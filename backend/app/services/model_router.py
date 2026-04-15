@@ -2,10 +2,13 @@
 LLM Unified Access Layer - ModelRouter
 
 Provides a unified interface for multiple LLM providers with:
-- Task-based model routing (heavy tasks → large models, light tasks → small models)
-- Fallback chains (if primary model fails, try next)
-- Streaming support (SSE)
+- Task-based model routing (configurable per task from frontend UI)
+- Multiple endpoints (different API keys / base URLs per task)
+- Embedding endpoint independent from generation endpoint
+- Fallback chains
+- Streaming (SSE)
 - Token usage tracking
+- DB-first config (frontend-managed), .env fallback
 """
 
 from __future__ import annotations
@@ -15,19 +18,15 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
-import httpx
-
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ModelConfig:
-    provider: str
+class TaskRouteConfig:
+    provider_key: str
     model_name: str
     temperature: float = 0.7
     max_tokens: int = 4096
-    top_p: float = 1.0
-    extra_params: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -46,31 +45,17 @@ class GenerationResult:
 
 
 class BaseProvider(ABC):
-    """Abstract base class for LLM providers."""
-
     name: str
 
     @abstractmethod
-    async def generate(
-        self,
-        messages: list[dict],
-        model: str,
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> GenerationResult:
-        ...
+    async def generate(self, messages: list[dict], model: str,
+                       temperature: float = 0.7, max_tokens: int = 4096,
+                       **kw) -> GenerationResult: ...
 
     @abstractmethod
-    async def generate_stream(
-        self,
-        messages: list[dict],
-        model: str,
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> AsyncIterator[str]:
-        ...
+    async def generate_stream(self, messages: list[dict], model: str,
+                              temperature: float = 0.7, max_tokens: int = 4096,
+                              **kw) -> AsyncIterator[str]: ...
 
 
 class AnthropicProvider(BaseProvider):
@@ -87,65 +72,36 @@ class AnthropicProvider(BaseProvider):
             self._client = anthropic.AsyncAnthropic(api_key=self.api_key)
         return self._client
 
-    async def generate(
-        self,
-        messages: list[dict],
-        model: str = "claude-sonnet-4-20250514",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> GenerationResult:
-        system_msg = None
-        chat_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system_msg = msg["content"]
+    async def generate(self, messages, model="claude-sonnet-4-20250514",
+                       temperature=0.7, max_tokens=4096, **kw) -> GenerationResult:
+        system_msg, chat = None, []
+        for m in messages:
+            if m["role"] == "system":
+                system_msg = m["content"]
             else:
-                chat_messages.append(msg)
-
-        params: dict = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": chat_messages,
-        }
+                chat.append(m)
+        params: dict = {"model": model, "max_tokens": max_tokens,
+                        "temperature": temperature, "messages": chat}
         if system_msg:
             params["system"] = system_msg
-
-        response = await self.client.messages.create(**params)
-        text = response.content[0].text if response.content else ""
-        usage = TokenUsage(
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            total_tokens=response.usage.input_tokens + response.usage.output_tokens,
-        )
+        resp = await self.client.messages.create(**params)
+        text = resp.content[0].text if resp.content else ""
+        usage = TokenUsage(resp.usage.input_tokens, resp.usage.output_tokens,
+                           resp.usage.input_tokens + resp.usage.output_tokens)
         return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
-    async def generate_stream(
-        self,
-        messages: list[dict],
-        model: str = "claude-sonnet-4-20250514",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> AsyncIterator[str]:
-        system_msg = None
-        chat_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system_msg = msg["content"]
+    async def generate_stream(self, messages, model="claude-sonnet-4-20250514",
+                              temperature=0.7, max_tokens=4096, **kw):
+        system_msg, chat = None, []
+        for m in messages:
+            if m["role"] == "system":
+                system_msg = m["content"]
             else:
-                chat_messages.append(msg)
-
-        params: dict = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": chat_messages,
-        }
+                chat.append(m)
+        params: dict = {"model": model, "max_tokens": max_tokens,
+                        "temperature": temperature, "messages": chat}
         if system_msg:
             params["system"] = system_msg
-
         async with self.client.messages.stream(**params) as stream:
             async for text in stream.text_stream:
                 yield text
@@ -154,270 +110,222 @@ class AnthropicProvider(BaseProvider):
 class OpenAIProvider(BaseProvider):
     name = "openai"
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, base_url: str = ""):
         self.api_key = api_key
+        self.base_url = base_url
         self._client = None
 
     @property
     def client(self):
         if self._client is None:
             import openai
-            self._client = openai.AsyncOpenAI(api_key=self.api_key)
+            kw: dict = {"api_key": self.api_key or "not-needed"}
+            if self.base_url:
+                kw["base_url"] = self.base_url
+            self._client = openai.AsyncOpenAI(**kw)
         return self._client
 
-    async def generate(
-        self,
-        messages: list[dict],
-        model: str = "gpt-4o",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> GenerationResult:
-        response = await self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        text = response.choices[0].message.content or ""
-        usage = TokenUsage(
-            input_tokens=response.usage.prompt_tokens if response.usage else 0,
-            output_tokens=response.usage.completion_tokens if response.usage else 0,
-            total_tokens=response.usage.total_tokens if response.usage else 0,
-        )
+    async def generate(self, messages, model="gpt-4o",
+                       temperature=0.7, max_tokens=4096, **kw) -> GenerationResult:
+        resp = await self.client.chat.completions.create(
+            model=model, messages=messages,
+            temperature=temperature, max_tokens=max_tokens)
+        text = resp.choices[0].message.content or ""
+        u = resp.usage
+        usage = TokenUsage(u.prompt_tokens if u else 0,
+                           u.completion_tokens if u else 0,
+                           u.total_tokens if u else 0)
         return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
-    async def generate_stream(
-        self,
-        messages: list[dict],
-        model: str = "gpt-4o",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> AsyncIterator[str]:
+    async def generate_stream(self, messages, model="gpt-4o",
+                              temperature=0.7, max_tokens=4096, **kw):
         stream = await self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+            model=model, messages=messages,
+            temperature=temperature, max_tokens=max_tokens, stream=True)
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
 
-class OpenAICompatibleProvider(BaseProvider):
-    """Provider for any OpenAI-compatible API endpoint (e.g., local models, OpenRouter)."""
+class EmbeddingProvider:
+    """Dedicated provider for embeddings (independent endpoint)."""
 
-    name = "openai_compatible"
-
-    def __init__(self, base_url: str, api_key: str = ""):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, api_key: str, base_url: str = "",
+                 model: str = "text-embedding-3-small"):
         self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
         self._client = None
 
     @property
     def client(self):
         if self._client is None:
             import openai
-            self._client = openai.AsyncOpenAI(
-                base_url=self.base_url,
-                api_key=self.api_key or "not-needed",
-            )
+            kw: dict = {"api_key": self.api_key or "not-needed"}
+            if self.base_url:
+                kw["base_url"] = self.base_url
+            self._client = openai.AsyncOpenAI(**kw)
         return self._client
 
-    async def generate(
-        self,
-        messages: list[dict],
-        model: str = "default",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> GenerationResult:
-        response = await self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        text = response.choices[0].message.content or ""
-        usage = TokenUsage(
-            input_tokens=response.usage.prompt_tokens if response.usage else 0,
-            output_tokens=response.usage.completion_tokens if response.usage else 0,
-            total_tokens=response.usage.total_tokens if response.usage else 0,
-        )
-        return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
-
-    async def generate_stream(
-        self,
-        messages: list[dict],
-        model: str = "default",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> AsyncIterator[str]:
-        stream = await self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-
-
-# Default task → model routing
-DEFAULT_TASK_ROUTING: dict[str, ModelConfig] = {
-    "generation": ModelConfig(provider="anthropic", model_name="claude-sonnet-4-20250514", temperature=0.8, max_tokens=4096),
-    "polishing": ModelConfig(provider="anthropic", model_name="claude-sonnet-4-20250514", temperature=0.7, max_tokens=4096),
-    "outline": ModelConfig(provider="anthropic", model_name="claude-sonnet-4-20250514", temperature=0.8, max_tokens=8192),
-    "extraction": ModelConfig(provider="anthropic", model_name="claude-haiku-4-5-20251001", temperature=0.3, max_tokens=2048),
-    "evaluation": ModelConfig(provider="openai", model_name="gpt-4o", temperature=0.3, max_tokens=2048),
-    "summary": ModelConfig(provider="anthropic", model_name="claude-haiku-4-5-20251001", temperature=0.3, max_tokens=1024),
-    "embedding": ModelConfig(provider="openai", model_name="text-embedding-3-small"),
-}
+    async def embed(self, text: str) -> list[float]:
+        resp = await self.client.embeddings.create(
+            model=self.model, input=text[:8000])
+        return resp.data[0].embedding
 
 
 class ModelRouter:
     """
     Unified model access layer.
-
-    Routes tasks to appropriate models, supports fallback chains,
-    and tracks token usage.
+    Config loaded from DB (frontend UI) with .env fallback.
+    Supports independent embedding endpoint.
     """
 
     def __init__(self):
         self.providers: dict[str, BaseProvider] = {}
-        self.task_routing: dict[str, ModelConfig] = dict(DEFAULT_TASK_ROUTING)
+        self.task_routing: dict[str, TaskRouteConfig] = {}
+        self.embedding_provider: EmbeddingProvider | None = None
         self.total_usage = TokenUsage()
+        self._db_loaded = False
 
-    def register_provider(self, provider: BaseProvider) -> None:
-        self.providers[provider.name] = provider
+    def register_provider(self, key: str, provider: BaseProvider) -> None:
+        self.providers[key] = provider
 
-    def set_task_routing(self, task_type: str, config: ModelConfig) -> None:
-        self.task_routing[task_type] = config
+    def set_embedding(self, provider: EmbeddingProvider) -> None:
+        self.embedding_provider = provider
 
-    def _get_config(self, task_type: str) -> ModelConfig:
-        config = self.task_routing.get(task_type)
-        if not config:
-            raise ValueError(f"No model config for task type: {task_type}")
-        return config
+    async def load_from_db(self) -> None:
+        """Load endpoint configs and task routing from database."""
+        try:
+            from sqlalchemy import select
+            from app.db.session import async_session_factory
+            from app.models.project import LLMEndpoint, ModelConfig
 
-    def _get_provider(self, provider_name: str) -> BaseProvider:
-        provider = self.providers.get(provider_name)
-        if not provider:
-            available = list(self.providers.keys())
-            if available:
-                logger.warning(
-                    "Provider %s not available, falling back to %s",
-                    provider_name,
-                    available[0],
-                )
-                return self.providers[available[0]]
-            raise ValueError(f"No providers registered. Requested: {provider_name}")
-        return provider
+            async with async_session_factory() as db:
+                result = await db.execute(
+                    select(LLMEndpoint).where(LLMEndpoint.enabled == 1))
+                endpoints = result.scalars().all()
 
-    def _track_usage(self, usage: TokenUsage) -> None:
+                for ep in endpoints:
+                    key = str(ep.id)
+                    if ep.provider_type == "anthropic":
+                        self.register_provider(key, AnthropicProvider(api_key=ep.api_key))
+                    else:
+                        self.register_provider(key, OpenAIProvider(
+                            api_key=ep.api_key, base_url=ep.base_url or ""))
+
+                result = await db.execute(select(ModelConfig))
+                configs = result.scalars().all()
+
+                for cfg in configs:
+                    if cfg.endpoint_id and str(cfg.endpoint_id) in self.providers:
+                        self.task_routing[cfg.task_type] = TaskRouteConfig(
+                            provider_key=str(cfg.endpoint_id),
+                            model_name=cfg.model_name or "",
+                            temperature=cfg.temperature or 0.7,
+                            max_tokens=cfg.max_tokens or 4096,
+                        )
+
+                # Embedding endpoint
+                emb_cfg = next((c for c in configs
+                                if c.task_type == "embedding" and c.endpoint_id), None)
+                if emb_cfg:
+                    emb_ep = next((e for e in endpoints
+                                  if str(e.id) == str(emb_cfg.endpoint_id)), None)
+                    if emb_ep:
+                        self.embedding_provider = EmbeddingProvider(
+                            api_key=emb_ep.api_key,
+                            base_url=emb_ep.base_url or "",
+                            model=emb_cfg.model_name or emb_ep.default_model,
+                        )
+
+                self._db_loaded = True
+                logger.info("Loaded %d endpoints, %d task routes from DB",
+                            len(endpoints), len(self.task_routing))
+        except Exception as e:
+            logger.warning("Failed to load model config from DB: %s", e)
+
+    def _get_route(self, task_type: str) -> TaskRouteConfig:
+        route = self.task_routing.get(task_type)
+        if not route and self.providers:
+            first = next(iter(self.providers))
+            return TaskRouteConfig(provider_key=first, model_name="")
+        if not route:
+            raise ValueError(
+                f"No model configured for '{task_type}'. "
+                "Configure at Settings > Model Configuration.")
+        return route
+
+    def _get_provider(self, key: str) -> BaseProvider:
+        if key in self.providers:
+            return self.providers[key]
+        if self.providers:
+            fb = next(iter(self.providers))
+            logger.warning("Provider %s not found, falling back to %s", key, fb)
+            return self.providers[fb]
+        raise ValueError("No LLM endpoints configured. Add one at Settings > Model Configuration.")
+
+    def _track(self, usage: TokenUsage) -> None:
         self.total_usage.input_tokens += usage.input_tokens
         self.total_usage.output_tokens += usage.output_tokens
         self.total_usage.total_tokens += usage.total_tokens
 
-    async def generate(
-        self,
-        task_type: str,
-        messages: list[dict],
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        **kwargs,
-    ) -> GenerationResult:
-        config = self._get_config(task_type)
-        provider = self._get_provider(config.provider)
-
+    async def generate(self, task_type: str, messages: list[dict],
+                       temperature: float | None = None,
+                       max_tokens: int | None = None, **kw) -> GenerationResult:
+        route = self._get_route(task_type)
+        provider = self._get_provider(route.provider_key)
         result = await provider.generate(
-            messages=messages,
-            model=config.model_name,
-            temperature=temperature if temperature is not None else config.temperature,
-            max_tokens=max_tokens if max_tokens is not None else config.max_tokens,
-            **kwargs,
-        )
-        self._track_usage(result.usage)
-        logger.info(
-            "Generated [%s] via %s/%s: %d tokens",
-            task_type,
-            result.provider,
-            result.model,
-            result.usage.total_tokens,
-        )
+            messages=messages, model=route.model_name,
+            temperature=temperature if temperature is not None else route.temperature,
+            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
+        self._track(result.usage)
         return result
 
-    async def generate_stream(
-        self,
-        task_type: str,
-        messages: list[dict],
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        **kwargs,
-    ) -> AsyncIterator[str]:
-        config = self._get_config(task_type)
-        provider = self._get_provider(config.provider)
-
+    async def generate_stream(self, task_type: str, messages: list[dict],
+                              temperature: float | None = None,
+                              max_tokens: int | None = None, **kw) -> AsyncIterator[str]:
+        route = self._get_route(task_type)
+        provider = self._get_provider(route.provider_key)
         async for chunk in provider.generate_stream(
-            messages=messages,
-            model=config.model_name,
-            temperature=temperature if temperature is not None else config.temperature,
-            max_tokens=max_tokens if max_tokens is not None else config.max_tokens,
-            **kwargs,
-        ):
+            messages=messages, model=route.model_name,
+            temperature=temperature if temperature is not None else route.temperature,
+            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
             yield chunk
 
-    async def generate_with_fallback(
-        self,
-        task_type: str,
-        messages: list[dict],
-        fallback_providers: list[str] | None = None,
-        **kwargs,
-    ) -> GenerationResult:
-        """Try primary provider, then fallback providers in order."""
-        config = self._get_config(task_type)
-        providers_to_try = [config.provider]
-        if fallback_providers:
-            providers_to_try.extend(fallback_providers)
-        else:
-            providers_to_try.extend(
-                name for name in self.providers if name != config.provider
-            )
-
-        last_error: Exception | None = None
-        for provider_name in providers_to_try:
-            if provider_name not in self.providers:
+    async def generate_with_fallback(self, task_type: str, messages: list[dict],
+                                     **kw) -> GenerationResult:
+        route = self._get_route(task_type)
+        to_try = [route.provider_key] + [k for k in self.providers if k != route.provider_key]
+        last_err = None
+        for key in to_try:
+            if key not in self.providers:
                 continue
             try:
-                provider = self.providers[provider_name]
-                result = await provider.generate(
-                    messages=messages,
-                    model=config.model_name if provider_name == config.provider else self._default_model_for(provider_name),
-                    temperature=kwargs.get("temperature", config.temperature),
-                    max_tokens=kwargs.get("max_tokens", config.max_tokens),
-                )
-                self._track_usage(result.usage)
+                prov = self.providers[key]
+                result = await prov.generate(
+                    messages=messages, model=route.model_name,
+                    temperature=kw.get("temperature", route.temperature),
+                    max_tokens=kw.get("max_tokens", route.max_tokens))
+                self._track(result.usage)
                 return result
             except Exception as e:
-                logger.warning("Provider %s failed: %s", provider_name, e)
-                last_error = e
-                continue
+                logger.warning("Provider %s failed: %s", key, e)
+                last_err = e
+        raise RuntimeError(f"All providers failed for {task_type}") from last_err
 
-        raise RuntimeError(f"All providers failed for task {task_type}") from last_error
-
-    def _default_model_for(self, provider_name: str) -> str:
-        defaults = {
-            "anthropic": "claude-sonnet-4-20250514",
-            "openai": "gpt-4o",
-            "openai_compatible": "default",
-        }
-        return defaults.get(provider_name, "default")
+    async def embed(self, text: str) -> list[float]:
+        """Generate embedding using dedicated embedding provider."""
+        if self.embedding_provider:
+            return await self.embedding_provider.embed(text)
+        for prov in self.providers.values():
+            if isinstance(prov, OpenAIProvider):
+                try:
+                    ep = EmbeddingProvider(api_key=prov.api_key, base_url=prov.base_url)
+                    return await ep.embed(text)
+                except Exception:
+                    continue
+        logger.warning("No embedding provider, returning zero vector")
+        return [0.0] * 1536
 
     def get_usage_stats(self) -> dict:
         return {
@@ -427,41 +335,41 @@ class ModelRouter:
         }
 
 
-def create_model_router() -> ModelRouter:
-    """Factory function to create ModelRouter with configured providers."""
-    from app.config import settings
-
-    router = ModelRouter()
-
-    if settings.ANTHROPIC_API_KEY:
-        router.register_provider(AnthropicProvider(settings.ANTHROPIC_API_KEY))
-        logger.info("Registered Anthropic provider")
-
-    if settings.OPENAI_API_KEY:
-        router.register_provider(OpenAIProvider(settings.OPENAI_API_KEY))
-        logger.info("Registered OpenAI provider")
-
-    if settings.OPENAI_COMPATIBLE_BASE_URL:
-        router.register_provider(
-            OpenAICompatibleProvider(
-                base_url=settings.OPENAI_COMPATIBLE_BASE_URL,
-                api_key=settings.OPENAI_COMPATIBLE_API_KEY or "",
-            )
-        )
-        logger.info("Registered OpenAI-compatible provider at %s", settings.OPENAI_COMPATIBLE_BASE_URL)
-
-    if not router.providers:
-        logger.warning("No LLM providers configured! Set API keys in .env")
-
-    return router
-
-
-# Singleton instance
 _router: ModelRouter | None = None
+
+
+async def get_model_router_async() -> ModelRouter:
+    global _router
+    if _router is None:
+        _router = ModelRouter()
+    if not _router._db_loaded:
+        await _router.load_from_db()
+        if not _router.providers:
+            _load_from_env(_router)
+    return _router
 
 
 def get_model_router() -> ModelRouter:
     global _router
     if _router is None:
-        _router = create_model_router()
+        _router = ModelRouter()
+        _load_from_env(_router)
     return _router
+
+
+def reset_model_router() -> None:
+    """Reset singleton (called when config changes via API)."""
+    global _router
+    _router = None
+
+
+def _load_from_env(router: ModelRouter) -> None:
+    from app.config import settings
+    if settings.ANTHROPIC_API_KEY:
+        router.register_provider("env_anthropic", AnthropicProvider(settings.ANTHROPIC_API_KEY))
+    if settings.OPENAI_API_KEY:
+        router.register_provider("env_openai", OpenAIProvider(settings.OPENAI_API_KEY))
+    if settings.OPENAI_COMPATIBLE_BASE_URL:
+        router.register_provider("env_compatible", OpenAIProvider(
+            api_key=settings.OPENAI_COMPATIBLE_API_KEY or "",
+            base_url=settings.OPENAI_COMPATIBLE_BASE_URL))

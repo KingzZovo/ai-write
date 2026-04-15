@@ -177,15 +177,36 @@ class StyleProfile(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
+class LLMEndpoint(Base):
+    """A configured LLM API endpoint (user-managed from frontend)."""
+
+    __tablename__ = "llm_endpoints"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)  # User-friendly name, e.g. "Claude API", "Local Qwen", "Jina Embedding"
+    provider_type = Column(String(50), nullable=False)  # anthropic, openai, openai_compatible
+    base_url = Column(String(1000), default="")  # Only for openai_compatible
+    api_key = Column(String(500), default="")  # Encrypted in production
+    default_model = Column(String(200), nullable=False)  # e.g. "claude-sonnet-4-20250514", "gpt-4o", "text-embedding-3-small"
+    enabled = Column(Integer, default=1)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
 class ModelConfig(Base):
+    """Maps each task type to a specific LLM endpoint + model."""
+
     __tablename__ = "model_configs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    task_type = Column(String(50), nullable=False)
-    provider = Column(String(50), nullable=False)
-    model_name = Column(String(200), nullable=False)
-    params_json = Column(JSON, default=dict)
-    is_active = Column(Integer, default=1)
+    task_type = Column(String(50), nullable=False, unique=True)
+    # task_type values: generation, polishing, outline, extraction, evaluation, summary, embedding
+    endpoint_id = Column(UUID(as_uuid=True), ForeignKey("llm_endpoints.id", ondelete="SET NULL"), nullable=True)
+    model_name = Column(String(200), default="")  # Override endpoint's default_model if set
+    temperature = Column(Float, default=0.7)
+    max_tokens = Column(Integer, default=4096)
+    params_json = Column(JSON, default=dict)  # Extra params
+
+    endpoint = relationship("LLMEndpoint")
 
 
 class Foreshadow(Base):

@@ -11,6 +11,9 @@ export default function Home() {
           <a href="/knowledge" className="inline-block px-6 py-3 bg-white text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50">
             Knowledge Base
           </a>
+          <a href="/settings" className="inline-block px-6 py-3 bg-white text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+            Model Settings
+          </a>
         </div>
       </div>
     </div>

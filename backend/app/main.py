@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import chapters, foreshadows, generate, knowledge, lora, outlines, projects, rewrite, settings, versions, volumes
+from app.api import chapters, foreshadows, generate, knowledge, lora, model_config, outlines, projects, rewrite, settings, versions, volumes
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
@@ -81,6 +81,7 @@ app.include_router(versions.router)
 app.include_router(rewrite.router)
 app.include_router(lora.router)
 app.include_router(volumes.router)
+app.include_router(model_config.router)
 
 
 # ---------------------------------------------------------------------------
