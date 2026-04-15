@@ -95,6 +95,18 @@ class Chapter(Base):
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     volume = relationship("Volume", back_populates="chapters")
+    versions = relationship(
+        "ChapterVersion",
+        back_populates="chapter",
+        cascade="all, delete-orphan",
+        order_by="ChapterVersion.created_at",
+    )
+    evaluations = relationship(
+        "ChapterEvaluation",
+        back_populates="chapter",
+        cascade="all, delete-orphan",
+        order_by="ChapterEvaluation.created_at",
+    )
 
 
 class Outline(Base):
@@ -295,3 +307,64 @@ class CrawlTask(Base):
     error_message = Column(Text)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+# =============================================================================
+# Phase 3: Quality Evaluation & Version Control
+# =============================================================================
+
+
+class ChapterVersion(Base):
+    """A version node in the chapter version tree."""
+
+    __tablename__ = "chapter_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapter_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    branch_name = Column(String(100), default="main")
+    content_text = Column(Text, nullable=False)
+    content_diff = Column(Text, default="")
+    word_count = Column(Integer, default=0)
+    is_active = Column(Integer, default=0)
+    source = Column(String(50), default="user_edit")  # ai_generation, user_edit, merge, branch
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    chapter = relationship("Chapter", back_populates="versions")
+    children = relationship(
+        "ChapterVersion",
+        backref="parent",
+        remote_side=[id],
+    )
+
+
+class ChapterEvaluation(Base):
+    """Quality evaluation result for a chapter."""
+
+    __tablename__ = "chapter_evaluations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    plot_coherence = Column(Float, default=0.0)
+    character_consistency = Column(Float, default=0.0)
+    style_adherence = Column(Float, default=0.0)
+    narrative_pacing = Column(Float, default=0.0)
+    foreshadow_handling = Column(Float, default=0.0)
+    overall = Column(Float, default=0.0)
+    issues_json = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    chapter = relationship("Chapter", back_populates="evaluations")

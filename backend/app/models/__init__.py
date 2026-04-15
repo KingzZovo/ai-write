@@ -8,6 +8,8 @@ from app.db.session import Base
 from app.models.project import (
     BookSource,
     Chapter,
+    ChapterEvaluation,
+    ChapterVersion,
     Character,
     CrawlTask,
     Foreshadow,
@@ -26,6 +28,8 @@ __all__ = [
     "Base",
     "BookSource",
     "Chapter",
+    "ChapterEvaluation",
+    "ChapterVersion",
     "Character",
     "CrawlTask",
     "Foreshadow",
