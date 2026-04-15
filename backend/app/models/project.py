@@ -207,3 +207,91 @@ class VolumeSummary(Base):
     character_snapshot_json = Column(JSON, default=dict)
     plot_progress_json = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+# =============================================================================
+# Phase 2: Knowledge Base & Style Learning
+# =============================================================================
+
+
+class BookSource(Base):
+    """Legado-compatible book source rule definition."""
+
+    __tablename__ = "book_sources"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    source_url = Column(String(1000), nullable=False)
+    source_type = Column(Integer, default=0)  # 0=text
+    source_group = Column(String(200))
+    source_json = Column(JSON, nullable=False)  # full legado BookSource JSON
+    enabled = Column(Integer, default=1)
+    last_test_at = Column(DateTime(timezone=True))
+    last_test_ok = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class ReferenceBook(Base):
+    """A reference novel imported for style learning."""
+
+    __tablename__ = "reference_books"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(500), nullable=False)
+    author = Column(String(200))
+    source = Column(String(50), nullable=False)  # crawler, upload_txt, upload_epub, upload_html, api
+    source_detail = Column(String(1000))  # URL or filename
+    total_chapters = Column(Integer, default=0)
+    total_words = Column(Integer, default=0)
+    status = Column(String(20), default="pending")  # pending, crawling, cleaning, extracting, ready, error
+    error_message = Column(Text)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    chunks = relationship("TextChunk", back_populates="book", cascade="all, delete-orphan")
+
+
+class TextChunk(Base):
+    """A text block from a reference book after cleaning and slicing."""
+
+    __tablename__ = "text_chunks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    book_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reference_books.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_idx = Column(Integer, nullable=False)
+    block_idx = Column(Integer, nullable=False)
+    chapter_title = Column(String(500))
+    content = Column(Text, nullable=False)
+    char_count = Column(Integer, nullable=False)
+    sequence_id = Column(Integer, nullable=False)  # global sequential ID within book
+    plot_extracted = Column(Integer, default=0)
+    style_extracted = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    book = relationship("ReferenceBook", back_populates="chunks")
+
+
+class CrawlTask(Base):
+    """A crawling task for fetching novel content."""
+
+    __tablename__ = "crawl_tasks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    book_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reference_books.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id = Column(UUID(as_uuid=True), ForeignKey("book_sources.id"), nullable=True)
+    book_url = Column(String(1000), nullable=False)
+    total_chapters = Column(Integer, default=0)
+    completed_chapters = Column(Integer, default=0)
+    status = Column(String(20), default="pending")  # pending, running, paused, completed, error
+    error_message = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

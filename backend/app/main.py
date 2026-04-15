@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import chapters, generate, outlines, projects
+from app.api import chapters, generate, knowledge, outlines, projects
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
@@ -74,6 +74,7 @@ app.include_router(projects.router)
 app.include_router(outlines.router)
 app.include_router(chapters.router)
 app.include_router(generate.router)
+app.include_router(knowledge.router)
 
 
 # ---------------------------------------------------------------------------
