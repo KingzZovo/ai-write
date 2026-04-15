@@ -55,6 +55,9 @@ class ContinuityChecker(BaseChecker):
         # 1. Timeline consistency within chapter
         self._check_internal_timeline(chapter_text, result)
 
+        if context is None:
+            return result
+
         # 2. Character location consistency
         self._check_character_locations(chapter_text, context, result)
 

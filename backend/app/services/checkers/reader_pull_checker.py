@@ -384,14 +384,15 @@ class ReaderPullChecker(BaseChecker):
         result: CheckResult,
     ) -> None:
         """Generate hook suggestions based on context."""
-        if context.hook_suggestion:
-            return  # Already has a suggestion
+        if context is None or getattr(context, 'hook_suggestion', None):
+            return  # No context or already has a suggestion
 
         suggestions: list[str] = []
 
         # Based on foreshadow proximity
+        foreshadows = getattr(context, 'foreshadow_triplets', []) or []
         ready_foreshadows = [
-            f for f in context.foreshadow_triplets if f.proximity > 0.7
+            f for f in foreshadows if f.proximity > 0.7
         ]
         if ready_foreshadows:
             suggestions.append(

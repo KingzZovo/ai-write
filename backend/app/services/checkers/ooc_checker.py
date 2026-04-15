@@ -58,7 +58,7 @@ class OOCChecker(BaseChecker):
     ) -> CheckResult:
         result = CheckResult(checker_name=self.name)
 
-        if not chapter_text.strip() or not context.character_cards:
+        if not chapter_text.strip() or context is None or not context.character_cards:
             return result
 
         # 1. Extract dialogue per character

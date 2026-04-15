@@ -37,6 +37,9 @@ class ConsistencyChecker(BaseChecker):
 
         if not chapter_text.strip():
             return result
+        if context is None:
+            result.score = 8.0
+            return result
 
         # 1. Check world rule violations
         self._check_world_rules(chapter_text, context, result)
