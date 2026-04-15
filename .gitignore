@@ -31,3 +31,4 @@ postgres_data/
 redis_data/
 qdrant_data/
 neo4j_data/
+.code-review-graph/
