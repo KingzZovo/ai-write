@@ -4,6 +4,8 @@ import { useState, useCallback } from 'react'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
 import { GeneratePanel } from '@/components/panels/GeneratePanel'
+import { ForeshadowPanel } from '@/components/panels/ForeshadowPanel'
+import { SettingsPanel } from '@/components/panels/SettingsPanel'
 import { useProjectStore } from '@/stores/projectStore'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiSSE } from '@/lib/api'
@@ -166,10 +168,22 @@ export default function WorkspacePage() {
         </div>
       }
       panel={
-        <GeneratePanel
-          onGenerate={handleGenerateChapter}
-          onGenerateOutline={handleGenerateOutline}
-        />
+        <div className="divide-y divide-gray-200">
+          <GeneratePanel
+            onGenerate={handleGenerateChapter}
+            onGenerateOutline={handleGenerateOutline}
+          />
+          {currentProject && (
+            <>
+              <div className="p-4">
+                <ForeshadowPanel projectId={currentProject.id} />
+              </div>
+              <div className="p-4">
+                <SettingsPanel projectId={currentProject.id} />
+              </div>
+            </>
+          )}
+        </div>
       }
     />
   )
