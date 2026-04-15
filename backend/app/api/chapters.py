@@ -27,6 +27,11 @@ class ChapterUpdate(BaseModel):
     status: str | None = None
 
 
+class ChapterSyncRequest(BaseModel):
+    old_text: str
+    new_text: str
+
+
 class ChapterResponse(BaseModel):
     id: str
     volume_id: str
@@ -134,3 +139,26 @@ async def delete_chapter(
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
     await db.delete(chapter)
+
+
+@router.post("/{chapter_id}/sync")
+async def sync_chapter_edit(
+    project_id: str,
+    chapter_id: str,
+    body: ChapterSyncRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Trigger incremental sync after user edits a chapter."""
+    chapter = await db.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    from app.services.incremental_sync import IncrementalSyncService
+
+    sync_service = IncrementalSyncService(db=db)
+    result = await sync_service.process_edit(
+        chapter_id=chapter_id,
+        old_text=body.old_text,
+        new_text=body.new_text,
+    )
+    return result

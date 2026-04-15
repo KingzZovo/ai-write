@@ -21,5 +21,13 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
+# Celery Beat periodic task schedule
+celery_app.conf.beat_schedule = {
+    "style-clustering-hourly": {
+        "task": "tasks.run_style_clustering",
+        "schedule": 3600.0,  # every hour
+    },
+}
+
 # Auto-discover task modules inside the tasks package.
 celery_app.autodiscover_tasks(["app.tasks"])

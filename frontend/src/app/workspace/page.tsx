@@ -9,6 +9,7 @@ import { SettingsPanel } from '@/components/panels/SettingsPanel'
 import { EvaluationPanel } from '@/components/panels/EvaluationPanel'
 import { VersionPanel } from '@/components/panels/VersionPanel'
 import { TokenDashboard } from '@/components/panels/TokenDashboard'
+import { RelationshipGraph } from '@/components/panels/RelationshipGraph'
 import { useProjectStore } from '@/stores/projectStore'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiSSE } from '@/lib/api'
@@ -43,7 +44,7 @@ function CollapsibleSection({
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      {open && <div className="px-4 pb-4">{children}</div>}
+      {open && <div className="pb-3">{children}</div>}
     </div>
   )
 }
@@ -217,25 +218,41 @@ export default function WorkspacePage() {
 
             {selectedChapterId && (
               <CollapsibleSection title="Quality Evaluation">
-                <EvaluationPanel chapterId={selectedChapterId} />
+                <div className="px-4">
+                  <EvaluationPanel chapterId={selectedChapterId} />
+                </div>
               </CollapsibleSection>
             )}
 
             {selectedChapterId && (
               <CollapsibleSection title="Version History">
-                <VersionPanel chapterId={selectedChapterId} />
+                <div className="px-4">
+                  <VersionPanel chapterId={selectedChapterId} />
+                </div>
               </CollapsibleSection>
             )}
 
             {currentProject && (
               <CollapsibleSection title="Foreshadows">
-                <ForeshadowPanel projectId={currentProject.id} />
+                <div className="px-4">
+                  <ForeshadowPanel projectId={currentProject.id} />
+                </div>
               </CollapsibleSection>
             )}
 
             {currentProject && (
               <CollapsibleSection title="Settings">
-                <SettingsPanel projectId={currentProject.id} />
+                <div className="px-4">
+                  <SettingsPanel projectId={currentProject.id} />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {currentProject && (
+              <CollapsibleSection title="Character Relations">
+                <div className="px-4">
+                  <RelationshipGraph projectId={currentProject.id} />
+                </div>
               </CollapsibleSection>
             )}
           </div>
