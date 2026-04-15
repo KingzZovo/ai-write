@@ -7,6 +7,10 @@ import { GeneratePanel } from '@/components/panels/GeneratePanel'
 import { ForeshadowPanel } from '@/components/panels/ForeshadowPanel'
 import { SettingsPanel } from '@/components/panels/SettingsPanel'
 import { EvaluationPanel } from '@/components/panels/EvaluationPanel'
+import { CheckerDashboard } from '@/components/panels/CheckerDashboard'
+import { StrandPanel } from '@/components/panels/StrandPanel'
+import { WritingGuidePanel } from '@/components/panels/WritingGuidePanel'
+import { AntiAIPanel } from '@/components/panels/AntiAIPanel'
 import { VersionPanel } from '@/components/panels/VersionPanel'
 import { TokenDashboard } from '@/components/panels/TokenDashboard'
 import { RelationshipGraph } from '@/components/panels/RelationshipGraph'
@@ -1102,6 +1106,36 @@ export default function WorkspacePage() {
               <CollapsibleSection title="Quality Evaluation">
                 <div className="px-4">
                   <EvaluationPanel chapterId={selectedChapterId} />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {selectedChapterId && (
+              <CollapsibleSection title="质量检查详情">
+                <div className="px-4">
+                  <CheckerDashboard chapterId={selectedChapterId} />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {currentProject && (
+              <CollapsibleSection title="三线平衡">
+                <div className="px-4">
+                  <StrandPanel projectId={currentProject.id} />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            <CollapsibleSection title="写作指南">
+              <div className="px-4">
+                <WritingGuidePanel />
+              </div>
+            </CollapsibleSection>
+
+            {selectedChapterId && (
+              <CollapsibleSection title="去AI味检查">
+                <div className="px-4">
+                  <AntiAIPanel chapterId={selectedChapterId} />
                 </div>
               </CollapsibleSection>
             )}

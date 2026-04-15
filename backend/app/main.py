@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
-from app.api import auth, chapters, foreshadows, generate, knowledge, lora, model_config, outlines, projects, rewrite, settings, versions, volumes
+from app.api import auth, chapters, foreshadows, generate, knowledge, lora, model_config, outlines, projects, quality, rewrite, settings, versions, volumes
 from app.api.auth import verify_token
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
@@ -128,6 +128,7 @@ app.include_router(rewrite.router)
 app.include_router(lora.router)
 app.include_router(volumes.router)
 app.include_router(model_config.router)
+app.include_router(quality.router)
 
 
 # ---------------------------------------------------------------------------
