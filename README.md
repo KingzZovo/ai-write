@@ -1,32 +1,32 @@
-# AI Write - AI-Powered Novel Writing Platform
+# AI Write - AI 驱动的全流程小说写作平台
 
-Full-stack AI novel writing platform. AI handles everything from outlines to chapters — human only reviews and fine-tunes. Supports learning writing styles from existing novels, hierarchical memory for ultra-long novels (2-5 million characters without continuity errors), and condition-triggered foreshadow management.
+全栈 AI 小说写作平台。AI 负责从大纲到正文的全部创作，人工仅做审阅和微调。支持学习已有小说的写作风格，分层记忆系统支撑 200-500 万字超长篇不出设定矛盾，条件触发式伏笔管理，6 维度独立质量审查，去 AI 味润色。
 
-## Architecture
+## 系统架构
 
 ```
-                    Nginx (:80)
+                    Nginx (:8080)
                    /          \
-        Next.js (:3000)    FastAPI (:8000)
-        Frontend            Backend
+        Next.js (:3100)    FastAPI (:8000)
+        前端 UI              后端 API
         |                   |
-        |              Celery Workers
+        |              Celery Workers (异步任务)
         |                   |
-        +------- Storage Cluster -------+
+        +------- 存储集群 -------+
         |           |          |        |
    PostgreSQL    Qdrant     Neo4j    Redis
-   (business)   (vectors)  (graph)  (cache/queue)
+   (业务数据)   (向量检索)  (知识图谱) (缓存/队列)
 ```
 
-**Tech Stack:**
-- **Frontend:** Next.js 16 + TypeScript + Tailwind CSS + Zustand + ProseMirror
-- **Backend:** Python 3.11+ / FastAPI + Celery + SQLAlchemy 2.0 (async)
-- **Storage:** PostgreSQL 16 + Qdrant + Neo4j 5 + Redis 7
-- **LLM:** Anthropic (Claude) / OpenAI (GPT) / Any OpenAI-compatible endpoint / LoRA fine-tuned local models
+**技术栈：**
+- **前端：** Next.js 16 + TypeScript + Tailwind CSS + Zustand + ProseMirror
+- **后端：** Python 3.11+ / FastAPI + Celery + SQLAlchemy 2.0 (async)
+- **存储：** PostgreSQL 16 + Qdrant + Neo4j 5 + Redis 7
+- **LLM：** Anthropic / OpenAI / OpenAI Compatible / LoRA 微调模型（前端可配置多端点）
 
-## Quick Start
+## 快速开始
 
-### 1. Clone & Configure
+### 1. 克隆并配置
 
 ```bash
 git clone https://github.com/KingzZovo/ai-write.git
@@ -34,294 +34,222 @@ cd ai-write
 cp .env.example .env
 ```
 
-Edit `.env` and set at least one LLM API key:
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-# or
-OPENAI_API_KEY=sk-...
-# or (for local/third-party models)
-OPENAI_COMPATIBLE_BASE_URL=http://localhost:8001/v1
-OPENAI_COMPATIBLE_API_KEY=...
-```
-
-### 2. Start Services
+### 2. 启动服务
 
 ```bash
 docker compose up -d
-```
-
-This starts 8 services: PostgreSQL, Redis, Qdrant, Neo4j, FastAPI backend, Celery worker, Next.js frontend, Nginx.
-
-### 3. Initialize Database
-
-```bash
 docker compose exec backend alembic upgrade head
 ```
 
-### 4. Access
+8 个服务：PostgreSQL, Redis, Qdrant, Neo4j, FastAPI, Celery Worker, Next.js, Nginx
 
-- **Web UI:** http://localhost
+### 3. 访问
+
+- **Web UI:** http://localhost:8080（登录：king / Wt991125）
 - **API Docs:** http://localhost:8000/docs
-- **Neo4j Browser:** http://localhost:7474
 
-## Core Features
+### 4. 配置 LLM 端点
 
-### Phase 1: AI Writing Pipeline
+登录后访问 **设置** 页面，添加 LLM API 端点并分配到各任务：
+- 大纲/章节生成 → 云端大模型（Claude / GPT）
+- 摘要/提取 → 本地模型（Qwen / RWKV）
+- 向量化 → 独立 Embedding 端点（Jina / BGE）
 
-Full AI-driven creation flow:
+## 核心功能
 
-```
-Creative Input → Book Outline → Volume Outlines → Chapter Outlines → Chapter Content
-                 (AI generates)  (AI generates)    (AI generates)     (AI generates)
-                    ↓                ↓                  ↓                  ↓
-                 User reviews     User reviews       User reviews      User reviews
-```
-
-- **Dual-Agent Pipeline:** PlotAgent (story coherence) → StyleAgent (style polish)
-- **SSE Streaming:** Real-time generation with typewriter effect
-- **ModelRouter:** Unified LLM access with task-based routing, fallback chains, token tracking
-
-### Phase 2: Knowledge Base & Style Learning
-
-Import reference novels to learn writing styles:
-
-- **Legado Book Source Engine:** Import book source rules from legado (阅读) app, supports CSS/XPath/JSONPath/regex/@js selectors
-- **Ranking Discovery:** Browse bestseller lists via `ruleExplore`
-- **Text Pipeline:** TXT/EPUB/HTML parsing → chapter detection → noise stripping → block slicing
-- **Style Extraction:** jieba-based statistical analysis (sentence length, dialogue ratio, rhetoric, POV)
-- **Style Clustering:** DBSCAN/KMeans → auto-generated StyleProfile configs
-- **Quality Scoring:** LLM-as-judge 5-dimension evaluation, filters low-quality novels from training
-
-### Phase 3: Memory System (200-500 万字)
-
-5-layer hierarchical memory pyramid:
-
-| Layer | Content | Storage | Recall |
-|-------|---------|---------|--------|
-| L1 World Rules | Power systems, geography, core rules | Neo4j + PG | Always full |
-| L2 Volume Summary | Per-volume plot progress, character snapshots | PostgreSQL | Always full |
-| L3 Chapter Summary | Per-chapter key events, characters, emotions | Qdrant | Current volume + vector search |
-| L4 Recent Text | Previous + current chapter full text | PostgreSQL | Always full |
-| L5 Entity Timeline | Character states, relationships over time | Neo4j | Query by chapter |
-
-**Entity Timeline (Neo4j):**
-- Track character states, relationships, locations across thousands of chapters
-- Time-point snapshot queries: "What was character X's state at chapter N?"
-- Auto-extraction from generated text via LLM
-
-**Condition-Triggered Foreshadow Management:**
-- No hard chapter deadlines (avoids forcing plot progression)
-- `resolve_conditions` describe WHEN resolution is natural
-- `narrative_proximity` (0.0-1.0) computed via LLM
-- Lifecycle: planted → ripening (>0.7) → ready (>0.9) → resolved
-- Auto-detection of new foreshadows and resolutions in generated text
-
-**Hook System:**
-- Pre-generate: foreshadow check, character consistency, outline alignment
-- Post-generate: entity extraction → Neo4j, summary generation → Qdrant, foreshadow check
-
-### Phase 4: Quality & Advanced Features
-
-- **LLM-as-a-Judge:** 5-dimension chapter scoring (plot/character/style/pacing/foreshadow)
-- **Version Control:** Git-like branching, diff comparison, merge
-- **Batch Generation:** Multi-chapter sequential generation with hook integration
-- **Semantic Cache:** Redis-backed, skips generation tasks, caches extractions/summaries
-- **Text Rewriting:** Select text → condense/expand/restructure/continue/custom
-- **Cascade Regeneration:** Edit impact analysis on downstream chapters
-- **Token Dashboard:** Real-time usage tracking and cache hit rate
-
-### LoRA Fine-tuning Support
-
-Train custom style models on your RTX 5080 (16GB):
+### 全流程 AI 创作管道
 
 ```
-Cloud Server (ai-write)  ←→  Home GPU (RTX 5080)
-  - Web UI + API              - Qwen2.5-7B + QLoRA training
-  - All databases             - vLLM/Ollama inference
-  - Anthropic/OpenAI API      - Connected via frp/Cloudflare Tunnel
+创意输入 → AI 全书大纲 → AI 分卷大纲 → AI 章节大纲 → AI 章节正文
+              ↓              ↓              ↓              ↓
+           用户审阅         用户审阅       用户审阅       用户审阅
 ```
 
-**Workflow:**
-1. Import reference novels → quality scoring → style extraction
-2. `POST /api/lora/export-dataset` → Alpaca/ShareGPT training JSON
-3. `POST /api/lora/generate-script` → Unsloth training script
-4. Train on home GPU (~1-2 hours for 5000 samples)
-5. Load adapter in Ollama/vLLM → set `OPENAI_COMPATIBLE_BASE_URL`
-6. AI Write automatically uses fine-tuned model
+- **双 Agent 管道：** PlotAgent（剧情推演）→ StyleAgent（风格润色 + few-shot）
+- **SSE 流式生成：** 实时打字机效果
+- **批量生成：** 多章节队列式生成 + 进度追踪
 
-## Project Structure
+### 三层上下文引擎 (Context Pack)
+
+| 层 | 内容 | 占比 |
+|----|------|------|
+| L1 近距离层 | 前 5 章摘要 + 当前内容 + 本章大纲 + 未来 10 章方向 | 40% |
+| L2 事实层 | 世界观 + SCORE 角色卡 + CFPG 伏笔三元组 + DOME 时间锚点 + 矛盾缓存 | 33% |
+| L3 RAG 层 | CoKe 关键词检索 + 角色对话样本 + 风格 few-shot | 20% |
+
+**高级技术：**
+- **SCORE 动态追踪：** 角色位置/实力/关系/心理状态/近期行为实时追踪
+- **CFPG 伏笔三元组：** 因 → 伏笔 → 消解目标，proximity 自动计算
+- **DOME 时间锚点：** 关键事件 + 因果链追踪
+- **CoKe 关键词检索：** 从大纲提取实体名触发向量检索
+- **ToM 心智理论：** 角色心理状态建模
+- **三线交织 (Strand Weave)：** Quest/Fire/Constellation 平衡监控
+
+### 6 维度独立质量审查
+
+| Checker | 检查内容 |
+|---------|---------|
+| ConsistencyChecker | 世界观规则违反、力量体系冲突 |
+| ContinuityChecker | 时间线连续性、角色位置一致性 |
+| OOCChecker | 角色 Out-of-Character 检测（5 种性格原型） |
+| PacingChecker | 句长变化、张力曲线、信息密度波动 |
+| ReaderPullChecker | 开头吸引力、微兑现分布、结尾钩子 |
+| AntiAIChecker | 64 个 AI 高频词、四字成语密度、"的"字密度、句式单调性 |
+
+6 个 Checker 并行执行，加权评分。
+
+### 写作质量系统
+
+- **7 大写作模块：** 展示非讲述 / 场景沉浸 / 对话技巧 / 张力控制 / 微观张力 / 情感共鸣 / 信息编织
+- **13 种悬念钩子：** 突然揭示 / 紧急危机 / 身份反转 / 两难选择 / 留白钩子 等
+- **12 个题材模板：** 玄幻 / 仙侠 / 都市 / 言情 / 悬疑 / 科幻 / 历史 / 末世 / 系统流 / 知乎短篇 等
+- **12 条写作禁忌 + 64 个 AI 词库**
+
+### 知识库与风格学习
+
+- **Legado 书源引擎：** 兼容阅读 app 书源规则，支持排行榜浏览
+- **文本清洗管道：** TXT/EPUB/HTML → 章节检测 → 噪音清洗 → 切片
+- **风格提取：** jieba 分词 + 句长/对话比/修辞/视角统计分析
+- **风格聚类：** DBSCAN/KMeans → 自动生成 StyleProfile
+- **质量评分：** 5 维度 LLM 评估，低质量小说不参与学习
+
+### LoRA 微调支持
+
+```
+云端服务器 (ai-write)  ←→  家用 GPU (RTX 5080 16GB)
+  全栈 Web 平台              QLoRA 训练 + 推理
+  云端 API (Claude/GPT)      Qwen2.5-7B / RWKV-7 7.2B
+```
+
+- 训练数据从已导入小说自动导出（Alpaca/ShareGPT 格式）
+- 自动生成 Unsloth 训练脚本
+- 推荐方案：14B 推理（质量）+ 7B 微调润色（风格）
+
+## 项目结构
 
 ```
 ai-write/
 ├── docker-compose.yml
-├── .env.example
-├── backend/
-│   ├── pyproject.toml
-│   ├── alembic/                    # Database migrations
-│   └── app/
-│       ├── main.py                 # FastAPI entry point
-│       ├── config.py               # Pydantic settings
-│       ├── models/                 # 16 SQLAlchemy ORM models
-│       ├── schemas/                # Pydantic request/response
-│       ├── api/                    # 10 API route modules, 59 endpoints
-│       │   ├── projects.py         # Project CRUD
-│       │   ├── outlines.py         # Outline CRUD + confirm
-│       │   ├── chapters.py         # Chapter CRUD + sync
-│       │   ├── generate.py         # SSE streaming (chapter + outline)
-│       │   ├── knowledge.py        # Book sources, uploads, crawling
-│       │   ├── foreshadows.py      # Foreshadow CRUD + resolve
-│       │   ├── settings.py         # Characters + world rules
-│       │   ├── versions.py         # Version tree + diff + evaluate
-│       │   ├── rewrite.py          # Text rewrite + batch generate
-│       │   └── lora.py             # LoRA dataset export + training
-│       ├── services/               # 22 business logic services
-│       │   ├── model_router.py     # Unified LLM access (3 providers)
-│       │   ├── outline_generator.py # 3-level outline generation
-│       │   ├── context_assembler.py # 5-layer memory assembly
-│       │   ├── chapter_generator.py # Dual-agent orchestration
-│       │   ├── memory.py           # Hierarchical memory pyramid
-│       │   ├── entity_timeline.py  # Neo4j knowledge graph
-│       │   ├── foreshadow_manager.py # Condition-triggered foreshadows
-│       │   ├── hook_manager.py     # Pre/post generation hooks
-│       │   ├── book_source_engine.py # Legado rule interpreter
-│       │   ├── text_pipeline.py    # Text cleaning & slicing
-│       │   ├── feature_extractor.py # Plot + style extraction
-│       │   ├── style_clustering.py # DBSCAN/KMeans clustering
-│       │   ├── quality_scorer.py   # Novel quality evaluation
-│       │   ├── chapter_evaluator.py # Chapter quality scoring
-│       │   ├── version_control.py  # Git-like version management
-│       │   ├── batch_generator.py  # Multi-chapter generation
-│       │   ├── semantic_cache.py   # Redis LLM response cache
-│       │   ├── text_rewriter.py    # Inline text operations
-│       │   ├── cascade_regenerator.py # Edit impact analysis
-│       │   ├── incremental_sync.py # Real-time edit sync
-│       │   ├── qdrant_store.py     # Vector storage management
-│       │   ├── lora_manager.py     # LoRA training data + scripts
-│       │   └── agents/
-│       │       ├── plot_agent.py   # Story generation agent
-│       │       └── style_agent.py  # Style polishing agent
-│       └── tasks/                  # Celery async tasks
-│           ├── knowledge_tasks.py  # Crawling, extraction, scoring
-│           └── style_tasks.py      # Periodic style clustering
-├── frontend/
+├── backend/                         # 68 Python 文件, 16,654 行
+│   ├── app/
+│   │   ├── api/                     # 13 路由模块, 79 端点
+│   │   │   ├── auth.py              # JWT 登录认证
+│   │   │   ├── projects.py          # 项目 CRUD
+│   │   │   ├── volumes.py           # 卷管理
+│   │   │   ├── chapters.py          # 章节 CRUD + 同步
+│   │   │   ├── outlines.py          # 大纲 CRUD + 确认
+│   │   │   ├── generate.py          # SSE 流式生成
+│   │   │   ├── knowledge.py         # 书源/导入/爬虫
+│   │   │   ├── foreshadows.py       # 伏笔管理
+│   │   │   ├── settings.py          # 角色 + 世界观
+│   │   │   ├── versions.py          # 版本控制 + 评估
+│   │   │   ├── quality.py           # 质量检查 + 指南
+│   │   │   ├── model_config.py      # LLM 端点配置
+│   │   │   ├── rewrite.py           # 文本改写 + 批量
+│   │   │   └── lora.py              # LoRA 训练管理
+│   │   ├── services/                # 22+ 业务服务
+│   │   │   ├── context_pack.py      # 三层上下文引擎
+│   │   │   ├── checkers/            # 6 独立质量审查器
+│   │   │   ├── writing_guides.py    # 写作指南引擎
+│   │   │   ├── strand_tracker.py    # 三线交织追踪
+│   │   │   ├── model_router.py      # 多端点 LLM 路由
+│   │   │   ├── memory.py            # 分层记忆金字塔
+│   │   │   ├── entity_timeline.py   # Neo4j 实体时间线
+│   │   │   ├── foreshadow_manager.py # 条件触发伏笔
+│   │   │   ├── hook_manager.py      # Pre/Post 生成钩子
+│   │   │   ├── book_source_engine.py # Legado 规则引擎
+│   │   │   └── lora_manager.py      # LoRA 训练数据导出
+│   │   └── models/                  # 17 ORM 模型
+│   └── alembic/                     # 数据库迁移
+├── frontend/                        # 31 TS/TSX 文件, 7,001 行
 │   └── src/
 │       ├── app/
-│       │   ├── page.tsx            # Landing page
-│       │   ├── workspace/page.tsx  # Main workspace
-│       │   └── knowledge/page.tsx  # Knowledge management
+│       │   ├── login/               # 登录页
+│       │   ├── workspace/           # 工作区（核心）
+│       │   ├── knowledge/           # 知识库管理
+│       │   └── settings/            # 模型配置
 │       ├── components/
-│       │   ├── editor/             # ProseMirror editor + rewrite menu
-│       │   ├── outline/            # Outline tree navigation
-│       │   ├── workspace/          # Three-column layout
-│       │   └── panels/             # 7 sidebar panels
-│       ├── stores/                 # Zustand state management
-│       └── lib/                    # API client + sync manager
-└── nginx/nginx.conf
+│       │   └── panels/              # 13 个侧边栏面板
+│       └── stores/                  # Zustand 状态管理
+└── nginx/
 ```
 
-## Database Schema
+## 前端面板
 
-16 tables across PostgreSQL:
+| 面板 | 功能 |
+|------|------|
+| 生成设置 | 模型/温度/字数配置 |
+| 质量评估 | 5 维度快速评分 |
+| 质量检查详情 | 6 checker 详细报告 (SVG 环形指标) |
+| 三线平衡 | Quest/Fire/Constellation 进度条 + 时间线 |
+| 写作指南 | 7 模块开关 + 题材选择 + 禁忌清单 |
+| 去AI味检查 | 人味指数 + AI词检测 + 密度仪表 |
+| 版本历史 | Git-like 分支/diff/切换 |
+| 伏笔追踪 | planted→ripening→ready→resolved |
+| 设定集 | 角色卡 + 世界观规则 |
+| 角色关系 | SVG 关系图 |
+| 风格面板 | StyleProfile 选择 + 手动描述 |
+| Token 用量 | 输入/输出/缓存命中率 |
 
-| Table | Purpose |
-|-------|---------|
-| `projects` | Novel projects with genre, premise, settings |
-| `volumes` | Book volumes with ordering |
-| `chapters` | Chapter content, outlines, word count, status |
-| `outlines` | Hierarchical outlines (book/volume/chapter) |
-| `characters` | Character profiles (synced with Neo4j) |
-| `world_rules` | World-building rules and constraints |
-| `foreshadows` | Foreshadow tracking with conditions and proximity |
-| `style_profiles` | Extracted style configurations |
-| `model_configs` | Per-task LLM model assignments |
-| `volume_summaries` | Per-volume plot summaries for memory |
-| `book_sources` | Legado-compatible book source rules |
-| `reference_books` | Imported novels for style learning |
-| `text_chunks` | Sliced text blocks from reference books |
-| `crawl_tasks` | Novel crawling job tracking |
-| `chapter_versions` | Version tree with diff storage |
-| `chapter_evaluations` | Quality evaluation scores |
+## API 参考
 
-## API Reference
+**79 端点**，完整文档访问 `/docs`。
 
-**59 endpoints** across 10 route modules. Full OpenAPI docs at `/docs`.
+| 模块 | 前缀 | 端点数 |
+|------|------|--------|
+| 认证 | `/api/auth` | 2 |
+| 项目 | `/api/projects` | 5 |
+| 卷 | `/api/projects/{id}/volumes` | 4 |
+| 章节 | `/api/projects/{id}/chapters` | 6 |
+| 大纲 | `/api/projects/{id}/outlines` | 5 |
+| 生成 | `/api/generate` | 3 |
+| 知识库 | `/api/knowledge` | 12 |
+| 伏笔 | `/api/projects/{id}/foreshadows` | 5 |
+| 设定集 | `/api/projects/{id}` | 8 |
+| 版本 | `/api/chapters/{id}/versions` | 5 |
+| 质量 | `/api/chapters/{id}/check-*` | 5 |
+| 模型配置 | `/api/model-config` | 8 |
+| 改写 | `/api/rewrite` | 3 |
+| LoRA | `/api/lora` | 4 |
+| 统计 | `/api/stats` | 1 |
 
-| Module | Prefix | Key Endpoints |
-|--------|--------|---------------|
-| Projects | `/api/projects` | CRUD |
-| Outlines | `/api/projects/{id}/outlines` | CRUD + confirm |
-| Chapters | `/api/projects/{id}/chapters` | CRUD + sync |
-| Generate | `/api/generate` | SSE chapter + outline generation |
-| Knowledge | `/api/knowledge` | Sources, books, upload, crawl, explore |
-| Foreshadows | `/api/projects/{id}/foreshadows` | CRUD + resolve |
-| Settings | `/api/projects/{id}` | Characters + world rules CRUD |
-| Versions | `/api/chapters/{id}/versions` | Tree, diff, branch, evaluate |
-| Rewrite | `/api/rewrite` | Text operations + batch generate |
-| LoRA | `/api/lora` | Dataset export, training scripts, adapters |
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | One of these | Anthropic API key (Claude) |
-| `OPENAI_API_KEY` | required | OpenAI API key (GPT) |
-| `OPENAI_COMPATIBLE_BASE_URL` | | Third-party/local model endpoint |
-| `DATABASE_URL` | Auto | PostgreSQL connection string |
-| `REDIS_URL` | Auto | Redis connection string |
-| `QDRANT_HOST` | Auto | Qdrant hostname |
-| `NEO4J_URI` | Auto | Neo4j bolt URI |
-| `NEO4J_PASSWORD` | Auto | Neo4j password |
-| `SECRET_KEY` | Yes | Application secret key |
-
-## Development
-
-### Local Backend (without Docker)
+## 开发
 
 ```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate
+# 后端
+cd backend && python -m venv .venv && source .venv/bin/activate
 pip install -e .
-
-# Start PostgreSQL and Redis separately, then:
 export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/aiwrite
-export REDIS_URL=redis://localhost:6379/0
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
-```
 
-### Local Frontend
+# 前端
+cd frontend && npm install && npm run dev
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Run Celery Worker
-
-```bash
-cd backend && source .venv/bin/activate
+# Celery Worker
 celery -A app.tasks:celery_app worker --loglevel=info
-```
 
-### Run Celery Beat (periodic tasks)
-
-```bash
+# Celery Beat (定时任务)
 celery -A app.tasks:celery_app beat --loglevel=info
 ```
 
-## Roadmap
+## 路线图
 
-See **[ITERATION_PLAN.md](ITERATION_PLAN.md)** for the full 7-iteration development plan.
+详见 [ITERATION_PLAN.md](ITERATION_PLAN.md)
 
-**Next up:**
-1. **Iteration 1:** E2E validation with real LLM APIs — generate a 5-chapter story end-to-end
-2. **Iteration 2:** Test suite (367 test gaps) + GitHub Actions CI
-3. **Iteration 3:** Frontend polish (ProseMirror deep integration, generation wizard, Chinese UI)
-4. **Iteration 4:** Robustness at scale (100+ chapters, WebSocket notifications)
-5. **Iteration 5:** LoRA training UI + multi-style support
-6. **Iteration 6:** Authentication + security hardening
-7. **Iteration 7:** Export (EPUB/PDF/DOCX) + publishing
+**当前版本 v0.2.0** — 核心功能完成，包含：
+- 全流程创作管道 + 三层上下文引擎
+- 6 维度质量审查 + 写作指南系统
+- 前端登录 + 导航 + 13 面板工作区
+- 多端点 LLM 配置 + LoRA 支持
+
+**下一步：**
+1. E2E 验证（接入真实 LLM API）
+2. 测试套件 + CI
+3. 前端深度交互（ProseMirror 选中菜单）
+4. RWKV-7 模型集成
+5. LoRA 训练 UI
+6. 导出 EPUB/PDF
 
 ## License
 
