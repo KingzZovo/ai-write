@@ -3,16 +3,20 @@
 import React, { useState } from 'react'
 import { useProjectStore } from '@/stores/projectStore'
 
-interface TreeNode {
-  id: string
-  label: string
-  children?: TreeNode[]
-  type: 'volume' | 'chapter'
-  data?: Record<string, unknown>
-}
-
 interface OutlineTreeProps {
   onSelectChapter?: (chapterId: string) => void
+}
+
+const statusColors: Record<string, string> = {
+  draft: 'bg-gray-200 text-gray-600',
+  generating: 'bg-yellow-100 text-yellow-700',
+  completed: 'bg-green-100 text-green-700',
+}
+
+const statusLabels: Record<string, string> = {
+  draft: '草稿',
+  generating: '生成中',
+  completed: '完成',
 }
 
 export function OutlineTree({ onSelectChapter }: OutlineTreeProps) {
@@ -33,62 +37,87 @@ export function OutlineTree({ onSelectChapter }: OutlineTreeProps) {
     onSelectChapter?.(chapterId)
   }
 
-  const tree: TreeNode[] = volumes.map((vol) => ({
-    id: vol.id,
-    label: vol.title,
-    type: 'volume' as const,
-    children: chapters
-      .filter((ch) => ch.volumeId === vol.id)
-      .sort((a, b) => a.chapterIdx - b.chapterIdx)
-      .map((ch) => ({
-        id: ch.id,
-        label: ch.title,
-        type: 'chapter' as const,
-      })),
-  }))
+  const sortedVolumes = [...volumes].sort(
+    (a, b) => (a.volume_idx ?? a.volumeIdx) - (b.volume_idx ?? b.volumeIdx)
+  )
 
-  if (tree.length === 0) {
+  if (sortedVolumes.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500">
-        No volumes yet. Generate an outline to get started.
+        暂无卷册。请先生成大纲。
       </div>
     )
   }
 
   return (
     <div className="text-sm">
-      {tree.map((volume) => (
-        <div key={volume.id} className="mb-1">
-          <button
-            onClick={() => toggleNode(volume.id)}
-            className="flex items-center w-full px-3 py-1.5 hover:bg-gray-100 rounded text-left"
-          >
-            <span className="mr-1 text-gray-400">
-              {expandedNodes.has(volume.id) ? '▼' : '▶'}
-            </span>
-            <span className="font-medium text-gray-700">{volume.label}</span>
-          </button>
+      {sortedVolumes.map((volume) => {
+        const volChapters = chapters
+          .filter((ch) => (ch.volume_id ?? ch.volumeId) === volume.id)
+          .sort((a, b) => (a.chapter_idx ?? a.chapterIdx) - (b.chapter_idx ?? b.chapterIdx))
 
-          {expandedNodes.has(volume.id) && volume.children && (
-            <div className="ml-4">
-              {volume.children.map((chapter) => (
-                <button
-                  key={chapter.id}
-                  onClick={() => handleSelectChapter(chapter.id)}
-                  className={`flex items-center w-full px-3 py-1 rounded text-left ${
-                    selectedChapterId === chapter.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'hover:bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  <span className="mr-1.5 text-gray-300">-</span>
-                  {chapter.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+        const totalWords = volChapters.reduce(
+          (sum, ch) => sum + (ch.word_count ?? ch.wordCount ?? 0),
+          0
+        )
+
+        return (
+          <div key={volume.id} className="mb-1">
+            <button
+              onClick={() => toggleNode(volume.id)}
+              className="flex items-center w-full px-3 py-1.5 hover:bg-gray-100 rounded text-left group"
+            >
+              <span className="mr-1 text-gray-400 text-xs">
+                {expandedNodes.has(volume.id) ? '▼' : '▶'}
+              </span>
+              <span className="font-medium text-gray-700 flex-1 truncate">
+                {volume.title}
+              </span>
+              <span className="text-[10px] text-gray-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {volChapters.length}章 {totalWords > 0 ? `${Math.round(totalWords / 1000)}k字` : ''}
+              </span>
+            </button>
+
+            {expandedNodes.has(volume.id) && (
+              <div className="ml-4">
+                {volChapters.map((chapter) => {
+                  const wc = chapter.word_count ?? chapter.wordCount ?? 0
+                  const st = chapter.status || 'draft'
+                  return (
+                    <button
+                      key={chapter.id}
+                      onClick={() => handleSelectChapter(chapter.id)}
+                      className={`flex items-center w-full px-3 py-1 rounded text-left group ${
+                        selectedChapterId === chapter.id
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'hover:bg-gray-50 text-gray-600'
+                      }`}
+                    >
+                      <span className="mr-1.5 text-gray-300">-</span>
+                      <span className="flex-1 truncate">{chapter.title}</span>
+                      <span className="flex items-center gap-1 ml-1">
+                        {wc > 0 && (
+                          <span className="text-[10px] text-gray-400">
+                            {wc > 1000 ? `${(wc / 1000).toFixed(1)}k` : wc}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[9px] px-1 py-0.5 rounded ${statusColors[st] || statusColors.draft}`}
+                        >
+                          {statusLabels[st] || st}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+                {volChapters.length === 0 && (
+                  <div className="px-3 py-1 text-xs text-gray-400">暂无章节</div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
