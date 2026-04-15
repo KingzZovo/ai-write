@@ -33,8 +33,8 @@ class ChapterSyncRequest(BaseModel):
 
 
 class ChapterResponse(BaseModel):
-    id: str
-    volume_id: str
+    id: UUID
+    volume_id: UUID
     title: str
     chapter_idx: int
     outline_json: dict

@@ -25,10 +25,10 @@ class OutlineUpdate(BaseModel):
 
 
 class OutlineResponse(BaseModel):
-    id: str
-    project_id: str
+    id: UUID
+    project_id: UUID
     level: str
-    parent_id: str | None
+    parent_id: UUID | None
     content_json: dict
     version: int
     is_confirmed: int

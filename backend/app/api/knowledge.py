@@ -32,7 +32,7 @@ class BookSourceImport(BaseModel):
 
 
 class BookSourceResponse(BaseModel):
-    id: str
+    id: UUID
     name: str
     source_url: str
     source_group: str | None
@@ -43,7 +43,7 @@ class BookSourceResponse(BaseModel):
 
 
 class ReferenceBookResponse(BaseModel):
-    id: str
+    id: UUID
     title: str
     author: str | None
     source: str
@@ -64,8 +64,8 @@ class CrawlTaskCreate(BaseModel):
 
 
 class CrawlTaskResponse(BaseModel):
-    id: str
-    book_id: str
+    id: UUID
+    book_id: UUID
     book_url: str
     total_chapters: int
     completed_chapters: int
