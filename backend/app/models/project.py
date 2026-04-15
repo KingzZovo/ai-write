@@ -130,7 +130,9 @@ class Outline(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="outlines")
-    children = relationship("Outline", backref="parent", remote_side=[id])
+    parent_outline = relationship(
+        "Outline", remote_side="Outline.id", backref="children"
+    )
 
 
 class Character(Base):
@@ -340,10 +342,10 @@ class ChapterVersion(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     chapter = relationship("Chapter", back_populates="versions")
-    children = relationship(
+    parent_version = relationship(
         "ChapterVersion",
-        backref="parent",
-        remote_side=[id],
+        remote_side="ChapterVersion.id",
+        backref="children",
     )
 
 

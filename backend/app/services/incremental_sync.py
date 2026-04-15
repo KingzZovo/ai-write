@@ -196,7 +196,8 @@ class IncrementalSyncService:
         # The summary should already be generated; store its embedding
         summary = chapter.summary or ""
         if summary:
-            volume = await self.db.get(chapter.__class__.__mro__[1], chapter.volume_id)
+            from app.models.project import Volume
+            volume = await self.db.get(Volume, chapter.volume_id)
             # Use generate_chapter_summary which also stores the embedding
             await memory.generate_chapter_summary(
                 chapter_text=new_text,

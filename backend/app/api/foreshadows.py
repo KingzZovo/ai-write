@@ -86,7 +86,7 @@ async def list_foreshadows(
 ) -> ForeshadowListResponse:
     """List all foreshadows for a project, optionally filtered by status."""
     query = select(Foreshadow).where(
-        Foreshadow.project_id == str(project_id)
+        Foreshadow.project_id == project_id
     )
     if status is not None:
         query = query.where(Foreshadow.status == status)
@@ -109,7 +109,7 @@ async def create_foreshadow(
 ) -> ForeshadowResponse:
     """Create a foreshadow manually."""
     foreshadow = Foreshadow(
-        project_id=str(project_id),
+        project_id=project_id,
         type=body.type,
         description=body.description,
         planted_chapter=body.planted_chapter,
@@ -135,7 +135,7 @@ async def update_foreshadow(
     result = await db.execute(
         select(Foreshadow).where(
             Foreshadow.id == foreshadow_id,
-            Foreshadow.project_id == str(project_id),
+            Foreshadow.project_id == project_id,
         )
     )
     foreshadow = result.scalar_one_or_none()
@@ -169,7 +169,7 @@ async def delete_foreshadow(
     result = await db.execute(
         select(Foreshadow).where(
             Foreshadow.id == foreshadow_id,
-            Foreshadow.project_id == str(project_id),
+            Foreshadow.project_id == project_id,
         )
     )
     foreshadow = result.scalar_one_or_none()
@@ -191,7 +191,7 @@ async def resolve_foreshadow(
     result = await db.execute(
         select(Foreshadow).where(
             Foreshadow.id == foreshadow_id,
-            Foreshadow.project_id == str(project_id),
+            Foreshadow.project_id == project_id,
         )
     )
     foreshadow = result.scalar_one_or_none()

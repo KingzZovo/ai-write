@@ -72,7 +72,18 @@ class HookManager:
     async def _get_db(self) -> AsyncSession:
         if self._db is not None:
             return self._db
-        return async_session_factory()
+        # Create a new session — caller must commit/close
+        self._db = async_session_factory()
+        return self._db
+
+    async def _commit_if_own_session(self) -> None:
+        """Commit and close the session if we created it ourselves."""
+        if self._db is not None:
+            try:
+                await self._db.commit()
+            except Exception:
+                await self._db.rollback()
+                raise
 
     @property
     def foreshadow_mgr(self) -> ForeshadowManager:

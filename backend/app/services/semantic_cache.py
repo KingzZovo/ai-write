@@ -52,8 +52,8 @@ class SemanticCache:
 
     async def _get_redis(self):
         if self._redis is None:
-            from app.db.redis import get_redis
-            self._redis = await get_redis()
+            from app.db.redis import _client
+            self._redis = _client
         return self._redis
 
     def _make_key(self, task_type: str, messages: list[dict]) -> str:

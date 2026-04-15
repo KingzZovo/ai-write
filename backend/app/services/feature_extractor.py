@@ -234,18 +234,27 @@ class StyleExtractor:
 
 
 async def generate_embedding(text: str) -> list[float]:
-    """Generate an embedding vector for text using the configured embedding model."""
+    """Generate an embedding vector for text using any available OpenAI-compatible provider."""
     router = get_model_router()
-    provider = router._get_provider("openai")  # Embeddings typically via OpenAI
 
-    import openai
-    # Use the OpenAI client directly for embeddings
-    client = provider.client
-    response = await client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text[:8000],  # Truncate to fit model limits
-    )
-    return response.data[0].embedding
+    # Try providers in order: openai, openai_compatible, then fallback
+    for provider_name in ["openai", "openai_compatible"]:
+        if provider_name in router.providers:
+            try:
+                provider = router.providers[provider_name]
+                client = provider.client
+                response = await client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=text[:8000],
+                )
+                return response.data[0].embedding
+            except Exception as e:
+                logger.warning("Embedding via %s failed: %s", provider_name, e)
+                continue
+
+    # Fallback: return zero vector (allows system to work without embeddings)
+    logger.warning("No embedding provider available, returning zero vector")
+    return [0.0] * 1536
 
 
 # =============================================================================

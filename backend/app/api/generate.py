@@ -52,60 +52,58 @@ async def generate_chapter(
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Generate chapter content via SSE streaming."""
+    # Query all DB data BEFORE creating the generator to avoid
+    # using the session after FastAPI's dependency lifecycle closes it.
+    project = await db.get(Project, req.project_id)
+    if not project:
+        return StreamingResponse(
+            iter([f"data: {json.dumps({'error': 'Project not found'})}\n\n"]),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
+
+    project_settings = project.settings_json or {}
+
+    rules_result = await db.execute(
+        select(WorldRule).where(WorldRule.project_id == req.project_id)
+    )
+    world_rules = [r.rule_text for r in rules_result.scalars().all()]
+
+    book_outline_result = await db.execute(
+        select(Outline).where(
+            Outline.project_id == req.project_id,
+            Outline.level == "book",
+        )
+    )
+    book_outline = book_outline_result.scalar_one_or_none()
+    book_summary = book_outline.content_json.get("main_plot", "") if book_outline and book_outline.content_json else ""
+
+    chapter_outline: dict = {}
+    previous_text = ""
+    current_text = ""
+
+    if req.chapter_id:
+        chapter = await db.get(Chapter, req.chapter_id)
+        if chapter:
+            chapter_outline = chapter.outline_json or {}
+            current_text = chapter.content_text or ""
+            prev_result = await db.execute(
+                select(Chapter).where(
+                    Chapter.volume_id == chapter.volume_id,
+                    Chapter.chapter_idx == chapter.chapter_idx - 1,
+                )
+            )
+            prev_chapter = prev_result.scalar_one_or_none()
+            if prev_chapter:
+                previous_text = prev_chapter.content_text or ""
 
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
-            # Load project data
-            project = await db.get(Project, req.project_id)
-            if not project:
-                yield f"data: {json.dumps({'error': 'Project not found'})}\n\n"
-                return
-
-            # Load world rules
-            rules_result = await db.execute(
-                select(WorldRule).where(WorldRule.project_id == req.project_id)
-            )
-            world_rules = [r.rule_text for r in rules_result.scalars().all()]
-
-            # Load book outline summary
-            book_outline_result = await db.execute(
-                select(Outline).where(
-                    Outline.project_id == req.project_id,
-                    Outline.level == "book",
-                )
-            )
-            book_outline = book_outline_result.scalar_one_or_none()
-            book_summary = ""
-            if book_outline and book_outline.content_json:
-                book_summary = book_outline.content_json.get("main_plot", "")
-
-            # Load chapter and its outline
-            chapter_outline = {}
-            previous_text = ""
-            current_text = ""
-
-            if req.chapter_id:
-                chapter = await db.get(Chapter, req.chapter_id)
-                if chapter:
-                    chapter_outline = chapter.outline_json or {}
-                    current_text = chapter.content_text or ""
-
-                    # Load previous chapter
-                    prev_result = await db.execute(
-                        select(Chapter).where(
-                            Chapter.volume_id == chapter.volume_id,
-                            Chapter.chapter_idx == chapter.chapter_idx - 1,
-                        )
-                    )
-                    prev_chapter = prev_result.scalar_one_or_none()
-                    if prev_chapter:
-                        previous_text = prev_chapter.content_text or ""
-
-            yield f"data: {json.dumps({'status': 'generating', 'message': '开始生成...'})}\n\n"
+            yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
 
             generator = ChapterGenerator()
             async for chunk in generator.generate_stream(
-                project_settings=project.settings_json or {},
+                project_settings=project_settings,
                 world_rules=world_rules,
                 book_outline_summary=book_summary,
                 chapter_outline=chapter_outline,

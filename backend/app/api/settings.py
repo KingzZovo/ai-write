@@ -98,7 +98,7 @@ async def list_characters(
     """List all characters for a project."""
     result = await db.execute(
         select(Character)
-        .where(Character.project_id == str(project_id))
+        .where(Character.project_id == project_id)
         .order_by(Character.created_at)
     )
     characters = list(result.scalars().all())
@@ -116,7 +116,7 @@ async def create_character(
 ) -> CharacterResponse:
     """Create a new character."""
     character = Character(
-        project_id=str(project_id),
+        project_id=project_id,
         name=body.name,
         profile_json=body.profile_json or {},
     )
@@ -137,7 +137,7 @@ async def update_character(
     result = await db.execute(
         select(Character).where(
             Character.id == character_id,
-            Character.project_id == str(project_id),
+            Character.project_id == project_id,
         )
     )
     character = result.scalar_one_or_none()
@@ -163,7 +163,7 @@ async def delete_character(
     result = await db.execute(
         select(Character).where(
             Character.id == character_id,
-            Character.project_id == str(project_id),
+            Character.project_id == project_id,
         )
     )
     character = result.scalar_one_or_none()
@@ -187,7 +187,7 @@ async def list_world_rules(
     """List all world rules for a project."""
     result = await db.execute(
         select(WorldRule)
-        .where(WorldRule.project_id == str(project_id))
+        .where(WorldRule.project_id == project_id)
         .order_by(WorldRule.created_at)
     )
     rules = list(result.scalars().all())
@@ -205,7 +205,7 @@ async def create_world_rule(
 ) -> WorldRuleResponse:
     """Create a new world rule."""
     rule = WorldRule(
-        project_id=str(project_id),
+        project_id=project_id,
         category=body.category,
         rule_text=body.rule_text,
     )
@@ -226,7 +226,7 @@ async def update_world_rule(
     result = await db.execute(
         select(WorldRule).where(
             WorldRule.id == rule_id,
-            WorldRule.project_id == str(project_id),
+            WorldRule.project_id == project_id,
         )
     )
     rule = result.scalar_one_or_none()
@@ -252,7 +252,7 @@ async def delete_world_rule(
     result = await db.execute(
         select(WorldRule).where(
             WorldRule.id == rule_id,
-            WorldRule.project_id == str(project_id),
+            WorldRule.project_id == project_id,
         )
     )
     rule = result.scalar_one_or_none()
