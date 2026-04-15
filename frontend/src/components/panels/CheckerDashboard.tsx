@@ -114,11 +114,11 @@ export function CheckerDashboard({ chapterId }: CheckerDashboardProps) {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiFetch<{ results: CheckerResult[] }>(
+      const data = await apiFetch<{ checkers: CheckerResult[]; overall_score: number }>(
         `/api/chapters/${chapterId}/check-quality`,
         { method: 'POST' }
       )
-      setResults(data.results)
+      setResults(data.checkers)
       setLastChecked(new Date().toISOString())
     } catch (err) {
       setError(err instanceof Error ? err.message : '检查失败')

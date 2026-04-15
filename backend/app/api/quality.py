@@ -45,10 +45,17 @@ async def check_quality(
     context = None
     try:
         from app.services.context_pack import ContextPackBuilder
+        from app.models.project import Volume
         builder = ContextPackBuilder()
         volume_id = str(chapter.volume_id) if chapter.volume_id else ""
+        # Get project_id from volume
+        project_id = ""
+        if volume_id:
+            volume = await db.get(Volume, volume_id)
+            if volume:
+                project_id = str(volume.project_id)
         context = await builder.build(
-            project_id="",
+            project_id=project_id,
             volume_id=volume_id,
             chapter_idx=chapter.chapter_idx or 1,
             db=db,
@@ -86,11 +93,29 @@ async def get_strand_status(
     """Get current strand balance status for a project."""
     from app.services.strand_tracker import StrandTrackerService
 
-    tracker = StrandTrackerService()
+    tracker_svc = StrandTrackerService()
     try:
-        strand_data = await tracker.analyze_strands(project_id, db)
-        history = await tracker.get_strand_history(project_id, db)
-        recommendations = tracker.get_balance_recommendations(strand_data)
+        # Get latest chapter index for this project
+        from app.models.project import Volume, Chapter as ChapterModel
+        vol_result = await db.execute(
+            select(Volume.id).where(Volume.project_id == project_id)
+        )
+        vol_ids = [str(v) for v in vol_result.scalars().all()]
+        current_chapter = 1
+        if vol_ids:
+            ch_result = await db.execute(
+                select(ChapterModel.chapter_idx)
+                .where(ChapterModel.volume_id.in_(vol_ids))
+                .order_by(ChapterModel.chapter_idx.desc())
+                .limit(1)
+            )
+            latest = ch_result.scalar_one_or_none()
+            if latest:
+                current_chapter = latest
+
+        strand_data = await tracker_svc.analyze_strands(project_id, current_chapter)
+        history = await tracker_svc.get_strand_history(project_id)
+        recommendations = tracker_svc.get_balance_recommendations(strand_data, current_chapter)
 
         return {
             "tracker": {
@@ -99,12 +124,8 @@ async def get_strand_status(
                 "last_constellation_chapter": strand_data.last_constellation_chapter,
                 "current_dominant": strand_data.current_dominant,
             },
-            "warnings": strand_data.get_warnings(
-                max(strand_data.last_quest_chapter,
-                    strand_data.last_fire_chapter,
-                    strand_data.last_constellation_chapter) + 1
-            ),
-            "history": history[-20:],  # Last 20 chapters
+            "warnings": strand_data.get_warnings(current_chapter),
+            "history": [{"chapter": h.chapter_idx, "dominant": h.dominant} for h in history[-20:]],
             "recommendations": recommendations,
         }
     except Exception as e:

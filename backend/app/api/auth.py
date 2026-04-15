@@ -1,6 +1,7 @@
 """Authentication endpoints – single hardcoded user with JWT tokens."""
 
 import hashlib
+import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -14,8 +15,12 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # ---------------------------------------------------------------------------
 # Hardcoded user
 # ---------------------------------------------------------------------------
-_USERNAME = "king"
-_PASSWORD_HASH = hashlib.sha256("Wt991125".encode()).hexdigest()
+_USERNAME = os.environ.get("AUTH_USERNAME", "king")
+# Pre-computed hash — never store plaintext password in source code
+_PASSWORD_HASH = os.environ.get(
+    "AUTH_PASSWORD_HASH",
+    "ab7be174ff6743f20255f4f81415eaae7cfb5ca5aaab9238272dcb983437c364",  # default hash
+)
 
 _JWT_ALGORITHM = "HS256"
 _JWT_EXPIRY_DAYS = 7

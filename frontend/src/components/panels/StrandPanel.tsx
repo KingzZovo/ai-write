@@ -201,7 +201,7 @@ export function StrandPanel({ projectId }: StrandPanelProps) {
     setLoading(true)
     try {
       const result = await apiFetch<StrandData>(
-        `/api/projects/${projectId}/strands`
+        `/api/projects/${projectId}/strand-status`
       )
       setData(result)
     } catch {

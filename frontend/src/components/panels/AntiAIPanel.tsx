@@ -134,7 +134,7 @@ export function AntiAIPanel({ chapterId }: AntiAIPanelProps) {
     setDismissedWords(new Set())
     try {
       const data = await apiFetch<AntiAIResult>(
-        `/api/chapters/${chapterId}/anti-ai-check`,
+        `/api/chapters/${chapterId}/check-anti-ai`,
         { method: 'POST' }
       )
       setResult(data)
