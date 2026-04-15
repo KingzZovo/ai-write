@@ -37,10 +37,15 @@ export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
     if (!projectId) return
     setLoading(true)
     try {
-      const data = await apiFetch<Foreshadow[]>(
-        `/api/projects/${projectId}/foreshadows${filter === 'active' ? '?status=active' : ''}`
+      const data = await apiFetch<{ foreshadows: Foreshadow[]; total: number }>(
+        `/api/projects/${projectId}/foreshadows`
       )
-      setForeshadows(data)
+      const all = data.foreshadows || []
+      if (filter === 'active') {
+        setForeshadows(all.filter((f) => f.status !== 'resolved'))
+      } else {
+        setForeshadows(all)
+      }
     } catch {
       // ignore
     } finally {

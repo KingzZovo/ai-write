@@ -227,7 +227,11 @@ class RuleParser:
         """Execute JavaScript snippet (limited, via dukpy)."""
         try:
             import dukpy
-            result = dukpy.evaljs(f"var result = ''; var src = `{content}`; {script}; result;")
+            # Pass content as a dukpy variable to avoid injection via template literals
+            result = dukpy.evaljs(
+                f"var result = ''; var src = dukpy.content; {script}; result;",
+                content=content,
+            )
             if result:
                 return [str(result)]
             return []

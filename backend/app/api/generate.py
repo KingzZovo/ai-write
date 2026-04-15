@@ -135,6 +135,40 @@ async def generate_outline(
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Generate outline at specified level via SSE streaming."""
+    # Pre-fetch all DB data before creating the generator (same pattern as generate_chapter)
+    book_outline: dict = {}
+    volume_outline: dict = {}
+
+    if req.level == "volume":
+        if req.parent_outline_id:
+            parent = await db.get(Outline, req.parent_outline_id)
+            book_outline = parent.content_json if parent else {}
+        elif req.project_id:
+            book_result = await db.execute(
+                select(Outline).where(
+                    Outline.project_id == req.project_id,
+                    Outline.level == "book",
+                )
+            )
+            parent = book_result.scalar_one_or_none()
+            book_outline = parent.content_json if parent else {}
+
+    elif req.level == "chapter":
+        if req.project_id:
+            book_result = await db.execute(
+                select(Outline).where(
+                    Outline.project_id == req.project_id,
+                    Outline.level == "book",
+                )
+            )
+            book_ol = book_result.scalar_one_or_none()
+            if book_ol:
+                book_outline = book_ol.content_json or {}
+
+        if req.parent_outline_id:
+            vol_ol = await db.get(Outline, req.parent_outline_id)
+            if vol_ol:
+                volume_outline = vol_ol.content_json or {}
 
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
@@ -149,20 +183,6 @@ async def generate_outline(
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "volume":
-                # Load parent book outline
-                if req.parent_outline_id:
-                    parent = await db.get(Outline, req.parent_outline_id)
-                    book_outline = parent.content_json if parent else {}
-                else:
-                    book_result = await db.execute(
-                        select(Outline).where(
-                            Outline.project_id == req.project_id,
-                            Outline.level == "book",
-                        )
-                    )
-                    parent = book_result.scalar_one_or_none()
-                    book_outline = parent.content_json if parent else {}
-
                 async for chunk in await generator.generate_volume_outline(
                     book_outline=book_outline,
                     volume_idx=req.volume_idx or 1,
@@ -172,26 +192,6 @@ async def generate_outline(
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "chapter":
-                # Load book + volume outlines
-                book_outline = {}
-                volume_outline = {}
-
-                if req.project_id:
-                    book_result = await db.execute(
-                        select(Outline).where(
-                            Outline.project_id == req.project_id,
-                            Outline.level == "book",
-                        )
-                    )
-                    book_ol = book_result.scalar_one_or_none()
-                    if book_ol:
-                        book_outline = book_ol.content_json or {}
-
-                if req.parent_outline_id:
-                    vol_ol = await db.get(Outline, req.parent_outline_id)
-                    if vol_ol:
-                        volume_outline = vol_ol.content_json or {}
-
                 async for chunk in await generator.generate_chapter_outline(
                     book_outline=book_outline,
                     volume_outline=volume_outline,
