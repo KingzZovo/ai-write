@@ -1,10 +1,41 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Empty string = relative URL, nginx proxies /api/ to backend
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || ''
+
+const TOKEN_KEY = 'auth_token'
+
+export function getToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken()
+  if (token) {
+    return { Authorization: `Bearer ${token}` }
+  }
+  return {}
+}
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options?.headers },
     ...options,
   })
+  if (res.status === 401) {
+    clearToken()
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login'
+    }
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(error.detail || 'API Error')
@@ -17,10 +48,17 @@ export function apiSSE(path: string, body: Record<string, unknown>, onChunk: (te
 
   fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
     signal: controller.signal,
   }).then(async (res) => {
+    if (res.status === 401) {
+      clearToken()
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
+      return
+    }
     if (!res.ok || !res.body) {
       throw new Error('SSE connection failed')
     }

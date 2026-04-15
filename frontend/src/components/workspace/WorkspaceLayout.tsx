@@ -10,7 +10,7 @@ interface WorkspaceLayoutProps {
 
 export function WorkspaceLayout({ sidebar, editor, panel }: WorkspaceLayoutProps) {
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen pt-12 bg-gray-50">
       <aside className="w-64 border-r border-gray-200 bg-white overflow-y-auto flex-shrink-0">
         {sidebar}
       </aside>

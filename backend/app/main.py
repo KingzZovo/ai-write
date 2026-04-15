@@ -8,7 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import chapters, foreshadows, generate, knowledge, lora, model_config, outlines, projects, rewrite, settings, versions, volumes
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse as StarletteJSONResponse
+
+from app.api import auth, chapters, foreshadows, generate, knowledge, lora, model_config, outlines, projects, rewrite, settings, versions, volumes
+from app.api.auth import verify_token
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
@@ -57,6 +61,46 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
+# Authentication middleware
+# ---------------------------------------------------------------------------
+_PUBLIC_PATHS = frozenset({
+    "/api/auth/login",
+    "/api/health",
+    "/docs",
+    "/openapi.json",
+})
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Verify JWT token for all /api/* requests except public paths."""
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        path = request.url.path
+
+        # Skip auth for public paths and non-API routes
+        if path in _PUBLIC_PATHS or not path.startswith("/api/"):
+            return await call_next(request)
+
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return StarletteJSONResponse(
+                status_code=401,
+                content={"detail": "Missing or invalid authorization header"},
+            )
+
+        token = auth_header[7:]
+        try:
+            verify_token(token)
+        except Exception:
+            return StarletteJSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or expired token"},
+            )
+
+        return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
 app.add_middleware(
@@ -66,10 +110,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuthMiddleware)
 
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(outlines.router)
 app.include_router(chapters.router)

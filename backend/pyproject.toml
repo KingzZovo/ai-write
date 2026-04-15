@@ -27,6 +27,7 @@ dependencies = [
     "parsel",
     "dukpy",
     "numpy",
+    "PyJWT",
 ]
 
 [build-system]
