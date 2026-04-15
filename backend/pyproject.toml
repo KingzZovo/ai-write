@@ -1,0 +1,37 @@
+[project]
+name = "ai-write-backend"
+version = "0.1.0"
+description = "AI Writing Platform Backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg",
+    "alembic",
+    "celery[redis]",
+    "redis",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "httpx",
+    "anthropic",
+    "openai",
+    "qdrant-client",
+    "neo4j",
+    "python-multipart",
+    "jieba",
+    "scikit-learn",
+    "ebooklib",
+    "beautifulsoup4",
+    "lxml",
+    "parsel",
+    "dukpy",
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
