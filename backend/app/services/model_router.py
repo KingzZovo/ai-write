@@ -186,6 +186,7 @@ class ModelRouter:
         self.embedding_provider: EmbeddingProvider | None = None
         self.total_usage = TokenUsage()
         self._db_loaded = False
+        self._endpoint_defaults: dict[str, str] = {}  # provider_key -> default_model
 
     def register_provider(self, key: str, provider: BaseProvider) -> None:
         self.providers[key] = provider
@@ -207,6 +208,7 @@ class ModelRouter:
 
                 for ep in endpoints:
                     key = str(ep.id)
+                    self._endpoint_defaults[key] = ep.default_model or ""
                     if ep.provider_type == "anthropic":
                         self.register_provider(key, AnthropicProvider(api_key=ep.api_key))
                     else:
@@ -269,13 +271,20 @@ class ModelRouter:
         self.total_usage.output_tokens += usage.output_tokens
         self.total_usage.total_tokens += usage.total_tokens
 
+    def _resolve_model(self, route: TaskRouteConfig) -> str:
+        """Get the actual model name: route override > endpoint default."""
+        if route.model_name:
+            return route.model_name
+        return self._endpoint_defaults.get(route.provider_key, "")
+
     async def generate(self, task_type: str, messages: list[dict],
                        temperature: float | None = None,
                        max_tokens: int | None = None, **kw) -> GenerationResult:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
+        model = self._resolve_model(route)
         result = await provider.generate(
-            messages=messages, model=route.model_name,
+            messages=messages, model=model,
             temperature=temperature if temperature is not None else route.temperature,
             max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
         self._track(result.usage)
@@ -286,8 +295,9 @@ class ModelRouter:
                               max_tokens: int | None = None, **kw) -> AsyncIterator[str]:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
+        model = self._resolve_model(route)
         async for chunk in provider.generate_stream(
-            messages=messages, model=route.model_name,
+            messages=messages, model=model,
             temperature=temperature if temperature is not None else route.temperature,
             max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
             yield chunk
@@ -295,6 +305,7 @@ class ModelRouter:
     async def generate_with_fallback(self, task_type: str, messages: list[dict],
                                      **kw) -> GenerationResult:
         route = self._get_route(task_type)
+        model = self._resolve_model(route)
         to_try = [route.provider_key] + [k for k in self.providers if k != route.provider_key]
         last_err = None
         for key in to_try:
@@ -303,7 +314,7 @@ class ModelRouter:
             try:
                 prov = self.providers[key]
                 result = await prov.generate(
-                    messages=messages, model=route.model_name,
+                    messages=messages, model=model,
                     temperature=kw.get("temperature", route.temperature),
                     max_tokens=kw.get("max_tokens", route.max_tokens))
                 self._track(result.usage)
@@ -353,12 +364,26 @@ def get_model_router() -> ModelRouter:
     """Get the model router singleton.
 
     DB config is pre-loaded at app startup via lifespan handler.
-    Falls back to .env config if DB not loaded yet.
+    If not loaded yet (e.g. Celery worker), loads synchronously.
     """
     global _router
     if _router is None:
         _router = ModelRouter()
         _load_from_env(_router)
+    if not _router._db_loaded:
+        try:
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                # Already in async context — can't block, DB will load later
+                pass
+            else:
+                asyncio.run(_router.load_from_db())
+        except Exception as e:
+            logger.warning("Sync DB load failed: %s", e)
     return _router
 
 
