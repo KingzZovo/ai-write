@@ -190,6 +190,7 @@ async def generate_outline(
                 volume_outline = vol_ol.content_json or {}
 
     async def event_stream() -> AsyncGenerator[str, None]:
+        collected_text = []
         try:
             generator = OutlineGenerator()
 
@@ -199,6 +200,7 @@ async def generate_outline(
                 async for chunk in await generator.generate_book_outline(
                     user_input=req.user_input, stream=True
                 ):
+                    collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "volume":
@@ -208,6 +210,7 @@ async def generate_outline(
                     user_notes=req.user_input,
                     stream=True,
                 ):
+                    collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "chapter":
@@ -218,7 +221,27 @@ async def generate_outline(
                     user_notes=req.user_input,
                     stream=True,
                 ):
+                    collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
+
+            # Auto-save outline to DB
+            full_text = "".join(collected_text)
+            if full_text and req.project_id:
+                try:
+                    from app.db.session import async_session_factory
+                    async with async_session_factory() as save_db:
+                        outline = Outline(
+                            project_id=req.project_id,
+                            level=req.level,
+                            parent_id=req.parent_outline_id,
+                            content_json={"raw_text": full_text},
+                        )
+                        save_db.add(outline)
+                        await save_db.commit()
+                        await save_db.refresh(outline)
+                        yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id)})}\n\n"
+                except Exception as save_err:
+                    logger.warning("Failed to auto-save outline: %s", save_err)
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"
