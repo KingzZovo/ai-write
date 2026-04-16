@@ -391,3 +391,19 @@ class ChapterEvaluation(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     chapter = relationship("Chapter", back_populates="evaluations")
+
+
+class FilterWord(Base):
+    """Configurable filter words for Anti-AI detection and style control."""
+
+    __tablename__ = "filter_words"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word = Column(String(100), nullable=False, unique=True)
+    category = Column(String(50), nullable=False)  # ai_trace, cliche, banned, custom
+    severity = Column(String(20), default="medium")  # low, medium, high
+    replacement = Column(String(200), default="")  # suggested replacement
+    source = Column(String(20), default="builtin")  # builtin, user, ai_detected
+    enabled = Column(Integer, default=1)
+    hit_count = Column(Integer, default=0)  # how many times detected
+    created_at = Column(DateTime(timezone=True), default=_utcnow)

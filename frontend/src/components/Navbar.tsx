@@ -8,6 +8,7 @@ import { getToken, clearToken } from '@/lib/api'
 const NAV_LINKS = [
   { href: '/workspace', label: '工作区' },
   { href: '/knowledge', label: '知识库' },
+  { href: '/filter-words', label: '过滤词' },
   { href: '/settings', label: '设置' },
 ]
 
