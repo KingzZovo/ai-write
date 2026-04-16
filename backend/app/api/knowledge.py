@@ -100,11 +100,45 @@ class QualityScoreResponse(BaseModel):
 
 @router.get("/sources")
 async def list_sources(
+    page: int = 1,
+    page_size: int = 30,
+    search: str = "",
+    group: str = "",
     db: AsyncSession = Depends(get_db),
-) -> list[BookSourceResponse]:
-    """List all book sources."""
-    result = await db.execute(select(BookSource).order_by(BookSource.name))
-    return [BookSourceResponse.model_validate(s) for s in result.scalars().all()]
+) -> dict:
+    """List book sources with pagination."""
+    query = select(BookSource)
+    count_query = select(func.count(BookSource.id))
+
+    if search:
+        query = query.where(BookSource.name.ilike(f"%{search}%"))
+        count_query = count_query.where(BookSource.name.ilike(f"%{search}%"))
+    if group:
+        query = query.where(BookSource.source_group == group)
+        count_query = count_query.where(BookSource.source_group == group)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    query = query.order_by(BookSource.score.desc(), BookSource.name)
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    sources = [BookSourceResponse.model_validate(s) for s in result.scalars().all()]
+
+    # Get distinct groups for filter
+    groups_result = await db.execute(
+        select(BookSource.source_group).where(BookSource.source_group.isnot(None)).distinct()
+    )
+    groups = sorted([g for g in groups_result.scalars().all() if g])
+
+    return {
+        "sources": sources,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "groups": groups,
+    }
 
 
 @router.post("/sources/upload", status_code=201)
@@ -294,11 +328,15 @@ async def report_source_result(
 
 @router.get("/sources/ranking")
 async def get_sources_ranking(
+    limit: int = 30,
     db: AsyncSession = Depends(get_db),
 ) -> list[BookSourceResponse]:
-    """Get book sources ranked by score (best first)."""
+    """Get top book sources ranked by score (best first)."""
     result = await db.execute(
-        select(BookSource).order_by(BookSource.score.desc(), BookSource.success_count.desc())
+        select(BookSource)
+        .where(BookSource.enabled == 1)
+        .order_by(BookSource.score.desc(), BookSource.success_count.desc())
+        .limit(limit)
     )
     return [BookSourceResponse.model_validate(s) for s in result.scalars().all()]
 

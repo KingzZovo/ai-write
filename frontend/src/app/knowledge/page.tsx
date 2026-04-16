@@ -46,8 +46,14 @@ export default function KnowledgePage() {
 /* ─── Sources Tab ──────────────────────────────────────────── */
 
 function SourcesTab() {
-  const { sources, loading, error, fetchSources, importSources, deleteSource } =
-    useKnowledgeStore()
+  const [sources, setSources] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [groups, setGroups] = useState<string[]>([])
+  const [selectedGroup, setSelectedGroup] = useState('')
   const [showImport, setShowImport] = useState(false)
   const [importJson, setImportJson] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
@@ -55,9 +61,34 @@ function SourcesTab() {
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<Record<string, string>>({})
 
-  useEffect(() => {
+  const fetchSources = useCallback(async (p = page, s = search, g = selectedGroup) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(p), page_size: '30' })
+      if (s) params.set('search', s)
+      if (g) params.set('group', g)
+      const data = await apiFetch<any>(`/api/knowledge/sources?${params}`)
+      setSources(data.sources || [])
+      setTotal(data.total || 0)
+      setTotalPages(data.total_pages || 1)
+      if (data.groups) setGroups(data.groups)
+    } catch { /* */ }
+    finally { setLoading(false) }
+  }, [page, search, selectedGroup])
+
+  const deleteSource = async (id: string) => {
+    await apiFetch(`/api/knowledge/sources/${id}`, { method: 'DELETE' })
     fetchSources()
-  }, [fetchSources])
+  }
+
+  const importSources = async (arr: any[]) => {
+    await apiFetch('/api/knowledge/sources/import', {
+      method: 'POST', body: JSON.stringify({ sources_json: arr })
+    })
+    fetchSources()
+  }
+
+  useEffect(() => { fetchSources() }, [page, selectedGroup]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleImport = useCallback(async () => {
     setImportError(null)
@@ -90,13 +121,33 @@ function SourcesTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">书源管理</h2>
+        <h2 className="text-lg font-semibold text-gray-900">书源管理 <span className="text-sm font-normal text-gray-400">({total})</span></h2>
         <button
           onClick={() => setShowImport(!showImport)}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           导入书源
         </button>
+      </div>
+
+      {/* Search + Group filter */}
+      <div className="flex gap-2">
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { setPage(1); fetchSources(1, search, selectedGroup) } }}
+          placeholder="搜索书源..."
+          className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg"
+        />
+        <button onClick={() => { setPage(1); fetchSources(1, search, selectedGroup) }}
+          className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg">搜索</button>
+        {groups.length > 0 && (
+          <select value={selectedGroup} onChange={e => { setSelectedGroup(e.target.value); setPage(1) }}
+            className="px-2 py-1.5 text-sm border border-gray-200 rounded-lg max-w-[120px]">
+            <option value="">全部分组</option>
+            {groups.slice(0, 30).map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        )}
       </div>
 
       {showImport && (
@@ -170,11 +221,6 @@ function SourcesTab() {
         </div>
       )}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       {loading && sources.length === 0 ? (
         <LoadingState />
@@ -243,6 +289,17 @@ function SourcesTab() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+            className="px-3 py-1.5 text-xs bg-gray-200 rounded disabled:opacity-30">上一页</button>
+          <span className="text-xs text-gray-500">{page} / {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+            className="px-3 py-1.5 text-xs bg-gray-200 rounded disabled:opacity-30">下一页</button>
         </div>
       )}
     </div>
