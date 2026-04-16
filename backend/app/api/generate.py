@@ -97,6 +97,15 @@ async def generate_chapter(
             if prev_chapter:
                 previous_text = prev_chapter.content_text or ""
 
+    # Auto-resolve style from StyleEngine if not manually provided
+    resolved_style = req.style_instruction
+    if not resolved_style:
+        try:
+            from app.services.style_runtime import resolve_style_prompt
+            resolved_style = await resolve_style_prompt(db, req.project_id, req.chapter_id) or ""
+        except Exception as e:
+            logger.warning("Style resolve failed: %s", e)
+
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
             yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
@@ -109,7 +118,7 @@ async def generate_chapter(
                 chapter_outline=chapter_outline,
                 previous_chapter_text=previous_text,
                 current_chapter_text=current_text,
-                style_instruction=req.style_instruction,
+                style_instruction=resolved_style,
                 user_instruction=req.user_instruction,
                 max_tokens=req.max_tokens,
             ):

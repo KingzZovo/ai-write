@@ -100,8 +100,6 @@ services:
     env_file: .env
     ports:
       - "3100:3000"
-    depends_on:
-      - backend
 
   nginx:
     image: nginx:alpine
