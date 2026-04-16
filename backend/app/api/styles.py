@@ -1,0 +1,263 @@
+"""Style profile management API.
+
+CRUD for writing style profiles, style detection from text,
+test-writing with a selected style, and binding to books/chapters.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_db
+from app.models.project import StyleProfile
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/styles", tags=["styles"])
+
+
+# =========================================================================
+# Schemas
+# =========================================================================
+
+class StyleProfileCreate(BaseModel):
+    name: str
+    description: str = ""
+    rules_json: list[dict] = []
+    anti_ai_rules: list[dict] = []
+    tone_keywords: list[str] = []
+    sample_passages: list = []
+
+
+class StyleProfileUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    rules_json: list[dict] | None = None
+    anti_ai_rules: list[dict] | None = None
+    tone_keywords: list[str] | None = None
+    sample_passages: list | None = None
+    is_active: int | None = None
+
+
+class StyleProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    description: str
+    source_book: str | None
+    rules_json: list
+    anti_ai_rules: list
+    tone_keywords: list
+    sample_passages: list
+    bind_level: str
+    bind_target_id: UUID | None
+    is_active: int
+    config_json: dict
+    created_at: Any
+    updated_at: Any
+
+
+class BindRequest(BaseModel):
+    bind_level: str  # global / book / chapter
+    bind_target_id: str | None = None
+
+
+class DetectRequest(BaseModel):
+    text: str
+    name: str = ""
+
+
+class TestWriteRequest(BaseModel):
+    prompt: str = "写一段200字的场景描写，一个人走在雨中的小巷里。"
+
+
+class TestWriteResponse(BaseModel):
+    text: str
+    style_name: str
+
+
+# =========================================================================
+# Endpoints
+# =========================================================================
+
+@router.get("", response_model=list[StyleProfileResponse])
+async def list_styles(
+    db: AsyncSession = Depends(get_db),
+) -> list[StyleProfileResponse]:
+    """List all style profiles."""
+    result = await db.execute(
+        select(StyleProfile).order_by(StyleProfile.is_active.desc(), StyleProfile.updated_at.desc())
+    )
+    profiles = result.scalars().all()
+    return [StyleProfileResponse.model_validate(p) for p in profiles]
+
+
+@router.post("", response_model=StyleProfileResponse, status_code=201)
+async def create_style(
+    body: StyleProfileCreate,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Create a new style profile."""
+    profile = StyleProfile(
+        name=body.name,
+        description=body.description,
+        rules_json=body.rules_json,
+        anti_ai_rules=body.anti_ai_rules,
+        tone_keywords=body.tone_keywords,
+        sample_passages=body.sample_passages,
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.get("/{style_id}", response_model=StyleProfileResponse)
+async def get_style(
+    style_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Get a style profile by ID."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.put("/{style_id}", response_model=StyleProfileResponse)
+async def update_style(
+    style_id: UUID,
+    body: StyleProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Update a style profile."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    update_data = body.model_dump(exclude_unset=True)
+    for field_name, value in update_data.items():
+        setattr(profile, field_name, value)
+
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.delete("/{style_id}", status_code=204)
+async def delete_style(
+    style_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a style profile."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+    await db.delete(profile)
+
+
+@router.post("/{style_id}/bind", response_model=StyleProfileResponse)
+async def bind_style(
+    style_id: UUID,
+    body: BindRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Bind a style profile to a target (global/book/chapter)."""
+    if body.bind_level not in ("global", "book", "chapter"):
+        raise HTTPException(status_code=400, detail="bind_level 必须是 global/book/chapter")
+
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    profile.bind_level = body.bind_level
+    profile.bind_target_id = body.bind_target_id
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/detect", response_model=StyleProfileResponse, status_code=201)
+async def detect_style(
+    body: DetectRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Detect writing style from text and create a new profile."""
+    if len(body.text) < 200:
+        raise HTTPException(status_code=400, detail="文本至少需要200字才能分析风格")
+
+    from app.services.style_detection import detect_style_features, features_to_rules
+
+    features = detect_style_features(body.text)
+    rules, anti_ai = features_to_rules(features)
+
+    profile = StyleProfile(
+        name=body.name or "自动检测的写法",
+        description=f"从 {len(body.text)} 字文本中自动提取的写作风格",
+        source_book="text_detection",
+        rules_json=rules,
+        anti_ai_rules=anti_ai,
+        tone_keywords=[w["word"] for w in features.get("top_words", [])[:10]],
+        sample_passages=[body.text[:500]],
+        config_json={"detection_features": features},
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/{style_id}/test-write", response_model=TestWriteResponse)
+async def test_write(
+    style_id: UUID,
+    body: TestWriteRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TestWriteResponse:
+    """Generate a test passage using a selected style profile."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    from app.services.style_compiler import compile_style
+    from app.services.model_router import get_model_router
+
+    style_prompt = compile_style(profile)
+    router = get_model_router()
+
+    result = await router.generate(
+        task_type="generation",
+        messages=[
+            {"role": "system", "content": f"你是一个小说作家。请严格按照以下写法指导来写作：\n\n{style_prompt}"},
+            {"role": "user", "content": body.prompt},
+        ],
+        max_tokens=1024,
+    )
+
+    return TestWriteResponse(text=result.text, style_name=profile.name)
+
+
+@router.post("/compile-preview")
+async def compile_preview(
+    body: StyleProfileCreate,
+) -> dict:
+    """Preview the compiled prompt for a set of rules (without saving)."""
+    from app.services.style_compiler import compile_style
+
+    # Create a temporary profile object for compilation
+    profile = StyleProfile(
+        name=body.name or "预览",
+        description=body.description,
+        rules_json=body.rules_json,
+        anti_ai_rules=body.anti_ai_rules,
+        tone_keywords=body.tone_keywords,
+        sample_passages=body.sample_passages,
+    )
+    compiled = compile_style(profile)
+    return {"compiled_prompt": compiled, "char_count": len(compiled)}

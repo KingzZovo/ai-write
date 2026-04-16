@@ -168,13 +168,30 @@ class WorldRule(Base):
 
 
 class StyleProfile(Base):
+    """A writing style profile that can be bound to a book/chapter/generation."""
+
     __tablename__ = "style_profiles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
+    description = Column(Text, default="")
     source_book = Column(String(500))
+
+    # Core style rules
+    rules_json = Column(JSON, default=list)         # [{rule, weight, category}]
+    anti_ai_rules = Column(JSON, default=list)      # [{pattern, replacement, autoRewrite}]
+    tone_keywords = Column(JSON, default=list)      # Style keyword tags
+    sample_passages = Column(JSON, default=list)    # Few-shot example passages
+
+    # Binding: global / book / chapter
+    bind_level = Column(String(20), default="global")
+    bind_target_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Status
+    is_active = Column(Integer, default=1)
     config_json = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
 class LLMEndpoint(Base):
