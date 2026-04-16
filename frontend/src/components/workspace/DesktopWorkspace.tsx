@@ -1098,7 +1098,7 @@ export default function DesktopWorkspace() {
       panel={
         <div className="flex flex-col h-full">
           <div className="flex-1 overflow-y-auto">
-            <CollapsibleSection title="Generation Settings" defaultOpen>
+            <CollapsibleSection title="生成设置" defaultOpen>
               <GeneratePanel
                 onGenerate={handleGenerateChapter}
                 onGenerateOutline={handleGenerateOutline}
@@ -1106,7 +1106,7 @@ export default function DesktopWorkspace() {
             </CollapsibleSection>
 
             {selectedChapterId && (
-              <CollapsibleSection title="Quality Evaluation">
+              <CollapsibleSection title="质量评估">
                 <div className="px-4">
                   <EvaluationPanel chapterId={selectedChapterId} />
                 </div>
@@ -1144,7 +1144,7 @@ export default function DesktopWorkspace() {
             )}
 
             {selectedChapterId && (
-              <CollapsibleSection title="Version History">
+              <CollapsibleSection title="版本历史">
                 <div className="px-4">
                   <VersionPanel chapterId={selectedChapterId} />
                 </div>
@@ -1152,7 +1152,7 @@ export default function DesktopWorkspace() {
             )}
 
             {currentProject && (
-              <CollapsibleSection title="Foreshadows">
+              <CollapsibleSection title="伏笔追踪">
                 <div className="px-4">
                   <ForeshadowPanel projectId={currentProject.id} />
                 </div>
@@ -1160,7 +1160,7 @@ export default function DesktopWorkspace() {
             )}
 
             {currentProject && (
-              <CollapsibleSection title="Settings">
+              <CollapsibleSection title="设定集">
                 <div className="px-4">
                   <SettingsPanel projectId={currentProject.id} />
                 </div>
@@ -1168,7 +1168,7 @@ export default function DesktopWorkspace() {
             )}
 
             {currentProject && (
-              <CollapsibleSection title="Character Relations">
+              <CollapsibleSection title="角色关系">
                 <div className="px-4">
                   <RelationshipGraph projectId={currentProject.id} />
                 </div>
