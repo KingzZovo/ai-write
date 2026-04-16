@@ -357,7 +357,6 @@ class BookSourceEngine:
         idx = min(category_index, len(categories) - 1)
         raw_url = categories[idx]["url"]
         url = self._render_url(raw_url, config.source_url, page=page)
-                break
 
         if not url:
             return []
