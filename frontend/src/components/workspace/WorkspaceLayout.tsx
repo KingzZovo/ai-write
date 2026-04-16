@@ -23,7 +23,7 @@ export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel }: Workspa
         <main className="flex-1 overflow-y-auto">
           {editor}
         </main>
-        <aside className="w-80 border-l border-gray-200 bg-white overflow-y-auto flex-shrink-0">
+        <aside className="w-96 border-l border-gray-200 bg-white overflow-y-auto flex-shrink-0">
           {panel}
         </aside>
       </div>

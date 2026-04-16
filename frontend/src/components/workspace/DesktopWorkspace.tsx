@@ -159,6 +159,9 @@ export default function DesktopWorkspace() {
   const [wizardProgress, setWizardProgress] = useState('')
   const [confirmedOutlineId, setConfirmedOutlineId] = useState<string | null>(null)
 
+  // Drawer panel
+  const [drawerPanel, setDrawerPanel] = useState<string | null>(null)
+
   // Auto-save ref
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedRef = useRef<string>('')
@@ -656,6 +659,31 @@ export default function DesktopWorkspace() {
   // ================================================================
 
   return (
+    <>
+    {/* Drawer overlay for large panels */}
+    {drawerPanel && currentProject && (
+      <div className="fixed inset-0 z-50 flex">
+        <div className="absolute inset-0 bg-black/30" onClick={() => setDrawerPanel(null)} />
+        <div className="relative ml-auto w-full max-w-2xl bg-white shadow-xl overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {drawerPanel === 'strand' ? '三线平衡' :
+               drawerPanel === 'foreshadow' ? '伏笔追踪' :
+               drawerPanel === 'settings' ? '设定集' : '角色关系'}
+            </h2>
+            <button onClick={() => setDrawerPanel(null)}
+              className="text-gray-400 hover:text-gray-600 text-lg">&#x2715;</button>
+          </div>
+          <div className="p-6">
+            {drawerPanel === 'strand' && <StrandPanel projectId={currentProject.id} />}
+            {drawerPanel === 'foreshadow' && <ForeshadowPanel projectId={currentProject.id} />}
+            {drawerPanel === 'settings' && <SettingsPanel projectId={currentProject.id} />}
+            {drawerPanel === 'relationship' && <RelationshipGraph projectId={currentProject.id} />}
+          </div>
+        </div>
+      </div>
+    )}
+
     <WorkspaceLayout
       sidebar={
         <div className="flex flex-col h-full">
@@ -1122,14 +1150,6 @@ export default function DesktopWorkspace() {
               </CollapsibleSection>
             )}
 
-            {currentProject && (
-              <CollapsibleSection title="三线平衡">
-                <div className="px-4">
-                  <StrandPanel projectId={currentProject.id} />
-                </div>
-              </CollapsibleSection>
-            )}
-
             <CollapsibleSection title="写作指南">
               <div className="px-4">
                 <WritingGuidePanel />
@@ -1152,28 +1172,25 @@ export default function DesktopWorkspace() {
               </CollapsibleSection>
             )}
 
+            {/* Panels that need more space — open as drawers */}
             {currentProject && (
-              <CollapsibleSection title="伏笔追踪">
-                <div className="px-4">
-                  <ForeshadowPanel projectId={currentProject.id} />
-                </div>
-              </CollapsibleSection>
-            )}
-
-            {currentProject && (
-              <CollapsibleSection title="设定集">
-                <div className="px-4">
-                  <SettingsPanel projectId={currentProject.id} />
-                </div>
-              </CollapsibleSection>
-            )}
-
-            {currentProject && (
-              <CollapsibleSection title="角色关系">
-                <div className="px-4">
-                  <RelationshipGraph projectId={currentProject.id} />
-                </div>
-              </CollapsibleSection>
+              <div className="border-b border-gray-200 px-4 py-3 space-y-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">详细面板</p>
+                {[
+                  { label: '三线平衡', key: 'strand' },
+                  { label: '伏笔追踪', key: 'foreshadow' },
+                  { label: '设定集', key: 'settings' },
+                  { label: '角色关系', key: 'relationship' },
+                ].map(item => (
+                  <button key={item.key} onClick={() => setDrawerPanel(item.key)}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-between">
+                    <span>{item.label}</span>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 
@@ -1184,6 +1201,7 @@ export default function DesktopWorkspace() {
         </div>
       }
     />
+    </>
   )
 }
 

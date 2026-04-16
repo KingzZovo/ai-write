@@ -191,7 +191,7 @@ async def detect_from_book(
 ) -> StyleProfileResponse:
     """Detect writing style from a reference book in the knowledge base."""
     from app.models.project import ReferenceBook, TextChunk
-    from app.services.style_detection import detect_style_features, features_to_rules
+    from app.services.style_detection import detect_style_features, detect_style_with_llm, features_to_rules
 
     book = await db.get(ReferenceBook, str(book_id))
     if not book:
@@ -213,8 +213,14 @@ async def detect_from_book(
     sampled = [chunks[i].content for i in range(0, n, step)][:8]
     combined_text = "\n\n".join(sampled)
 
+    # Statistical analysis
     features = detect_style_features(combined_text)
-    rules, anti_ai = features_to_rules(features)
+
+    # LLM deep analysis
+    llm_analysis = await detect_style_with_llm(combined_text)
+
+    # Merge into rules
+    rules, anti_ai = features_to_rules(features, llm_analysis)
 
     profile = StyleProfile(
         name=f"{book.title} 风格",
@@ -222,9 +228,10 @@ async def detect_from_book(
         source_book=book.title,
         rules_json=rules,
         anti_ai_rules=anti_ai,
-        tone_keywords=[w["word"] for w in features.get("top_words", [])[:10]],
+        tone_keywords=(llm_analysis.get("style_labels", []) if isinstance(llm_analysis.get("style_labels"), list) else [])
+                      + [w["word"] for w in features.get("top_words", [])[:6]],
         sample_passages=[s[:500] for s in sampled[:3]],
-        config_json={"detection_features": features, "source_book_id": str(book_id)},
+        config_json={"detection_features": features, "llm_analysis": llm_analysis, "source_book_id": str(book_id)},
     )
     db.add(profile)
     await db.flush()

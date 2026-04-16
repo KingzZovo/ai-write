@@ -164,15 +164,44 @@ async def _process_uploaded_book_async(book_id: str, file_path: str, filename: s
                 db.add(chunk)
             await db.commit()
 
-            # Stage 2: auto quality scoring (if model configured)
+            # Stage 2: vectorize chunks into Qdrant
             book.status = "extracting"
             await db.commit()
 
             try:
+                from app.services.qdrant_store import QdrantStore
+                from app.services.feature_extractor import generate_embedding
+                from qdrant_client import AsyncQdrantClient as _QC
+                from app.config import settings as _s
+
+                qdrant_client = _QC(host=_s.QDRANT_HOST, port=_s.QDRANT_PORT)
+                if qdrant_client:
+                    store = QdrantStore(qdrant_client)
+                    await store.ensure_collections()
+                    vectorized = 0
+                    for block in blocks:
+                        try:
+                            embedding = await generate_embedding(block.content[:500])
+                            if embedding and any(v != 0 for v in embedding[:10]):
+                                await store.store_style_features(
+                                    book_id=str(book.id),
+                                    chunk_id=f"{block.chapter_idx}_{block.block_idx}",
+                                    sequence_id=block.sequence_id,
+                                    features_dict={"chapter_title": block.chapter_title, "char_count": block.char_count},
+                                    embedding=embedding,
+                                )
+                                vectorized += 1
+                        except Exception:
+                            pass  # Skip individual chunk failures
+                    logger.info("Vectorized %d/%d chunks for %s", vectorized, len(blocks), book.title)
+            except Exception as e:
+                logger.warning("Vectorization skipped for %s: %s", book.title, e)
+
+            # Stage 3: auto quality scoring (if model configured)
+            try:
                 from app.services.quality_scorer import QualityScorer
                 scorer = QualityScorer()
 
-                # Sample up to 5 blocks
                 sample_blocks = blocks[:5] if len(blocks) <= 5 else [blocks[i] for i in range(0, len(blocks), max(1, len(blocks) // 5))][:5]
                 samples = [b.content for b in sample_blocks]
 
@@ -427,6 +456,20 @@ async def _extract_features_async(book_id: str):
         )
         chunks = result.scalars().all()
 
+        # Initialize Qdrant for vectorization
+        qdrant_store = None
+        try:
+            from qdrant_client import AsyncQdrantClient
+            from app.config import settings as _cfg
+            from app.services.qdrant_store import QdrantStore
+            from app.services.feature_extractor import generate_embedding
+
+            _qc = AsyncQdrantClient(host=_cfg.QDRANT_HOST, port=_cfg.QDRANT_PORT)
+            qdrant_store = QdrantStore(_qc)
+            await qdrant_store.ensure_collections()
+        except Exception as e:
+            logger.warning("Qdrant not available for vectorization: %s", e)
+
         for chunk in chunks:
             try:
                 # Style extraction (fast, no LLM)
@@ -441,13 +484,36 @@ async def _extract_features_async(book_id: str):
                     chunk.plot_features_json = plot_features if isinstance(plot_features, dict) else {"raw": str(plot_features)}
                     chunk.plot_extracted = 1
 
+                # Vectorize to Qdrant
+                if qdrant_store:
+                    try:
+                        embedding = await generate_embedding(chunk.content[:500])
+                        if embedding and any(v != 0 for v in embedding[:10]):
+                            summary = str(chunk.plot_features_json.get("summary", "")) if chunk.plot_features_json else ""
+                            await qdrant_store.store_plot_features(
+                                book_id=book_id, chunk_id=str(chunk.id),
+                                sequence_id=chunk.sequence_id, summary_text=summary,
+                                embedding=embedding,
+                            )
+                            await qdrant_store.store_style_features(
+                                book_id=book_id, chunk_id=str(chunk.id),
+                                sequence_id=chunk.sequence_id,
+                                features_dict=chunk.style_features_json or {},
+                                embedding=embedding,
+                            )
+                    except Exception as ve:
+                        logger.debug("Vectorization failed for chunk %s: %s", chunk.id, ve)
+
                 await db.commit()
             except Exception as e:
                 logger.warning("Feature extraction failed for chunk %s: %s", chunk.id, e)
 
+        if qdrant_store:
+            await _qc.close()
+
         book.status = "ready"
         await db.commit()
-        logger.info("Feature extraction complete for book %s", book.title)
+        logger.info("Feature extraction + vectorization complete for book %s", book.title)
 
 
 @celery_app.task(name="tasks.run_quality_score")

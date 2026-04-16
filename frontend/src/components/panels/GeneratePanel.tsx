@@ -5,6 +5,73 @@ import Link from 'next/link'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiFetch } from '@/lib/api'
 
+interface StyleInfo {
+  id: string
+  name: string
+  is_active: number
+  bind_level: string
+  rules_json: { rule: string }[]
+  tone_keywords: string[]
+}
+
+function StyleSelector() {
+  const [styles, setStyles] = useState<StyleInfo[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiFetch<StyleInfo[]>('/api/styles')
+      .then(setStyles)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const activeStyles = styles.filter(s => s.is_active)
+
+  if (loading) return <p className="text-xs text-gray-400">加载写法...</p>
+
+  if (styles.length === 0) {
+    return (
+      <div className="text-xs text-gray-500 space-y-1">
+        <p>暂无写法档案</p>
+        <Link href="/styles" className="text-blue-600 hover:text-blue-700">
+          前往创建写法 &rarr;
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {activeStyles.length > 0 ? (
+        <>
+          <p className="text-xs text-gray-500">当前激活的写法（生成时自动注入）：</p>
+          {activeStyles.map(s => (
+            <div key={s.id} className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-green-800">{s.name}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-600 rounded">
+                  {s.bind_level === 'global' ? '全局' : s.bind_level === 'book' ? '整本书' : '单章'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {s.tone_keywords?.slice(0, 5).map((kw, i) => (
+                  <span key={i} className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">{kw}</span>
+                ))}
+              </div>
+              <p className="text-[10px] text-green-600 mt-1">{s.rules_json?.length || 0} 条规则</p>
+            </div>
+          ))}
+        </>
+      ) : (
+        <p className="text-xs text-gray-500">无激活的写法 — 生成将使用默认风格</p>
+      )}
+      <Link href="/styles" className="block text-xs text-blue-600 hover:text-blue-700">
+        管理写法 ({styles.length}) &rarr;
+      </Link>
+    </div>
+  )
+}
+
 interface GeneratePanelProps {
   onGenerate?: () => void
   onGenerateOutline?: (level: string) => void
@@ -152,13 +219,10 @@ export function GeneratePanel({ onGenerate, onGenerateOutline }: GeneratePanelPr
         </div>
       </div>
 
-      {/* Writing style */}
+      {/* Writing style selector */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">写作风格</h3>
-        <textarea
-          placeholder="描述目标写作风格（如：金庸武侠风、余华现实主义风格）"
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none h-20 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          disabled={isGenerating} />
+        <StyleSelector />
       </div>
     </div>
   )
