@@ -101,12 +101,51 @@ async def list_sources(
     return [BookSourceResponse.model_validate(s) for s in result.scalars().all()]
 
 
+@router.post("/sources/upload", status_code=201)
+async def upload_sources_file(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Upload a legado book source JSON file (supports large files)."""
+    import json as _json
+    content = await file.read()
+    try:
+        sources_list = _json.loads(content)
+        if isinstance(sources_list, dict):
+            sources_list = [sources_list]
+    except _json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="JSON 格式无效")
+
+    imported = 0
+    skipped = 0
+    for source_json in sources_list:
+        name = source_json.get("bookSourceName", "Unknown")
+        url = source_json.get("bookSourceUrl", "")
+        group = source_json.get("bookSourceGroup", "")
+        if not url:
+            continue
+        existing = await db.execute(
+            select(BookSource).where(BookSource.source_url == url)
+        )
+        if existing.scalar_one_or_none():
+            skipped += 1
+            continue
+        source = BookSource(
+            name=name, source_url=url, source_group=group, source_json=source_json,
+        )
+        db.add(source)
+        imported += 1
+
+    await db.flush()
+    return {"imported": imported, "skipped": skipped, "total": len(sources_list)}
+
+
 @router.post("/sources/import", status_code=201)
 async def import_sources(
     body: BookSourceImport,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Import legado book source JSON(s)."""
+    """Import legado book source JSON(s) via request body."""
     imported = 0
     for source_json in body.sources_json:
         name = source_json.get("bookSourceName", "Unknown")

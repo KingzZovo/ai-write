@@ -51,6 +51,7 @@ function SourcesTab() {
   const [showImport, setShowImport] = useState(false)
   const [importJson, setImportJson] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<Record<string, string>>({})
 
@@ -100,14 +101,49 @@ function SourcesTab() {
 
       {showImport && (
         <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
-          <label className="block text-sm font-medium text-gray-700">
-            粘贴书源 JSON
-          </label>
+          {/* File upload for large JSON */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              上传书源文件（支持大文件）
+            </label>
+            <input
+              type="file"
+              accept=".json"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                setUploading(true)
+                setImportError('')
+                try {
+                  const formData = new FormData()
+                  formData.append('file', file)
+                  const res = await fetch('/api/knowledge/sources/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` },
+                    body: formData,
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.detail || '上传失败')
+                  alert(`导入成功：${data.imported} 个书源，跳过 ${data.skipped} 个重复`)
+                  setShowImport(false)
+                  fetchSources()
+                } catch (err) {
+                  setImportError(err instanceof Error ? err.message : '上传失败')
+                } finally {
+                  setUploading(false)
+                }
+              }}
+              className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
+            />
+          </div>
+
+          <div className="text-xs text-gray-400 text-center">— 或者粘贴 JSON —</div>
+
           <textarea
             value={importJson}
             onChange={(e) => setImportJson(e.target.value)}
-            placeholder='[{"name": "Source Name", "source_url": "https://..."}]'
-            className="w-full h-32 px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder='[{"bookSourceName": "书源名", "bookSourceUrl": "https://..."}]'
+            className="w-full h-24 px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           {importError && (
             <p className="text-sm text-red-600">{importError}</p>
