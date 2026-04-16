@@ -111,7 +111,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="pt-14 px-3 md:px-8 max-w-5xl mx-auto pb-8 space-y-8">
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
           {error}

@@ -18,8 +18,8 @@ export default function KnowledgePage() {
   const [activeTab, setActiveTab] = useState<TabKey>('sources')
 
   return (
-    <div>
-      <div className="flex gap-1 border-b border-gray-200 mb-6">
+    <div className="pt-14 px-3 md:px-8 max-w-5xl mx-auto pb-8">
+      <div className="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -334,56 +334,43 @@ function SourcesTab() {
       ) : sources.length === 0 ? (
         <EmptyState message="暂无书源，点击导入添加" />
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-3 py-3 w-8">
-                  <input type="checkbox" checked={selected.size === sources.length && sources.length > 0}
-                    onChange={toggleSelectAll} className="rounded border-gray-300" />
-                </th>
-                <th className="text-left px-3 py-3 font-medium text-gray-600">名称</th>
-                <th className="text-center px-3 py-3 font-medium text-gray-600">评分</th>
-                <th className="text-left px-3 py-3 font-medium text-gray-600">状态</th>
-                <th className="text-right px-3 py-3 font-medium text-gray-600">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((source) => {
-                const s = source as any
-                const score = s.score ?? 5
-                const scoreColor = score >= 7 ? 'text-green-600' : score >= 4 ? 'text-yellow-600' : 'text-red-600'
-                const enabled = s.enabled === 1
-                return (
-                <tr key={source.id} className={`border-b border-gray-100 last:border-b-0 ${!enabled ? 'opacity-50' : ''}`}>
-                  <td className="px-3 py-3">
-                    <input type="checkbox" checked={selected.has(source.id)}
-                      onChange={() => toggleSelect(source.id)} className="rounded border-gray-300" />
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="font-medium text-gray-900">{source.name}</div>
-                    <div className="text-xs text-gray-400 truncate max-w-[200px]">{source.source_url}</div>
-                    {source.source_group && <div className="text-[10px] text-gray-400">{source.source_group}</div>}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <span className={`text-sm font-bold ${scoreColor}`}>{score.toFixed(1)}</span>
-                    <div className="text-[10px] text-gray-400">
-                      {s.success_count ?? s.successCount ?? 0}成功 / {s.fail_count ?? s.failCount ?? 0}失败
+        <div className="space-y-2">
+          {/* Select all */}
+          <label className="flex items-center gap-2 text-xs text-gray-500 px-1">
+            <input type="checkbox" checked={selected.size === sources.length && sources.length > 0}
+              onChange={toggleSelectAll} className="rounded border-gray-300" />
+            全选当前页
+          </label>
+
+          {sources.map((source) => {
+            const s = source as any
+            const score = s.score ?? 5
+            const scoreColor = score >= 7 ? 'text-green-600' : score >= 4 ? 'text-yellow-600' : 'text-red-600'
+            const enabled = s.enabled === 1
+            return (
+              <div key={source.id} className={`bg-white rounded-lg border border-gray-200 p-3 ${!enabled ? 'opacity-50' : ''}`}>
+                <div className="flex items-start gap-2">
+                  <input type="checkbox" checked={selected.has(source.id)}
+                    onChange={() => toggleSelect(source.id)} className="rounded border-gray-300 mt-1 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm text-gray-900 truncate">{source.name}</span>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span className={`text-sm font-bold ${scoreColor}`}>{score.toFixed(1)}</span>
+                        <StatusBadge
+                          ok={enabled && source.last_test_ok === 1}
+                          label={!enabled ? '停用' : testResult[source.id] || (source.last_test_ok === 1 ? '正常' : '未测')}
+                        />
+                      </div>
                     </div>
-                    {(s.consecutive_fails ?? s.consecutiveFails ?? 0) >= 3 && (
-                      <div className="text-[10px] text-red-500">连续失败{s.consecutive_fails ?? s.consecutiveFails}次</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusBadge
-                      ok={enabled && source.last_test_ok === 1}
-                      label={!enabled ? '已停用' : testResult[source.id] || (source.last_test_ok === 1 ? '正常' : '未测试')}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <div className="flex flex-wrap gap-1 justify-end">
+                    <div className="text-xs text-gray-400 truncate mt-0.5">{source.source_url}</div>
+                    <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
+                      {source.source_group && <span>{source.source_group}</span>}
+                      <span>{s.success_count ?? 0}成/{s.fail_count ?? 0}败</span>
+                    </div>
+                    <div className="flex gap-1.5 mt-2">
                       <button onClick={() => handleTest(source)} disabled={testingId === source.id}
-                        className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">
+                        className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded disabled:opacity-50">
                         {testingId === source.id ? '...' : '测试'}
                       </button>
                       <button onClick={async () => {
@@ -393,16 +380,13 @@ function SourcesTab() {
                         {enabled ? '停用' : '启用'}
                       </button>
                       <button onClick={() => deleteSource(source.id)}
-                        className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100">
-                        删除
-                      </button>
+                        className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded">删除</button>
                     </div>
-                  </td>
-                </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -610,95 +594,56 @@ function BooksTab() {
       ) : books.length === 0 ? (
         <EmptyState message="暂无参考书，点击上传添加" />
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">书名</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">作者</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">来源</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">字数</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">质量</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {books.map((book) => (
-                <tr key={book.id} className="border-b border-gray-100 last:border-b-0">
-                  <td className="px-4 py-3 font-medium text-gray-900">{book.title}</td>
-                  <td className="px-4 py-3 text-gray-500">{book.author || '-'}</td>
-                  <td className="px-4 py-3 text-gray-500">{book.source}</td>
-                  <td className="px-4 py-3 text-right text-gray-500">
-                    {(book.total_words || 0).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3">
+        <div className="space-y-3">
+          {books.map((book) => {
+            const qualityScore = (book.metadata_json as any)?.quality_score?.overall
+            const statusLabel: Record<string, string> = {
+              pending: '等待处理', cleaning: '解析中', extracting: '评分中',
+              crawling: '抓取中', ready: '已就绪', completed: '已完成',
+              error: '失败', low_quality: '质量低',
+            }
+            return (
+              <div key={book.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-start justify-between mb-1">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-sm text-gray-900 truncate">{book.title}</h3>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {book.author || '未知'} · {(book.total_words || 0).toLocaleString()}字
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    {qualityScore != null && (
+                      <span className="text-sm font-bold text-blue-600">{Number(qualityScore).toFixed(1)}</span>
+                    )}
                     <StatusBadge
                       ok={book.status === 'ready' || book.status === 'completed'}
-                      label={{
-                        pending: '等待处理',
-                        cleaning: '解析中...',
-                        extracting: '评分中...',
-                        crawling: '抓取中...',
-                        ready: '已就绪',
-                        completed: '已完成',
-                        error: '失败',
-                        low_quality: '质量低',
-                      }[book.status] || book.status}
+                      label={statusLabel[book.status] || book.status}
                     />
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {(book.metadata_json as any)?.quality_score?.overall != null
-                      ? `${Number((book.metadata_json as any).quality_score.overall).toFixed(1)}`
-                      : '-'}
-                  </td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    <button
-                      onClick={() => setDetailBookId(book.id)}
-                      className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                    >
-                      详情
-                    </button>
-                    <button
-                      onClick={() => handleScore(book.id)}
-                      disabled={scoringId === book.id}
-                      className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 disabled:opacity-50"
-                    >
-                      {scoringId === book.id ? '评分中...' : '评分'}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        await apiFetch(`/api/knowledge/books/${book.id}/vectorize`, { method: 'POST' })
-                        alert('向量化已开始，后台处理中')
-                      }}
-                      className="px-3 py-1 text-xs bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100"
-                    >
-                      向量化
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const data = await apiFetch<any>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
-                          alert(`已从《${book.title}》提取写法：${data.name}`)
-                        } catch (e) {
-                          alert(e instanceof Error ? e.message : '提取失败')
-                        }
-                      }}
-                      className="px-3 py-1 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
-                    >
-                      提取风格
-                    </button>
-                    <button
-                      onClick={() => deleteBook(book.id)}
-                      className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
-                    >
-                      删除
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <button onClick={() => setDetailBookId(book.id)}
+                    className="px-2.5 py-1 text-xs bg-gray-100 text-gray-700 rounded">详情</button>
+                  <button onClick={() => handleScore(book.id)} disabled={scoringId === book.id}
+                    className="px-2.5 py-1 text-xs bg-blue-50 text-blue-600 rounded disabled:opacity-50">
+                    {scoringId === book.id ? '评分中' : '评分'}
+                  </button>
+                  <button onClick={async () => {
+                    await apiFetch(`/api/knowledge/books/${book.id}/vectorize`, { method: 'POST' })
+                    alert('向量化已开始')
+                  }} className="px-2.5 py-1 text-xs bg-indigo-50 text-indigo-600 rounded">向量化</button>
+                  <button onClick={async () => {
+                    try {
+                      const data = await apiFetch<any>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
+                      alert(`已提取写法：${data.name}`)
+                    } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
+                  }} className="px-2.5 py-1 text-xs bg-purple-50 text-purple-600 rounded">提取风格</button>
+                  <button onClick={() => deleteBook(book.id)}
+                    className="px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded">删除</button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
