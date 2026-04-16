@@ -266,7 +266,7 @@ async def detect_from_book(
         anti_ai_rules=anti_ai,
         tone_keywords=(llm_analysis.get("style_labels", []) if isinstance(llm_analysis.get("style_labels"), list) else [])
                       + features.get("style_labels", []),
-        sample_passages=[s[:500] for s in sampled[:3]],
+        sample_passages=[s[:500] for s in sampled_texts[:3]],
         config_json={"detection_features": features, "llm_analysis": llm_analysis, "source_book_id": str(book_id)},
     )
     db.add(profile)
