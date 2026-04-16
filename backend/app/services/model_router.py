@@ -13,6 +13,7 @@ Provides a unified interface for multiple LLM providers with:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -206,14 +207,17 @@ class ModelRouter:
                     select(LLMEndpoint).where(LLMEndpoint.enabled == 1))
                 endpoints = result.scalars().all()
 
+                from app.utils.crypto import decrypt_api_key
+
                 for ep in endpoints:
                     key = str(ep.id)
                     self._endpoint_defaults[key] = ep.default_model or ""
+                    api_key = decrypt_api_key(ep.api_key or "")
                     if ep.provider_type == "anthropic":
-                        self.register_provider(key, AnthropicProvider(api_key=ep.api_key))
+                        self.register_provider(key, AnthropicProvider(api_key=api_key))
                     else:
                         self.register_provider(key, OpenAIProvider(
-                            api_key=ep.api_key, base_url=ep.base_url or ""))
+                            api_key=api_key, base_url=ep.base_url or ""))
 
                 result = await db.execute(select(ModelConfig))
                 configs = result.scalars().all()
@@ -347,16 +351,21 @@ class ModelRouter:
 
 
 _router: ModelRouter | None = None
+_router_lock = asyncio.Lock()
 
 
 async def get_model_router_async() -> ModelRouter:
     global _router
-    if _router is None:
-        _router = ModelRouter()
-    if not _router._db_loaded:
-        await _router.load_from_db()
-        if not _router.providers:
-            _load_from_env(_router)
+    # Fast path: already loaded
+    if _router is not None and _router._db_loaded:
+        return _router
+    async with _router_lock:
+        if _router is None:
+            _router = ModelRouter()
+        if not _router._db_loaded:
+            await _router.load_from_db()
+            if not _router.providers:
+                _load_from_env(_router)
     return _router
 
 

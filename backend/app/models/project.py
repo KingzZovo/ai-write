@@ -315,6 +315,8 @@ class TextChunk(Base):
     sequence_id = Column(Integer, nullable=False)  # global sequential ID within book
     plot_extracted = Column(Integer, default=0)
     style_extracted = Column(Integer, default=0)
+    style_features_json = Column(JSON, nullable=True)
+    plot_features_json = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     book = relationship("ReferenceBook", back_populates="chunks")

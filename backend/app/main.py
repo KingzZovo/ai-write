@@ -54,6 +54,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Could not verify database tables")
 
+    # Migrate plaintext API keys to encrypted format
+    try:
+        from app.utils.crypto import encrypt_api_key, is_encrypted
+        from app.models.project import LLMEndpoint
+        from sqlalchemy import select as sel
+        async with engine.connect() as conn:
+            from sqlalchemy.ext.asyncio import AsyncSession as _AS
+            from sqlalchemy.orm import Session as _S
+            async with _AS(bind=conn) as migration_db:
+                result = await migration_db.execute(sel(LLMEndpoint))
+                migrated = 0
+                for ep in result.scalars().all():
+                    if ep.api_key and not is_encrypted(ep.api_key):
+                        ep.api_key = encrypt_api_key(ep.api_key)
+                        migrated += 1
+                if migrated:
+                    await migration_db.commit()
+                    logger.info("Migrated %d API keys to encrypted storage", migrated)
+    except Exception as e:
+        logger.warning("API key migration skipped: %s", e)
+
     # Pre-load model router from DB so all services can use it
     try:
         from app.services.model_router import get_model_router_async

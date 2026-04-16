@@ -343,12 +343,13 @@ async def _extract_features_async(book_id: str):
                 # Style extraction (fast, no LLM)
                 if not chunk.style_extracted:
                     style_features = style_extractor.extract(chunk.content)
-                    # Store in metadata (will be vectorized later)
+                    chunk.style_features_json = style_features if isinstance(style_features, dict) else {"raw": str(style_features)}
                     chunk.style_extracted = 1
 
                 # Plot extraction (LLM, slower)
                 if not chunk.plot_extracted:
                     plot_features = await plot_extractor.extract(chunk.content)
+                    chunk.plot_features_json = plot_features if isinstance(plot_features, dict) else {"raw": str(plot_features)}
                     chunk.plot_extracted = 1
 
                 await db.commit()

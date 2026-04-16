@@ -165,11 +165,13 @@ async def create_endpoint(
             detail="base_url is required for openai_compatible provider",
         )
 
+    from app.utils.crypto import encrypt_api_key
+
     endpoint = LLMEndpoint(
         name=body.name,
         provider_type=body.provider_type,
         base_url=body.base_url,
-        api_key=body.api_key,
+        api_key=encrypt_api_key(body.api_key),
         default_model=body.default_model,
     )
     db.add(endpoint)
@@ -200,7 +202,11 @@ async def update_endpoint(
             detail=f"Invalid provider_type. Must be one of: {', '.join(VALID_PROVIDER_TYPES)}",
         )
 
+    from app.utils.crypto import encrypt_api_key
+
     for field_name, value in update_data.items():
+        if field_name == "api_key" and value:
+            value = encrypt_api_key(value)
         setattr(endpoint, field_name, value)
 
     await db.flush()
@@ -242,12 +248,15 @@ async def test_endpoint(
     if endpoint is None:
         raise HTTPException(status_code=404, detail="Endpoint not found")
 
+    from app.utils.crypto import decrypt_api_key
+    decrypted_key = decrypt_api_key(endpoint.api_key or "")
+
     start = time.monotonic()
     try:
         if endpoint.provider_type == "anthropic":
             import anthropic
 
-            client = anthropic.AsyncAnthropic(api_key=endpoint.api_key)
+            client = anthropic.AsyncAnthropic(api_key=decrypted_key)
             await client.messages.create(
                 model=endpoint.default_model,
                 max_tokens=10,
@@ -256,7 +265,7 @@ async def test_endpoint(
         elif endpoint.provider_type in ("openai", "openai_compatible"):
             import openai
 
-            kwargs: dict[str, Any] = {"api_key": endpoint.api_key or "not-needed"}
+            kwargs: dict[str, Any] = {"api_key": decrypted_key or "not-needed"}
             if endpoint.provider_type == "openai_compatible" and endpoint.base_url:
                 kwargs["base_url"] = endpoint.base_url
 

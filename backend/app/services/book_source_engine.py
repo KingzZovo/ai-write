@@ -626,11 +626,14 @@ class BookSourceEngine:
             parts = rule.split("##")
             pattern = parts[0] if parts else ""
             replacement = parts[1] if len(parts) > 1 else ""
-            if pattern:
-                try:
-                    content = re.sub(pattern, replacement, content)
-                except re.error:
-                    pass
+            if not pattern or len(pattern) > 200:
+                continue  # Skip empty or overly long patterns (ReDoS risk)
+            try:
+                compiled = re.compile(pattern, re.DOTALL)
+                # Limit content length to prevent catastrophic backtracking
+                content = compiled.sub(replacement, content[:100000])
+            except (re.error, RecursionError):
+                pass
         return content
 
     async def close(self):
