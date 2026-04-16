@@ -381,83 +381,50 @@ function EndpointsSection({
           <p className="text-sm text-gray-500">尚未配置端点，请添加一个以开始使用。</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">名称</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">供应商</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">基础地址</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">API 密钥</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">默认模型</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {endpoints.map((ep) => {
-                const tr = testResults[ep.id]
-                return (
-                  <tr key={ep.id} className="border-b border-gray-100 last:border-b-0">
-                    <td className="px-4 py-3 font-medium text-gray-900">{ep.name}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
-                        {ep.provider_type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 truncate max-w-[200px]">
-                      {ep.base_url || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">
-                      {ep.api_key_masked}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700 font-mono text-xs">
-                      {ep.default_model}
-                    </td>
-                    <td className="px-4 py-3">
-                      {tr ? (
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            tr.success
-                              ? 'bg-green-50 text-green-700'
-                              : 'bg-red-50 text-red-700'
-                          }`}
-                          title={tr.message}
-                        >
-                          {tr.success
-                            ? `正常 ${tr.latency_ms ? `(${tr.latency_ms}ms)` : ''}`
-                            : '失败'}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">未测试</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right space-x-2">
-                      <button
-                        onClick={() => handleTest(ep.id)}
-                        disabled={testingId === ep.id}
-                        className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-                      >
-                        {testingId === ep.id ? '测试中...' : '测试'}
-                      </button>
-                      <button
-                        onClick={() => handleEdit(ep)}
-                        className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      >
-                        编辑
-                      </button>
-                      <button
-                        onClick={() => handleDelete(ep.id)}
-                        className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
-                      >
-                        删除
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {endpoints.map((ep) => {
+            const tr = testResults[ep.id]
+            return (
+              <div key={ep.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h4 className="font-medium text-gray-900 text-sm">{ep.name}</h4>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 mt-1">
+                      {ep.provider_type}
+                    </span>
+                  </div>
+                  {tr ? (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      tr.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {tr.success ? `正常${tr.latency_ms ? ` ${tr.latency_ms}ms` : ''}` : '失败'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-gray-400">未测试</span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs text-gray-500 mb-3">
+                  {ep.base_url && <div className="truncate"><span className="text-gray-400">地址:</span> {ep.base_url}</div>}
+                  <div><span className="text-gray-400">密钥:</span> <span className="font-mono">{ep.api_key_masked}</span></div>
+                  <div><span className="text-gray-400">模型:</span> <span className="font-mono text-gray-700">{ep.default_model}</span></div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleTest(ep.id)} disabled={testingId === ep.id}
+                    className="flex-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">
+                    {testingId === ep.id ? '测试中...' : '测试'}
+                  </button>
+                  <button onClick={() => handleEdit(ep)}
+                    className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100">
+                    编辑
+                  </button>
+                  <button onClick={() => handleDelete(ep.id)}
+                    className="flex-1 px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100">
+                    删除
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </section>
@@ -536,102 +503,69 @@ function TaskRoutingSection({
         </p>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">任务</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">端点</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">模型覆盖</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-44">创造性</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">最大长度</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600 w-24"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {localTasks.map((task) => (
-              <tr key={task.task_type} className="border-b border-gray-100 last:border-b-0">
-                <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">
-                    {TASK_LABELS[task.task_type] || task.task_type}
-                  </div>
-                  <div className="text-xs text-gray-400">{task.task_type}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <select
-                    value={task.endpoint?.id || ''}
-                    onChange={(e) => {
-                      const ep = endpoints.find((ep) => ep.id === e.target.value) || null
-                      updateLocal(task.task_type, { endpoint: ep })
-                    }}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">-- 未分配 --</option>
-                    {endpoints.map((ep) => (
-                      <option key={ep.id} value={ep.id}>
-                        {ep.name} ({ep.provider_type})
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-4 py-3">
-                  <input
-                    type="text"
-                    value={task.model_name}
-                    onChange={(e) => updateLocal(task.task_type, { model_name: e.target.value })}
-                    placeholder={task.endpoint?.default_model || '使用端点默认模型'}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={task.temperature}
-                      onChange={(e) =>
-                        updateLocal(task.task_type, { temperature: parseFloat(e.target.value) })
-                      }
-                      className="flex-1"
-                    />
-                    <span className="text-xs text-gray-500 w-8 text-right">{task.temperature}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <input
-                    type="number"
-                    value={task.max_tokens}
-                    onChange={(e) =>
-                      updateLocal(task.task_type, { max_tokens: parseInt(e.target.value) || 0 })
-                    }
-                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    min={1}
-                    max={65536}
-                  />
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => handleSave(task.task_type)}
-                    disabled={saving === task.task_type}
-                    className={`px-3 py-1 text-xs rounded ${
-                      savedTasks.has(task.task_type)
-                        ? 'bg-green-50 text-green-700'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    } disabled:opacity-50`}
-                  >
-                    {saving === task.task_type
-                      ? '保存中...'
-                      : savedTasks.has(task.task_type)
-                        ? '已保存'
-                        : '保存'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-3">
+        {localTasks.map((task) => (
+          <div key={task.task_type} className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="font-medium text-gray-900 text-sm">
+                  {TASK_LABELS[task.task_type] || task.task_type}
+                </div>
+                <div className="text-[10px] text-gray-400">{task.task_type}</div>
+              </div>
+              <button
+                onClick={() => handleSave(task.task_type)}
+                disabled={saving === task.task_type}
+                className={`px-3 py-1.5 text-xs rounded ${
+                  savedTasks.has(task.task_type)
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                } disabled:opacity-50`}
+              >
+                {saving === task.task_type ? '保存中...' : savedTasks.has(task.task_type) ? '已保存' : '保存'}
+              </button>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">选择端点</label>
+                <select
+                  value={task.endpoint?.id || ''}
+                  onChange={(e) => {
+                    const ep = endpoints.find((x) => x.id === e.target.value) || null
+                    updateLocal(task.task_type, { endpoint: ep })
+                  }}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white"
+                >
+                  <option value="">-- 未分配 --</option>
+                  {endpoints.map((ep) => (
+                    <option key={ep.id} value={ep.id}>{ep.name} ({ep.provider_type})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">模型覆盖</label>
+                <input type="text" value={task.model_name}
+                  onChange={(e) => updateLocal(task.task_type, { model_name: e.target.value })}
+                  placeholder={task.endpoint?.default_model || '使用端点默认模型'}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-500 mb-1">创造性: {task.temperature}</label>
+                  <input type="range" min="0" max="1" step="0.1" value={task.temperature}
+                    onChange={(e) => updateLocal(task.task_type, { temperature: parseFloat(e.target.value) })}
+                    className="w-full" />
+                </div>
+                <div className="w-24">
+                  <label className="block text-xs text-gray-500 mb-1">最大长度</label>
+                  <input type="number" value={task.max_tokens}
+                    onChange={(e) => updateLocal(task.task_type, { max_tokens: parseInt(e.target.value) || 0 })}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" min={1} max={65536} />
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {endpoints.length === 0 && (
