@@ -62,8 +62,9 @@ def detect_style_features(text: str) -> dict:
         "paragraph_count": text.count("\n\n") + 1,
     }
 
-    # 2. Dialogue ratio
-    dialogue_chars = sum(len(m) for m in re.findall(r'[""「」『』].*?[""「」『』]', text))
+    # 2. Dialogue ratio — match Chinese quotes: \u201c...\u201d and \u300c...\u300d
+    dialogue_matches = re.findall(r'\u201c[^\u201d]*\u201d|\u300c[^\u300d]*\u300d|\u300e[^\u300f]*\u300f', text)
+    dialogue_chars = sum(len(m) for m in dialogue_matches)
     features["dialogue_ratio"] = round(dialogue_chars / max(len(text), 1), 3)
 
     # 3. Description density
@@ -90,27 +91,7 @@ def detect_style_features(text: str) -> dict:
         "long_pct": round(long / total, 2),
     }
 
-    # 6. Top words — POS filtered, NO person/place names
-    import jieba.posseg as pseg
-    # Keep: n(名词) v(动词) a(形容词) d(副词) — Exclude: nr(人名) ns(地名) nt(机构) nz(其他专名)
-    allowed_pos = {"n", "v", "a", "d", "vn", "an", "ad", "vd"}
-    excluded_pos = {"nr", "ns", "nt", "nz", "r", "m", "q", "p", "c", "u", "x", "w"}
-    stop_words = {"的", "了", "在", "是", "我", "他", "她", "你", "不", "有", "这", "那", "就", "都", "也",
-                  "要", "会", "对", "和", "与", "而", "但", "又", "还", "很", "更", "最", "把", "被", "让",
-                  "从", "到", "为", "以", "于", "着", "过", "地", "得"}
-
-    word_counts: Counter = Counter()
-    for word, pos in pseg.cut(text):
-        if len(word) < 2 or word in stop_words:
-            continue
-        if pos in excluded_pos:
-            continue
-        if pos in allowed_pos or (pos.startswith("n") and pos not in excluded_pos):
-            word_counts[word] += 1
-
-    features["top_words"] = [{"word": w, "count": c} for w, c in word_counts.most_common(20)]
-
-    # 7. Tone
+    # 6. Tone
     exclamation_ratio = text.count("！") / max(len(sentences), 1)
     question_ratio = text.count("？") / max(len(sentences), 1)
     features["tone"] = {
@@ -118,7 +99,77 @@ def detect_style_features(text: str) -> dict:
         "question_ratio": round(question_ratio, 3),
     }
 
+    # 7. Style labels — derived from features, NOT high-frequency words
+    features["style_labels"] = _derive_style_labels(features)
+
     return features
+
+
+def _derive_style_labels(features: dict) -> list[str]:
+    """Derive meaningful style labels from statistical features.
+
+    Returns labels like "节奏紧凑", "对话驱动", "画面感强" instead of
+    useless high-frequency words like "没有", "时候".
+    """
+    labels: list[str] = []
+
+    # Sentence rhythm
+    dist = features.get("sentence_distribution", {})
+    if dist.get("short_pct", 0) > 0.45:
+        labels.append("节奏紧凑")
+    elif dist.get("long_pct", 0) > 0.4:
+        labels.append("叙事舒缓")
+    else:
+        labels.append("节奏均衡")
+
+    avg_len = features.get("basic", {}).get("avg_sentence_length", 15)
+    if avg_len < 12:
+        labels.append("短句为主")
+    elif avg_len > 25:
+        labels.append("长句绵密")
+
+    # Dialogue
+    dr = features.get("dialogue_ratio", 0)
+    if dr > 0.35:
+        labels.append("对话驱动")
+    elif dr > 0.2:
+        labels.append("对话适中")
+    elif dr < 0.05:
+        labels.append("纯叙述")
+    else:
+        labels.append("叙述为主")
+
+    # Description density
+    dd = features.get("description_density", 0)
+    if dd > 2.0:
+        labels.append("描写细腻")
+    elif dd > 1.2:
+        labels.append("画面感强")
+
+    # Tone
+    tone = features.get("tone", {})
+    if tone.get("exclamation_ratio", 0) > 0.15:
+        labels.append("情感强烈")
+    if tone.get("question_ratio", 0) > 0.1:
+        labels.append("悬念感强")
+
+    # AI markers
+    ai_count = len(features.get("ai_markers", []))
+    if ai_count == 0:
+        labels.append("语言自然")
+    elif ai_count > 5:
+        labels.append("AI痕迹重")
+
+    # Paragraph density
+    basic = features.get("basic", {})
+    chars = basic.get("total_chars", 0)
+    paras = basic.get("paragraph_count", 1)
+    if paras > 0 and chars / paras < 100:
+        labels.append("段落紧凑")
+    elif paras > 0 and chars / paras > 300:
+        labels.append("段落厚重")
+
+    return labels
 
 
 async def detect_style_with_llm(text: str) -> dict:

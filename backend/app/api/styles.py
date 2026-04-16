@@ -229,7 +229,7 @@ async def detect_from_book(
         rules_json=rules,
         anti_ai_rules=anti_ai,
         tone_keywords=(llm_analysis.get("style_labels", []) if isinstance(llm_analysis.get("style_labels"), list) else [])
-                      + [w["word"] for w in features.get("top_words", [])[:6]],
+                      + features.get("style_labels", []),
         sample_passages=[s[:500] for s in sampled[:3]],
         config_json={"detection_features": features, "llm_analysis": llm_analysis, "source_book_id": str(book_id)},
     )
@@ -259,7 +259,7 @@ async def detect_style(
         source_book="text_detection",
         rules_json=rules,
         anti_ai_rules=anti_ai,
-        tone_keywords=[w["word"] for w in features.get("top_words", [])[:10]],
+        tone_keywords=features.get("style_labels", []),
         sample_passages=[body.text[:500]],
         config_json={"detection_features": features},
     )
