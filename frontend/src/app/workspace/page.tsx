@@ -174,7 +174,7 @@ export default function WorkspacePage() {
         })
         .catch((err) => console.error('Failed to load projects:', err))
     }
-  }, [projectsLoaded, setProjects, setProjectsLoaded])
+  }, [projectsLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ----------------------------------------------------------------
   // Load volumes + chapters when a project is selected
@@ -218,7 +218,7 @@ export default function WorkspacePage() {
     if (currentProject) {
       loadProjectData(currentProject.id)
     }
-  }, [currentProject, loadProjectData])
+  }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ----------------------------------------------------------------
   // Select a project from the dropdown
