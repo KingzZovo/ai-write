@@ -1,19 +1,22 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
 import { GeneratePanel } from '@/components/panels/GeneratePanel'
-import { ForeshadowPanel } from '@/components/panels/ForeshadowPanel'
-import { SettingsPanel } from '@/components/panels/SettingsPanel'
-import { EvaluationPanel } from '@/components/panels/EvaluationPanel'
-import { CheckerDashboard } from '@/components/panels/CheckerDashboard'
-import { StrandPanel } from '@/components/panels/StrandPanel'
-import { WritingGuidePanel } from '@/components/panels/WritingGuidePanel'
-import { AntiAIPanel } from '@/components/panels/AntiAIPanel'
-import { VersionPanel } from '@/components/panels/VersionPanel'
-import { TokenDashboard } from '@/components/panels/TokenDashboard'
-import { RelationshipGraph } from '@/components/panels/RelationshipGraph'
+
+// Lazy load heavy panels — only loaded when their CollapsibleSection is opened
+const ForeshadowPanel = dynamic(() => import('@/components/panels/ForeshadowPanel').then(m => ({ default: m.ForeshadowPanel })), { ssr: false })
+const SettingsPanel = dynamic(() => import('@/components/panels/SettingsPanel').then(m => ({ default: m.SettingsPanel })), { ssr: false })
+const EvaluationPanel = dynamic(() => import('@/components/panels/EvaluationPanel').then(m => ({ default: m.EvaluationPanel })), { ssr: false })
+const CheckerDashboard = dynamic(() => import('@/components/panels/CheckerDashboard').then(m => ({ default: m.CheckerDashboard })), { ssr: false })
+const StrandPanel = dynamic(() => import('@/components/panels/StrandPanel').then(m => ({ default: m.StrandPanel })), { ssr: false })
+const WritingGuidePanel = dynamic(() => import('@/components/panels/WritingGuidePanel').then(m => ({ default: m.WritingGuidePanel })), { ssr: false })
+const AntiAIPanel = dynamic(() => import('@/components/panels/AntiAIPanel').then(m => ({ default: m.AntiAIPanel })), { ssr: false })
+const VersionPanel = dynamic(() => import('@/components/panels/VersionPanel').then(m => ({ default: m.VersionPanel })), { ssr: false })
+const TokenDashboard = dynamic(() => import('@/components/panels/TokenDashboard').then(m => ({ default: m.TokenDashboard })), { ssr: false })
+const RelationshipGraph = dynamic(() => import('@/components/panels/RelationshipGraph').then(m => ({ default: m.RelationshipGraph })), { ssr: false })
 import {
   useProjectStore,
   normalizeVolume,
