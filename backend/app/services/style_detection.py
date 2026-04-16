@@ -24,19 +24,24 @@ AI_MARKERS = [
     "不言而喻", "无法自拔", "血液沸腾", "电光火石",
 ]
 
-LLM_STYLE_PROMPT = """你是一位专业的文学分析师。请分析以下小说文本的写作风格特征。
+LLM_STYLE_PROMPT = """你是顶级文学风格分析师。请从以下15个维度全面分析小说文本的写作风格。
 
-分析维度：
+分析维度（每项必须填写）：
 1. narrative_pov（叙事视角）：第一人称/第三人称有限/第三人称全知/多视角交替
-2. narrative_pace（叙事节奏）：快节奏（动作密集）/中节奏（平衡）/慢节奏（描写细腻）
-3. rhetoric_techniques（修辞手法）：列出使用的主要修辞手法（比喻/拟人/排比/夸张等）
-4. emotional_tone（情感基调）：热血/冷峻/幽默/压抑/温暖/悬疑 等
-5. sentence_style（句式偏好）：短句为主/长句为主/长短交替/对话驱动
-6. description_focus（描写重点）：动作/心理/环境/对话 中哪些更突出
-7. style_labels（风格标签）：3-5个最能概括此文风的标签
-8. strengths（写作优势）：这段文字写得好的2-3个方面
-9. weaknesses（可改进处）：可以提升的1-2个方面
-10. writing_rules（写作规则建议）：基于分析结果，生成3-5条具体的写作规则
+2. narrative_pace（叙事节奏）：快节奏/中节奏/慢节奏，并说明节奏变化特点
+3. rhetoric_techniques（修辞手法）：列出3-5种使用的修辞，附具体例句
+4. emotional_tone（情感基调）：主基调+辅基调，如"热血为主，穿插幽默吐槽"
+5. sentence_style（句式偏好）：短句/长句/交替/对话驱动，说明句式特色
+6. description_focus（描写重点）：动作/心理/环境/对话/五感，按占比排序
+7. dialogue_style（对话特色）：对话的功能（推情节/立人物/造冲突），是否有潜台词
+8. conflict_pattern（冲突模式）：冲突如何构建和释放，是否有信息差
+9. hook_techniques（钩子技巧）：章节间如何制造悬念和追读力
+10. character_voice（角色声音）：不同角色的语言是否有区分度
+11. humor_style（幽默方式）：吐槽/反差/冷幽默/戏仿/无（描述具体手法）
+12. world_building_method（世界观呈现）：直接说明/融入对话/行动展示/旁白注释
+13. style_labels（风格标签）：5-8个精准概括此文风的标签
+14. strengths（写作优势）：最突出的3个写作特点
+15. writing_rules（写作规则）：基于以上分析，生成5-8条可执行的写作规则，每条规则要具体到可以直接指导AI写作
 
 输出纯 JSON 格式。
 
@@ -226,46 +231,50 @@ def features_to_rules(features: dict, llm_analysis: dict | None = None) -> tuple
     if dd > 1.5:
         rules.append({"rule": "注重环境和细节描写", "weight": 0.7, "category": "style"})
 
-    # --- Rules from LLM analysis (higher confidence) ---
+    # --- Rules from LLM analysis (higher confidence, 15 dimensions) ---
     if llm_analysis and "llm_error" not in llm_analysis:
-        # Narrative POV
-        pov = llm_analysis.get("narrative_pov", "")
-        if pov:
-            rules.append({"rule": f"叙事视角：{pov}", "weight": 0.85, "category": "structure"})
+        # Map each LLM dimension to a rule
+        dim_map = [
+            ("narrative_pov", "叙事视角", 0.85, "structure"),
+            ("narrative_pace", "叙事节奏", 0.8, "rhythm"),
+            ("emotional_tone", "情感基调", 0.8, "style"),
+            ("sentence_style", "句式偏好", 0.75, "rhythm"),
+            ("description_focus", "描写重点", 0.7, "style"),
+            ("dialogue_style", "对话特色", 0.8, "dialogue"),
+            ("conflict_pattern", "冲突模式", 0.75, "structure"),
+            ("hook_techniques", "钩子技巧", 0.8, "structure"),
+            ("character_voice", "角色声音", 0.75, "dialogue"),
+            ("humor_style", "幽默方式", 0.7, "style"),
+            ("world_building_method", "世界观呈现", 0.7, "structure"),
+        ]
+        for key, label, weight, category in dim_map:
+            val = llm_analysis.get(key, "")
+            if val:
+                text = val if isinstance(val, str) else str(val)
+                if text and text not in ("无", "None", "null", ""):
+                    rules.append({"rule": f"{label}：{text[:100]}", "weight": weight, "category": category})
 
-        # Narrative pace
-        pace = llm_analysis.get("narrative_pace", "")
-        if pace:
-            rules.append({"rule": f"叙事节奏：{pace}", "weight": 0.8, "category": "rhythm"})
-
-        # Rhetoric
+        # Rhetoric (may be list)
         rhetoric = llm_analysis.get("rhetoric_techniques", [])
         if isinstance(rhetoric, list) and rhetoric:
-            rules.append({"rule": f"常用修辞：{'、'.join(rhetoric[:4])}", "weight": 0.7, "category": "style"})
+            # Each rhetoric item may be a string or dict with example
+            parts = []
+            for r in rhetoric[:5]:
+                if isinstance(r, str):
+                    parts.append(r)
+                elif isinstance(r, dict):
+                    parts.append(r.get("name", r.get("technique", str(r))))
+            rules.append({"rule": f"常用修辞：{'、'.join(parts)}", "weight": 0.75, "category": "style"})
         elif isinstance(rhetoric, str) and rhetoric:
-            rules.append({"rule": f"常用修辞：{rhetoric}", "weight": 0.7, "category": "style"})
+            rules.append({"rule": f"常用修辞：{rhetoric}", "weight": 0.75, "category": "style"})
 
-        # Emotional tone
-        tone = llm_analysis.get("emotional_tone", "")
-        if tone:
-            rules.append({"rule": f"情感基调：{tone}", "weight": 0.8, "category": "style"})
-
-        # Sentence style
-        ss = llm_analysis.get("sentence_style", "")
-        if ss:
-            rules.append({"rule": f"句式偏好：{ss}", "weight": 0.75, "category": "rhythm"})
-
-        # Description focus
-        df = llm_analysis.get("description_focus", "")
-        if df:
-            rules.append({"rule": f"描写重点：{df}", "weight": 0.7, "category": "style"})
-
-        # LLM-generated writing rules (highest weight)
+        # LLM-generated writing rules (highest weight, up to 8)
         llm_rules = llm_analysis.get("writing_rules", [])
         if isinstance(llm_rules, list):
-            for r in llm_rules[:5]:
+            for r in llm_rules[:8]:
                 rule_text = r if isinstance(r, str) else r.get("rule", str(r))
-                rules.append({"rule": rule_text, "weight": 0.85, "category": "llm_derived"})
+                if rule_text:
+                    rules.append({"rule": rule_text[:150], "weight": 0.85, "category": "llm_derived"})
 
     # --- Anti-AI rules from markers ---
     anti_ai: list[dict] = []

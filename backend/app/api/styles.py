@@ -207,8 +207,30 @@ async def detect_from_book(
     if not chunks:
         raise HTTPException(status_code=400, detail="该书尚未处理完成，没有可分析的文本")
 
-    # Smart sampling: use Qdrant to find diverse representative chunks,
-    # falling back to even spacing if Qdrant not available
+    # Check vectorization completeness — must be done before extraction
+    try:
+        from qdrant_client import AsyncQdrantClient
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        from app.config import settings
+        qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+        count_result = await qc.count(
+            collection_name="styles",
+            count_filter=Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(book_id)))]),
+        )
+        await qc.close()
+        vectorized = count_result.count
+        total = len(chunks)
+        if vectorized < total * 0.9:  # At least 90% vectorized
+            raise HTTPException(
+                status_code=400,
+                detail=f"向量化未完成（{vectorized}/{total}），请先完成向量化再提取风格"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Vectorization check failed: %s", e)
+
+    # Multi-query Qdrant sampling: use different queries to get diverse representative chunks
     sampled_texts: list[str] = []
     try:
         from qdrant_client import AsyncQdrantClient
@@ -217,25 +239,36 @@ async def detect_from_book(
 
         router = await get_model_router_async()
         qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
-
-        # Query Qdrant for diverse chunks from this book
-        # Use a generic "style analysis" query to find stylistically rich chunks
-        query_vec = await router.embed("精彩的场景描写和对话，展示写作风格特色")
         from qdrant_client.models import Filter, FieldCondition, MatchValue
-        results = await qc.query_points(
-            collection_name="styles",
-            query=query_vec,
-            query_filter=Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(book_id)))]),
-            limit=10,
-        )
+        book_filter = Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(book_id)))])
+
+        # Multiple diverse queries to capture different aspects of style
+        queries = [
+            "精彩的动作场面和战斗描写",
+            "深刻的对话和角色互动",
+            "细腻的心理活动和内心独白",
+            "环境描写和氛围营造",
+            "幽默搞笑的轻松段落",
+        ]
+        seen_ids: set[str] = set()
+        for q in queries:
+            query_vec = await router.embed(q)
+            results = await qc.query_points(
+                collection_name="styles", query=query_vec,
+                query_filter=book_filter, limit=3,
+            )
+            if results.points:
+                for point in results.points:
+                    cid = point.payload.get("chunk_id", "")
+                    if cid not in seen_ids:
+                        seen_ids.add(cid)
         await qc.close()
 
-        if results.points:
+        if seen_ids:
             # Get the actual chunk content from DB by chunk_id
             chunk_map = {str(c.id): c.content for c in chunks}
-            for point in results.points:
-                cid = point.payload.get("chunk_id", "")
-                if cid in chunk_map:
+            for cid in seen_ids:
+                if cid in chunk_map and len(sampled_texts) < 12:
                     sampled_texts.append(chunk_map[cid])
     except Exception as e:
         logger.warning("Qdrant sampling failed, falling back to even spacing: %s", e)
@@ -252,8 +285,8 @@ async def detect_from_book(
     # Statistical analysis on sampled text
     features = detect_style_features(combined_text)
 
-    # LLM deep analysis (3000 char sample for token budget)
-    llm_analysis = await detect_style_with_llm(combined_text[:4000])
+    # LLM deep analysis — send a representative sample (up to 5000 chars)
+    llm_analysis = await detect_style_with_llm(combined_text[:5000])
 
     # Merge into rules
     rules, anti_ai = features_to_rules(features, llm_analysis)
