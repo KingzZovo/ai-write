@@ -668,6 +668,15 @@ function BooksTab() {
                     </button>
                     <button
                       onClick={async () => {
+                        await apiFetch(`/api/knowledge/books/${book.id}/vectorize`, { method: 'POST' })
+                        alert('向量化已开始，后台处理中')
+                      }}
+                      className="px-3 py-1 text-xs bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100"
+                    >
+                      向量化
+                    </button>
+                    <button
+                      onClick={async () => {
                         try {
                           const data = await apiFetch<any>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
                           alert(`已从《${book.title}》提取写法：${data.name}`)
