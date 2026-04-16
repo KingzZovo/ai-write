@@ -128,15 +128,17 @@ class OpenAIProvider(BaseProvider):
 
     async def generate(self, messages, model="gpt-4o",
                        temperature=0.7, max_tokens=4096, **kw) -> GenerationResult:
-        resp = await self.client.chat.completions.create(
+        # Some API proxies only return content via streaming.
+        # Use stream mode and collect chunks for reliability.
+        chunks: list[str] = []
+        stream = await self.client.chat.completions.create(
             model=model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens)
-        text = resp.choices[0].message.content or ""
-        u = resp.usage
-        usage = TokenUsage(u.prompt_tokens if u else 0,
-                           u.completion_tokens if u else 0,
-                           u.total_tokens if u else 0)
-        return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
+            temperature=temperature, max_tokens=max_tokens, stream=True)
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                chunks.append(chunk.choices[0].delta.content)
+        text = "".join(chunks)
+        return GenerationResult(text=text, usage=TokenUsage(), model=model, provider=self.name)
 
     async def generate_stream(self, messages, model="gpt-4o",
                               temperature=0.7, max_tokens=4096, **kw):
