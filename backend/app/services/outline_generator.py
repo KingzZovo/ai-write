@@ -136,8 +136,10 @@ class OutlineGenerator:
         stream: bool = False,
     ) -> dict | AsyncIterator[str]:
         """Generate a book-level outline from user's creative input."""
+        from app.services.prompt_loader import load_prompt
+        system = await load_prompt("outline_book", fallback=BOOK_OUTLINE_SYSTEM)
         messages = [
-            {"role": "system", "content": BOOK_OUTLINE_SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": f"请根据以下创意生成全书大纲：\n\n{user_input}"},
         ]
 

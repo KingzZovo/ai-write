@@ -122,3 +122,100 @@ async def delete_project(
 
     await db.delete(project)
     await db.flush()
+
+
+@router.get("/{project_id}/export")
+async def export_project(
+    project_id: UUID,
+    format: str = "txt",
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a project's chapters as TXT or EPUB."""
+    from fastapi.responses import Response
+    from app.models.project import Volume, Chapter
+
+    project = await db.get(Project, str(project_id))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get all volumes and chapters
+    vol_result = await db.execute(
+        select(Volume).where(Volume.project_id == str(project_id)).order_by(Volume.volume_idx)
+    )
+    volumes = list(vol_result.scalars().all())
+
+    ch_result = await db.execute(
+        select(Chapter).order_by(Chapter.chapter_idx)
+    )
+    all_chapters = list(ch_result.scalars().all())
+
+    # Group chapters by volume
+    vol_ids = {str(v.id) for v in volumes}
+    chapters_by_vol: dict[str, list] = {str(v.id): [] for v in volumes}
+    ungrouped = []
+    for ch in all_chapters:
+        vid = str(ch.volume_id) if ch.volume_id else ""
+        if vid in chapters_by_vol:
+            chapters_by_vol[vid].append(ch)
+        elif vid == "" or vid not in vol_ids:
+            ungrouped.append(ch)
+
+    if format == "txt":
+        lines = [f"《{project.title}》\n\n"]
+        for vol in volumes:
+            lines.append(f"\n{'='*40}\n{vol.title}\n{'='*40}\n\n")
+            for ch in chapters_by_vol.get(str(vol.id), []):
+                lines.append(f"\n{ch.title}\n\n")
+                lines.append((ch.content_text or "") + "\n")
+        for ch in ungrouped:
+            lines.append(f"\n{ch.title}\n\n")
+            lines.append((ch.content_text or "") + "\n")
+
+        content = "".join(lines)
+        return Response(
+            content=content.encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{project.title}.txt"'},
+        )
+
+    elif format == "epub":
+        import io
+        from ebooklib import epub
+
+        book = epub.EpubBook()
+        book.set_identifier(str(project_id))
+        book.set_title(project.title)
+        book.set_language("zh")
+
+        spine = ["nav"]
+        toc = []
+
+        for vol in volumes:
+            for ch in chapters_by_vol.get(str(vol.id), []):
+                c = epub.EpubHtml(
+                    title=ch.title,
+                    file_name=f"ch_{ch.chapter_idx}.xhtml",
+                    lang="zh",
+                )
+                text = (ch.content_text or "").replace("\n", "<br/>")
+                c.content = f"<h2>{ch.title}</h2><p>{text}</p>"
+                book.add_item(c)
+                spine.append(c)
+                toc.append(c)
+
+        book.toc = toc
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+        book.spine = spine
+
+        buf = io.BytesIO()
+        epub.write_epub(buf, book)
+        buf.seek(0)
+
+        return Response(
+            content=buf.read(),
+            media_type="application/epub+zip",
+            headers={"Content-Disposition": f'attachment; filename="{project.title}.epub"'},
+        )
+
+    raise HTTPException(status_code=400, detail="不支持的格式，请使用 txt 或 epub")

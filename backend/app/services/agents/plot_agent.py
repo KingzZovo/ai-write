@@ -56,8 +56,9 @@ class PlotAgent:
         Returns:
             Generated chapter text
         """
-        # Inject plot agent's system instructions
-        messages = self._inject_system(context_messages)
+        # Inject plot agent's system instructions (from registry or fallback)
+        system = await self._load_system_prompt()
+        messages = self._inject_system(context_messages, system)
 
         result = await self.router.generate(
             task_type="generation",
@@ -72,7 +73,8 @@ class PlotAgent:
         max_tokens: int = 4096,
     ) -> AsyncIterator[str]:
         """Generate chapter draft with streaming output."""
-        messages = self._inject_system(context_messages)
+        system = await self._load_system_prompt()
+        messages = self._inject_system(context_messages, system)
 
         async for chunk in self.router.generate_stream(
             task_type="generation",
@@ -81,19 +83,25 @@ class PlotAgent:
         ):
             yield chunk
 
-    def _inject_system(self, messages: list[dict]) -> list[dict]:
+    async def _load_system_prompt(self) -> str:
+        """Load system prompt from registry with fallback."""
+        from app.services.prompt_loader import load_prompt
+        return await load_prompt("generation", fallback=PLOT_AGENT_SYSTEM)
+
+    def _inject_system(self, messages: list[dict], system_override: str = "") -> list[dict]:
         """Prepend plot agent system prompt to existing context."""
+        system = system_override or PLOT_AGENT_SYSTEM
         result = []
         for msg in messages:
             if msg["role"] == "system":
                 result.append({
                     "role": "system",
-                    "content": PLOT_AGENT_SYSTEM + "\n\n" + msg["content"],
+                    "content": system + "\n\n" + msg["content"],
                 })
             else:
                 result.append(msg)
 
         if not any(m["role"] == "system" for m in result):
-            result.insert(0, {"role": "system", "content": PLOT_AGENT_SYSTEM})
+            result.insert(0, {"role": "system", "content": system})
 
         return result

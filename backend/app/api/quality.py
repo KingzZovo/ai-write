@@ -224,3 +224,101 @@ async def check_anti_ai(
         "issues": result.issues,
         "checker_name": result.checker_name,
     }
+
+
+# =========================================================================
+# Genre Rules API
+# =========================================================================
+
+
+@router.get("/genre-rules")
+async def list_genre_rules() -> dict:
+    """List all available genre templates."""
+    from app.services.genre_rules import get_all_genres
+    return {"genres": get_all_genres()}
+
+
+@router.get("/genre-rules/{genre}")
+async def get_genre_rule(genre: str) -> dict:
+    """Get a specific genre template with compiled prompt."""
+    from app.services.genre_rules import get_genre_template, compile_genre_prompt
+    template = get_genre_template(genre)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"题材 '{genre}' 不存在")
+    return {
+        "name": template.name,
+        "label": template.label,
+        "rules": template.rules,
+        "pacing": template.pacing,
+        "taboos": template.taboos,
+        "hooks": template.hooks,
+        "keywords": template.keywords,
+        "compiled_prompt": compile_genre_prompt(genre),
+    }
+
+
+# =========================================================================
+# BVSR (Multi-variant Generation)
+# =========================================================================
+
+class BVSRRequest(BaseModel):
+    prompt: str
+    system_prompt: str = ""
+    count: int = 3
+    auto_score: bool = True
+
+
+@router.post("/bvsr/generate")
+async def bvsr_generate(body: BVSRRequest) -> dict:
+    """Generate multiple variants of the same content and optionally score them."""
+    from app.services.bvsr import generate_variants, score_variants
+
+    variants = await generate_variants(
+        prompt=body.prompt,
+        system_prompt=body.system_prompt,
+        count=body.count,
+    )
+
+    if body.auto_score:
+        variants = await score_variants(variants)
+
+    return {
+        "count": len(variants),
+        "variants": [
+            {"index": v.index, "text": v.text, "score": v.score, "feedback": v.feedback}
+            for v in variants
+        ],
+    }
+
+
+# =========================================================================
+# ConStory Cross-chapter Consistency Check
+# =========================================================================
+
+@router.post("/constory-check/{project_id}")
+async def constory_check(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Run cross-chapter consistency check on a project."""
+    from app.models.project import Volume
+    from app.services.constory_checker import check_cross_chapter_consistency
+
+    vol_result = await db.execute(
+        select(Volume.id).where(Volume.project_id == str(project_id))
+    )
+    vol_ids = [str(v) for v in vol_result.scalars().all()]
+
+    ch_result = await db.execute(
+        select(Chapter)
+        .where(Chapter.volume_id.in_(vol_ids) if vol_ids else Chapter.id.is_(None))
+        .order_by(Chapter.chapter_idx)
+    )
+    chapters = list(ch_result.scalars().all())
+
+    if len(chapters) < 2:
+        return {"message": "至少需要2个章节才能进行一致性检查", "report": None}
+
+    chapter_texts = [(ch.chapter_idx, ch.title, ch.content_text or "") for ch in chapters]
+    report = await check_cross_chapter_consistency(chapter_texts)
+    return {"report": report.to_dict()}
