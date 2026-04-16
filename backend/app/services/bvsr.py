@@ -81,9 +81,9 @@ async def score_variants(variants: list[Variant]) -> list[Variant]:
             continue
         try:
             result = await router.generate(
-                task_type="evaluation",
+                task_type="generation",  # Use generation, not evaluation (different schema)
                 messages=[
-                    {"role": "system", "content": "你是文学评分专家。评估以下文本质量，输出JSON: {\"score\": 0-10, \"feedback\": \"一句话评价\"}"},
+                    {"role": "system", "content": "你是文学评分专家。评估以下文本质量，只输出JSON: {\"score\": 0-10, \"feedback\": \"一句话评价\"}"},
                     {"role": "user", "content": v.text[:2000]},
                 ],
                 max_tokens=100,

@@ -133,12 +133,20 @@ class OpenAIProvider(BaseProvider):
         chunks: list[str] = []
         stream = await self.client.chat.completions.create(
             model=model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens, stream=True)
+            temperature=temperature, max_tokens=max_tokens,
+            stream=True, stream_options={"include_usage": True})
+        usage = TokenUsage()
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 chunks.append(chunk.choices[0].delta.content)
+            if hasattr(chunk, 'usage') and chunk.usage:
+                u = chunk.usage
+                usage = TokenUsage(
+                    getattr(u, 'prompt_tokens', 0) or 0,
+                    getattr(u, 'completion_tokens', 0) or 0,
+                    getattr(u, 'total_tokens', 0) or 0)
         text = "".join(chunks)
-        return GenerationResult(text=text, usage=TokenUsage(), model=model, provider=self.name)
+        return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
     async def generate_stream(self, messages, model="gpt-4o",
                               temperature=0.7, max_tokens=4096, **kw):
