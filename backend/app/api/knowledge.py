@@ -817,7 +817,6 @@ async def search_books(
             )
             sources = result.scalars().all()
 
-            import asyncio as aio
             for source in sources:
                 try:
                     config = engine.parse_source(source.source_json)

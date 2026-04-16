@@ -107,10 +107,10 @@ function SourcesTab() {
     async (source: BookSource) => {
       setTestingId(source.id)
       try {
-        const res = await fetch(source.sourceUrl, { method: 'HEAD', mode: 'no-cors' })
-        setTestResult((prev) => ({ ...prev, [source.id]: 'reachable' }))
+        const data = await apiFetch<{status: string}>(`/api/knowledge/sources/${source.id}/test`, { method: 'POST' })
+        setTestResult((prev) => ({ ...prev, [source.id]: data.status === 'ok' ? '正常' : '失败' }))
       } catch {
-        setTestResult((prev) => ({ ...prev, [source.id]: 'unreachable' }))
+        setTestResult((prev) => ({ ...prev, [source.id]: '失败' }))
       } finally {
         setTestingId(null)
       }
@@ -248,8 +248,8 @@ function SourcesTab() {
                 <tr key={source.id} className={`border-b border-gray-100 last:border-b-0 ${!enabled ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">{source.name}</div>
-                    <div className="text-xs text-gray-400 truncate max-w-[200px]">{source.sourceUrl}</div>
-                    {source.sourceGroup && <div className="text-[10px] text-gray-400">{source.sourceGroup}</div>}
+                    <div className="text-xs text-gray-400 truncate max-w-[200px]">{source.source_url}</div>
+                    {source.source_group && <div className="text-[10px] text-gray-400">{source.source_group}</div>}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-sm font-bold ${scoreColor}`}>{score.toFixed(1)}</span>
@@ -262,8 +262,8 @@ function SourcesTab() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge
-                      ok={enabled && source.lastTestOk === 1}
-                      label={!enabled ? '已停用' : testResult[source.id] || (source.lastTestOk === 1 ? '正常' : '未测试')}
+                      ok={enabled && source.last_test_ok === 1}
+                      label={!enabled ? '已停用' : testResult[source.id] || (source.last_test_ok === 1 ? '正常' : '未测试')}
                     />
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -333,9 +333,10 @@ function BooksTab() {
       formData.append('file', uploadFile)
       formData.append('title', uploadTitle)
       formData.append('author', uploadAuthor)
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${API_BASE}/api/knowledge/upload`, {
+      const token = localStorage.getItem('auth_token') || ''
+      const res = await fetch('/api/knowledge/upload', {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
       })
       if (!res.ok) {
@@ -650,126 +651,6 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
 
 /* ─── Explore Tab ──────────────────────────────────────────── */
 
-function ExploreTab_DISABLED_OLD() {
-  const [sources, setSources] = useState<any[]>([])
-  const [selectedSource, setSelectedSource] = useState('')
-  const [books, setBooks] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(1)
-  const [searchKeyword, setSearchKeyword] = useState('')
-
-  useEffect(() => {
-    // Get top-scored sources for explore
-    apiFetch<any>('/api/knowledge/sources/ranking')
-      .then(data => {
-        const list = Array.isArray(data) ? data : (data.sources || [])
-        // Show top 50 enabled sources
-        setSources(list.filter((s: any) => s.enabled).slice(0, 50))
-      })
-      .catch(() => {
-        // Fallback to regular list
-        apiFetch<any>('/api/knowledge/sources')
-          .then(data => {
-            const list = Array.isArray(data) ? data : (data.sources || [])
-            setSources(Array.isArray(list) ? list.filter((s: any) => s.enabled).slice(0, 50) : [])
-          })
-          .catch(() => {})
-      })
-  }, [])
-
-  const [categories, setCategories] = useState<{index: number; title: string}[]>([])
-  const [categoryIndex, setCategoryIndex] = useState(0)
-
-  const handleExplore = async (sourceId: string, p: number = 1, catIdx: number = 0) => {
-    setLoading(true)
-    setSelectedSource(sourceId)
-    setPage(p)
-    setCategoryIndex(catIdx)
-    try {
-      const data = await apiFetch<{ books: any[]; categories?: any[] }>(`/api/knowledge/sources/${sourceId}/explore`, {
-        method: 'POST',
-        body: JSON.stringify({ source_id: sourceId, page: p, category_index: catIdx }),
-      })
-      setBooks(data.books || [])
-      if (data.categories) setCategories(data.categories)
-    } catch { setBooks([]) }
-    finally { setLoading(false) }
-  }
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">排行榜浏览</h2>
-
-      {sources.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-          <p className="text-sm text-gray-500">请先在"书源管理"中导入书源</p>
-        </div>
-      ) : (
-        <>
-          <div className="flex gap-2 overflow-x-auto">
-            {sources.map((s: any) => (
-              <button key={s.id} onClick={() => handleExplore(s.id)}
-                className={`px-3 py-1.5 text-xs rounded-full whitespace-nowrap ${
-                  selectedSource === s.id ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
-                }`}>
-                {s.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Category tabs */}
-          {categories.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
-              {categories.map((cat) => (
-                <button key={cat.index}
-                  onClick={() => handleExplore(selectedSource, 1, cat.index)}
-                  className={`px-2.5 py-1 text-xs rounded whitespace-nowrap ${
-                    categoryIndex === cat.index ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                  {cat.title}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {loading ? (
-            <p className="text-sm text-gray-400">加载排行榜...</p>
-          ) : books.length > 0 ? (
-            <div className="space-y-2">
-              {books.map((book: any, idx: number) => (
-                <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium text-gray-900 text-sm">{book.title}</h3>
-                      <p className="text-xs text-gray-500">{book.author}</p>
-                    </div>
-                    {book.kind && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded">{book.kind}</span>}
-                  </div>
-                  {book.intro && <p className="text-xs text-gray-600 mt-1 line-clamp-2">{book.intro}</p>}
-                  <div className="flex gap-2 mt-2">
-                    {book.word_count && <span className="text-[10px] text-gray-400">{book.word_count}</span>}
-                    {book.last_chapter && <span className="text-[10px] text-gray-400">最新: {book.last_chapter}</span>}
-                  </div>
-                </div>
-              ))}
-              <div className="flex gap-2 justify-center">
-                {page > 1 && <button onClick={() => handleExplore(selectedSource, page - 1, categoryIndex)}
-                  className="px-3 py-1.5 text-xs bg-gray-200 rounded">上一页</button>}
-                <span className="text-xs text-gray-400 py-1.5">第 {page} 页</span>
-                <button onClick={() => handleExplore(selectedSource, page + 1, categoryIndex)}
-                  className="px-3 py-1.5 text-xs bg-gray-200 rounded">下一页</button>
-              </div>
-            </div>
-          ) : selectedSource ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-              <p className="text-sm text-gray-500">该书源暂无排行榜数据，或书源不支持 explore 规则</p>
-            </div>
-          ) : null}
-        </>
-      )}
-    </div>
-  )
-}
 
 function ExploreTab() {
   const [mode, setMode] = useState<'ranking' | 'search'>('ranking')
