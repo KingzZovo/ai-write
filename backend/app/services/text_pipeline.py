@@ -143,6 +143,44 @@ def parse_epub(file_data: bytes) -> ParseResult:
     )
 
 
+def parse_azw3(file_data: bytes) -> ParseResult:
+    """Parse an AZW3 (Kindle KF8) file into chapters.
+
+    Uses the `mobi` library to unpack AZW3 → HTML/EPUB, then parses the result.
+    """
+    import mobi
+    import shutil
+    import tempfile
+    import os
+
+    # Write bytes to a temp file (mobi.extract needs a file path)
+    tmp_input = tempfile.NamedTemporaryFile(suffix=".azw3", delete=False)
+    try:
+        tmp_input.write(file_data)
+        tmp_input.close()
+
+        tempdir, filepath = mobi.extract(tmp_input.name)
+
+        try:
+            if not filepath or not os.path.exists(filepath):
+                raise ValueError("AZW3 解析失败：无法提取内容文件")
+
+            ext = Path(filepath).suffix.lower()
+
+            if ext == ".epub":
+                with open(filepath, "rb") as f:
+                    return parse_epub(f.read())
+            else:
+                # HTML or other text format
+                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    html_content = f.read()
+                return parse_html(html_content)
+        finally:
+            shutil.rmtree(tempdir, ignore_errors=True)
+    finally:
+        os.unlink(tmp_input.name)
+
+
 # =============================================================================
 # Chapter Detection
 # =============================================================================
@@ -321,6 +359,10 @@ def process_text_file(
         if isinstance(content, str):
             content = content.encode("utf-8")
         result = parse_epub(content)
+    elif ext == ".azw3":
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        result = parse_azw3(content)
     elif ext in (".html", ".htm"):
         if isinstance(content, bytes):
             content = content.decode("utf-8", errors="ignore")

@@ -29,5 +29,6 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-# Auto-discover task modules inside the tasks package.
-celery_app.autodiscover_tasks(["app.tasks"])
+# Explicitly import task modules so Celery registers them.
+import app.tasks.knowledge_tasks  # noqa: F401, E402
+import app.tasks.style_tasks  # noqa: F401, E402

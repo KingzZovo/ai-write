@@ -53,6 +53,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Could not verify database tables")
 
+    # Pre-load model router from DB so all services can use it
+    try:
+        from app.services.model_router import get_model_router_async
+        router = await get_model_router_async()
+        logger.info("Model router loaded: %d providers, %d task routes",
+                     len(router.providers), len(router.task_routing))
+    except Exception:
+        logger.warning("Could not pre-load model router")
+
     yield
 
     # Shutdown

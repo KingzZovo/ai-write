@@ -350,6 +350,11 @@ async def get_model_router_async() -> ModelRouter:
 
 
 def get_model_router() -> ModelRouter:
+    """Get the model router singleton.
+
+    DB config is pre-loaded at app startup via lifespan handler.
+    Falls back to .env config if DB not loaded yet.
+    """
     global _router
     if _router is None:
         _router = ModelRouter()

@@ -26,6 +26,168 @@ def _run_async(coro):
         loop.close()
 
 
+@celery_app.task(name="tasks.process_uploaded_book")
+def process_uploaded_book(book_id: str, file_path: str, filename: str, user_title: str = "", user_author: str = ""):
+    """Process an uploaded book file: parse → chunk → auto-score."""
+    _run_async(_process_uploaded_book_async(book_id, file_path, filename, user_title, user_author))
+
+
+async def _process_uploaded_book_async(book_id: str, file_path: str, filename: str, user_title: str, user_author: str):
+    import os
+    from app.db.session import async_session_factory
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.text_pipeline import process_text_file
+
+    async with async_session_factory() as db:
+        book = await db.get(ReferenceBook, book_id)
+        if not book:
+            logger.error("Book %s not found", book_id)
+            return
+
+        try:
+            # Stage 1: cleaning
+            book.status = "cleaning"
+            await db.commit()
+
+            with open(file_path, "rb") as f:
+                content = f.read()
+
+            parse_result, blocks = process_text_file(content, filename)
+
+            if parse_result.title and not user_title:
+                book.title = parse_result.title
+            if parse_result.author and not user_author:
+                book.author = parse_result.author
+            book.total_chapters = len(parse_result.chapters)
+            book.total_words = parse_result.total_chars
+
+            # Save text chunks
+            for block in blocks:
+                chunk = TextChunk(
+                    book_id=book.id,
+                    chapter_idx=block.chapter_idx,
+                    block_idx=block.block_idx,
+                    chapter_title=block.chapter_title,
+                    content=block.content,
+                    char_count=block.char_count,
+                    sequence_id=block.sequence_id,
+                )
+                db.add(chunk)
+            await db.commit()
+
+            # Stage 2: auto quality scoring (if model configured)
+            book.status = "extracting"
+            await db.commit()
+
+            try:
+                from app.services.quality_scorer import QualityScorer
+                scorer = QualityScorer()
+
+                # Sample up to 5 blocks
+                sample_blocks = blocks[:5] if len(blocks) <= 5 else [blocks[i] for i in range(0, len(blocks), max(1, len(blocks) // 5))][:5]
+                samples = [b.content for b in sample_blocks]
+
+                score, is_suitable = await scorer.score_and_filter(samples)
+                metadata = book.metadata_json or {}
+                metadata["quality_score"] = score.to_dict()
+                book.metadata_json = metadata
+                if not is_suitable:
+                    book.status = "low_quality"
+                else:
+                    book.status = "ready"
+            except Exception as e:
+                logger.warning("Auto-scoring skipped for %s: %s", book.title, e)
+                book.status = "ready"
+
+            await db.commit()
+            logger.info("Book processed: %s — %d chapters, %d chars", book.title, book.total_chapters, book.total_words)
+
+        except Exception as e:
+            book.status = "error"
+            book.error_message = str(e)[:500]
+            await db.commit()
+            logger.exception("Failed to process book %s", book_id)
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(file_path)
+            except OSError:
+                pass
+
+
+@celery_app.task(name="tasks.batch_test_sources")
+def batch_test_sources_task(source_ids: list[str]):
+    """Batch test book sources for connectivity in background."""
+    _run_async(_batch_test_async(source_ids))
+
+
+async def _batch_test_async(source_ids: list[str]):
+    import httpx
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.db.session import async_session_factory
+    from app.models.project import BookSource
+
+    client = httpx.AsyncClient(
+        timeout=6,
+        follow_redirects=True,
+        verify=False,
+        headers={"User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/107.0 Mobile Safari/537.36"},
+        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+    )
+
+    ok_count = 0
+    fail_count = 0
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(BookSource).where(BookSource.id.in_(source_ids))
+        )
+        sources = list(result.scalars().all())
+
+        async def test_one(source: BookSource):
+            sj = source.source_json or {}
+            base = sj.get("bookSourceUrl", "")
+            if not base:
+                return False
+            try:
+                resp = await client.get(base)
+                reachable = resp.status_code < 500
+                source.last_test_ok = 1 if reachable else 0
+                source.last_test_at = datetime.now(timezone.utc)
+                if reachable:
+                    source.success_count = (source.success_count or 0) + 1
+                    source.consecutive_fails = 0
+                    source.score = min(10.0, (source.score or 5.0) + 0.3)
+                else:
+                    source.fail_count = (source.fail_count or 0) + 1
+                    source.consecutive_fails = (source.consecutive_fails or 0) + 1
+                    source.score = max(0.0, (source.score or 5.0) - 0.5)
+                return reachable
+            except Exception:
+                source.last_test_ok = 0
+                source.last_test_at = datetime.now(timezone.utc)
+                source.fail_count = (source.fail_count or 0) + 1
+                source.consecutive_fails = (source.consecutive_fails or 0) + 1
+                source.score = max(0.0, (source.score or 5.0) - 1.0)
+                return False
+
+        batch_size = 30
+        for i in range(0, len(sources), batch_size):
+            batch = sources[i:i + batch_size]
+            results = await asyncio.gather(*[test_one(s) for s in batch], return_exceptions=True)
+            for r in results:
+                if r is True:
+                    ok_count += 1
+                else:
+                    fail_count += 1
+            await db.commit()
+            logger.info("Batch test progress: %d/%d (ok=%d, fail=%d)", i + len(batch), len(sources), ok_count, fail_count)
+
+    await client.aclose()
+    logger.info("Batch test complete: %d total, %d ok, %d failed", len(sources), ok_count, fail_count)
+
+
 @celery_app.task(bind=True, name="tasks.crawl_book", max_retries=3)
 def crawl_book(self, task_id: str):
     """

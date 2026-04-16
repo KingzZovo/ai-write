@@ -15,6 +15,8 @@ interface Endpoint {
   api_key_masked: string
   default_model: string
   enabled: number
+  last_test_ok: number
+  last_test_latency: number | null
   created_at: string
 }
 
@@ -146,7 +148,20 @@ function EndpointsSection({
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
-  const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>(() => {
+    // Initialize from persisted endpoint data
+    const init: Record<string, TestResult> = {}
+    for (const ep of endpoints) {
+      if (ep.last_test_latency != null) {
+        init[ep.id] = {
+          success: ep.last_test_ok === 1,
+          message: ep.last_test_ok === 1 ? `正常 ${ep.last_test_latency}ms` : '上次测试失败',
+          latency_ms: ep.last_test_latency,
+        }
+      }
+    }
+    return init
+  })
 
   const resetForm = useCallback(() => {
     setFormData({ name: '', provider_type: 'anthropic', base_url: '', api_key: '', default_model: '' })

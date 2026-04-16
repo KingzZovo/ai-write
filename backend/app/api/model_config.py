@@ -72,6 +72,8 @@ class EndpointResponse(BaseModel):
     api_key_masked: str
     default_model: str
     enabled: int
+    last_test_ok: int
+    last_test_latency: float | None
     created_at: Any
 
     @classmethod
@@ -84,6 +86,8 @@ class EndpointResponse(BaseModel):
             api_key_masked=_mask_key(ep.api_key or ""),
             default_model=ep.default_model,
             enabled=ep.enabled,
+            last_test_ok=getattr(ep, "last_test_ok", 0) or 0,
+            last_test_latency=getattr(ep, "last_test_latency", None),
             created_at=ep.created_at,
         )
 
@@ -279,10 +283,16 @@ async def test_endpoint(
             )
 
         elapsed = (time.monotonic() - start) * 1000
+        endpoint.last_test_ok = 1
+        endpoint.last_test_latency = round(elapsed, 1)
+        await db.flush()
         return TestResult(success=True, message="Connection successful", latency_ms=round(elapsed, 1))
 
     except Exception as e:
         elapsed = (time.monotonic() - start) * 1000
+        endpoint.last_test_ok = 0
+        endpoint.last_test_latency = round(elapsed, 1)
+        await db.flush()
         return TestResult(
             success=False,
             message=f"Connection failed: {str(e)}",

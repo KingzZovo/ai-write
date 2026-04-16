@@ -257,6 +257,7 @@ class BookSourceEngine:
         self.client = httpx.AsyncClient(
             timeout=30,
             follow_redirects=True,
+            verify=False,  # Many book sources have expired/self-signed certs
             headers={
                 "User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/107.0 Mobile Safari/537.36",
             },
@@ -297,11 +298,11 @@ class BookSourceEngine:
         page: int = 1,
     ) -> list[BookInfo]:
         """Search for books using the source's search rules."""
-        url = self._render_url(config.search_url, config.source_url, key=keyword, page=page)
-        if not url:
+        parsed = self._parse_url_template(config.search_url, config.source_url, key=keyword, page=page)
+        if not parsed["url"]:
             return []
 
-        html = await self._fetch(url, config)
+        html = await self._fetch_request(parsed, config)
         if not html:
             return []
 
@@ -356,12 +357,12 @@ class BookSourceEngine:
 
         idx = min(category_index, len(categories) - 1)
         raw_url = categories[idx]["url"]
-        url = self._render_url(raw_url, config.source_url, page=page)
+        parsed = self._parse_url_template(raw_url, config.source_url, page=page)
 
-        if not url:
+        if not parsed["url"]:
             return []
 
-        html = await self._fetch(url, config)
+        html = await self._fetch_request(parsed, config)
         if not html:
             return []
 
@@ -472,46 +473,115 @@ class BookSourceEngine:
     # Internal helpers
     # =========================================================================
 
-    def _render_url(
+    def _parse_url_template(
         self,
         url_template: str,
         base_url: str,
         key: str = "",
         page: int = 1,
-    ) -> str:
-        """Render a legado URL template with variables."""
+    ) -> dict:
+        """Parse a legado URL template into url + method + body + charset.
+
+        Legado formats:
+          - Simple: "https://site.com/search?q={{key}}"
+          - With config: '/search,{"method":"POST","body":"kw={{key}}","charset":"gbk"}'
+          - @js: JavaScript (not supported, skip)
+        """
+        result: dict[str, Any] = {"url": "", "method": "GET", "body": "", "charset": "", "headers": {}}
         if not url_template:
+            return result
+
+        template = url_template.strip()
+
+        # Skip @js: templates
+        if template.startswith("@js:"):
+            return result
+
+        # Split URL from config JSON — find the first '{' after the URL part
+        url_part = template
+        config_json: dict = {}
+
+        # Look for JSON config: url,{...} or url\n{...}
+        for sep in [",{", "\n{"]:
+            idx = template.find(sep)
+            if idx > 0:
+                url_part = template[:idx].strip()
+                json_str = template[idx + 1:] if sep == ",{" else template[idx + 1:]
+                try:
+                    config_json = json.loads("{" + json_str if not json_str.startswith("{") else json_str)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                break
+
+        # Replace template variables in URL
+        url_part = url_part.replace("{{key}}", quote_plus(key))
+        url_part = url_part.replace("{{page}}", str(page))
+        url_part = url_part.replace("{{Page}}", str(page))
+        url_part = url_part.replace("searchKey", quote_plus(key))
+        url_part = url_part.replace("searchPage", str(page))
+
+        if not url_part.startswith("http"):
+            url_part = urljoin(base_url, url_part)
+
+        result["url"] = url_part
+        result["method"] = config_json.get("method", "GET").upper()
+        result["charset"] = config_json.get("charset", "")
+
+        # Replace template variables in body
+        body = config_json.get("body", "")
+        if body:
+            body = body.replace("{{key}}", key)  # Don't URL-encode body values
+            body = body.replace("{{page}}", str(page))
+            body = body.replace("searchKey", key)
+            body = body.replace("searchPage", str(page))
+        result["body"] = body
+
+        if config_json.get("headers"):
+            try:
+                if isinstance(config_json["headers"], str):
+                    result["headers"] = json.loads(config_json["headers"])
+                else:
+                    result["headers"] = config_json["headers"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        return result
+
+    async def _fetch_request(self, parsed: dict, config: BookSourceConfig) -> str:
+        """Fetch URL content using parsed request config (supports GET and POST)."""
+        url = parsed["url"]
+        if not url:
             return ""
 
-        # Handle POST body (format: url,{"method":"POST","body":"..."})
-        url = url_template.split(",")[0].strip()
-
-        # Replace template variables
-        url = url.replace("{{key}}", quote_plus(key))
-        url = url.replace("{{page}}", str(page))
-        url = url.replace("{{Page}}", str(page))
-        url = url.replace("searchKey", quote_plus(key))
-        url = url.replace("searchPage", str(page))
-
-        if not url.startswith("http"):
-            url = urljoin(base_url, url)
-
-        return url
-
-    async def _fetch(self, url: str, config: BookSourceConfig) -> str:
-        """Fetch URL content with configured headers and charset."""
         try:
             headers = dict(config.header) if config.header else {}
-            response = await self.client.get(url, headers=headers)
+            headers.update(parsed.get("headers", {}))
+            charset = parsed.get("charset") or config.charset or "utf-8"
+
+            if parsed["method"] == "POST" and parsed.get("body"):
+                # Set Content-Type for form data if not already set
+                if "Content-Type" not in headers and "content-type" not in headers:
+                    headers["Content-Type"] = "application/x-www-form-urlencoded"
+                response = await self.client.post(
+                    url,
+                    headers=headers,
+                    content=parsed["body"].encode(charset, errors="ignore"),
+                )
+            else:
+                response = await self.client.get(url, headers=headers)
+
             response.raise_for_status()
 
-            # Handle charset
-            if config.charset and config.charset.lower() != "utf-8":
-                return response.content.decode(config.charset, errors="ignore")
+            if charset.lower() != "utf-8":
+                return response.content.decode(charset, errors="ignore")
             return response.text
         except Exception as e:
             logger.warning("Failed to fetch %s: %s", url, e)
             return ""
+
+    async def _fetch(self, url: str, config: BookSourceConfig) -> str:
+        """Simple GET fetch for plain URLs."""
+        return await self._fetch_request({"url": url, "method": "GET", "body": "", "charset": "", "headers": {}}, config)
 
     def _parse_book_list(
         self,

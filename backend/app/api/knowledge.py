@@ -68,6 +68,12 @@ class CrawlTaskCreate(BaseModel):
     author: str = ""
 
 
+class SmartCrawlRequest(BaseModel):
+    """Search for a book by name, find it in book sources, and start crawling."""
+    keyword: str
+    max_sources: int = 20
+
+
 class CrawlTaskResponse(BaseModel):
     id: UUID
     book_id: UUID
@@ -273,6 +279,111 @@ async def toggle_source(
     await db.flush()
     await db.refresh(source)
     return BookSourceResponse.model_validate(source)
+
+
+class BatchDeleteRequest(BaseModel):
+    source_ids: list[str]
+
+
+class BatchTestRequest(BaseModel):
+    source_ids: list[str] | None = None  # None = test all enabled
+    max_sources: int = 0  # 0 = no limit
+
+
+@router.post("/sources/batch-delete", status_code=200)
+async def batch_delete_sources(
+    body: BatchDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete multiple book sources at once."""
+    if not body.source_ids:
+        return {"deleted": 0}
+
+    result = await db.execute(
+        select(BookSource).where(BookSource.id.in_(body.source_ids))
+    )
+    sources = list(result.scalars().all())
+    for s in sources:
+        await db.delete(s)
+    await db.flush()
+    return {"deleted": len(sources)}
+
+
+@router.post("/sources/batch-test")
+async def batch_test_sources(
+    body: BatchTestRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Start a batch test as a background task. Returns immediately with task status."""
+    from app.tasks.knowledge_tasks import batch_test_sources_task
+
+    if body.source_ids:
+        result = await db.execute(
+            select(BookSource).where(BookSource.id.in_(body.source_ids))
+        )
+    else:
+        query = select(BookSource).where(BookSource.enabled == 1)
+        if body.max_sources > 0:
+            query = query.limit(body.max_sources)
+        result = await db.execute(query)
+    source_ids = [str(s.id) for s in result.scalars().all()]
+
+    if not source_ids:
+        return {"status": "done", "total": 0, "ok": 0, "failed": 0}
+
+    # Launch Celery background task
+    batch_test_sources_task.delay(source_ids)
+    return {"status": "started", "total": len(source_ids), "message": f"正在后台测试 {len(source_ids)} 个书源..."}
+
+
+@router.get("/sources/test-progress")
+async def get_test_progress(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get current batch test progress from DB."""
+    total = await db.scalar(select(func.count(BookSource.id)).where(BookSource.enabled == 1))
+    tested = await db.scalar(select(func.count(BookSource.id)).where(BookSource.last_test_at.isnot(None)))
+    ok = await db.scalar(select(func.count(BookSource.id)).where(BookSource.last_test_ok == 1))
+    failed = await db.scalar(select(func.count(BookSource.id)).where(
+        BookSource.last_test_ok == 0, BookSource.last_test_at.isnot(None)
+    ))
+    return {"total": total or 0, "tested": tested or 0, "ok": ok or 0, "failed": failed or 0}
+
+
+@router.post("/sources/batch-disable-failed")
+async def batch_disable_failed(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Disable all sources that have consecutive_fails >= 3."""
+    result = await db.execute(
+        select(BookSource).where(
+            BookSource.enabled == 1,
+            BookSource.consecutive_fails >= 3,
+        )
+    )
+    sources = list(result.scalars().all())
+    for s in sources:
+        s.enabled = 0
+    await db.flush()
+    return {"disabled": len(sources)}
+
+
+@router.post("/sources/delete-all-failed")
+async def delete_all_failed(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete all sources that failed testing (last_test_ok == 0 and have been tested)."""
+    result = await db.execute(
+        select(BookSource).where(
+            BookSource.last_test_ok == 0,
+            BookSource.last_test_at.isnot(None),
+        )
+    )
+    sources = list(result.scalars().all())
+    for s in sources:
+        await db.delete(s)
+    await db.flush()
+    return {"deleted": len(sources)}
 
 
 @router.post("/sources/{source_id}/report-result")
@@ -487,9 +598,18 @@ async def upload_file(
     author: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ) -> ReferenceBookResponse:
-    """Upload a TXT/EPUB/HTML file for style learning."""
+    """Upload a file for style learning. Processing runs in background."""
+    import os, tempfile
+
     content = await file.read()
     filename = file.filename or "unknown.txt"
+
+    # Save file to temp location for background processing
+    upload_dir = "/tmp/ai-write-uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    tmp_path = os.path.join(upload_dir, f"{uuid.uuid4().hex}_{filename}")
+    with open(tmp_path, "wb") as f:
+        f.write(content)
 
     # Create reference book record
     book = ReferenceBook(
@@ -497,46 +617,15 @@ async def upload_file(
         author=author,
         source=f"upload_{filename.rsplit('.', 1)[-1].lower()}",
         source_detail=filename,
-        status="cleaning",
+        status="pending",
     )
     db.add(book)
     await db.flush()
     await db.refresh(book)
 
-    # Process text
-    from app.services.text_pipeline import process_text_file
-    try:
-        parse_result, blocks = process_text_file(content, filename)
-
-        if parse_result.title and not title:
-            book.title = parse_result.title
-        if parse_result.author and not author:
-            book.author = parse_result.author
-        book.total_chapters = len(parse_result.chapters)
-        book.total_words = parse_result.total_chars
-
-        # Save text chunks
-        for block in blocks:
-            chunk = TextChunk(
-                book_id=book.id,
-                chapter_idx=block.chapter_idx,
-                block_idx=block.block_idx,
-                chapter_title=block.chapter_title,
-                content=block.content,
-                char_count=block.char_count,
-                sequence_id=block.sequence_id,
-            )
-            db.add(chunk)
-
-        book.status = "ready"
-        await db.flush()
-        await db.refresh(book)
-
-    except Exception as e:
-        book.status = "error"
-        book.error_message = str(e)
-        await db.flush()
-        logger.exception("Failed to process uploaded file: %s", filename)
+    # Queue background processing
+    from app.tasks.knowledge_tasks import process_uploaded_book
+    process_uploaded_book.delay(str(book.id), tmp_path, filename, title, author)
 
     return ReferenceBookResponse.model_validate(book)
 
@@ -584,11 +673,83 @@ async def create_crawl_task(
     await db.flush()
     await db.refresh(task)
 
-    # TODO: Queue Celery crawl task
-    # from app.tasks.crawl import crawl_book
-    # crawl_book.delay(str(task.id))
+    # Queue Celery crawl task
+    from app.tasks.knowledge_tasks import crawl_book
+    crawl_book.delay(str(task.id))
 
     return CrawlTaskResponse.model_validate(task)
+
+
+@router.post("/crawl-tasks/smart", status_code=201)
+async def smart_crawl(
+    body: SmartCrawlRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Search for a book by name across enabled sources, then create a crawl task.
+
+    Automatically:
+    1. Searches top enabled sources for the book
+    2. Picks the first match with a valid book_url
+    3. Creates a crawl task for it
+    """
+    from app.services.book_source_engine import BookSourceEngine
+    import asyncio
+
+    if not body.keyword.strip():
+        raise HTTPException(status_code=400, detail="请输入书名")
+
+    result = await db.execute(
+        select(BookSource)
+        .where(BookSource.enabled == 1)
+        .order_by(BookSource.score.desc())
+        .limit(body.max_sources)
+    )
+    sources = list(result.scalars().all())
+    if not sources:
+        raise HTTPException(status_code=400, detail="没有可用的书源，请先导入并测试书源")
+
+    engine = BookSourceEngine()
+    found_books: list[dict] = []
+
+    # Search concurrently across sources
+    async def search_source(source: BookSource) -> list[dict]:
+        config = engine.parse_source(source.source_json)
+        if not config.search_url or config.search_url.strip().startswith("@js:"):
+            return []
+        try:
+            results = await engine.search(config, body.keyword)
+            return [
+                {
+                    "title": b.title, "author": b.author, "book_url": b.book_url,
+                    "intro": b.intro, "kind": b.kind,
+                    "source_id": str(source.id), "source_name": source.name,
+                }
+                for b in results if b.book_url
+            ]
+        except Exception:
+            return []
+
+    batch_size = 10
+    for i in range(0, len(sources), batch_size):
+        batch = sources[i:i + batch_size]
+        batch_results = await asyncio.gather(*[search_source(s) for s in batch])
+        for books in batch_results:
+            found_books.extend(books)
+        # Stop early if we found enough
+        if len(found_books) >= 5:
+            break
+
+    await engine.close()
+
+    if not found_books:
+        return {"status": "not_found", "message": f"未在书源中找到 \"{body.keyword}\"，请确认书源可用", "books": []}
+
+    # Return found books for user to choose, don't auto-crawl
+    return {
+        "status": "found",
+        "message": f"找到 {len(found_books)} 个结果",
+        "books": found_books[:20],
+    }
 
 
 @router.post("/crawl-tasks/{task_id}/pause")

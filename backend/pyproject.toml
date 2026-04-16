@@ -28,6 +28,7 @@ dependencies = [
     "dukpy",
     "numpy",
     "PyJWT",
+    "mobi",
 ]
 
 [build-system]
