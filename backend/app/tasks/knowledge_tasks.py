@@ -26,6 +26,95 @@ def _run_async(coro):
         loop.close()
 
 
+@celery_app.task(name="tasks.run_pipeline_generation")
+def run_pipeline_generation(pipeline_id: str):
+    """Execute pipeline generation: iterate chapters, generate, review."""
+    _run_async(_run_pipeline_async(pipeline_id))
+
+
+async def _run_pipeline_async(pipeline_id: str):
+    from sqlalchemy import select
+    from app.db.session import async_session_factory
+    from app.models.pipeline import PipelineRun, PipelineChapterStatus
+    from app.models.project import Chapter
+    from app.services.model_router import get_model_router_async
+    from datetime import datetime, timezone
+    import asyncio as aio
+
+    async with async_session_factory() as db:
+        pipeline = await db.get(PipelineRun, pipeline_id)
+        if not pipeline or pipeline.state not in ("generating", "planning"):
+            return
+
+        if pipeline.state == "planning":
+            pipeline.state = "generating"
+            pipeline.started_at = datetime.now(timezone.utc)
+            await db.commit()
+
+        router = await get_model_router_async()
+
+        # Get pending chapters
+        result = await db.execute(
+            select(PipelineChapterStatus)
+            .where(
+                PipelineChapterStatus.pipeline_id == pipeline.id,
+                PipelineChapterStatus.state == "pending",
+            )
+            .order_by(PipelineChapterStatus.chapter_idx)
+        )
+        pending = list(result.scalars().all())
+
+        for cs in pending:
+            if pipeline.state == "paused":
+                break
+
+            chapter = await db.get(Chapter, str(cs.chapter_id))
+            if not chapter:
+                cs.state = "failed"
+                cs.error_message = "章节不存在"
+                await db.commit()
+                continue
+
+            cs.state = "generating"
+            cs.started_at = datetime.now(timezone.utc)
+            pipeline.current_chapter_idx = cs.chapter_idx
+            await db.commit()
+
+            try:
+                gen_result = await router.generate(
+                    task_type="generation",
+                    messages=[
+                        {"role": "system", "content": "你是一位专业的小说内容生成引擎。根据章节标题和大纲生成正文。每章至少3000字。"},
+                        {"role": "user", "content": f"章节标题：{chapter.title}\n大纲：{chapter.outline_json or '无'}"},
+                    ],
+                    max_tokens=8192,
+                )
+
+                chapter.content_text = gen_result.text
+                chapter.word_count = len(gen_result.text)
+                chapter.status = "completed"
+                cs.state = "completed"
+                cs.word_count = len(gen_result.text)
+                cs.completed_at = datetime.now(timezone.utc)
+                pipeline.completed_chapters = (pipeline.completed_chapters or 0) + 1
+
+            except Exception as e:
+                cs.state = "failed"
+                cs.error_message = str(e)[:200]
+                logger.warning("Pipeline chapter %d failed: %s", cs.chapter_idx, e)
+
+            await db.commit()
+            await aio.sleep(1)  # Rate limit
+
+        # Advance pipeline state
+        from app.services.pipeline_service import advance_pipeline
+        await advance_pipeline(db, pipeline_id)
+        await db.commit()
+
+        logger.info("Pipeline %s state: %s (%d/%d chapters)",
+                     pipeline_id, pipeline.state, pipeline.completed_chapters, pipeline.total_chapters)
+
+
 @celery_app.task(name="tasks.process_uploaded_book")
 def process_uploaded_book(book_id: str, file_path: str, filename: str, user_title: str = "", user_author: str = ""):
     """Process an uploaded book file: parse → chunk → auto-score."""

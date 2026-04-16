@@ -5,6 +5,7 @@ via a single import of this package.
 """
 
 from app.db.session import Base
+from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
 from app.models.project import (
     BookSource,
@@ -48,4 +49,6 @@ __all__ = [
     "VolumeSummary",
     "WorldRule",
     "PromptAsset",
+    "PipelineRun",
+    "PipelineChapterStatus",
 ]
