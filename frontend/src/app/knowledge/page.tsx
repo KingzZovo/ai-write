@@ -772,12 +772,30 @@ function ExploreTab_DISABLED_OLD() {
 }
 
 function ExploreTab() {
-  const [mode, setMode] = useState<'ranking' | 'source'>('ranking')
+  const [mode, setMode] = useState<'ranking' | 'search'>('ranking')
   const [rankingSource, setRankingSource] = useState('quark_male_hot')
   const [rankingCategory, setRankingCategory] = useState('全部')
   const [books, setBooks] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+
+  const handleSearch = async () => {
+    if (!searchKeyword.trim()) return
+    setSearching(true)
+    setError('')
+    setMode('search')
+    try {
+      const data = await apiFetch<any>('/api/knowledge/search', {
+        method: 'POST',
+        body: JSON.stringify({ keyword: searchKeyword }),
+      })
+      setSearchResults(data.books || [])
+    } catch (e) { setError(e instanceof Error ? e.message : '搜索失败') }
+    finally { setSearching(false) }
+  }
 
   const RANKING_SOURCES = [
     { key: 'quark_male_hot', name: '夸克热搜·男频' },
@@ -806,8 +824,55 @@ function ExploreTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">排行榜</h2>
+        <h2 className="text-lg font-semibold text-gray-900">排行榜 & 搜索</h2>
       </div>
+
+      {/* Search bar */}
+      <div className="flex gap-2">
+        <input value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSearch() }}
+          placeholder="搜索小说名称或作者..."
+          className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg" />
+        <button onClick={handleSearch} disabled={searching || !searchKeyword.trim()}
+          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50 shrink-0">
+          {searching ? '搜索中...' : '搜索'}
+        </button>
+      </div>
+
+      {/* Mode tabs */}
+      <div className="flex gap-2">
+        <button onClick={() => setMode('ranking')}
+          className={`px-3 py-1.5 text-xs rounded-full ${mode === 'ranking' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`}>
+          排行榜
+        </button>
+        <button onClick={() => { if (searchResults.length) setMode('search') }}
+          className={`px-3 py-1.5 text-xs rounded-full ${mode === 'search' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`}>
+          搜索结果 {searchResults.length > 0 ? `(${searchResults.length})` : ''}
+        </button>
+      </div>
+
+      {/* Search results */}
+      {mode === 'search' && (
+        <div className="space-y-2">
+          {searchResults.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">暂无搜索结果</p>
+          ) : searchResults.map((book: any, idx: number) => (
+            <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-gray-900 text-sm truncate">{book.title}</h3>
+                  <div className="text-xs text-gray-500">{book.author} <span className="text-gray-300">|</span> {book.source_name}</div>
+                </div>
+                {book.kind && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded shrink-0 ml-2">{book.kind}</span>}
+              </div>
+              {book.intro && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{book.intro}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Ranking section (only when in ranking mode) */}
+      {mode === 'ranking' && <>
 
       {/* Ranking source selector */}
       <div className="flex gap-1.5 overflow-x-auto">
@@ -859,6 +924,8 @@ function ExploreTab() {
           <p className="text-sm text-gray-500">点击上方排行榜分类加载数据</p>
         </div>
       ) : null}
+
+      </>}
     </div>
   )
 }

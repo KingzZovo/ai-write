@@ -712,7 +712,7 @@ async def fetch_ranking(body: RankingRequest) -> dict:
 
         # Fallback: parse text content if no structured cards found
         if not books:
-            text = soup.get_text()
+            text = soup.get_text(separator="\n")
             import re
             # Quark ranking has pattern: title\ncount\nscore\nauthor\ntags\ndesc
             lines = [l.strip() for l in text.split("\n") if l.strip() and len(l.strip()) > 1]
@@ -768,3 +768,74 @@ async def fetch_ranking(body: RankingRequest) -> dict:
     except Exception as e:
         logger.warning("Ranking fetch failed: %s", e)
         return {"source": source["name"], "category": body.category, "books": [], "error": str(e)}
+
+
+# =============================================================================
+# Book Search (search across book sources)
+# =============================================================================
+
+class SearchRequest(BaseModel):
+    keyword: str
+    source_id: str | None = None  # If None, search top sources
+
+
+@router.post("/search")
+async def search_books(
+    body: SearchRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Search for books across book sources."""
+    from app.services.book_source_engine import BookSourceEngine
+
+    if not body.keyword.strip():
+        raise HTTPException(status_code=400, detail="请输入搜索关键词")
+
+    engine = BookSourceEngine()
+    all_books: list[dict] = []
+
+    try:
+        if body.source_id:
+            # Search specific source
+            source = await db.get(BookSource, body.source_id)
+            if not source:
+                raise HTTPException(status_code=404, detail="书源不存在")
+            config = engine.parse_source(source.source_json)
+            results = await engine.search(config, body.keyword)
+            for b in results:
+                all_books.append({
+                    "title": b.title, "author": b.author, "book_url": b.book_url,
+                    "intro": b.intro, "kind": b.kind, "source_name": source.name,
+                    "source_id": str(source.id),
+                })
+        else:
+            # Search top 5 enabled sources by score
+            result = await db.execute(
+                select(BookSource)
+                .where(BookSource.enabled == 1)
+                .order_by(BookSource.score.desc())
+                .limit(5)
+            )
+            sources = result.scalars().all()
+
+            import asyncio as aio
+            for source in sources:
+                try:
+                    config = engine.parse_source(source.source_json)
+                    results = await engine.search(config, body.keyword)
+                    for b in results[:10]:
+                        all_books.append({
+                            "title": b.title, "author": b.author, "book_url": b.book_url,
+                            "intro": b.intro, "kind": b.kind, "source_name": source.name,
+                            "source_id": str(source.id),
+                        })
+                except Exception as e:
+                    logger.warning("Search failed for source %s: %s", source.name, e)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Search error: %s", e)
+    finally:
+        await engine.close()
+
+    return {"keyword": body.keyword, "books": all_books[:50], "total": len(all_books)}
