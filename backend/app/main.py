@@ -43,6 +43,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Qdrant connection failed -- continuing without Qdrant")
 
+    # Auto-create tables if they don't exist (safety net for fresh DB)
+    try:
+        from app.db.session import engine
+        from app.models import Base as _Base
+        async with engine.begin() as conn:
+            await conn.run_sync(_Base.metadata.create_all)
+        logger.info("Database tables verified")
+    except Exception:
+        logger.warning("Could not verify database tables")
+
     yield
 
     # Shutdown
