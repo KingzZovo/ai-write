@@ -3,14 +3,6 @@
 import dynamic from 'next/dynamic'
 import { useEffect, useState } from 'react'
 
-function useIsMobile() {
-  const [mobile, setMobile] = useState(false)
-  useEffect(() => {
-    setMobile(window.innerWidth < 768)
-  }, [])
-  return mobile
-}
-
 const DesktopWorkspace = dynamic(() => import('@/components/workspace/DesktopWorkspace'), {
   ssr: false,
   loading: () => (
@@ -30,6 +22,21 @@ const MobileWorkspace = dynamic(() => import('@/components/workspace/MobileWorks
 })
 
 export default function WorkspacePage() {
-  const isMobile = useIsMobile()
-  return isMobile ? <MobileWorkspace /> : <DesktopWorkspace />
+  const [ready, setReady] = useState(false)
+  const [mobile, setMobile] = useState(false)
+
+  useEffect(() => {
+    setMobile(window.innerWidth < 768)
+    setReady(true)
+  }, [])
+
+  if (!ready) {
+    return (
+      <div className="flex items-center justify-center h-screen pt-12 bg-gray-50">
+        <p className="text-gray-400">加载工作区...</p>
+      </div>
+    )
+  }
+
+  return mobile ? <MobileWorkspace /> : <DesktopWorkspace />
 }

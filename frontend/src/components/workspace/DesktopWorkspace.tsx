@@ -127,6 +127,7 @@ export default function DesktopWorkspace() {
     setChapters,
     addChapters,
     selectChapter,
+    volumes,
     chapters,
     updateChapterContent,
     updateChapterStatus,
