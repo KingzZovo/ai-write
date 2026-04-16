@@ -144,8 +144,9 @@ async def export_project(
     )
     volumes = list(vol_result.scalars().all())
 
+    vol_ids = [str(v.id) for v in volumes]
     ch_result = await db.execute(
-        select(Chapter).order_by(Chapter.chapter_idx)
+        select(Chapter).where(Chapter.volume_id.in_(vol_ids) if vol_ids else Chapter.id.is_(None)).order_by(Chapter.chapter_idx)
     )
     all_chapters = list(ch_result.scalars().all())
 
