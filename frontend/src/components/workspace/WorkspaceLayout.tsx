@@ -6,9 +6,11 @@ interface WorkspaceLayoutProps {
   sidebar: React.ReactNode
   editor: React.ReactNode
   panel: React.ReactNode
+  /** Lightweight panel for mobile — only essential controls */
+  mobilePanel?: React.ReactNode
 }
 
-export function WorkspaceLayout({ sidebar, editor, panel }: WorkspaceLayoutProps) {
+export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel }: WorkspaceLayoutProps) {
   const [mobileTab, setMobileTab] = useState<'sidebar' | 'editor' | 'panel'>('editor')
 
   return (
@@ -36,12 +38,11 @@ export function WorkspaceLayout({ sidebar, editor, panel }: WorkspaceLayoutProps
             <div className="min-h-full">{editor}</div>
           )}
           {mobileTab === 'panel' && (
-            <div className="bg-white min-h-full">{panel}</div>
+            <div className="bg-white min-h-full">{mobilePanel || panel}</div>
           )}
         </div>
 
-        {/* Mobile bottom tab bar */}
-        <div className="flex border-t border-gray-200 bg-white">
+        <div className="flex border-t border-gray-200 bg-white safe-area-bottom">
           {([
             { key: 'sidebar' as const, label: '目录', icon: '📁' },
             { key: 'editor' as const, label: '编辑', icon: '✏️' },
