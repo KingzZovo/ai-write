@@ -599,14 +599,25 @@ function ExploreTab() {
   const [books, setBooks] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
+  const [searchKeyword, setSearchKeyword] = useState('')
 
   useEffect(() => {
-    apiFetch<{ endpoints?: any[]; sources?: any[] } | any>('/api/knowledge/sources')
+    // Get top-scored sources for explore
+    apiFetch<any>('/api/knowledge/sources/ranking')
       .then(data => {
-        const list = Array.isArray(data) ? data : (data.sources || data)
-        setSources(Array.isArray(list) ? list.filter((s: any) => s.enabled) : [])
+        const list = Array.isArray(data) ? data : (data.sources || [])
+        // Show top 50 enabled sources
+        setSources(list.filter((s: any) => s.enabled).slice(0, 50))
       })
-      .catch(() => {})
+      .catch(() => {
+        // Fallback to regular list
+        apiFetch<any>('/api/knowledge/sources')
+          .then(data => {
+            const list = Array.isArray(data) ? data : (data.sources || [])
+            setSources(Array.isArray(list) ? list.filter((s: any) => s.enabled).slice(0, 50) : [])
+          })
+          .catch(() => {})
+      })
   }, [])
 
   const handleExplore = async (sourceId: string, p: number = 1) => {
