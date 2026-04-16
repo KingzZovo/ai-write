@@ -170,35 +170,40 @@ async def _process_uploaded_book_async(book_id: str, file_path: str, filename: s
 
             try:
                 from app.services.qdrant_store import QdrantStore
-                from app.services.feature_extractor import generate_embedding
+                from app.services.model_router import get_model_router_async
                 from qdrant_client import AsyncQdrantClient as _QC
                 from app.config import settings as _s
 
+                # Pre-load model router (with DB config + decrypted keys)
+                router = await get_model_router_async()
+
                 qdrant_client = _QC(host=_s.QDRANT_HOST, port=_s.QDRANT_PORT)
-                if qdrant_client:
-                    store = QdrantStore(qdrant_client)
-                    await store.ensure_collections()
-                    vectorized = 0
-                    for block in blocks:
-                        try:
-                            embedding = await generate_embedding(block.content[:500])
-                            if embedding and any(v != 0 for v in embedding[:10]):
-                                await store.store_style_features(
-                                    book_id=str(book.id),
-                                    chunk_id=f"{block.chapter_idx}_{block.block_idx}",
-                                    sequence_id=block.sequence_id,
-                                    features_dict={"chapter_title": block.chapter_title, "char_count": block.char_count},
-                                    embedding=embedding,
-                                )
-                                vectorized += 1
-                        except Exception:
-                            pass  # Skip individual chunk failures
-                    logger.info("Vectorized %d/%d chunks for %s", vectorized, len(blocks), book.title)
+                store = QdrantStore(qdrant_client)
+                await store.ensure_collections()
+                vectorized = 0
+                for block in blocks:
+                    try:
+                        embedding = await router.embed(block.content[:500])
+                        if embedding and any(v != 0 for v in embedding[:10]):
+                            await store.store_style_features(
+                                book_id=str(book.id),
+                                chunk_id=f"{block.chapter_idx}_{block.block_idx}",
+                                sequence_id=block.sequence_id,
+                                features_dict={"chapter_title": block.chapter_title, "char_count": block.char_count},
+                                embedding=embedding,
+                            )
+                            vectorized += 1
+                    except Exception:
+                        pass
+                await qdrant_client.close()
+                logger.info("Vectorized %d/%d chunks for %s", vectorized, len(blocks), book.title)
             except Exception as e:
                 logger.warning("Vectorization skipped for %s: %s", book.title, e)
 
             # Stage 3: auto quality scoring (if model configured)
             try:
+                from app.services.model_router import get_model_router_async as _gmra
+                await _gmra()  # Ensure router loaded before QualityScorer uses sync version
                 from app.services.quality_scorer import QualityScorer
                 scorer = QualityScorer()
 

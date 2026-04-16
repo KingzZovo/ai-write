@@ -15,18 +15,18 @@ export interface ReferenceBook {
   title: string
   author: string | null
   source: string
-  totalChapters: number
-  totalWords: number
+  total_chapters: number
+  total_words: number
   status: string
-  metadataJson: Record<string, unknown>
+  metadata_json: Record<string, unknown>
 }
 
 export interface CrawlTask {
   id: string
-  bookId: string
-  bookUrl: string
-  totalChapters: number
-  completedChapters: number
+  book_id: string
+  book_url: string
+  total_chapters: number
+  completed_chapters: number
   status: string
 }
 

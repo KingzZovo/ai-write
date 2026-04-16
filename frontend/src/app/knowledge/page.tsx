@@ -583,22 +583,22 @@ function BooksTab() {
             </div>
             <div>
               <span className="text-gray-500">章节数:</span>{' '}
-              <span className="text-gray-900">{detailBook.totalChapters}</span>
+              <span className="text-gray-900">{detailBook.total_chapters}</span>
             </div>
             <div>
               <span className="text-gray-500">字数:</span>{' '}
-              <span className="text-gray-900">{(detailBook.totalWords || 0).toLocaleString()}</span>
+              <span className="text-gray-900">{(detailBook.total_words || 0).toLocaleString()}</span>
             </div>
             <div>
               <span className="text-gray-500">状态:</span>{' '}
               <span className="text-gray-900">{detailBook.status}</span>
             </div>
           </div>
-          {Object.keys(detailBook.metadataJson).length > 0 && (
+          {Object.keys(detailBook.metadata_json).length > 0 && (
             <div>
               <span className="text-sm text-gray-500">元数据:</span>
               <pre className="mt-1 text-xs bg-gray-50 rounded p-2 overflow-x-auto">
-                {JSON.stringify(detailBook.metadataJson, null, 2)}
+                {JSON.stringify(detailBook.metadata_json, null, 2)}
               </pre>
             </div>
           )}
@@ -630,7 +630,7 @@ function BooksTab() {
                   <td className="px-4 py-3 text-gray-500">{book.author || '-'}</td>
                   <td className="px-4 py-3 text-gray-500">{book.source}</td>
                   <td className="px-4 py-3 text-right text-gray-500">
-                    {(book.totalWords || 0).toLocaleString()}
+                    {(book.total_words || 0).toLocaleString()}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge
@@ -648,8 +648,8 @@ function BooksTab() {
                     />
                   </td>
                   <td className="px-4 py-3 text-right text-gray-700">
-                    {(book.metadataJson as any)?.quality_score?.overall != null
-                      ? `${Number((book.metadataJson as any).quality_score.overall).toFixed(1)}`
+                    {(book.metadata_json as any)?.quality_score?.overall != null
+                      ? `${Number((book.metadata_json as any).quality_score.overall).toFixed(1)}`
                       : '-'}
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">
@@ -822,8 +822,8 @@ function CrawlTab() {
 
 function CrawlTaskCard({ task }: { task: CrawlTask }) {
   const progress =
-    task.totalChapters > 0
-      ? Math.round((task.completedChapters / task.totalChapters) * 100)
+    task.total_chapters > 0
+      ? Math.round((task.completed_chapters / task.total_chapters) * 100)
       : 0
 
   return (
@@ -831,7 +831,7 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium text-gray-900 truncate max-w-md">
-            {task.bookUrl}
+            {task.book_url}
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">任务 ID: {task.id}</p>
         </div>
@@ -844,7 +844,7 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
       <div>
         <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
           <span>
-            {task.completedChapters} / {task.totalChapters} 章
+            {task.completed_chapters} / {task.total_chapters} 章
           </span>
           <span>{progress}%</span>
         </div>
