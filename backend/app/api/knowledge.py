@@ -619,3 +619,152 @@ async def resume_crawl_task(
     await db.flush()
     await db.refresh(task)
     return CrawlTaskResponse.model_validate(task)
+
+
+# =============================================================================
+# Built-in Novel Rankings (Quark / Third-party)
+# =============================================================================
+
+RANKING_SOURCES = {
+    "quark_male_hot": {
+        "name": "夸克热搜·男频",
+        "url": "https://vt.quark.cn/blm/novel-rank-627/index?format=html&schema=v2&gender=male&cate=%E5%85%A8%E9%83%A8&rank=rank_hot",
+    },
+    "quark_female_hot": {
+        "name": "夸克热搜·女频",
+        "url": "https://vt.quark.cn/blm/novel-rank-627/index?format=html&schema=v2&gender=female&cate=%E5%85%A8%E9%83%A8&rank=rank_hot",
+    },
+    "quark_male_good": {
+        "name": "夸克好评·男频",
+        "url": "https://vt.quark.cn/blm/novel-rank-627/index?format=html&schema=v2&gender=male&cate=%E5%85%A8%E9%83%A8&rank=rank_good",
+    },
+    "quark_female_good": {
+        "name": "夸克好评·女频",
+        "url": "https://vt.quark.cn/blm/novel-rank-627/index?format=html&schema=v2&gender=female&cate=%E5%85%A8%E9%83%A8&rank=rank_good",
+    },
+}
+
+QUARK_CATEGORIES = ["全部", "都市", "玄幻", "仙侠", "历史", "科幻", "灵异悬疑", "军事"]
+
+
+@router.get("/rankings")
+async def list_rankings() -> dict:
+    """List available built-in ranking sources."""
+    return {
+        "sources": [
+            {"key": k, "name": v["name"]}
+            for k, v in RANKING_SOURCES.items()
+        ],
+        "categories": QUARK_CATEGORIES,
+    }
+
+
+class RankingRequest(BaseModel):
+    source_key: str = "quark_male_hot"
+    category: str = "全部"
+
+
+@router.post("/rankings/fetch")
+async def fetch_ranking(body: RankingRequest) -> dict:
+    """Fetch novels from a built-in ranking source."""
+    import httpx
+    from bs4 import BeautifulSoup
+
+    source = RANKING_SOURCES.get(body.source_key)
+    if not source:
+        raise HTTPException(status_code=400, detail="Unknown ranking source")
+
+    url = source["url"]
+    if body.category != "全部":
+        from urllib.parse import quote
+        url = url.replace("cate=%E5%85%A8%E9%83%A8", f"cate={quote(body.category)}")
+
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/146.0 Mobile Safari/537.36",
+            })
+            resp.raise_for_status()
+            html = resp.text
+
+        soup = BeautifulSoup(html, "lxml")
+
+        # Parse quark ranking page structure
+        books: list[dict] = []
+
+        # Try common novel card patterns
+        for card in soup.select(".novel-item, .book-item, .rank-item, [class*=novel], [class*=book-card]"):
+            title_el = card.select_one(".title, .name, h3, h2, [class*=title]")
+            author_el = card.select_one(".author, [class*=author]")
+            desc_el = card.select_one(".desc, .intro, [class*=desc], [class*=intro]")
+
+            title = title_el.get_text(strip=True) if title_el else ""
+            if not title:
+                continue
+
+            books.append({
+                "title": title,
+                "author": author_el.get_text(strip=True) if author_el else "",
+                "intro": desc_el.get_text(strip=True)[:200] if desc_el else "",
+                "kind": "",
+                "word_count": "",
+            })
+
+        # Fallback: parse text content if no structured cards found
+        if not books:
+            text = soup.get_text()
+            import re
+            # Quark ranking has pattern: title\ncount\nscore\nauthor\ntags\ndesc
+            lines = [l.strip() for l in text.split("\n") if l.strip() and len(l.strip()) > 1]
+
+            # Find book entries by looking for numeric patterns (view counts)
+            i = 0
+            while i < len(lines) - 2:
+                line = lines[i]
+                # Skip navigation/header text
+                if any(skip in line for skip in ["大家都在搜", "小说热搜", "好评榜", "男频", "女频"]):
+                    i += 1
+                    continue
+                if any(cat == line for cat in QUARK_CATEGORIES):
+                    i += 1
+                    continue
+
+                # Check if next line looks like a view count (e.g., "11,905,133")
+                if i + 1 < len(lines) and re.match(r"[\d,]+$", lines[i + 1].replace(",", "")):
+                    book: dict = {"title": line, "author": "", "intro": "", "kind": "", "word_count": lines[i + 1]}
+
+                    # Score might be next
+                    j = i + 2
+                    if j < len(lines) and re.match(r"\d+\.\d+$", lines[j]):
+                        j += 1  # skip score
+
+                    # Author
+                    if j < len(lines) and not re.match(r"[\d,]+$", lines[j].replace(",", "")):
+                        book["author"] = lines[j]
+                        j += 1
+
+                    # Tags/kind
+                    if j < len(lines) and len(lines[j]) < 50:
+                        book["kind"] = lines[j]
+                        j += 1
+
+                    # Intro
+                    if j < len(lines) and len(lines[j]) > 20:
+                        book["intro"] = lines[j][:200]
+                        j += 1
+
+                    books.append(book)
+                    i = j
+                else:
+                    i += 1
+
+        return {
+            "source": source["name"],
+            "category": body.category,
+            "books": books[:50],
+            "total": len(books),
+        }
+
+    except Exception as e:
+        logger.warning("Ranking fetch failed: %s", e)
+        return {"source": source["name"], "category": body.category, "books": [], "error": str(e)}

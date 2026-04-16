@@ -650,7 +650,7 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
 
 /* ─── Explore Tab ──────────────────────────────────────────── */
 
-function ExploreTab() {
+function ExploreTab_DISABLED_OLD() {
   const [sources, setSources] = useState<any[]>([])
   const [selectedSource, setSelectedSource] = useState('')
   const [books, setBooks] = useState<any[]>([])
@@ -767,6 +767,98 @@ function ExploreTab() {
           ) : null}
         </>
       )}
+    </div>
+  )
+}
+
+function ExploreTab() {
+  const [mode, setMode] = useState<'ranking' | 'source'>('ranking')
+  const [rankingSource, setRankingSource] = useState('quark_male_hot')
+  const [rankingCategory, setRankingCategory] = useState('全部')
+  const [books, setBooks] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const RANKING_SOURCES = [
+    { key: 'quark_male_hot', name: '夸克热搜·男频' },
+    { key: 'quark_female_hot', name: '夸克热搜·女频' },
+    { key: 'quark_male_good', name: '夸克好评·男频' },
+    { key: 'quark_female_good', name: '夸克好评·女频' },
+  ]
+  const CATEGORIES = ['全部', '都市', '玄幻', '仙侠', '历史', '科幻', '灵异悬疑', '军事']
+
+  const fetchRanking = async (src = rankingSource, cat = rankingCategory) => {
+    setLoading(true)
+    setError('')
+    setRankingSource(src)
+    setRankingCategory(cat)
+    try {
+      const data = await apiFetch<any>('/api/knowledge/rankings/fetch', {
+        method: 'POST',
+        body: JSON.stringify({ source_key: src, category: cat }),
+      })
+      setBooks(data.books || [])
+      if (data.error) setError(data.error)
+    } catch (e) { setError(e instanceof Error ? e.message : '获取失败') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">排行榜</h2>
+      </div>
+
+      {/* Ranking source selector */}
+      <div className="flex gap-1.5 overflow-x-auto">
+        {RANKING_SOURCES.map(s => (
+          <button key={s.key} onClick={() => fetchRanking(s.key, rankingCategory)}
+            className={`px-3 py-1.5 text-xs rounded-full whitespace-nowrap ${
+              rankingSource === s.key ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+            }`}>{s.name}</button>
+        ))}
+      </div>
+
+      {/* Category filter */}
+      <div className="flex gap-1 overflow-x-auto">
+        {CATEGORIES.map(cat => (
+          <button key={cat} onClick={() => fetchRanking(rankingSource, cat)}
+            className={`px-2.5 py-1 text-xs rounded whitespace-nowrap ${
+              rankingCategory === cat ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+            }`}>{cat}</button>
+        ))}
+      </div>
+
+      {error && <p className="text-xs text-red-500">{error}</p>}
+
+      {loading ? (
+        <p className="text-sm text-gray-400 text-center py-8">加载排行榜...</p>
+      ) : books.length > 0 ? (
+        <div className="space-y-2">
+          {books.map((book: any, idx: number) => (
+            <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 font-mono w-5">{idx + 1}</span>
+                    <h3 className="font-medium text-gray-900 text-sm truncate">{book.title}</h3>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 ml-7">
+                    <span className="text-xs text-gray-500">{book.author}</span>
+                    {book.word_count && <span className="text-[10px] text-gray-400">{book.word_count}</span>}
+                  </div>
+                </div>
+                {book.kind && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded shrink-0">{book.kind}</span>}
+              </div>
+              {book.intro && <p className="text-xs text-gray-500 mt-1.5 ml-7 line-clamp-2">{book.intro}</p>}
+            </div>
+          ))}
+        </div>
+      ) : rankingSource ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">点击上方排行榜分类加载数据</p>
+        </div>
+      ) : null}
     </div>
   )
 }
