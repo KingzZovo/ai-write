@@ -184,6 +184,54 @@ async def bind_style(
     return StyleProfileResponse.model_validate(profile)
 
 
+@router.post("/detect-from-book/{book_id}", response_model=StyleProfileResponse, status_code=201)
+async def detect_from_book(
+    book_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Detect writing style from a reference book in the knowledge base."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.style_detection import detect_style_features, features_to_rules
+
+    book = await db.get(ReferenceBook, str(book_id))
+    if not book:
+        raise HTTPException(status_code=404, detail="参考书不存在")
+
+    # Sample text from the book's chunks
+    result = await db.execute(
+        select(TextChunk)
+        .where(TextChunk.book_id == str(book_id))
+        .order_by(TextChunk.sequence_id)
+    )
+    chunks = list(result.scalars().all())
+    if not chunks:
+        raise HTTPException(status_code=400, detail="该书尚未处理完成，没有可分析的文本")
+
+    # Sample evenly: pick 5-10 chunks spread across the book
+    n = len(chunks)
+    step = max(1, n // 8)
+    sampled = [chunks[i].content for i in range(0, n, step)][:8]
+    combined_text = "\n\n".join(sampled)
+
+    features = detect_style_features(combined_text)
+    rules, anti_ai = features_to_rules(features)
+
+    profile = StyleProfile(
+        name=f"{book.title} 风格",
+        description=f"从参考书《{book.title}》({book.total_words or 0}字) 自动提取的写作风格",
+        source_book=book.title,
+        rules_json=rules,
+        anti_ai_rules=anti_ai,
+        tone_keywords=[w["word"] for w in features.get("top_words", [])[:10]],
+        sample_passages=[s[:500] for s in sampled[:3]],
+        config_json={"detection_features": features, "source_book_id": str(book_id)},
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
 @router.post("/detect", response_model=StyleProfileResponse, status_code=201)
 async def detect_style(
     body: DetectRequest,

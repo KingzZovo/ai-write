@@ -667,6 +667,19 @@ function BooksTab() {
                       {scoringId === book.id ? '评分中...' : '评分'}
                     </button>
                     <button
+                      onClick={async () => {
+                        try {
+                          const data = await apiFetch<any>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
+                          alert(`已从《${book.title}》提取写法：${data.name}`)
+                        } catch (e) {
+                          alert(e instanceof Error ? e.message : '提取失败')
+                        }
+                      }}
+                      className="px-3 py-1 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
+                    >
+                      提取风格
+                    </button>
+                    <button
                       onClick={() => deleteBook(book.id)}
                       className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
                     >
