@@ -38,6 +38,11 @@ class BookSourceResponse(BaseModel):
     source_group: str | None
     enabled: int
     last_test_ok: int
+    score: float
+    success_count: int
+    fail_count: int
+    consecutive_fails: int
+    total_books_fetched: int
 
     model_config = {"from_attributes": True}
 
@@ -218,6 +223,83 @@ async def delete_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
     await db.delete(source)
+
+
+@router.post("/sources/{source_id}/toggle")
+async def toggle_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> BookSourceResponse:
+    """Enable or disable a book source."""
+    source = await db.get(BookSource, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    source.enabled = 0 if source.enabled else 1
+    await db.flush()
+    await db.refresh(source)
+    return BookSourceResponse.model_validate(source)
+
+
+@router.post("/sources/{source_id}/report-result")
+async def report_source_result(
+    source_id: str,
+    success: bool = True,
+    quality: float = 5.0,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Report a fetch result — updates health score automatically.
+    Called internally after each crawl attempt."""
+    source = await db.get(BookSource, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    if success:
+        source.success_count = (source.success_count or 0) + 1
+        source.consecutive_fails = 0
+        # Update average quality
+        total = source.success_count
+        old_avg = source.avg_quality or 0.0
+        source.avg_quality = ((old_avg * (total - 1)) + quality) / total
+    else:
+        source.fail_count = (source.fail_count or 0) + 1
+        source.consecutive_fails = (source.consecutive_fails or 0) + 1
+        # Auto-disable after 5 consecutive failures
+        if source.consecutive_fails >= 5:
+            source.enabled = 0
+            logger.warning("Source '%s' auto-disabled after %d consecutive failures",
+                           source.name, source.consecutive_fails)
+
+    # Recalculate score (0-10)
+    total_attempts = (source.success_count or 0) + (source.fail_count or 0)
+    if total_attempts > 0:
+        success_rate = (source.success_count or 0) / total_attempts
+        quality_factor = (source.avg_quality or 5.0) / 10.0
+        source.score = round(success_rate * 6 + quality_factor * 4, 1)  # 60% reliability + 40% quality
+    source.score = max(0, min(10, source.score or 5.0))
+
+    from datetime import datetime, timezone
+    source.last_test_at = datetime.now(timezone.utc)
+    source.last_test_ok = 1 if success else 0
+
+    await db.flush()
+    return {
+        "source_id": source_id,
+        "score": source.score,
+        "enabled": source.enabled,
+        "consecutive_fails": source.consecutive_fails,
+        "auto_disabled": source.consecutive_fails >= 5,
+    }
+
+
+@router.get("/sources/ranking")
+async def get_sources_ranking(
+    db: AsyncSession = Depends(get_db),
+) -> list[BookSourceResponse]:
+    """Get book sources ranked by score (best first)."""
+    result = await db.execute(
+        select(BookSource).order_by(BookSource.score.desc(), BookSource.success_count.desc())
+    )
+    return [BookSourceResponse.model_validate(s) for s in result.scalars().all()]
 
 
 @router.post("/sources/{source_id}/explore")

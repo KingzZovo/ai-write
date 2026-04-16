@@ -250,7 +250,7 @@ class VolumeSummary(Base):
 
 
 class BookSource(Base):
-    """Legado-compatible book source rule definition."""
+    """Legado-compatible book source rule definition with health tracking."""
 
     __tablename__ = "book_sources"
 
@@ -263,6 +263,13 @@ class BookSource(Base):
     enabled = Column(Integer, default=1)
     last_test_at = Column(DateTime(timezone=True))
     last_test_ok = Column(Integer, default=0)
+    # Health & scoring
+    score = Column(Float, default=5.0)  # 0-10, auto-adjusted
+    success_count = Column(Integer, default=0)  # successful fetches
+    fail_count = Column(Integer, default=0)  # failed fetches
+    consecutive_fails = Column(Integer, default=0)  # consecutive failures (auto-disable at 5)
+    avg_quality = Column(Float, default=0.0)  # average content quality
+    total_books_fetched = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 

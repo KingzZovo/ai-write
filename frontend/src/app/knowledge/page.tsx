@@ -193,51 +193,54 @@ function SourcesTab() {
               </tr>
             </thead>
             <tbody>
-              {sources.map((source) => (
-                <tr key={source.id} className="border-b border-gray-100 last:border-b-0">
-                  <td className="px-4 py-3 font-medium text-gray-900">{source.name}</td>
-                  <td className="px-4 py-3 text-gray-500 truncate max-w-xs">
-                    <a
-                      href={source.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-blue-600 hover:underline"
-                    >
-                      {source.sourceUrl}
-                    </a>
+              {sources.map((source) => {
+                const s = source as any
+                const score = s.score ?? 5
+                const scoreColor = score >= 7 ? 'text-green-600' : score >= 4 ? 'text-yellow-600' : 'text-red-600'
+                const enabled = s.enabled === 1
+                return (
+                <tr key={source.id} className={`border-b border-gray-100 last:border-b-0 ${!enabled ? 'opacity-50' : ''}`}>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-900">{source.name}</div>
+                    <div className="text-xs text-gray-400 truncate max-w-[200px]">{source.sourceUrl}</div>
+                    {source.sourceGroup && <div className="text-[10px] text-gray-400">{source.sourceGroup}</div>}
                   </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {source.sourceGroup || '-'}
+                  <td className="px-4 py-3 text-center">
+                    <span className={`text-sm font-bold ${scoreColor}`}>{score.toFixed(1)}</span>
+                    <div className="text-[10px] text-gray-400">
+                      {s.success_count ?? s.successCount ?? 0}成功 / {s.fail_count ?? s.failCount ?? 0}失败
+                    </div>
+                    {(s.consecutive_fails ?? s.consecutiveFails ?? 0) >= 3 && (
+                      <div className="text-[10px] text-red-500">连续失败{s.consecutive_fails ?? s.consecutiveFails}次</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge
-                      ok={source.enabled === 1 && source.lastTestOk === 1}
-                      label={
-                        testResult[source.id]
-                          ? testResult[source.id]
-                          : source.lastTestOk === 1
-                            ? 'OK'
-                            : 'Untested'
-                      }
+                      ok={enabled && source.lastTestOk === 1}
+                      label={!enabled ? '已停用' : testResult[source.id] || (source.lastTestOk === 1 ? '正常' : '未测试')}
                     />
                   </td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    <button
-                      onClick={() => handleTest(source)}
-                      disabled={testingId === source.id}
-                      className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-                    >
-                      {testingId === source.id ? '测试中...' : '测试'}
-                    </button>
-                    <button
-                      onClick={() => deleteSource(source.id)}
-                      className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
-                    >
-                      删除
-                    </button>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex flex-wrap gap-1 justify-end">
+                      <button onClick={() => handleTest(source)} disabled={testingId === source.id}
+                        className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">
+                        {testingId === source.id ? '...' : '测试'}
+                      </button>
+                      <button onClick={async () => {
+                        await apiFetch(`/api/knowledge/sources/${source.id}/toggle`, { method: 'POST' })
+                        fetchSources()
+                      }} className={`px-2 py-1 text-xs rounded ${enabled ? 'bg-yellow-50 text-yellow-600' : 'bg-green-50 text-green-600'}`}>
+                        {enabled ? '停用' : '启用'}
+                      </button>
+                      <button onClick={() => deleteSource(source.id)}
+                        className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100">
+                        删除
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -591,18 +594,91 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
 /* ─── Explore Tab ──────────────────────────────────────────── */
 
 function ExploreTab() {
+  const [sources, setSources] = useState<any[]>([])
+  const [selectedSource, setSelectedSource] = useState('')
+  const [books, setBooks] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+
+  useEffect(() => {
+    apiFetch<{ endpoints?: any[]; sources?: any[] } | any>('/api/knowledge/sources')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.sources || data)
+        setSources(Array.isArray(list) ? list.filter((s: any) => s.enabled) : [])
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleExplore = async (sourceId: string, p: number = 1) => {
+    setLoading(true)
+    setSelectedSource(sourceId)
+    setPage(p)
+    try {
+      const data = await apiFetch<{ books: any[] }>(`/api/knowledge/sources/${sourceId}/explore`, {
+        method: 'POST',
+        body: JSON.stringify({ source_id: sourceId, page: p }),
+      })
+      setBooks(data.books || [])
+    } catch { setBooks([]) }
+    finally { setLoading(false) }
+  }
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">排行榜</h2>
-      <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-        <div className="text-gray-400 text-4xl mb-4">&#128218;</div>
-        <h3 className="text-lg font-medium text-gray-700 mb-2">
-          浏览书籍排行
-        </h3>
-        <p className="text-sm text-gray-500 max-w-md mx-auto">
-          浏览已导入书源的排行榜。此功能即将上线——配置好书源后，排行榜和推荐内容将在此显示。
-        </p>
-      </div>
+      <h2 className="text-lg font-semibold text-gray-900">排行榜浏览</h2>
+
+      {sources.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">请先在"书源管理"中导入书源</p>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2 overflow-x-auto">
+            {sources.map((s: any) => (
+              <button key={s.id} onClick={() => handleExplore(s.id)}
+                className={`px-3 py-1.5 text-xs rounded-full whitespace-nowrap ${
+                  selectedSource === s.id ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+                }`}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <p className="text-sm text-gray-400">加载排行榜...</p>
+          ) : books.length > 0 ? (
+            <div className="space-y-2">
+              {books.map((book: any, idx: number) => (
+                <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-medium text-gray-900 text-sm">{book.title}</h3>
+                      <p className="text-xs text-gray-500">{book.author}</p>
+                    </div>
+                    {book.kind && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded">{book.kind}</span>}
+                  </div>
+                  {book.intro && <p className="text-xs text-gray-600 mt-1 line-clamp-2">{book.intro}</p>}
+                  <div className="flex gap-2 mt-2">
+                    {book.word_count && <span className="text-[10px] text-gray-400">{book.word_count}</span>}
+                    {book.last_chapter && <span className="text-[10px] text-gray-400">最新: {book.last_chapter}</span>}
+                  </div>
+                </div>
+              ))}
+              <div className="flex gap-2 justify-center">
+                {page > 1 && <button onClick={() => handleExplore(selectedSource, page - 1)}
+                  className="px-3 py-1.5 text-xs bg-gray-200 rounded">上一页</button>}
+                <span className="text-xs text-gray-400 py-1.5">第 {page} 页</span>
+                <button onClick={() => handleExplore(selectedSource, page + 1)}
+                  className="px-3 py-1.5 text-xs bg-gray-200 rounded">下一页</button>
+              </div>
+            </div>
+          ) : selectedSource ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+              <p className="text-sm text-gray-500">该书源暂无排行榜数据，或书源不支持 explore 规则</p>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
