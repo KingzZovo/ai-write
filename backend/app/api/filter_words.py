@@ -65,7 +65,7 @@ class FilterWordUpdate(BaseModel):
 
 
 class FilterWordResponse(BaseModel):
-    id: str
+    id: UUID
     word: str
     category: str
     severity: str
@@ -137,6 +137,74 @@ async def add_filter_word(
     await db.flush()
     await db.refresh(word)
     return FilterWordResponse.model_validate(word)
+
+
+class BatchImportRequest(BaseModel):
+    """Import filter words. Supports:
+    - Simple word list: ["word1", "word2"]
+    - Legado purification rules: ["ruleName##regex##replacement", ...]
+    - Object list: [{"word": "...", "category": "...", "replacement": "..."}]
+    """
+    words: list[str | dict]
+
+
+@router.post("/import", status_code=201)
+async def import_filter_words(
+    body: BatchImportRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Batch import filter words. Supports plain words, legado rules, and object format."""
+    imported = 0
+    skipped = 0
+
+    for item in body.words:
+        word_text = ""
+        category = "custom"
+        replacement = ""
+        severity = "medium"
+
+        if isinstance(item, dict):
+            word_text = item.get("word", "").strip()
+            category = item.get("category", "custom")
+            replacement = item.get("replacement", "")
+            severity = item.get("severity", "medium")
+        elif isinstance(item, str):
+            item = item.strip()
+            if not item:
+                continue
+            # Legado purification rule format: name##regex##replacement
+            if "##" in item:
+                parts = item.split("##")
+                if len(parts) >= 2:
+                    word_text = parts[1].strip()  # regex pattern
+                    replacement = parts[2].strip() if len(parts) > 2 else ""
+                    category = "legado_rule"
+                else:
+                    word_text = item
+            else:
+                word_text = item
+
+        if not word_text or len(word_text) > 100:
+            skipped += 1
+            continue
+
+        # Skip duplicates
+        existing = await db.execute(
+            select(FilterWord).where(FilterWord.word == word_text)
+        )
+        if existing.scalar_one_or_none():
+            skipped += 1
+            continue
+
+        db.add(FilterWord(
+            word=word_text, category=category,
+            severity=severity, replacement=replacement,
+            source="import",
+        ))
+        imported += 1
+
+    await db.flush()
+    return {"imported": imported, "skipped": skipped}
 
 
 @router.put("/{word_id}")

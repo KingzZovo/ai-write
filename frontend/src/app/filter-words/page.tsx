@@ -19,6 +19,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   cliche: '陈词滥调',
   banned: '禁用词',
   custom: '自定义',
+  legado_rule: '阅读规则',
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -31,6 +32,7 @@ const SOURCE_LABELS: Record<string, string> = {
   builtin: '内置',
   user: '手动添加',
   ai_detected: 'AI 发现',
+  import: '导入',
 }
 
 export default function FilterWordsPage() {
@@ -48,6 +50,9 @@ export default function FilterWordsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [detectResult, setDetectResult] = useState<any>(null)
+  const [showImport, setShowImport] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const fetchWords = useCallback(async () => {
     try {
@@ -139,10 +144,14 @@ export default function FilterWordsPage() {
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-wrap">
         <button onClick={() => setShowAdd(!showAdd)}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">
           + 添加过滤词
+        </button>
+        <button onClick={() => setShowImport(!showImport)}
+          className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg">
+          批量导入
         </button>
       </div>
 
@@ -171,6 +180,54 @@ export default function FilterWordsPage() {
           <div className="flex gap-2">
             <button onClick={handleAdd} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg">确认添加</button>
             <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg">取消</button>
+          </div>
+        </div>
+      )}
+
+      {/* Import form */}
+      {showImport && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-900">批量导入过滤词</h3>
+          <p className="text-xs text-gray-500">支持以下格式：</p>
+          <ul className="text-xs text-gray-400 list-disc ml-4 space-y-0.5">
+            <li>每行一个词：<code>璀璨</code></li>
+            <li>阅读净化规则：<code>规则名##正则表达式##替换内容</code></li>
+            <li>JSON 数组：<code>[&quot;词1&quot;, &quot;词2&quot;]</code></li>
+          </ul>
+          <textarea value={importText} onChange={e => setImportText(e.target.value)}
+            placeholder={'璀璨\n瑰丽\n油然而生\n去广告##广告内容.*?结束##\n或 JSON: ["词1","词2"]'}
+            className="w-full h-32 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono resize-none" />
+          <div className="flex gap-2">
+            <button onClick={async () => {
+              if (!importText.trim()) return
+              setImporting(true)
+              try {
+                let wordList: (string | Record<string, string>)[]
+                const trimmed = importText.trim()
+                if (trimmed.startsWith('[')) {
+                  wordList = JSON.parse(trimmed)
+                } else {
+                  wordList = trimmed.split('\n').map(l => l.trim()).filter(Boolean)
+                }
+                const data = await apiFetch<any>('/api/filter-words/import', {
+                  method: 'POST',
+                  body: JSON.stringify({ words: wordList }),
+                })
+                alert(`导入成功：${data.imported} 个，跳过 ${data.skipped} 个重复`)
+                setImportText('')
+                setShowImport(false)
+                fetchWords()
+              } catch (e) {
+                alert(e instanceof Error ? e.message : '导入失败')
+              } finally {
+                setImporting(false)
+              }
+            }} disabled={importing || !importText.trim()}
+              className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg disabled:opacity-50">
+              {importing ? '导入中...' : '确认导入'}
+            </button>
+            <button onClick={() => { setShowImport(false); setImportText('') }}
+              className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg">取消</button>
           </div>
         </div>
       )}
