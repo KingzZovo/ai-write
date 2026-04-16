@@ -202,20 +202,23 @@ export default function DesktopWorkspace() {
         const outlines = await apiFetch<OutlineRes[]>(
           `/api/projects/${projectId}/outlines`
         )
-        if (normalized.length > 0) {
-          // Has volumes → go to editor
+        if (outlines.length === 0 && normalized.length === 0) {
+          setActiveView('wizard')
+          setWizardStep(1)
+        } else if (normalized.length > 0) {
           setActiveView('editor')
         } else if (outlines.length > 0) {
-          // Has outline but no volumes → show outline and go to step 2
-          const bookOutline = outlines.find((o) => o.level === 'book')
-          if (bookOutline?.content_json?.raw_text) {
-            setOutlinePreview(String(bookOutline.content_json.raw_text))
+          // Has outlines but no volumes — show outline preview
+          const bookOutline = outlines.find(o => o.level === 'book')
+          if (bookOutline) {
+            const cj = bookOutline.content_json as Record<string, unknown> | null
+            const raw = String(cj?.raw_text || JSON.stringify(cj, null, 2) || '')
+            setOutlinePreview(raw)
             setConfirmedOutlineId(bookOutline.id)
           }
           setActiveView('wizard')
-          setWizardStep(2) // Skip to "generate volume outlines"
+          setWizardStep(2) // Go to step 2 (volume generation) since outline exists
         } else {
-          // No outline → wizard step 1
           setActiveView('wizard')
           setWizardStep(1)
         }
@@ -985,16 +988,6 @@ export default function DesktopWorkspace() {
                       基于全书大纲，AI 将自动生成每卷的详细大纲和结构。
                     </p>
 
-                    {/* Show existing outline */}
-                    {outlinePreview && (
-                      <details className="mb-4" open>
-                        <summary className="text-sm font-semibold text-gray-700 cursor-pointer mb-2">查看全书大纲</summary>
-                        <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-4 rounded-xl border max-h-64 overflow-y-auto">
-                          {outlinePreview}
-                        </pre>
-                      </details>
-                    )}
-
                     {wizardProgress && (
                       <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border mb-4 max-h-64 overflow-y-auto">
                         {wizardProgress}
@@ -1079,6 +1072,22 @@ export default function DesktopWorkspace() {
           {/* ---- Chapter Editor ---- */}
           {activeView === 'editor' && (
             <div className="flex-1 overflow-y-auto">
+              {/* Show outline if no chapter selected */}
+              {!currentChapter && outlinePreview && (
+                <div className="max-w-3xl mx-auto pt-4 px-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-lg font-bold text-gray-900">全书大纲</h2>
+                    <button onClick={() => { setActiveView('wizard'); setWizardStep(2) }}
+                      className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg">
+                      继续生成分卷
+                    </button>
+                  </div>
+                  <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border leading-relaxed"
+                    style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                    {outlinePreview}
+                  </pre>
+                </div>
+              )}
               {currentChapter && (
                 <div className="max-w-3xl mx-auto pt-4 px-6">
                   <div className="flex items-center justify-between mb-2">
