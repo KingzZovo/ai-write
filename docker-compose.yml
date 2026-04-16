@@ -96,12 +96,8 @@ services:
     env_file: .env
     ports:
       - "3100:3000"
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
     depends_on:
       - backend
-    command: npm run dev
 
   nginx:
     image: nginx:alpine
