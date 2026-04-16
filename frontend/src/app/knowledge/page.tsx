@@ -648,8 +648,8 @@ function BooksTab() {
                     />
                   </td>
                   <td className="px-4 py-3 text-right text-gray-700">
-                    {typeof book.metadataJson?.quality_score === 'number'
-                      ? `${(book.metadataJson.quality_score as number).toFixed(1)}`
+                    {(book.metadataJson as any)?.quality_score?.overall != null
+                      ? `${Number((book.metadataJson as any).quality_score.overall).toFixed(1)}`
                       : '-'}
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">

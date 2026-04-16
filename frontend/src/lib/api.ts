@@ -25,8 +25,13 @@ function authHeaders(): Record<string, string> {
 }
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { ...authHeaders() }
+  // Don't set Content-Type for FormData (browser sets multipart boundary automatically)
+  if (!(options?.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
+  }
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options?.headers },
+    headers: { ...headers, ...options?.headers },
     ...options,
   })
   if (res.status === 401) {
@@ -64,12 +69,14 @@ export function apiSSE(path: string, body: Record<string, unknown>, onChunk: (te
     }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
+    let buffer = ''
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      const text = decoder.decode(value, { stream: true })
-      const lines = text.split('\n')
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || '' // keep incomplete last line for next chunk
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6)

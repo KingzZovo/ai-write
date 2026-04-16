@@ -391,11 +391,19 @@ class ContextPackBuilder:
 
     def __init__(self, db: AsyncSession | None = None) -> None:
         self._db = db
+        self._owns_db = False
 
     async def _get_db(self) -> AsyncSession:
         if self._db is not None:
             return self._db
-        return async_session_factory()
+        self._db = async_session_factory()
+        self._owns_db = True
+        return self._db
+
+    async def close(self) -> None:
+        if self._owns_db and self._db is not None:
+            await self._db.close()
+            self._db = None
 
     async def build(
         self,

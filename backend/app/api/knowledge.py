@@ -9,6 +9,7 @@ Handles:
 """
 
 import logging
+import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -117,8 +118,9 @@ async def list_sources(
     count_query = select(func.count(BookSource.id))
 
     if search:
-        query = query.where(BookSource.name.ilike(f"%{search}%"))
-        count_query = count_query.where(BookSource.name.ilike(f"%{search}%"))
+        escaped = search.replace("%", r"\%").replace("_", r"\_")
+        query = query.where(BookSource.name.ilike(f"%{escaped}%", escape="\\"))
+        count_query = count_query.where(BookSource.name.ilike(f"%{escaped}%", escape="\\"))
     if group:
         query = query.where(BookSource.source_group == group)
         count_query = count_query.where(BookSource.source_group == group)

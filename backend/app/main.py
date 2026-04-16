@@ -1,6 +1,7 @@
 """FastAPI application entry-point."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
@@ -124,7 +125,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        os.environ.get("CORS_ORIGIN", "http://localhost:3100"),
+        "http://localhost:8080",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
