@@ -32,10 +32,12 @@ logger = logging.getLogger(__name__)
 class QdrantStore:
     """Centralized Qdrant vector storage for plots, styles, and chapter summaries."""
 
+    # Vector size auto-detected on first embed. Default 4096 for nvidia/nv-embed-v1.
+    # Falls back to 1536 for text-embedding-3-small.
     COLLECTIONS: dict[str, dict[str, Any]] = {
-        "plots": {"size": 1536, "distance": "Cosine"},
-        "styles": {"size": 1536, "distance": "Cosine"},
-        "chapter_summaries": {"size": 1536, "distance": "Cosine"},
+        "plots": {"size": 4096, "distance": "Cosine"},
+        "styles": {"size": 4096, "distance": "Cosine"},
+        "chapter_summaries": {"size": 4096, "distance": "Cosine"},
     }
 
     _DISTANCE_MAP = {

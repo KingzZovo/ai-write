@@ -239,7 +239,7 @@ class ModelRouter:
                                   if str(e.id) == str(emb_cfg.endpoint_id)), None)
                     if emb_ep:
                         self.embedding_provider = EmbeddingProvider(
-                            api_key=emb_ep.api_key,
+                            api_key=decrypt_api_key(emb_ep.api_key or ""),
                             base_url=emb_ep.base_url or "",
                             model=emb_cfg.model_name or emb_ep.default_model,
                         )
