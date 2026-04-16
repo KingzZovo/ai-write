@@ -257,11 +257,21 @@ async def test_endpoint(
                 kwargs["base_url"] = endpoint.base_url
 
             client = openai.AsyncOpenAI(**kwargs)
-            await client.chat.completions.create(
-                model=endpoint.default_model,
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Say hi"}],
-            )
+
+            # Detect embedding models — use embeddings API instead of chat
+            model_lower = (endpoint.default_model or "").lower()
+            is_embedding = any(kw in model_lower for kw in ["embed", "embedding", "bge", "jina", "e5"])
+            if is_embedding:
+                await client.embeddings.create(
+                    model=endpoint.default_model,
+                    input="test",
+                )
+            else:
+                await client.chat.completions.create(
+                    model=endpoint.default_model,
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": "Say hi"}],
+                )
         else:
             return TestResult(
                 success=False,
