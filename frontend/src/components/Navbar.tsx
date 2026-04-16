@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: '/knowledge', label: '知识库' },
   { href: '/styles', label: '写法' },
   { href: '/filter-words', label: '过滤词' },
+  { href: '/prompts', label: 'Prompt' },
   { href: '/settings', label: '设置' },
 ]
 
