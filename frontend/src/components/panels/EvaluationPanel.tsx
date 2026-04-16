@@ -28,11 +28,11 @@ interface EvaluationPanelProps {
 }
 
 const SCORE_LABELS: { key: keyof EvaluationResult['scores']; label: string }[] = [
-  { key: 'plotCoherence', label: 'Plot Coherence' },
-  { key: 'characterConsistency', label: 'Character Consistency' },
-  { key: 'styleAdherence', label: 'Style Adherence' },
-  { key: 'narrativePacing', label: 'Narrative Pacing' },
-  { key: 'foreshadowHandling', label: 'Foreshadow Handling' },
+  { key: 'plotCoherence', label: '情节连贯性' },
+  { key: 'characterConsistency', label: '角色一致性' },
+  { key: 'styleAdherence', label: '风格契合度' },
+  { key: 'narrativePacing', label: '叙事节奏' },
+  { key: 'foreshadowHandling', label: '伏笔处理' },
 ]
 
 function getScoreColor(score: number): string {
@@ -54,9 +54,9 @@ function getOverallBg(score: number): string {
 }
 
 const SEVERITY_CONFIG = {
-  high: { color: 'bg-red-100 text-red-700', label: 'High' },
-  medium: { color: 'bg-yellow-100 text-yellow-700', label: 'Medium' },
-  low: { color: 'bg-gray-100 text-gray-600', label: 'Low' },
+  high: { color: 'bg-red-100 text-red-700', label: '高' },
+  medium: { color: 'bg-yellow-100 text-yellow-700', label: '中' },
+  low: { color: 'bg-gray-100 text-gray-600', label: '低' },
 }
 
 export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
@@ -96,7 +96,7 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
       )
       setEvaluation(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Evaluation failed')
+      setError(err instanceof Error ? err.message : '评估失败')
     } finally {
       setEvaluating(false)
     }
@@ -105,11 +105,11 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Quality Evaluation</h3>
+        <h3 className="text-sm font-semibold text-gray-900">质量评估</h3>
       </div>
 
       {loading ? (
-        <p className="text-xs text-gray-400">Loading evaluation...</p>
+        <p className="text-xs text-gray-400">加载评估中...</p>
       ) : evaluation ? (
         <div className="space-y-3">
           {/* Overall score */}
@@ -121,7 +121,7 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
             <div className={`text-2xl font-bold ${getScoreTextColor(evaluation.overallScore)}`}>
               {evaluation.overallScore.toFixed(1)}
             </div>
-            <div className="text-xs text-gray-500 mt-0.5">Overall Score / 10</div>
+            <div className="text-xs text-gray-500 mt-0.5">综合评分 / 10</div>
           </div>
 
           {/* Individual scores as progress bars */}
@@ -151,7 +151,7 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
           {evaluation.issues.length > 0 && (
             <div>
               <h4 className="text-xs font-medium text-gray-600 mb-1.5">
-                Issues ({evaluation.issues.length})
+                问题 ({evaluation.issues.length})
               </h4>
               <div className="space-y-1.5">
                 {evaluation.issues.map((issue, idx) => {
@@ -172,7 +172,7 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
                       <p className="text-gray-700 leading-relaxed">{issue.description}</p>
                       {issue.suggestion && (
                         <p className="text-blue-600 mt-1 leading-relaxed">
-                          Suggestion: {issue.suggestion}
+                          建议: {issue.suggestion}
                         </p>
                       )}
                     </div>
@@ -183,11 +183,11 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
           )}
 
           <div className="text-[10px] text-gray-400">
-            Evaluated: {new Date(evaluation.evaluatedAt).toLocaleString()}
+            评估时间: {new Date(evaluation.evaluatedAt).toLocaleString()}
           </div>
         </div>
       ) : (
-        <p className="text-xs text-gray-400">No evaluation data. Run an evaluation to see results.</p>
+        <p className="text-xs text-gray-400">暂无评估数据，运行评估后可查看结果。</p>
       )}
 
       {error && <p className="text-xs text-red-500">{error}</p>}
@@ -199,13 +199,13 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
           disabled={evaluating}
           className="w-full px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {evaluating ? 'Evaluating...' : 'Run Evaluation'}
+          {evaluating ? '评估中...' : '运行评估'}
         </button>
         <button
           disabled
           className="w-full px-3 py-1.5 text-xs bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed"
         >
-          Re-generate Problem Sections
+          重新生成问题段落
         </button>
       </div>
     </div>

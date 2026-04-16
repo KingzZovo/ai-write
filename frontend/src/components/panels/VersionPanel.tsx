@@ -139,12 +139,12 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Version History</h3>
+        <h3 className="text-sm font-semibold text-gray-900">版本历史</h3>
         <button
           onClick={() => setShowBranchForm(!showBranchForm)}
           className="text-xs text-blue-600 hover:text-blue-700"
         >
-          + Branch
+          + 分支
         </button>
       </div>
 
@@ -153,7 +153,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
           <input
             value={branchName}
             onChange={(e) => setBranchName(e.target.value)}
-            placeholder="Branch name..."
+            placeholder="分支名称..."
             className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
           />
           <div className="flex gap-1.5">
@@ -162,7 +162,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
               disabled={creating || !branchName.trim()}
               className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {creating ? 'Creating...' : 'Create Branch'}
+              {creating ? '创建中...' : '创建分支'}
             </button>
             <button
               onClick={() => {
@@ -171,16 +171,16 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
               }}
               className="flex-1 px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded"
             >
-              Cancel
+              取消
             </button>
           </div>
         </div>
       )}
 
       {loading ? (
-        <p className="text-xs text-gray-400">Loading versions...</p>
+        <p className="text-xs text-gray-400">加载版本中...</p>
       ) : versions.length === 0 ? (
-        <p className="text-xs text-gray-400">No versions yet.</p>
+        <p className="text-xs text-gray-400">暂无版本记录。</p>
       ) : (
         <div className="space-y-1.5">
           {versions.map((v) => (
@@ -202,7 +202,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
                   </span>
                   {v.isActive && (
                     <span className="px-1 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">
-                      Active
+                      当前
                     </span>
                   )}
                 </div>
@@ -213,11 +213,11 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
                       : 'bg-green-100 text-green-700'
                   }`}
                 >
-                  {v.source === 'ai' ? 'AI' : 'User'}
+                  {v.source === 'ai' ? 'AI' : '用户'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-gray-400">
-                <span>{v.wordCount.toLocaleString()} words</span>
+                <span>{v.wordCount.toLocaleString()} 字</span>
                 <span>{formatTime(v.createdAt)}</span>
               </div>
               {selectedVersionId === v.id && !v.isActive && (
@@ -229,7 +229,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
                   disabled={switching}
                   className="mt-2 w-full px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {switching ? 'Switching...' : 'Switch to this version'}
+                  {switching ? '切换中...' : '切换到此版本'}
                 </button>
               )}
             </div>
@@ -241,11 +241,11 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
       {selectedVersionId && activeVersion && selectedVersionId !== activeVersion.id && (
         <div className="mt-3">
           <h4 className="text-xs font-medium text-gray-600 mb-1.5">
-            Diff: {activeVersion.branchName} vs{' '}
+            差异: {activeVersion.branchName} 与{' '}
             {versions.find((v) => v.id === selectedVersionId)?.branchName}
           </h4>
           {diffLoading ? (
-            <p className="text-xs text-gray-400">Loading diff...</p>
+            <p className="text-xs text-gray-400">加载差异中...</p>
           ) : diff && diff.lines.length > 0 ? (
             <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden max-h-60 overflow-y-auto">
               {diff.lines.map((line, idx) => (
@@ -267,7 +267,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-gray-400">No differences found.</p>
+            <p className="text-xs text-gray-400">未发现差异。</p>
           )}
         </div>
       )}

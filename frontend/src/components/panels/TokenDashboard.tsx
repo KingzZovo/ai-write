@@ -46,10 +46,10 @@ export function TokenDashboard() {
 
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Token Usage</h3>
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Token 用量</h3>
 
       {loading && !stats ? (
-        <p className="text-xs text-gray-400">Loading...</p>
+        <p className="text-xs text-gray-400">加载中...</p>
       ) : stats ? (
         <div className="space-y-2">
           {/* Token counts */}
@@ -58,26 +58,26 @@ export function TokenDashboard() {
               <div className="text-xs font-medium text-gray-800">
                 {formatNumber(stats.totalInputTokens)}
               </div>
-              <div className="text-[10px] text-gray-400">Input</div>
+              <div className="text-[10px] text-gray-400">输入</div>
             </div>
             <div className="bg-gray-50 rounded p-1.5 text-center">
               <div className="text-xs font-medium text-gray-800">
                 {formatNumber(stats.totalOutputTokens)}
               </div>
-              <div className="text-[10px] text-gray-400">Output</div>
+              <div className="text-[10px] text-gray-400">输出</div>
             </div>
             <div className="bg-gray-50 rounded p-1.5 text-center">
               <div className="text-xs font-medium text-gray-800">
                 {formatNumber(stats.totalTokens)}
               </div>
-              <div className="text-[10px] text-gray-400">Total</div>
+              <div className="text-[10px] text-gray-400">总计</div>
             </div>
           </div>
 
           {/* Cache hit rate */}
           <div>
             <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[10px] text-gray-500">Cache Hit Rate</span>
+              <span className="text-[10px] text-gray-500">缓存命中率</span>
               <span className="text-[10px] font-medium text-gray-700">
                 {(stats.cacheHitRate * 100).toFixed(1)}%
               </span>
@@ -90,16 +90,16 @@ export function TokenDashboard() {
             </div>
             <div className="flex justify-between mt-0.5">
               <span className="text-[10px] text-gray-400">
-                Hits: {formatNumber(stats.cacheHits)}
+                命中: {formatNumber(stats.cacheHits)}
               </span>
               <span className="text-[10px] text-gray-400">
-                Misses: {formatNumber(stats.cacheMisses)}
+                未命中: {formatNumber(stats.cacheMisses)}
               </span>
             </div>
           </div>
         </div>
       ) : (
-        <p className="text-xs text-gray-400">No token data available.</p>
+        <p className="text-xs text-gray-400">暂无 Token 数据。</p>
       )}
     </div>
   )

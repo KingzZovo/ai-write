@@ -8,10 +8,10 @@ import { apiFetch } from '@/lib/api'
 type TabKey = 'sources' | 'books' | 'crawl' | 'explore'
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'sources', label: 'Book Sources' },
-  { key: 'books', label: 'Reference Books' },
-  { key: 'crawl', label: 'Crawl Tasks' },
-  { key: 'explore', label: 'Explore' },
+  { key: 'sources', label: '书源管理' },
+  { key: 'books', label: '参考书库' },
+  { key: 'crawl', label: '抓取任务' },
+  { key: 'explore', label: '排行榜' },
 ]
 
 export default function KnowledgePage() {
@@ -67,7 +67,7 @@ function SourcesTab() {
       setShowImport(false)
       setImportJson('')
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Invalid JSON')
+      setImportError(err instanceof Error ? err.message : 'JSON 格式无效')
     }
   }, [importJson, importSources])
 
@@ -89,19 +89,19 @@ function SourcesTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Book Sources</h2>
+        <h2 className="text-lg font-semibold text-gray-900">书源管理</h2>
         <button
           onClick={() => setShowImport(!showImport)}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
-          Import Sources
+          导入书源
         </button>
       </div>
 
       {showImport && (
         <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
           <label className="block text-sm font-medium text-gray-700">
-            Paste sources JSON
+            粘贴书源 JSON
           </label>
           <textarea
             value={importJson}
@@ -118,7 +118,7 @@ function SourcesTab() {
               disabled={!importJson.trim() || loading}
               className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Importing...' : 'Confirm Import'}
+              {loading ? '导入中...' : '确认导入'}
             </button>
             <button
               onClick={() => {
@@ -128,7 +128,7 @@ function SourcesTab() {
               }}
               className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
             >
-              Cancel
+              取消
             </button>
           </div>
         </div>
@@ -143,17 +143,17 @@ function SourcesTab() {
       {loading && sources.length === 0 ? (
         <LoadingState />
       ) : sources.length === 0 ? (
-        <EmptyState message="No book sources imported yet." />
+        <EmptyState message="暂无书源，点击导入添加" />
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">URL</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Group</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">名称</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">地址</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">分组</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -191,13 +191,13 @@ function SourcesTab() {
                       disabled={testingId === source.id}
                       className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
                     >
-                      {testingId === source.id ? 'Testing...' : 'Test'}
+                      {testingId === source.id ? '测试中...' : '测试'}
                     </button>
                     <button
                       onClick={() => deleteSource(source.id)}
                       className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
                     >
-                      Delete
+                      删除
                     </button>
                   </td>
                 </tr>
@@ -244,7 +244,7 @@ function BooksTab() {
       })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ detail: res.statusText }))
-        throw new Error(errData.detail || 'Upload failed')
+        throw new Error(errData.detail || '上传失败')
       }
       setShowUpload(false)
       setUploadFile(null)
@@ -252,7 +252,7 @@ function BooksTab() {
       setUploadAuthor('')
       fetchBooks()
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed')
+      setUploadError(err instanceof Error ? err.message : '上传失败')
     } finally {
       setUploading(false)
     }
@@ -275,39 +275,39 @@ function BooksTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Reference Books</h2>
+        <h2 className="text-lg font-semibold text-gray-900">参考书库</h2>
         <button
           onClick={() => setShowUpload(!showUpload)}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
-          Upload Book
+          上传书籍
         </button>
       </div>
 
       {showUpload && (
         <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">书名 *</label>
             <input
               type="text"
               value={uploadTitle}
               onChange={(e) => setUploadTitle(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Book title"
+              placeholder="书名"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Author</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">作者</label>
             <input
               type="text"
               value={uploadAuthor}
               onChange={(e) => setUploadAuthor(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Author name"
+              placeholder="作者"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">File *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">文件 *</label>
             <input
               type="file"
               accept=".txt,.epub,.pdf"
@@ -324,7 +324,7 @@ function BooksTab() {
               disabled={!uploadFile || !uploadTitle.trim() || uploading}
               className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {uploading ? 'Uploading...' : 'Upload'}
+              {uploading ? '上传中...' : '上传'}
             </button>
             <button
               onClick={() => {
@@ -336,7 +336,7 @@ function BooksTab() {
               }}
               className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
             >
-              Cancel
+              取消
             </button>
           </div>
         </div>
@@ -362,29 +362,29 @@ function BooksTab() {
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <span className="text-gray-500">Author:</span>{' '}
-              <span className="text-gray-900">{detailBook.author || 'Unknown'}</span>
+              <span className="text-gray-500">作者:</span>{' '}
+              <span className="text-gray-900">{detailBook.author || '未知'}</span>
             </div>
             <div>
-              <span className="text-gray-500">Source:</span>{' '}
+              <span className="text-gray-500">来源:</span>{' '}
               <span className="text-gray-900">{detailBook.source}</span>
             </div>
             <div>
-              <span className="text-gray-500">Chapters:</span>{' '}
+              <span className="text-gray-500">章节数:</span>{' '}
               <span className="text-gray-900">{detailBook.totalChapters}</span>
             </div>
             <div>
-              <span className="text-gray-500">Words:</span>{' '}
+              <span className="text-gray-500">字数:</span>{' '}
               <span className="text-gray-900">{detailBook.totalWords.toLocaleString()}</span>
             </div>
             <div>
-              <span className="text-gray-500">Status:</span>{' '}
+              <span className="text-gray-500">状态:</span>{' '}
               <span className="text-gray-900">{detailBook.status}</span>
             </div>
           </div>
           {Object.keys(detailBook.metadataJson).length > 0 && (
             <div>
-              <span className="text-sm text-gray-500">Metadata:</span>
+              <span className="text-sm text-gray-500">元数据:</span>
               <pre className="mt-1 text-xs bg-gray-50 rounded p-2 overflow-x-auto">
                 {JSON.stringify(detailBook.metadataJson, null, 2)}
               </pre>
@@ -396,19 +396,19 @@ function BooksTab() {
       {loading && books.length === 0 ? (
         <LoadingState />
       ) : books.length === 0 ? (
-        <EmptyState message="No reference books uploaded yet." />
+        <EmptyState message="暂无参考书，点击上传添加" />
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Title</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Author</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Words</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Quality</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">书名</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">作者</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">来源</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">字数</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">质量</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -436,20 +436,20 @@ function BooksTab() {
                       onClick={() => setDetailBookId(book.id)}
                       className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                     >
-                      Details
+                      详情
                     </button>
                     <button
                       onClick={() => handleScore(book.id)}
                       disabled={scoringId === book.id}
                       className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 disabled:opacity-50"
                     >
-                      {scoringId === book.id ? 'Scoring...' : 'Score'}
+                      {scoringId === book.id ? '评分中...' : '评分'}
                     </button>
                     <button
                       onClick={() => deleteBook(book.id)}
                       className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
                     >
-                      Delete
+                      删除
                     </button>
                   </td>
                 </tr>
@@ -476,13 +476,13 @@ function CrawlTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Crawl Tasks</h2>
+        <h2 className="text-lg font-semibold text-gray-900">抓取任务</h2>
         <button
           onClick={fetchCrawlTasks}
           disabled={loading}
           className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
         >
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loading ? '刷新中...' : '刷新'}
         </button>
       </div>
 
@@ -495,7 +495,7 @@ function CrawlTab() {
       {loading && crawlTasks.length === 0 ? (
         <LoadingState />
       ) : crawlTasks.length === 0 ? (
-        <EmptyState message="No active crawl tasks." />
+        <EmptyState message="暂无抓取任务" />
       ) : (
         <div className="space-y-3">
           {crawlTasks.map((task) => (
@@ -520,7 +520,7 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
           <h3 className="text-sm font-medium text-gray-900 truncate max-w-md">
             {task.bookUrl}
           </h3>
-          <p className="text-xs text-gray-500 mt-0.5">Task ID: {task.id}</p>
+          <p className="text-xs text-gray-500 mt-0.5">任务 ID: {task.id}</p>
         </div>
         <StatusBadge
           ok={task.status === 'completed'}
@@ -531,7 +531,7 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
       <div>
         <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
           <span>
-            {task.completedChapters} / {task.totalChapters} chapters
+            {task.completedChapters} / {task.totalChapters} 章
           </span>
           <span>{progress}%</span>
         </div>
@@ -557,16 +557,14 @@ function CrawlTaskCard({ task }: { task: CrawlTask }) {
 function ExploreTab() {
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">Explore</h2>
+      <h2 className="text-lg font-semibold text-gray-900">排行榜</h2>
       <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
         <div className="text-gray-400 text-4xl mb-4">&#128218;</div>
         <h3 className="text-lg font-medium text-gray-700 mb-2">
-          Browse Book Rankings
+          浏览书籍排行
         </h3>
         <p className="text-sm text-gray-500 max-w-md mx-auto">
-          Explore rankings from your imported book sources. This feature is
-          coming soon -- once you have book sources configured, rankings and
-          recommendations will appear here.
+          浏览已导入书源的排行榜。此功能即将上线——配置好书源后，排行榜和推荐内容将在此显示。
         </p>
       </div>
     </div>
@@ -594,7 +592,7 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 function LoadingState() {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-      <p className="text-sm text-gray-500">Loading...</p>
+      <p className="text-sm text-gray-500">加载中...</p>
     </div>
   )
 }

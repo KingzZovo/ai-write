@@ -13,16 +13,16 @@ export default function KnowledgeLayout({
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <a href="/" className="text-gray-400 hover:text-gray-600 text-sm">
-              Home
+              首页
             </a>
             <span className="text-gray-300">/</span>
-            <h1 className="text-lg font-semibold text-gray-900">Knowledge Base</h1>
+            <h1 className="text-lg font-semibold text-gray-900">知识库</h1>
           </div>
           <a
             href="/workspace"
             className="text-sm text-blue-600 hover:text-blue-700"
           >
-            Workspace
+            工作台
           </a>
         </div>
       </header>

@@ -45,7 +45,7 @@ interface Preset {
 const PROVIDER_OPTIONS = [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai', label: 'OpenAI' },
-  { value: 'openai_compatible', label: 'OpenAI Compatible' },
+  { value: 'openai_compatible', label: 'OpenAI 兼容' },
 ]
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
@@ -59,7 +59,7 @@ const TASK_LABELS: Record<string, string> = {
   generation: '\u7AE0\u8282\u751F\u6210',
   polishing: '\u98CE\u683C\u6DA6\u8272',
   extraction: '\u6458\u8981\u63D0\u53D6',
-  summary: '\u6458\u8981\u63D0\u53D6',
+  summary: '\u5185\u5BB9\u603B\u7ED3',
   evaluation: '\u8D28\u91CF\u8BC4\u4F30',
   embedding: '\u6587\u672C\u5411\u91CF\u5316',
 }
@@ -88,7 +88,7 @@ export default function SettingsPage() {
       setTasks(taskRes.tasks)
       setPresets(presetRes)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load settings')
+      setError(err instanceof Error ? err.message : '加载设置失败')
     } finally {
       setLoading(false)
     }
@@ -102,7 +102,7 @@ export default function SettingsPage() {
     return (
       <div className="space-y-6">
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-          <p className="text-sm text-gray-500">Loading model configuration...</p>
+          <p className="text-sm text-gray-500">正在加载模型配置...</p>
         </div>
       </div>
     )
@@ -195,7 +195,7 @@ function EndpointsSection({
       resetForm()
       onRefresh()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Save failed')
+      setFormError(err instanceof Error ? err.message : '保存失败')
     } finally {
       setSaving(false)
     }
@@ -203,12 +203,12 @@ function EndpointsSection({
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!confirm('Delete this endpoint? Task configs referencing it will lose their assignment.')) return
+      if (!confirm('确定删除此端点？引用该端点的任务配置将失去关联。')) return
       try {
         await apiFetch(`/api/model-config/endpoints/${id}`, { method: 'DELETE' })
         onRefresh()
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Delete failed')
+        alert(err instanceof Error ? err.message : '删除失败')
       }
     },
     [onRefresh]
@@ -224,7 +224,7 @@ function EndpointsSection({
     } catch (err) {
       setTestResults((prev) => ({
         ...prev,
-        [id]: { success: false, message: err instanceof Error ? err.message : 'Test failed', latency_ms: null },
+        [id]: { success: false, message: err instanceof Error ? err.message : '测试失败', latency_ms: null },
       }))
     } finally {
       setTestingId(null)
@@ -237,8 +237,8 @@ function EndpointsSection({
     <section>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">API Endpoints</h2>
-          <p className="text-sm text-gray-500 mt-1">Configure LLM API connections</p>
+          <h2 className="text-lg font-semibold text-gray-900">API 端点</h2>
+          <p className="text-sm text-gray-500 mt-1">配置 LLM API 连接</p>
         </div>
         <button
           onClick={() => {
@@ -247,7 +247,7 @@ function EndpointsSection({
           }}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
-          Add Endpoint
+          添加端点
         </button>
       </div>
 
@@ -255,23 +255,23 @@ function EndpointsSection({
       {showForm && (
         <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4 space-y-4">
           <h3 className="text-sm font-semibold text-gray-700">
-            {editingId ? 'Edit Endpoint' : 'New Endpoint'}
+            {editingId ? '编辑端点' : '新建端点'}
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">名称 *</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData((d) => ({ ...d, name: e.target.value }))}
-                placeholder="e.g. Claude API, Local Qwen"
+                placeholder="例如 Claude API、本地 Qwen"
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Provider Type *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">供应商类型 *</label>
               <select
                 value={formData.provider_type}
                 onChange={(e) =>
@@ -289,7 +289,7 @@ function EndpointsSection({
 
             {formData.provider_type === 'openai_compatible' && (
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Base URL *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">基础地址 *</label>
                 <input
                   type="text"
                   value={formData.base_url}
@@ -301,25 +301,25 @@ function EndpointsSection({
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">API 密钥</label>
               <input
                 type="password"
                 value={formData.api_key}
                 onChange={(e) => setFormData((d) => ({ ...d, api_key: e.target.value }))}
-                placeholder={editingId ? '(leave blank to keep current)' : 'sk-...'}
+                placeholder={editingId ? '(留空则保持当前密钥)' : 'sk-...'}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Default Model *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">默认模型 *</label>
               {suggestions.length > 0 ? (
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={formData.default_model}
                     onChange={(e) => setFormData((d) => ({ ...d, default_model: e.target.value }))}
-                    placeholder="Model name"
+                    placeholder="模型名称"
                     className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     list="model-suggestions"
                   />
@@ -363,13 +363,13 @@ function EndpointsSection({
               disabled={saving || !formData.name || !formData.default_model}
               className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
+              {saving ? '保存中...' : editingId ? '更新' : '创建'}
             </button>
             <button
               onClick={resetForm}
               className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
             >
-              Cancel
+              取消
             </button>
           </div>
         </div>
@@ -378,20 +378,20 @@ function EndpointsSection({
       {/* Endpoints Table */}
       {endpoints.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-          <p className="text-sm text-gray-500">No endpoints configured yet. Add one to get started.</p>
+          <p className="text-sm text-gray-500">尚未配置端点，请添加一个以开始使用。</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Provider</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Base URL</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">API Key</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Default Model</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">名称</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">供应商</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">基础地址</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">API 密钥</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">默认模型</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -425,11 +425,11 @@ function EndpointsSection({
                           title={tr.message}
                         >
                           {tr.success
-                            ? `OK ${tr.latency_ms ? `(${tr.latency_ms}ms)` : ''}`
-                            : 'Failed'}
+                            ? `正常 ${tr.latency_ms ? `(${tr.latency_ms}ms)` : ''}`
+                            : '失败'}
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400">Untested</span>
+                        <span className="text-xs text-gray-400">未测试</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right space-x-2">
@@ -438,19 +438,19 @@ function EndpointsSection({
                         disabled={testingId === ep.id}
                         className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
                       >
-                        {testingId === ep.id ? 'Testing...' : 'Test'}
+                        {testingId === ep.id ? '测试中...' : '测试'}
                       </button>
                       <button
                         onClick={() => handleEdit(ep)}
                         className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
                       >
-                        Edit
+                        编辑
                       </button>
                       <button
                         onClick={() => handleDelete(ep.id)}
                         className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
                       >
-                        Delete
+                        删除
                       </button>
                     </td>
                   </tr>
@@ -519,7 +519,7 @@ function TaskRoutingSection({
         setSavedTasks((prev) => new Set(prev).add(taskType))
         onRefresh()
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Save failed')
+        alert(err instanceof Error ? err.message : '保存失败')
       } finally {
         setSaving(null)
       }
@@ -530,9 +530,9 @@ function TaskRoutingSection({
   return (
     <section>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Task Routing</h2>
+        <h2 className="text-lg font-semibold text-gray-900">任务路由</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Assign an endpoint and model to each task type
+          为每种任务类型分配端点和模型
         </p>
       </div>
 
@@ -540,11 +540,11 @@ function TaskRoutingSection({
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Task</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Endpoint</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Model Override</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-44">Temperature</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">Max Tokens</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">任务</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">端点</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">模型覆盖</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 w-44">创造性</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">最大长度</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600 w-24"></th>
             </tr>
           </thead>
@@ -566,7 +566,7 @@ function TaskRoutingSection({
                     }}
                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="">-- Not assigned --</option>
+                    <option value="">-- 未分配 --</option>
                     {endpoints.map((ep) => (
                       <option key={ep.id} value={ep.id}>
                         {ep.name} ({ep.provider_type})
@@ -579,7 +579,7 @@ function TaskRoutingSection({
                     type="text"
                     value={task.model_name}
                     onChange={(e) => updateLocal(task.task_type, { model_name: e.target.value })}
-                    placeholder={task.endpoint?.default_model || 'Use endpoint default'}
+                    placeholder={task.endpoint?.default_model || '使用端点默认模型'}
                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </td>
@@ -622,10 +622,10 @@ function TaskRoutingSection({
                     } disabled:opacity-50`}
                   >
                     {saving === task.task_type
-                      ? 'Saving...'
+                      ? '保存中...'
                       : savedTasks.has(task.task_type)
-                        ? 'Saved'
-                        : 'Save'}
+                        ? '已保存'
+                        : '保存'}
                   </button>
                 </td>
               </tr>
@@ -636,7 +636,7 @@ function TaskRoutingSection({
 
       {endpoints.length === 0 && (
         <p className="text-sm text-amber-600 mt-2">
-          Add at least one endpoint above before assigning tasks.
+          请先在上方添加至少一个端点，然后再分配任务。
         </p>
       )}
     </section>
@@ -661,12 +661,12 @@ function PresetsSection({
   const handleApplyPreset = useCallback(
     async (preset: Preset) => {
       if (endpoints.length === 0) {
-        alert('Please add at least one endpoint before applying a preset.')
+        alert('请先添加至少一个端点，然后再应用预设。')
         return
       }
 
       const targetEndpoint = endpoints[0]
-      if (!confirm(`Apply "${preset.description}" using endpoint "${targetEndpoint.name}"? This will overwrite all current task assignments.`)) {
+      if (!confirm(`使用端点"${targetEndpoint.name}"应用"${preset.description}"？这将覆盖所有当前任务分配。`)) {
         return
       }
 
@@ -685,7 +685,7 @@ function PresetsSection({
         }
         onRefresh()
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Failed to apply preset')
+        alert(err instanceof Error ? err.message : '应用预设失败')
       } finally {
         setApplying(null)
       }
@@ -695,23 +695,23 @@ function PresetsSection({
 
   const presetStyles: Record<string, { label: string; desc: string; color: string }> = {
     cloud_anthropic: {
-      label: 'Cloud Only (Anthropic)',
-      desc: 'All tasks use the same Anthropic endpoint',
+      label: '纯云端 (Anthropic)',
+      desc: '所有任务使用同一个 Anthropic 端点',
       color: 'border-purple-200 hover:border-purple-400',
     },
     cloud_openai: {
-      label: 'Cloud Only (OpenAI)',
-      desc: 'All tasks use the same OpenAI endpoint',
+      label: '纯云端 (OpenAI)',
+      desc: '所有任务使用同一个 OpenAI 端点',
       color: 'border-green-200 hover:border-green-400',
     },
     hybrid: {
-      label: 'Hybrid',
-      desc: 'Generation on cloud, extraction on local, embedding separate',
+      label: '混合模式',
+      desc: '生成用云端，提取用本地，向量化独立',
       color: 'border-blue-200 hover:border-blue-400',
     },
     local_only: {
-      label: 'Local Only',
-      desc: 'All tasks use one OpenAI-compatible local endpoint',
+      label: '纯本地',
+      desc: '所有任务使用同一个 OpenAI 兼容的本地端点',
       color: 'border-orange-200 hover:border-orange-400',
     },
   }
@@ -719,9 +719,9 @@ function PresetsSection({
   return (
     <section>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Quick Setup</h2>
+        <h2 className="text-lg font-semibold text-gray-900">快速设置</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Apply a preset to quickly configure all tasks. Requires at least one endpoint.
+          应用预设快速配置所有任务，需要至少一个端点。
         </p>
       </div>
 
@@ -742,7 +742,7 @@ function PresetsSection({
               <h3 className="text-sm font-semibold text-gray-900 mb-1">{style.label}</h3>
               <p className="text-xs text-gray-500">{style.desc}</p>
               {applying === preset.name && (
-                <p className="text-xs text-blue-600 mt-2">Applying...</p>
+                <p className="text-xs text-blue-600 mt-2">应用中...</p>
               )}
             </button>
           )
