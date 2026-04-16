@@ -202,12 +202,20 @@ export default function DesktopWorkspace() {
         const outlines = await apiFetch<OutlineRes[]>(
           `/api/projects/${projectId}/outlines`
         )
-        if (outlines.length === 0 && normalized.length === 0) {
-          setActiveView('wizard')
-          setWizardStep(1)
-        } else if (normalized.length > 0) {
+        if (normalized.length > 0) {
+          // Has volumes → go to editor
           setActiveView('editor')
+        } else if (outlines.length > 0) {
+          // Has outline but no volumes → show outline and go to step 2
+          const bookOutline = outlines.find((o) => o.level === 'book')
+          if (bookOutline?.content_json?.raw_text) {
+            setOutlinePreview(String(bookOutline.content_json.raw_text))
+            setConfirmedOutlineId(bookOutline.id)
+          }
+          setActiveView('wizard')
+          setWizardStep(2) // Skip to "generate volume outlines"
         } else {
+          // No outline → wizard step 1
           setActiveView('wizard')
           setWizardStep(1)
         }
@@ -976,6 +984,16 @@ export default function DesktopWorkspace() {
                     <p className="text-gray-500 mb-4 text-sm">
                       基于全书大纲，AI 将自动生成每卷的详细大纲和结构。
                     </p>
+
+                    {/* Show existing outline */}
+                    {outlinePreview && (
+                      <details className="mb-4" open>
+                        <summary className="text-sm font-semibold text-gray-700 cursor-pointer mb-2">查看全书大纲</summary>
+                        <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-4 rounded-xl border max-h-64 overflow-y-auto">
+                          {outlinePreview}
+                        </pre>
+                      </details>
+                    )}
 
                     {wizardProgress && (
                       <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border mb-4 max-h-64 overflow-y-auto">
