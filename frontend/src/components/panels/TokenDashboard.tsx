@@ -41,7 +41,7 @@ export function TokenDashboard() {
   }, [fetchStats])
 
   const formatNumber = (n: number): string => {
-    return n.toLocaleString()
+    return (n || 0).toLocaleString()
   }
 
   return (

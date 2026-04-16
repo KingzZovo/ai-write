@@ -472,7 +472,7 @@ function BooksTab() {
             </div>
             <div>
               <span className="text-gray-500">字数:</span>{' '}
-              <span className="text-gray-900">{detailBook.totalWords.toLocaleString()}</span>
+              <span className="text-gray-900">{(detailBook.totalWords || 0).toLocaleString()}</span>
             </div>
             <div>
               <span className="text-gray-500">状态:</span>{' '}
@@ -515,7 +515,7 @@ function BooksTab() {
                   <td className="px-4 py-3 text-gray-500">{book.author || '-'}</td>
                   <td className="px-4 py-3 text-gray-500">{book.source}</td>
                   <td className="px-4 py-3 text-right text-gray-500">
-                    {book.totalWords.toLocaleString()}
+                    {(book.totalWords || 0).toLocaleString()}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge

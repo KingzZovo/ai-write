@@ -1,6 +1,6 @@
 # AI Write 迭代计划
 
-## 当前版本 v0.2.0 (2026-04-15)
+## 当前版本 v0.3.0 (2026-04-16)
 
 ### 已完成功能
 
@@ -17,12 +17,18 @@
 | 引擎 | 三层 Context Pack (SCORE/CFPG/DOME/CoKe/ToM) | ✅ |
 | 审查 | 6 独立 Checker 并行执行 + 加权评分 | ✅ |
 | 写作 | 写作指南引擎（7模块+13钩子+12题材+64 AI词库） | ✅ |
-| 面板 | CheckerDashboard+StrandPanel+WritingGuidePanel+AntiAIPanel | ✅ |
+| 面板 | 质量检查+三线平衡+写作指南+去AI味 共4个新面板 | ✅ |
+| 中文化 | 设置/知识库/面板/登录 全面中文化 | ✅ |
+| 移动端 | 独立轻量 MobileWorkspace + 底部tab | ✅ |
+| 过滤词 | 可配置词库 + AI 自动发现新词 | ✅ |
+| 书源 | 健康评分 + 自动停用 + 分页搜索 + 启用/停用 | ✅ |
+| 排行榜 | 夸克热搜/好评 + 分类 + 书籍搜索 | ✅ |
+| 上传 | 大文件书源JSON上传（12MB+） | ✅ |
 
 ### 技术统计
 
 ```
-18 commits | 99 源码文件 | 23,655 行代码 | 79 API 端点 | 13 前端面板
+42 commits | 70+ 后端文件 | 30+ 前端文件 | ~25,000 行代码 | 85+ API 端点
 ```
 
 ---
@@ -31,100 +37,112 @@
 
 **目标：** 接入真实 LLM API，跑通全流程，修复运行时 bug。
 
-- [ ] 在 Settings 页面配置至少一个 LLM 端点
+- [ ] 在 Settings 页面配置 LLM 端点
 - [ ] 完整流程：创建项目 → 生成全书大纲 → 分卷 → 章节 → 正文
 - [ ] 验证 SSE 流式生成在浏览器中正常工作
 - [ ] 测试书源导入 + 爬虫抓取
 - [ ] 测试文件上传 → 清洗 → 风格提取完整链路
 - [ ] 验证 6 Checker 带真实 ContextPack 的运行结果
-- [ ] 修复所有运行时发现的 bug
+- [ ] PC 端 DesktopWorkspace 稳定性修复
 
 **成功标准：** 从零生成一本 5 章短篇小说，全程无手动干预。
 
-## Iteration 2: 测试套件与 CI
+## Iteration 2: 写法引擎资产化
 
-**目标：** 消除 594 个测试 gap，建立自动化质量保障。
+**目标：** 将写法从静态模板升级为可编辑、可绑定、可编译的持久资产。
+
+**参考：** AI-Novel-Writing-Assistant 的 StyleEngine（10 个服务模块）
+
+- [ ] StyleProfile 持久化（DB 存储，前端 CRUD）
+- [ ] StyleCompiler：将写法规则编译为 prompt 指令（带权重：≥0.85 必须保持 / ≥0.65 优先保持）
+- [ ] StyleBinding：写法绑定到整本书 / 单个章节 / 单次生成（优先级层级）
+- [ ] StyleDetection：从现有文本提取写法特征 → 保存为 Profile
+- [ ] StyleRuntime：生成时动态解析当前激活的写法规则
+- [ ] Anti-AI 规则升级：增加 `autoRewrite` 和 `detectPatterns` 字段
+- [ ] 写法试写功能：选定写法 → 试写一段 → 评估匹配度
+- [ ] 前端写法管理页面
+
+## Iteration 3: Prompt Registry 统一管理
+
+**目标：** 所有产品级 prompt 统一注册、版本化、可追溯。
+
+**参考：** AI-Novel-Writing-Assistant 的 prompting/ 系统
+
+- [ ] `PromptAsset` 数据结构（id/version/taskType/mode/contextPolicy/outputSchema）
+- [ ] `PromptRegistry` 注册表
+- [ ] 统一 Runner（`runStructuredPrompt` / `runTextPrompt` / `streamTextPrompt`）
+- [ ] 将所有散落在 agent/service 中的 prompt 迁入 registry
+- [ ] 前端 prompt 管理页面（查看/编辑/版本对比）
+- [ ] Prompt 效果追踪（每个 prompt 的成功率/评分）
+
+## Iteration 4: 生产 Pipeline 增强
+
+**目标：** 整本书生产流水线，支持断点恢复、快照回滚、状态机追踪。
+
+**参考：** AI-Novel-Writing-Assistant 的 NovelPipelineService
+
+- [ ] Pipeline 状态机（planning → generating → reviewing → polishing → completed）
+- [ ] 快照系统：生产前自动快照，失败可回滚
+- [ ] 章节审校服务（生成 → 审校 → 修复 → 确认，最多 3 轮）
+- [ ] 整本批量执行 + 断点恢复
+- [ ] 生产状态面板（前端实时显示当前阶段/进度/失败原因）
+- [ ] 导出功能：TXT / EPUB / PDF / DOCX
+
+## Iteration 5: 测试套件与 CI
+
+**目标：** 消除测试 gap，建立自动化质量保障。
 
 - [ ] pytest + pytest-asyncio 后端测试框架
-- [ ] 核心服务单元测试（text_pipeline, book_source_engine, checkers, context_pack）
-- [ ] API 集成测试（使用测试数据库）
-- [ ] 前端组件测试（Jest + React Testing Library）
-- [ ] GitHub Actions CI（lint + test on push）
-- [ ] pre-commit hooks（ruff lint + type check）
+- [ ] 核心服务单元测试
+- [ ] API 集成测试
+- [ ] 前端组件测试
+- [ ] GitHub Actions CI
+- [ ] pre-commit hooks
 
-## Iteration 3: 前端深度交互
-
-**目标：** ProseMirror 深度集成，提升写作体验。
-
-- [ ] ProseMirror AI 内容标记（不同背景色）
-- [ ] 选中文本悬浮菜单（缩写/扩写/重构/续写）→ 连接 RewriteMenu 组件
-- [ ] 流式生成光标追踪
-- [ ] 大纲编辑器可视化（树状拖拽排序）
-- [ ] 中文全面本地化
-- [ ] 暗色模式
-- [ ] 移动端响应式
-
-## Iteration 4: 性能与健壮性
-
-**目标：** 100+ 章节长篇可靠运行。
-
-- [ ] 长篇压测：100 章，验证记忆召回准确度
-- [ ] Neo4j 1000+ 实体查询性能
-- [ ] Qdrant 10000+ 向量检索延迟
-- [ ] WebSocket 通知（增量同步/后台生成完成）
-- [ ] 批量生成真实 SSE 进度（逐章推送）
-- [ ] 数据库索引优化 + 连接池调优
-
-## Iteration 5: LoRA 训练集成
+## Iteration 6: LoRA 训练集成
 
 **目标：** 从 Web UI 完成微调全流程。
 
-- [ ] LoRA 管理页面（数据集导出向导 + 训练配置）
-- [ ] 训练任务监控（连接远程 GPU WebSocket）
+- [ ] LoRA 管理页面
+- [ ] 训练任务监控
 - [ ] Adapter 浏览器（列表/预览/激活/A-B对比）
 - [ ] 多风格 LoRA 运行时切换
-- [ ] RWKV-7 模型集成（通过 RWKV-Runner OpenAI 兼容端点）
-- [ ] vLLM/Ollama 自动检测 + 健康监控
-
-## Iteration 6: 导出与发布
-
-**目标：** 作品输出到各平台。
-
-- [ ] 导出格式：TXT / EPUB / PDF / DOCX
-- [ ] 元数据编辑（标题/作者/简介/封面）
-- [ ] Legado 兼容格式导出（直接在阅读 app 中阅读）
-- [ ] 字数统计趋势图
-- [ ] 质量评分历史曲线
-- [ ] 生成成本追踪（按项目）
+- [ ] RWKV-7 模型集成
+- [ ] vLLM/Ollama 自动检测
 
 ## Iteration 7: 高级写作技术
 
 **目标：** 深度集成研究级写作技术。
 
-- [ ] ConStory-Checker：跨章节一致性深度检查
+- [ ] LangGraph 工作流编排（替代线性 Celery 任务链）
+- [ ] Agent Tool Registry（参考 AI-Novel-Writing-Assistant 的 22 工具系统）
+- [ ] ConStory-Checker 跨章节一致性深度检查
 - [ ] BVSR 抽卡机制：生成多版本段落供选择
-- [ ] SWAG 动作引导：限制模型的动作空间防止失控
-- [ ] 多 Agent Teams 并行写作（参考 chinese-novelist-skill）
+- [ ] SWAG 动作引导：限制模型的动作空间
 - [ ] webnovel-writer 的 Context Contract v2 完整实现
 - [ ] 追读力 Reading Power Taxonomy 完整矩阵
-- [ ] 40+ 题材专属规则库（参考 webnovel-writer genres/）
+- [ ] 40+ 题材专属规则库
+- [ ] 多 Agent Teams 并行写作
 
 ---
+
+## 参考项目
+
+| 项目 | 借鉴内容 | 优先级 |
+|------|---------|--------|
+| [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant) | 写法引擎资产化、Prompt Registry、Agent Tool System、生产Pipeline、Anti-AI规则 | **高** |
+| [chinese-novelist-skill](https://github.com/PenglongHuang/chinese-novelist-skill) | 悬念十三式、章节检查清单、去AI味规则、子Agent并行 | 高 |
+| [webnovel-writer](https://github.com/lingfengQAQ/webnovel-writer) | Context Contract、双Agent数据流、Strand Weave、题材模板 | 高 |
+| [RWKV-Runner](https://github.com/josStorer/RWKV-Runner) | OpenAI 兼容推理服务 | 中 |
+| [AI-Writer](https://github.com/BlinkDL/AI-Writer) | RWKV 中文网文生成 | 中 |
 
 ## 版本历史
 
 | 版本 | 日期 | 里程碑 |
 |------|------|--------|
 | v0.1.0 | 2026-04-15 | Phase 1-4 初始发布 |
-| v0.2.0 | 2026-04-15 | 认证 + 上下文引擎 + Checker + 写作指南 + 面板 |
-| v0.3.0 | TBD | Iteration 1: E2E 验证 |
-| v1.0.0 | TBD | Iteration 3-4: 生产就绪 |
-
-## 参考项目
-
-| 项目 | 借鉴内容 |
-|------|---------|
-| [chinese-novelist-skill](https://github.com/PenglongHuang/chinese-novelist-skill) | 悬念十三式、章节检查清单、去AI味规则、子Agent并行 |
-| [webnovel-writer](https://github.com/lingfengQAQ/webnovel-writer) | Context Contract、双Agent数据流、Strand Weave、40+题材模板 |
-| [RWKV-Runner](https://github.com/josStorer/RWKV-Runner) | OpenAI 兼容推理服务、模型管理 |
-| [AI-Writer](https://github.com/BlinkDL/AI-Writer) | RWKV 中文网文生成 |
+| v0.2.0 | 2026-04-15 | 认证+上下文引擎+Checker+写作指南+面板 |
+| v0.3.0 | 2026-04-16 | 中文化+移动端+过滤词+书源评分+排行榜+搜索 |
+| v0.4.0 | TBD | Iteration 1: E2E 验证 |
+| v0.5.0 | TBD | Iteration 2: 写法引擎资产化 |
+| v1.0.0 | TBD | Iteration 4: 生产就绪 |

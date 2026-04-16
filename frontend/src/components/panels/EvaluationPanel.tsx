@@ -183,7 +183,7 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
           )}
 
           <div className="text-[10px] text-gray-400">
-            评估时间: {new Date(evaluation.evaluatedAt).toLocaleString()}
+            评估时间: {evaluation.evaluatedAt ? new Date(evaluation.evaluatedAt).toLocaleString() : ""}
           </div>
         </div>
       ) : (
