@@ -197,7 +197,7 @@ async def detect_from_book(
     if not book:
         raise HTTPException(status_code=404, detail="参考书不存在")
 
-    # Sample text from the book's chunks
+    # Get chunks from DB
     result = await db.execute(
         select(TextChunk)
         .where(TextChunk.book_id == str(book_id))
@@ -207,17 +207,53 @@ async def detect_from_book(
     if not chunks:
         raise HTTPException(status_code=400, detail="该书尚未处理完成，没有可分析的文本")
 
-    # Sample evenly: pick 5-10 chunks spread across the book
-    n = len(chunks)
-    step = max(1, n // 8)
-    sampled = [chunks[i].content for i in range(0, n, step)][:8]
-    combined_text = "\n\n".join(sampled)
+    # Smart sampling: use Qdrant to find diverse representative chunks,
+    # falling back to even spacing if Qdrant not available
+    sampled_texts: list[str] = []
+    try:
+        from qdrant_client import AsyncQdrantClient
+        from app.config import settings
+        from app.services.model_router import get_model_router_async
 
-    # Statistical analysis
+        router = await get_model_router_async()
+        qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+
+        # Query Qdrant for diverse chunks from this book
+        # Use a generic "style analysis" query to find stylistically rich chunks
+        query_vec = await router.embed("精彩的场景描写和对话，展示写作风格特色")
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        results = await qc.query_points(
+            collection_name="styles",
+            query=query_vec,
+            query_filter=Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(book_id)))]),
+            limit=10,
+        )
+        await qc.close()
+
+        if results.points:
+            # Get the actual chunk content from DB by chunk_id
+            chunk_map = {str(c.id): c.content for c in chunks}
+            for point in results.points:
+                cid = point.payload.get("chunk_id", "")
+                if cid in chunk_map:
+                    sampled_texts.append(chunk_map[cid])
+    except Exception as e:
+        logger.warning("Qdrant sampling failed, falling back to even spacing: %s", e)
+
+    # Fallback: even spacing across the book (skip first 10% which is often TOC/preface)
+    if len(sampled_texts) < 5:
+        n = len(chunks)
+        start = max(1, n // 10)  # Skip beginning (TOC/copyright)
+        step = max(1, (n - start) // 8)
+        sampled_texts = [chunks[i].content for i in range(start, n, step)][:8]
+
+    combined_text = "\n\n".join(sampled_texts[:8])
+
+    # Statistical analysis on sampled text
     features = detect_style_features(combined_text)
 
-    # LLM deep analysis
-    llm_analysis = await detect_style_with_llm(combined_text)
+    # LLM deep analysis (3000 char sample for token budget)
+    llm_analysis = await detect_style_with_llm(combined_text[:4000])
 
     # Merge into rules
     rules, anti_ai = features_to_rules(features, llm_analysis)
