@@ -26,6 +26,68 @@ def _run_async(coro):
         loop.close()
 
 
+@celery_app.task(name="tasks.vectorize_book")
+def vectorize_book_task(book_id: str):
+    """Vectorize all chunks of an existing book into Qdrant."""
+    _run_async(_vectorize_book_async(book_id))
+
+
+async def _vectorize_book_async(book_id: str):
+    from sqlalchemy import select
+    from app.db.session import async_session_factory
+    from app.models.project import TextChunk, ReferenceBook
+    from app.services.model_router import get_model_router_async
+    from app.services.qdrant_store import QdrantStore
+    from qdrant_client import AsyncQdrantClient
+    from app.config import settings
+
+    router = await get_model_router_async()
+    qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+    store = QdrantStore(qc)
+    await store.ensure_collections()
+
+    async with async_session_factory() as db:
+        book = await db.get(ReferenceBook, book_id)
+        if not book:
+            logger.error("Book %s not found", book_id)
+            return
+
+        result = await db.execute(
+            select(TextChunk)
+            .where(TextChunk.book_id == book_id)
+            .order_by(TextChunk.sequence_id)
+        )
+        chunks = list(result.scalars().all())
+        logger.info("Vectorizing %d chunks for %s", len(chunks), book.title)
+
+        vectorized = 0
+        for chunk in chunks:
+            try:
+                embedding = await router.embed(chunk.content[:500])
+                if embedding and any(v != 0 for v in embedding[:10]):
+                    await store.store_style_features(
+                        book_id=book_id,
+                        chunk_id=str(chunk.id),
+                        sequence_id=chunk.sequence_id,
+                        features_dict={
+                            "chapter_title": chunk.chapter_title or "",
+                            "char_count": chunk.char_count,
+                        },
+                        embedding=embedding,
+                    )
+                    vectorized += 1
+            except Exception as e:
+                logger.debug("Chunk vectorization failed: %s", e)
+
+            # Log progress every 100 chunks
+            if vectorized > 0 and vectorized % 100 == 0:
+                logger.info("  %d/%d vectorized...", vectorized, len(chunks))
+
+        logger.info("Vectorization complete: %d/%d chunks for %s", vectorized, len(chunks), book.title)
+
+    await qc.close()
+
+
 @celery_app.task(name="tasks.run_pipeline_generation")
 def run_pipeline_generation(pipeline_id: str):
     """Execute pipeline generation: iterate chapters, generate, review."""

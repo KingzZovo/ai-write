@@ -540,6 +540,21 @@ async def delete_book(
     await db.delete(book)
 
 
+@router.post("/books/{book_id}/vectorize")
+async def vectorize_book(
+    book_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Trigger vectorization for an existing book's chunks into Qdrant."""
+    book = await db.get(ReferenceBook, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    from app.tasks.knowledge_tasks import vectorize_book_task
+    vectorize_book_task.delay(book_id)
+    return {"status": "started", "book_id": book_id, "message": f"正在向量化《{book.title}》..."}
+
+
 @router.post("/books/{book_id}/score")
 async def score_book(
     book_id: str,
