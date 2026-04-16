@@ -620,16 +620,21 @@ function ExploreTab() {
       })
   }, [])
 
-  const handleExplore = async (sourceId: string, p: number = 1) => {
+  const [categories, setCategories] = useState<{index: number; title: string}[]>([])
+  const [categoryIndex, setCategoryIndex] = useState(0)
+
+  const handleExplore = async (sourceId: string, p: number = 1, catIdx: number = 0) => {
     setLoading(true)
     setSelectedSource(sourceId)
     setPage(p)
+    setCategoryIndex(catIdx)
     try {
-      const data = await apiFetch<{ books: any[] }>(`/api/knowledge/sources/${sourceId}/explore`, {
+      const data = await apiFetch<{ books: any[]; categories?: any[] }>(`/api/knowledge/sources/${sourceId}/explore`, {
         method: 'POST',
-        body: JSON.stringify({ source_id: sourceId, page: p }),
+        body: JSON.stringify({ source_id: sourceId, page: p, category_index: catIdx }),
       })
       setBooks(data.books || [])
+      if (data.categories) setCategories(data.categories)
     } catch { setBooks([]) }
     finally { setLoading(false) }
   }
@@ -655,6 +660,21 @@ function ExploreTab() {
             ))}
           </div>
 
+          {/* Category tabs */}
+          {categories.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {categories.map((cat) => (
+                <button key={cat.index}
+                  onClick={() => handleExplore(selectedSource, 1, cat.index)}
+                  className={`px-2.5 py-1 text-xs rounded whitespace-nowrap ${
+                    categoryIndex === cat.index ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                  {cat.title}
+                </button>
+              ))}
+            </div>
+          )}
+
           {loading ? (
             <p className="text-sm text-gray-400">加载排行榜...</p>
           ) : books.length > 0 ? (
@@ -676,10 +696,10 @@ function ExploreTab() {
                 </div>
               ))}
               <div className="flex gap-2 justify-center">
-                {page > 1 && <button onClick={() => handleExplore(selectedSource, page - 1)}
+                {page > 1 && <button onClick={() => handleExplore(selectedSource, page - 1, categoryIndex)}
                   className="px-3 py-1.5 text-xs bg-gray-200 rounded">上一页</button>}
                 <span className="text-xs text-gray-400 py-1.5">第 {page} 页</span>
-                <button onClick={() => handleExplore(selectedSource, page + 1)}
+                <button onClick={() => handleExplore(selectedSource, page + 1, categoryIndex)}
                   className="px-3 py-1.5 text-xs bg-gray-200 rounded">下一页</button>
               </div>
             </div>

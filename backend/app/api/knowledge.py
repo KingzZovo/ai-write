@@ -82,6 +82,7 @@ class CrawlTaskResponse(BaseModel):
 class ExploreRequest(BaseModel):
     source_id: str
     page: int = 1
+    category_index: int = 0
 
 
 class QualityScoreResponse(BaseModel):
@@ -320,10 +321,13 @@ async def explore_source(
     engine = BookSourceEngine()
     try:
         config = engine.parse_source(source.source_json)
-        books = await engine.explore(config, page=body.page)
+        categories = engine.get_explore_categories(config)
+        books = await engine.explore(config, page=body.page, category_index=body.category_index)
         return {
             "source_id": source_id,
             "page": body.page,
+            "category_index": body.category_index,
+            "categories": [{"index": c["index"], "title": c["title"]} for c in categories],
             "books": [
                 {
                     "title": b.title,

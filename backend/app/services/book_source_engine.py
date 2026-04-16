@@ -307,26 +307,56 @@ class BookSourceEngine:
 
         return self._parse_book_list(html, config.rule_search, config.source_url)
 
+    def get_explore_categories(self, config: BookSourceConfig) -> list[dict]:
+        """Get available explore categories (e.g., 三江推荐, 月票排行)."""
+        if not config.explore_url:
+            return []
+
+        categories = []
+        explore = config.explore_url.strip()
+
+        # Format 1: JSON array [{title, url}, ...]
+        if explore.startswith("["):
+            try:
+                items = json.loads(explore)
+                for i, item in enumerate(items):
+                    if isinstance(item, dict) and item.get("url"):
+                        categories.append({
+                            "index": i,
+                            "title": item.get("title", f"分类{i+1}"),
+                            "url": item["url"],
+                        })
+                return categories
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Format 2: "title::url\ntitle2::url2"
+        for i, line in enumerate(explore.split("\n")):
+            line = line.strip()
+            if not line:
+                continue
+            if "::" in line:
+                title, url = line.split("::", 1)
+                categories.append({"index": i, "title": title.strip(), "url": url.strip()})
+            else:
+                categories.append({"index": i, "title": f"默认{i+1}", "url": line})
+
+        return categories
+
     async def explore(
         self,
         config: BookSourceConfig,
         page: int = 1,
+        category_index: int = 0,
     ) -> list[BookInfo]:
-        """Browse the explore/ranking page."""
-        if not config.explore_url:
+        """Browse the explore/ranking page for a specific category."""
+        categories = self.get_explore_categories(config)
+        if not categories:
             return []
 
-        # exploreUrl can have multiple sections separated by \n
-        # Each section format: "title::url"
-        sections = config.explore_url.split("\n")
-        url = ""
-        for section in sections:
-            if "::" in section:
-                _, section_url = section.split("::", 1)
-                url = self._render_url(section_url.strip(), config.source_url, page=page)
-                break
-            else:
-                url = self._render_url(section.strip(), config.source_url, page=page)
+        idx = min(category_index, len(categories) - 1)
+        raw_url = categories[idx]["url"]
+        url = self._render_url(raw_url, config.source_url, page=page)
                 break
 
         if not url:
