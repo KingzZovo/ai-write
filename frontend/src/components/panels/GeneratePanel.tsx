@@ -14,18 +14,36 @@ interface StyleInfo {
   tone_keywords: string[]
 }
 
+// Exported so DesktopWorkspace can read the selected style
+let _selectedStyleId: string | null = null
+export function getSelectedStyleId() { return _selectedStyleId }
+
 function StyleSelector() {
   const [styles, setStyles] = useState<StyleInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedId, setSelectedId] = useState<string>('')
 
   useEffect(() => {
     apiFetch<StyleInfo[]>('/api/styles')
-      .then(setStyles)
+      .then(data => {
+        setStyles(data)
+        // Auto-select the first active style
+        const active = data.find(s => s.is_active)
+        if (active) {
+          setSelectedId(active.id)
+          _selectedStyleId = active.id
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  const activeStyles = styles.filter(s => s.is_active)
+  const handleChange = (id: string) => {
+    setSelectedId(id)
+    _selectedStyleId = id || null
+  }
+
+  const selected = styles.find(s => s.id === selectedId)
 
   if (loading) return <p className="text-xs text-gray-400">加载写法...</p>
 
@@ -42,29 +60,27 @@ function StyleSelector() {
 
   return (
     <div className="space-y-2">
-      {activeStyles.length > 0 ? (
-        <>
-          <p className="text-xs text-gray-500">当前激活的写法（生成时自动注入）：</p>
-          {activeStyles.map(s => (
-            <div key={s.id} className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-green-800">{s.name}</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-600 rounded">
-                  {s.bind_level === 'global' ? '全局' : s.bind_level === 'book' ? '整本书' : '单章'}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {s.tone_keywords?.slice(0, 5).map((kw, i) => (
-                  <span key={i} className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">{kw}</span>
-                ))}
-              </div>
-              <p className="text-[10px] text-green-600 mt-1">{s.rules_json?.length || 0} 条规则</p>
-            </div>
-          ))}
-        </>
-      ) : (
-        <p className="text-xs text-gray-500">无激活的写法 — 生成将使用默认风格</p>
+      <select value={selectedId} onChange={e => handleChange(e.target.value)}
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
+        <option value="">不使用写法（默认风格）</option>
+        {styles.map(s => (
+          <option key={s.id} value={s.id}>
+            {s.name} ({s.rules_json?.length || 0}条规则)
+          </option>
+        ))}
+      </select>
+
+      {selected && (
+        <div className="px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+          <div className="flex flex-wrap gap-1">
+            {selected.tone_keywords?.slice(0, 6).map((kw, i) => (
+              <span key={i} className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{kw}</span>
+            ))}
+          </div>
+          <p className="text-[10px] text-blue-600 mt-1">{selected.rules_json?.length || 0} 条规则 · 生成时注入</p>
+        </div>
       )}
+
       <Link href="/styles" className="block text-xs text-blue-600 hover:text-blue-700">
         管理写法 ({styles.length}) &rarr;
       </Link>

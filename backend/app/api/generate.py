@@ -24,6 +24,7 @@ class GenerateChapterRequest(BaseModel):
     chapter_id: str | None = None  # If None, generates from outline
     volume_id: str | None = None
     chapter_idx: int | None = None
+    style_id: str | None = None  # Specific StyleProfile to use
     style_instruction: str = ""
     user_instruction: str = ""
     max_tokens: int = 4096
@@ -97,8 +98,17 @@ async def generate_chapter(
             if prev_chapter:
                 previous_text = prev_chapter.content_text or ""
 
-    # Auto-resolve style from StyleEngine if not manually provided
+    # Resolve style: explicit style_id > manual text > auto-resolve
     resolved_style = req.style_instruction
+    if not resolved_style and req.style_id:
+        try:
+            from app.models.project import StyleProfile
+            from app.services.style_compiler import compile_style
+            profile = await db.get(StyleProfile, req.style_id)
+            if profile:
+                resolved_style = compile_style(profile)
+        except Exception as e:
+            logger.warning("Style compile failed: %s", e)
     if not resolved_style:
         try:
             from app.services.style_runtime import resolve_style_prompt

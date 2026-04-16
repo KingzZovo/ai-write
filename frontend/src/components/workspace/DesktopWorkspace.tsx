@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
-import { GeneratePanel } from '@/components/panels/GeneratePanel'
+import { GeneratePanel, getSelectedStyleId } from '@/components/panels/GeneratePanel'
 
 // Lazy load heavy panels — only loaded when their CollapsibleSection is opened
 const ForeshadowPanel = dynamic(() => import('@/components/panels/ForeshadowPanel').then(m => ({ default: m.ForeshadowPanel })), { ssr: false })
@@ -600,6 +600,7 @@ export default function DesktopWorkspace() {
       {
         project_id: currentProject.id,
         chapter_id: selectedChapterId,
+        style_id: getSelectedStyleId(),
       },
       (text) => {
         appendStreamContent(text)
