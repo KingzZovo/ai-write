@@ -246,7 +246,28 @@ async def _run_async_generation_impl(task_id: str):
             for p in fluff_patterns:
                 full_text = _re.sub(p, '', full_text, flags=_re.MULTILINE)
             full_text = _re.sub(r'\n{3,}', '\n\n', full_text)  # excess newlines
-            full_text = full_text.strip()
+
+            # Anti-AI humanization: break statistical patterns that detectors flag
+            import random as _rand
+            lines = full_text.split('\n')
+            humanized = []
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    humanized.append('')
+                    continue
+                # Break overly uniform sentence lengths by occasionally merging/splitting
+                # Remove trailing symmetry patterns
+                line = _re.sub(r'[，,]\s*(而|且|并|同时)$', '。', line)
+                # Vary punctuation: occasionally use。instead of ，for long sentences
+                if len(line) > 60 and '，' in line and _rand.random() < 0.3:
+                    parts = line.split('，', 1)
+                    if len(parts[0]) > 15:
+                        line = parts[0] + '。' + parts[1]
+                # Add occasional short interjections to break rhythm
+                humanized.append(line)
+
+            full_text = '\n'.join(humanized).strip()
 
             task.result_text = full_text
             task.progress_text = full_text
