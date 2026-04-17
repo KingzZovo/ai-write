@@ -307,6 +307,7 @@ class AsyncGenerateRequest(BaseModel):
     user_input: str = ""
     style_id: str | None = None
     structure_book_id: str | None = None  # Optional: extract & use plot structure from this book
+    enable_polish: bool = False  # Optional: second-pass anti-AI polishing
     chapter_id: str | None = None
     volume_idx: int | None = None
     chapter_idx: int | None = None
@@ -328,6 +329,7 @@ async def start_async_generation(
             "user_input": req.user_input,
             "style_id": req.style_id,
             "structure_book_id": req.structure_book_id,
+            "enable_polish": req.enable_polish,
             "chapter_id": req.chapter_id,
             "volume_idx": req.volume_idx,
             "chapter_idx": req.chapter_idx,

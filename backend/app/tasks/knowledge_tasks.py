@@ -271,47 +271,41 @@ async def _run_async_generation_impl(task_id: str):
 
             task.result_text = full_text
 
-            # Second pass: LLM anti-AI polishing (preserve content, change expression)
-            task.status = "polishing"
-            task.progress_text = full_text
-            await db.commit()
+            # Second pass: LLM anti-AI polishing (optional, only when enabled)
+            if params.get("enable_polish"):
+                task.status = "polishing"
+                task.progress_text = full_text
+                await db.commit()
 
-            try:
-                # Split into chunks for polishing (LLM has token limits)
-                polish_chunks = []
-                chunk_size = 2000
-                for i in range(0, len(full_text), chunk_size):
-                    chunk_text = full_text[i:i + chunk_size]
-                    polish_result = await router.generate(
-                        task_type="polishing",
-                        messages=[
-                            {"role": "system", "content": (
-                                "你是一个文本润色编辑。你的任务是改写以下文本，让它读起来更像人写的。\n"
-                                "规则：\n"
-                                "1. 保持所有内容、情节、角色、设定完全不变\n"
-                                "2. 只改变表达方式：换词、调整句序、改变句子长短\n"
-                                "3. 加入一些口语化表达、不规则断句、偶尔的短句\n"
-                                "4. 打破均匀的节奏感，有的段落写得随意一些\n"
-                                "5. 去掉所有对称句式（不是A而是B）\n"
-                                "6. 直接输出改写后的文本，不要加任何说明\n"
-                                "7. 不要使用任何Markdown格式"
-                            )},
-                            {"role": "user", "content": chunk_text},
-                        ],
-                    )
-                    polish_chunks.append(polish_result.text if polish_result.text else chunk_text)
-
-                polished = "".join(polish_chunks)
-                # Clean polished text too
-                polished = _re.sub(r'\*\*([^*]+)\*\*', r'\1', polished)
-                polished = _re.sub(r'\*([^*]+)\*', r'\1', polished)
-                polished = _re.sub(r'^#{1,6}\s*', '', polished, flags=_re.MULTILINE)
-                polished = _re.sub(r'^---+\s*$', '', polished, flags=_re.MULTILINE)
-                polished = _re.sub(r'\n{3,}', '\n\n', polished)
-                task.polished_text = polished.strip()
-            except Exception as pe:
-                logger.warning("Polishing failed, using raw text: %s", pe)
-                task.polished_text = full_text  # Fallback to raw
+                try:
+                    polish_chunks = []
+                    chunk_size = 2000
+                    for i in range(0, len(full_text), chunk_size):
+                        chunk_text = full_text[i:i + chunk_size]
+                        polish_result = await router.generate(
+                            task_type="polishing",
+                            messages=[
+                                {"role": "system", "content": (
+                                    "你是文本润色编辑。改写以下文本让它更像人写的。\n"
+                                    "规则：保持所有内容不变，只改表达方式。\n"
+                                    "加口语化表达，打破均匀节奏，去对称句式。\n"
+                                    "直接输出，不加说明，不用Markdown。"
+                                )},
+                                {"role": "user", "content": chunk_text},
+                            ],
+                        )
+                        polish_chunks.append(polish_result.text if polish_result.text else chunk_text)
+                    polished = "".join(polish_chunks)
+                    polished = _re.sub(r'\*\*([^*]+)\*\*', r'\1', polished)
+                    polished = _re.sub(r'\*([^*]+)\*', r'\1', polished)
+                    polished = _re.sub(r'^#{1,6}\s*', '', polished, flags=_re.MULTILINE)
+                    polished = _re.sub(r'\n{3,}', '\n\n', polished)
+                    task.polished_text = polished.strip()
+                except Exception as pe:
+                    logger.warning("Polishing failed, using raw text: %s", pe)
+                    task.polished_text = full_text
+            else:
+                task.polished_text = ""  # No polishing requested
             task.progress_text = full_text
             task.char_count = len(full_text)
             task.status = "completed"

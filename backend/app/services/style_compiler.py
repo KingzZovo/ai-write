@@ -45,8 +45,20 @@ def compile_style(profile: StyleProfile) -> str:
 
     if style_rules:
         sections.append("写作时参考以下风格特征（只影响文笔，不影响故事结构和卷数）：")
-        for r in style_rules[:10]:  # Cap at 10 rules to avoid over-constraining
-            sections.append(f"- {r.get('rule', '')[:100]}")
+        for r in style_rules[:8]:
+            rule_text = r.get("rule", "")
+            # Clean JSON dicts that snuck into rule text
+            if "{" in rule_text:
+                # Extract just the key value, drop JSON structure
+                import re
+                rule_text = re.sub(r"\{[^}]*\}", "", rule_text).strip()
+                rule_text = re.sub(r"\[[^\]]*\]", "", rule_text).strip()
+            # Remove references to specific books/characters
+            for ref in ["龙族", "加图索", "昂热", "恺撒", "路明非", "继承人"]:
+                rule_text = rule_text.replace(ref, "")
+            rule_text = rule_text.strip(" ：:，,。")
+            if len(rule_text) > 5:
+                sections.append(f"- {rule_text[:80]}")
 
     # Anti-AI rules
     anti_ai = profile.anti_ai_rules or []
