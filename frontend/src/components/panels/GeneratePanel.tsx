@@ -14,9 +14,11 @@ interface StyleInfo {
   tone_keywords: string[]
 }
 
-// Exported so DesktopWorkspace can read the selected style
+// Exported so DesktopWorkspace can read the selected values
 let _selectedStyleId: string | null = null
+let _selectedStructureBookId: string | null = null
 export function getSelectedStyleId() { return _selectedStyleId }
+export function getSelectedStructureBookId() { return _selectedStructureBookId }
 
 function StyleSelector() {
   const [styles, setStyles] = useState<StyleInfo[]>([])
@@ -240,6 +242,51 @@ export function GeneratePanel({ onGenerate, onGenerateOutline }: GeneratePanelPr
         <h3 className="text-sm font-semibold text-gray-900 mb-3">写作风格</h3>
         <StyleSelector />
       </div>
+
+      {/* Plot structure selector (optional) */}
+      <div className="border-t pt-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">剧情架构（可选）</h3>
+        <StructureSelector />
+      </div>
+    </div>
+  )
+}
+
+function StructureSelector() {
+  const [structures, setStructures] = useState<any[]>([])
+  const [selectedId, setSelectedId] = useState<string>('')
+
+  useEffect(() => {
+    apiFetch<any[]>('/api/styles/structures')
+      .then(setStructures)
+      .catch(() => {})
+  }, [])
+
+  const handleChange = (id: string) => {
+    setSelectedId(id)
+    _selectedStructureBookId = id || null
+  }
+
+  if (structures.length === 0) {
+    return <p className="text-xs text-gray-400">暂无架构数据，请先在参考书库中"提取架构"</p>
+  }
+
+  return (
+    <div className="space-y-2">
+      <select value={selectedId} onChange={e => handleChange(e.target.value)}
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
+        <option value="">不使用剧情架构</option>
+        {structures.map((s: any) => (
+          <option key={s.book_id} value={s.book_id}>
+            {s.book_title} — {s.arc_pattern || ''}
+          </option>
+        ))}
+      </select>
+      {selectedId && (
+        <p className="text-[10px] text-orange-500">
+          {structures.find((s: any) => s.book_id === selectedId)?.structure_summary || ''}
+        </p>
+      )}
     </div>
   )
 }

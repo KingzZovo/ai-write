@@ -119,6 +119,27 @@ async def create_style(
     return StyleProfileResponse.model_validate(profile)
 
 
+@router.get("/structures")
+async def list_book_structures(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List all books that have extracted plot structures."""
+    from app.models.project import ReferenceBook
+    result = await db.execute(select(ReferenceBook).order_by(ReferenceBook.created_at.desc()))
+    books = result.scalars().all()
+    structures = []
+    for b in books:
+        ps = (b.metadata_json or {}).get("plot_structure")
+        if ps and "error" not in ps:
+            structures.append({
+                "book_id": str(b.id),
+                "book_title": b.title,
+                "structure_summary": ps.get("structure_summary", ""),
+                "arc_pattern": ps.get("arc_pattern", ""),
+            })
+    return structures
+
+
 @router.get("/{style_id}", response_model=StyleProfileResponse)
 async def get_style(
     style_id: UUID,
@@ -420,4 +441,11 @@ async def extract_book_structure(
     combined = "\n\n".join(samples)
 
     structure = await extract_plot_structure(combined)
+
+    # Persist in book metadata
+    metadata = book.metadata_json or {}
+    metadata["plot_structure"] = structure
+    book.metadata_json = metadata
+    await db.flush()
+
     return {"book_title": book.title, "structure": structure}

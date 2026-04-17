@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { apiFetch, apiSSE } from '@/lib/api'
+import { getSelectedStructureBookId } from '@/components/panels/GeneratePanel'
 
 // Lazy load panels — only when user opens the tools tab
 const GeneratePanel = dynamic(() => import('@/components/panels/GeneratePanel').then(m => ({ default: m.GeneratePanel })), { ssr: false })
@@ -150,7 +151,10 @@ export default function MobileWorkspace() {
     try {
       const data = await apiFetch<{ task_id: string }>('/api/generate/async', {
         method: 'POST',
-        body: JSON.stringify({ project_id: currentProject.id, task_type: taskType, user_input: input }),
+        body: JSON.stringify({
+          project_id: currentProject.id, task_type: taskType, user_input: input,
+          structure_book_id: getSelectedStructureBookId() || undefined,
+        }),
       })
       setGenTaskId(data.task_id)
       // Start polling
