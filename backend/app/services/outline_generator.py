@@ -17,54 +17,35 @@ from app.services.model_router import get_model_router
 
 logger = logging.getLogger(__name__)
 
-BOOK_OUTLINE_SYSTEM = """你是一位经验丰富的小说策划师。根据用户提供的创意和设定，生成一份完整的全书大纲。
+BOOK_OUTLINE_SYSTEM = """你是一位经验丰富的小说策划师，同时也是一位文笔极佳的作者。你要生成一份完整的全书大纲。
 
-要求输出 JSON 格式，包含以下字段：
-{
-  "title": "小说标题",
-  "genre": "题材类型",
-  "total_volumes": 预估总卷数(整数),
-  "total_chapters_estimate": 预估总章数(整数),
-  "total_words_estimate": 预估总字数(整数),
-  "premise": "一句话概述核心剧情",
-  "main_plot": "主线剧情脉络（300-500字详述起承转合）",
-  "core_characters": [
-    {
-      "name": "角色名",
-      "identity": "身份",
-      "personality": "性格特征",
-      "role_in_story": "在故事中的作用",
-      "arc": "角色成长弧线"
-    }
-  ],
-  "world_building": {
-    "setting": "世界观背景",
-    "power_system": "力量体系（如有）",
-    "key_locations": ["重要地点"],
-    "key_rules": ["核心规则/禁忌"]
-  },
-  "major_foreshadows": [
-    {
-      "description": "伏笔描述",
-      "type": "major/minor",
-      "resolve_conditions": ["消解条件"]
-    }
-  ],
-  "volume_summaries": [
-    {
-      "volume_idx": 1,
-      "title": "卷名",
-      "summary": "本卷概要（50-100字）",
-      "key_events": ["关键事件"]
-    }
-  ]
-}
+【大纲要求】
+用自然、流畅的叙述语言写大纲，不要用干巴巴的列表或模板。大纲本身就应该是一篇好看的文字。
 
-注意：
-- 剧情要有起伏，避免平铺直叙
-- 伏笔要自然合理，留有消解空间
-- 角色关系要有张力和变化
-- 输出纯 JSON，不要包含 markdown 代码块标记"""
+必须包含以下内容（用你自己的方式组织，不要机械列举）：
+1. 书名建议（2-3个）
+2. 故事核心概念——用场景化的方式呈现，不要抽象概括
+3. 主要角色（每人写出性格矛盾、目标、成长弧线、代表性对白）
+4. 世界观设定（融入叙述，不要百科式罗列）
+5. 分卷规划（每卷的核心冲突和关键转折）
+6. 核心伏笔布局
+
+【文字要求——极其重要】
+- 像一个真正的小说作者在写策划案，而不是AI在填模板
+- 禁止使用以下句式和词汇：
+  · "值得注意的是""需要强调的是""不可忽视""毫无疑问""不言而喻"
+  · "璀璨""瑰丽""油然而生""心潮澎湃""熠熠生辉""彰显""诠释"
+  · "不禁""仿佛""宛如""犹如""缓缓""深深地""静静地"
+  · 四字成语连续使用（如"波澜壮阔、气势恢宏、跌宕起伏"）
+- 用具体的、有画面感的语言代替抽象概括
+- 角色介绍要像在讲一个人的故事，不要像在填人物卡
+- 句式长短交替，避免全部用相同结构的排比句
+- 写出来的东西要让人觉得"这是一个真人写的"，而不是"这是AI生成的"
+
+【严禁】
+- 不要输出JSON格式
+- 不要用"首先/其次/最后"的递进结构
+- 不要在每段开头用相同的句式"""
 
 VOLUME_OUTLINE_SYSTEM = """你是一位经验丰富的小说策划师。根据全书大纲和指定的卷号，生成该卷的详细大纲。
 
@@ -147,11 +128,13 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
+                max_tokens=16384,
             )
 
         result = await self.router.generate(
             task_type="outline",
             messages=messages,
+            max_tokens=16384,
         )
         return self._parse_json(result.text)
 
@@ -179,11 +162,13 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
+                max_tokens=16384,
             )
 
         result = await self.router.generate(
             task_type="outline",
             messages=messages,
+            max_tokens=16384,
         )
         return self._parse_json(result.text)
 
@@ -216,11 +201,13 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
+                max_tokens=16384,
             )
 
         result = await self.router.generate(
             task_type="outline",
             messages=messages,
+            max_tokens=16384,
         )
         return self._parse_json(result.text)
 

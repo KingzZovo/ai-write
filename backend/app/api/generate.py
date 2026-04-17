@@ -189,6 +189,35 @@ async def generate_outline(
             if vol_ol:
                 volume_outline = vol_ol.content_json or {}
 
+    # Resolve style for outline generation (same as chapter generation)
+    style_instruction = ""
+    if req.project_id:
+        try:
+            from app.services.style_runtime import resolve_style_prompt
+            style_instruction = await resolve_style_prompt(db, req.project_id) or ""
+        except Exception:
+            pass
+
+    # Build Anti-AI instruction from filter words
+    anti_ai_instruction = ""
+    try:
+        from app.models.project import FilterWord
+        fw_result = await db.execute(
+            select(FilterWord).where(FilterWord.enabled == 1).limit(50)
+        )
+        filter_words = [fw.word for fw in fw_result.scalars().all()]
+        if filter_words:
+            anti_ai_instruction = f"\n\n【禁用词】严禁使用以下词汇：{'、'.join(filter_words)}\n用更自然、更口语化的表达替代。避免四字成语堆砌。句式要多变，长短交替。"
+    except Exception:
+        pass
+
+    # Combine user input with style and anti-AI instructions
+    enhanced_input = req.user_input
+    if style_instruction:
+        enhanced_input = f"{style_instruction}\n\n---\n\n用户创意：{req.user_input}"
+    if anti_ai_instruction:
+        enhanced_input += anti_ai_instruction
+
     async def event_stream() -> AsyncGenerator[str, None]:
         collected_text = []
         try:
@@ -198,7 +227,7 @@ async def generate_outline(
 
             if req.level == "book":
                 async for chunk in await generator.generate_book_outline(
-                    user_input=req.user_input, stream=True
+                    user_input=enhanced_input, stream=True
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
