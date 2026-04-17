@@ -474,7 +474,7 @@ async def detect_style_by_author(
     )
     books = list(result.scalars().all())
     if not books:
-        raise HTTPException(status_code=404, detail=f"未找到作者"{author}"的书籍")
+        raise HTTPException(status_code=404, detail=f"未找到作者的书籍")
 
     # Sample chunks from ALL books (diverse sampling)
     all_samples: list[str] = []
@@ -543,7 +543,7 @@ async def extract_structure_by_author(
     )
     books = list(result.scalars().all())
     if not books:
-        raise HTTPException(status_code=404, detail=f"未找到作者"{author}"的书籍")
+        raise HTTPException(status_code=404, detail=f"未找到作者的书籍")
 
     all_samples: list[str] = []
     for book in books:
