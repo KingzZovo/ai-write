@@ -89,27 +89,35 @@ export default function MobileWorkspace() {
     } catch { /* */ }
   }
 
-  const handleGenerateOutline = () => {
-    if (!currentProject || !creativeInput.trim() || isGenerating) return
+  const handleGenerateOutline = (level?: string) => {
+    if (!currentProject) { alert('请先选择一个项目'); return }
+    if (isGenerating) { alert('正在生成中，请稍候'); return }
+    const targetLevel = level || 'book'
+    const input = creativeInput.trim() || currentProject.title
     setIsGenerating(true)
     setOutlinePreview('')
+    setSavedOutline('')
+    setTab('list') // Switch to list view to show the streaming outline
     apiSSE(
       '/api/generate/outline',
-      { project_id: currentProject.id, level: 'book', user_input: creativeInput },
+      { project_id: currentProject.id, level: targetLevel, user_input: input },
       (text) => setOutlinePreview(prev => prev + text),
-      () => setIsGenerating(false),
+      () => { setIsGenerating(false); alert('大纲生成完成') },
     )
   }
 
   const handleGenerateChapter = () => {
-    if (!currentProject || !selectedChapter || isGenerating) return
+    if (!currentProject) { alert('请先选择一个项目'); return }
+    if (!selectedChapter) { alert('请先在目录中选择一个章节'); return }
+    if (isGenerating) { alert('正在生成中，请稍候'); return }
     setIsGenerating(true)
     setEditorContent('')
+    setTab('editor') // Switch to editor to show streaming content
     apiSSE(
       '/api/generate/chapter',
       { project_id: currentProject.id, chapter_id: selectedChapter.id },
       (text) => setEditorContent(prev => prev + text),
-      () => setIsGenerating(false),
+      () => { setIsGenerating(false); alert('章节生成完成') },
     )
   }
 
@@ -146,21 +154,35 @@ export default function MobileWorkspace() {
                     className="text-xs text-blue-600 shrink-0 ml-2">返回</button>
                 </div>
 
-                {volumes.length === 0 && savedOutline ? (
+                {/* Show streaming outline during generation */}
+                {isGenerating && outlinePreview && (
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-blue-600 animate-pulse">生成中...</span>
+                      <span className="text-xs text-gray-400">{outlinePreview.length} 字</span>
+                    </div>
+                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-100 max-h-[50vh] overflow-y-auto leading-relaxed"
+                      style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                      {outlinePreview}
+                    </pre>
+                  </div>
+                )}
+
+                {volumes.length === 0 && (savedOutline || (!isGenerating && outlinePreview)) ? (
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-gray-700">全书大纲</h3>
                     <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border max-h-[60vh] overflow-y-auto leading-relaxed"
                       style={{ fontFamily: "'Noto Serif SC', serif" }}>
-                      {savedOutline}
+                      {savedOutline || outlinePreview}
                     </pre>
                   </div>
-                ) : volumes.length === 0 ? (
+                ) : volumes.length === 0 && !isGenerating ? (
                   <div className="space-y-3">
                     <p className="text-sm text-gray-500">暂无大纲，输入你的小说创意：</p>
                     <textarea value={creativeInput} onChange={e => setCreativeInput(e.target.value)}
                       placeholder="例如：都市修仙，主角是外卖员意外获得修炼功法..."
                       className="w-full h-28 p-3 border border-gray-300 rounded-lg text-sm resize-none" />
-                    <button onClick={handleGenerateOutline} disabled={isGenerating || !creativeInput.trim()}
+                    <button onClick={() => handleGenerateOutline('book')} disabled={isGenerating || !creativeInput.trim()}
                       className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">
                       {isGenerating ? '大纲生成中...' : '生成全书大纲'}
                     </button>
