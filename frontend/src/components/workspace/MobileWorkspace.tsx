@@ -65,7 +65,14 @@ export default function MobileWorkspace() {
       // Check for running generation tasks
       try {
         const tasks = await apiFetch<any[]>(`/api/generate/async/project/${p.id}`)
-        const running = tasks.find((t: any) => t.status === 'pending' || t.status === 'running')
+        // Load polished text from completed task
+        const completed = tasks.find((t: any) => t.status === 'completed' && t.task_type?.startsWith('outline'))
+        if (completed) {
+          const full = await apiFetch<any>(`/api/generate/async/${completed.task_id}`)
+          if (full.polished_text) setPolishedOutline(full.polished_text)
+          if (full.result_text) setSavedOutline(prev => prev || full.result_text)
+        }
+        const running = tasks.find((t: any) => t.status === 'pending' || t.status === 'running' || t.status === 'polishing')
         if (running) {
           setIsGenerating(true)
           setGenTaskId(running.task_id)
@@ -84,6 +91,7 @@ export default function MobileWorkspace() {
                 setGenTaskId(null)
                 if (status.task_type.startsWith('outline')) {
                   setSavedOutline(status.result_text)
+                  setPolishedOutline(status.polished_text || '')
                   setOutlinePreview('')
                 }
               } else if (status.status === 'failed') {

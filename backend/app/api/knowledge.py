@@ -507,13 +507,50 @@ async def explore_source(
 async def list_books(
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
-) -> list[ReferenceBookResponse]:
-    """List all reference books."""
+) -> list[dict]:
+    """List all reference books with vector count."""
     query = select(ReferenceBook).order_by(ReferenceBook.created_at.desc())
     if status:
         query = query.where(ReferenceBook.status == status)
     result = await db.execute(query)
-    return [ReferenceBookResponse.model_validate(b) for b in result.scalars().all()]
+    books = result.scalars().all()
+
+    # Get vector counts from Qdrant
+    vector_counts: dict[str, int] = {}
+    try:
+        from qdrant_client import AsyncQdrantClient
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        from app.config import settings
+        qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+        for b in books:
+            try:
+                cnt = await qc.count(
+                    collection_name="styles",
+                    count_filter=Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(b.id)))]),
+                )
+                vector_counts[str(b.id)] = cnt.count
+            except Exception:
+                vector_counts[str(b.id)] = 0
+        await qc.close()
+    except Exception:
+        pass
+
+    # Get chunk counts from DB
+    chunk_counts: dict[str, int] = {}
+    for b in books:
+        cnt = await db.scalar(
+            select(func.count(TextChunk.id)).where(TextChunk.book_id == str(b.id))
+        )
+        chunk_counts[str(b.id)] = cnt or 0
+
+    return [
+        {
+            **ReferenceBookResponse.model_validate(b).model_dump(),
+            "vector_count": vector_counts.get(str(b.id), 0),
+            "chunk_count": chunk_counts.get(str(b.id), 0),
+        }
+        for b in books
+    ]
 
 
 @router.get("/books/{book_id}")

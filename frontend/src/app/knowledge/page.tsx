@@ -612,7 +612,7 @@ function BooksTab() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 ml-2">
-                    {qualityScore != null && (
+                    {qualityScore != null && qualityScore > 0 && (
                       <span className="text-sm font-bold text-blue-600">{Number(qualityScore).toFixed(1)}</span>
                     )}
                     <StatusBadge
@@ -620,6 +620,17 @@ function BooksTab() {
                       label={statusLabel[book.status] || book.status}
                     />
                   </div>
+                </div>
+                {/* Vector & chunk status */}
+                <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400">
+                  <span>切片: {(book as any).chunk_count || 0}</span>
+                  <span>向量: {(book as any).vector_count || 0}/{(book as any).chunk_count || 0}</span>
+                  {(book as any).vector_count > 0 && (book as any).vector_count >= (book as any).chunk_count && (
+                    <span className="text-green-500">向量化完成</span>
+                  )}
+                  {(book as any).vector_count > 0 && (book as any).vector_count < (book as any).chunk_count && (
+                    <span className="text-yellow-500">向量化中 {Math.round(((book as any).vector_count / (book as any).chunk_count) * 100)}%</span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <button onClick={() => setDetailBookId(book.id)}
@@ -637,7 +648,13 @@ function BooksTab() {
                       const data = await apiFetch<any>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
                       alert(`已提取写法：${data.name}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
-                  }} className="px-2.5 py-1 text-xs bg-purple-50 text-purple-600 rounded">提取风格</button>
+                  }} className="px-2.5 py-1 text-xs bg-purple-50 text-purple-600 rounded">提取写法</button>
+                  <button onClick={async () => {
+                    try {
+                      const data = await apiFetch<any>(`/api/styles/extract-structure/${book.id}`, { method: 'POST' })
+                      alert(`已提取架构：${JSON.stringify(data.structure?.structure_summary || '完成').slice(0, 100)}`)
+                    } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
+                  }} className="px-2.5 py-1 text-xs bg-orange-50 text-orange-600 rounded">提取架构</button>
                   <button onClick={() => deleteBook(book.id)}
                     className="px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded">删除</button>
                 </div>
