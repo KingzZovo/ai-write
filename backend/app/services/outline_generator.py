@@ -128,7 +128,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
-                max_tokens=16384,
+                max_tokens=163840,
             )
 
         result = await self.router.generate(
@@ -162,7 +162,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
-                max_tokens=16384,
+                max_tokens=163840,
             )
 
         result = await self.router.generate(
@@ -201,7 +201,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
-                max_tokens=16384,
+                max_tokens=163840,
             )
 
         result = await self.router.generate(
