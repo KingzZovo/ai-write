@@ -60,6 +60,39 @@ export default function MobileWorkspace() {
         const raw = String((bookOutline.content_json as any)?.raw_text || JSON.stringify(bookOutline.content_json, null, 2))
         setSavedOutline(raw)
       }
+      // Check for running generation tasks
+      try {
+        const tasks = await apiFetch<any[]>(`/api/generate/async/project/${p.id}`)
+        const running = tasks.find((t: any) => t.status === 'pending' || t.status === 'running')
+        if (running) {
+          setIsGenerating(true)
+          setGenTaskId(running.task_id)
+          // Resume polling
+          const poll = setInterval(async () => {
+            try {
+              const status = await apiFetch<any>(`/api/generate/async/${running.task_id}`)
+              if (status.task_type.startsWith('outline')) {
+                setOutlinePreview(status.progress_text || '')
+              } else {
+                setEditorContent(status.progress_text || '')
+              }
+              if (status.status === 'completed') {
+                clearInterval(poll)
+                setIsGenerating(false)
+                setGenTaskId(null)
+                if (status.task_type.startsWith('outline')) {
+                  setSavedOutline(status.result_text)
+                  setOutlinePreview('')
+                }
+              } else if (status.status === 'failed') {
+                clearInterval(poll)
+                setIsGenerating(false)
+                setGenTaskId(null)
+              }
+            } catch { /* */ }
+          }, 3000)
+        }
+      } catch { /* */ }
     } catch { /* */ }
   }, [])
 
@@ -89,36 +122,82 @@ export default function MobileWorkspace() {
     } catch { /* */ }
   }
 
-  const handleGenerateOutline = (level?: string) => {
+  const [genTaskId, setGenTaskId] = useState<string | null>(null)
+
+  const handleGenerateOutline = async (level?: string) => {
     if (!currentProject) { alert('请先选择一个项目'); return }
     if (isGenerating) { alert('正在生成中，请稍候'); return }
-    const targetLevel = level || 'book'
+    const taskType = `outline_${level || 'book'}`
     const input = creativeInput.trim() || currentProject.title
     setIsGenerating(true)
     setOutlinePreview('')
     setSavedOutline('')
-    setTab('list') // Switch to list view to show the streaming outline
-    apiSSE(
-      '/api/generate/outline',
-      { project_id: currentProject.id, level: targetLevel, user_input: input },
-      (text) => setOutlinePreview(prev => prev + text),
-      () => { setIsGenerating(false); alert('大纲生成完成') },
-    )
+    setTab('list')
+    try {
+      const data = await apiFetch<{ task_id: string }>('/api/generate/async', {
+        method: 'POST',
+        body: JSON.stringify({ project_id: currentProject.id, task_type: taskType, user_input: input }),
+      })
+      setGenTaskId(data.task_id)
+      // Start polling
+      const poll = setInterval(async () => {
+        try {
+          const status = await apiFetch<any>(`/api/generate/async/${data.task_id}`)
+          setOutlinePreview(status.progress_text || '')
+          if (status.status === 'completed') {
+            clearInterval(poll)
+            setIsGenerating(false)
+            setGenTaskId(null)
+            setSavedOutline(status.result_text)
+            setOutlinePreview('')
+          } else if (status.status === 'failed') {
+            clearInterval(poll)
+            setIsGenerating(false)
+            setGenTaskId(null)
+            alert(`生成失败: ${status.error_message || '未知错误'}`)
+          }
+        } catch { /* */ }
+      }, 3000)
+    } catch (e) {
+      setIsGenerating(false)
+      alert(e instanceof Error ? e.message : '提交生成任务失败')
+    }
   }
 
-  const handleGenerateChapter = () => {
+  const handleGenerateChapter = async () => {
     if (!currentProject) { alert('请先选择一个项目'); return }
     if (!selectedChapter) { alert('请先在目录中选择一个章节'); return }
     if (isGenerating) { alert('正在生成中，请稍候'); return }
     setIsGenerating(true)
     setEditorContent('')
-    setTab('editor') // Switch to editor to show streaming content
-    apiSSE(
-      '/api/generate/chapter',
-      { project_id: currentProject.id, chapter_id: selectedChapter.id },
-      (text) => setEditorContent(prev => prev + text),
-      () => { setIsGenerating(false); alert('章节生成完成') },
-    )
+    setTab('editor')
+    try {
+      const data = await apiFetch<{ task_id: string }>('/api/generate/async', {
+        method: 'POST',
+        body: JSON.stringify({ project_id: currentProject.id, task_type: 'chapter', chapter_id: selectedChapter.id }),
+      })
+      setGenTaskId(data.task_id)
+      const poll = setInterval(async () => {
+        try {
+          const status = await apiFetch<any>(`/api/generate/async/${data.task_id}`)
+          setEditorContent(status.progress_text || '')
+          if (status.status === 'completed') {
+            clearInterval(poll)
+            setIsGenerating(false)
+            setGenTaskId(null)
+            setEditorContent(status.result_text)
+          } else if (status.status === 'failed') {
+            clearInterval(poll)
+            setIsGenerating(false)
+            setGenTaskId(null)
+            alert(`生成失败: ${status.error_message || '未知错误'}`)
+          }
+        } catch { /* */ }
+      }, 3000)
+    } catch (e) {
+      setIsGenerating(false)
+      alert(e instanceof Error ? e.message : '提交生成任务失败')
+    }
   }
 
   const statusLabel: Record<string, string> = { draft: '草稿', generating: '生成中', completed: '完成' }

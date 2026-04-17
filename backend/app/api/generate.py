@@ -294,3 +294,98 @@ async def generate_outline(
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
+
+
+# =========================================================================
+# Async generation (background task mode — for mobile / persistent progress)
+# =========================================================================
+
+
+class AsyncGenerateRequest(BaseModel):
+    project_id: str
+    task_type: str = "outline_book"  # outline_book, outline_volume, outline_chapter, chapter
+    user_input: str = ""
+    style_id: str | None = None
+    chapter_id: str | None = None
+    volume_idx: int | None = None
+    chapter_idx: int | None = None
+
+
+@router.post("/async")
+async def start_async_generation(
+    req: AsyncGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Start a background generation task. Returns task_id for polling."""
+    from app.models.generation_task import GenerationTask
+
+    task = GenerationTask(
+        project_id=req.project_id,
+        task_type=req.task_type,
+        status="pending",
+        params_json={
+            "user_input": req.user_input,
+            "style_id": req.style_id,
+            "chapter_id": req.chapter_id,
+            "volume_idx": req.volume_idx,
+            "chapter_idx": req.chapter_idx,
+        },
+    )
+    db.add(task)
+    await db.flush()
+    await db.refresh(task)
+
+    from app.tasks.knowledge_tasks import run_async_generation
+    run_async_generation.delay(str(task.id))
+
+    return {"task_id": str(task.id), "status": "pending"}
+
+
+@router.get("/async/{task_id}")
+async def get_async_generation(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Poll generation task progress."""
+    from app.models.generation_task import GenerationTask
+
+    task = await db.get(GenerationTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    return {
+        "task_id": str(task.id),
+        "task_type": task.task_type,
+        "status": task.status,
+        "char_count": task.char_count,
+        "progress_text": task.progress_text or "",
+        "result_text": task.result_text or "",
+        "error_message": task.error_message,
+        "created_at": str(task.created_at),
+    }
+
+
+@router.get("/async/project/{project_id}")
+async def list_project_tasks(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List generation tasks for a project."""
+    from app.models.generation_task import GenerationTask
+
+    result = await db.execute(
+        select(GenerationTask)
+        .where(GenerationTask.project_id == project_id)
+        .order_by(GenerationTask.created_at.desc())
+        .limit(10)
+    )
+    return [
+        {
+            "task_id": str(t.id),
+            "task_type": t.task_type,
+            "status": t.status,
+            "char_count": t.char_count,
+            "created_at": str(t.created_at),
+        }
+        for t in result.scalars().all()
+    ]

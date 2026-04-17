@@ -5,6 +5,7 @@ via a single import of this package.
 """
 
 from app.db.session import Base
+from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
 from app.models.project import (
@@ -51,4 +52,5 @@ __all__ = [
     "PromptAsset",
     "PipelineRun",
     "PipelineChapterStatus",
+    "GenerationTask",
 ]

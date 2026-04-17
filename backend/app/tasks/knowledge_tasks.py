@@ -88,6 +88,137 @@ async def _vectorize_book_async(book_id: str):
     await qc.close()
 
 
+@celery_app.task(name="tasks.run_async_generation")
+def run_async_generation(task_id: str):
+    """Run outline/chapter generation in background with progress tracking."""
+    _run_async(_run_async_generation_impl(task_id))
+
+
+async def _run_async_generation_impl(task_id: str):
+    from app.db.session import async_session_factory
+    from app.models.generation_task import GenerationTask
+    from app.models.project import Outline
+    from app.services.model_router import get_model_router_async
+    from app.services.outline_generator import OutlineGenerator
+
+    router = await get_model_router_async()
+
+    async with async_session_factory() as db:
+        task = await db.get(GenerationTask, task_id)
+        if not task:
+            return
+
+        task.status = "running"
+        await db.commit()
+
+        params = task.params_json or {}
+        user_input = params.get("user_input", "")
+        project_id = str(task.project_id)
+
+        try:
+            # Resolve style
+            style_text = ""
+            style_id = params.get("style_id")
+            if style_id:
+                from app.models.project import StyleProfile
+                from app.services.style_compiler import compile_style
+                profile = await db.get(StyleProfile, style_id)
+                if profile:
+                    style_text = compile_style(profile)
+            if not style_text:
+                from app.services.style_runtime import resolve_style_prompt
+                style_text = await resolve_style_prompt(db, project_id) or ""
+
+            # Build enhanced input
+            enhanced = user_input
+            if style_text:
+                enhanced = f"{style_text}\n\n---\n\n用户创意：{user_input}"
+
+            # Generate based on task_type
+            generator = OutlineGenerator()
+            collected = []
+
+            if task.task_type == "outline_book":
+                async for chunk in await generator.generate_book_outline(
+                    user_input=enhanced, stream=True
+                ):
+                    collected.append(chunk)
+                    # Update progress every 20 chunks
+                    if len(collected) % 20 == 0:
+                        task.progress_text = "".join(collected)
+                        task.char_count = len(task.progress_text)
+                        await db.commit()
+
+            elif task.task_type == "outline_volume":
+                # Get book outline for context
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(Outline).where(Outline.project_id == project_id, Outline.level == "book")
+                )
+                book_ol = result.scalar_one_or_none()
+                book_data = book_ol.content_json if book_ol else {}
+
+                async for chunk in await generator.generate_volume_outline(
+                    book_outline=book_data,
+                    volume_idx=params.get("volume_idx", 1),
+                    user_notes=enhanced, stream=True
+                ):
+                    collected.append(chunk)
+                    if len(collected) % 20 == 0:
+                        task.progress_text = "".join(collected)
+                        task.char_count = len(task.progress_text)
+                        await db.commit()
+
+            elif task.task_type == "chapter":
+                from app.services.chapter_generator import ChapterGenerator
+                from app.models.project import Chapter
+                ch = await db.get(Chapter, params.get("chapter_id", ""))
+                if not ch:
+                    raise ValueError("章节不存在")
+                gen = ChapterGenerator()
+                async for chunk in gen.generate_stream(
+                    project_settings={}, world_rules=[], book_outline_summary="",
+                    chapter_outline=ch.outline_json or {},
+                    previous_chapter_text="", style_instruction=style_text,
+                ):
+                    collected.append(chunk)
+                    if len(collected) % 20 == 0:
+                        task.progress_text = "".join(collected)
+                        task.char_count = len(task.progress_text)
+                        await db.commit()
+
+                # Save chapter content
+                if collected:
+                    ch.content_text = "".join(collected)
+                    ch.word_count = len(ch.content_text)
+                    ch.status = "completed"
+
+            full_text = "".join(collected)
+            task.result_text = full_text
+            task.progress_text = full_text
+            task.char_count = len(full_text)
+            task.status = "completed"
+
+            # Auto-save outline to outlines table
+            if task.task_type.startswith("outline") and full_text and project_id:
+                level = task.task_type.replace("outline_", "")
+                outline = Outline(
+                    project_id=project_id,
+                    level=level,
+                    content_json={"raw_text": full_text},
+                )
+                db.add(outline)
+
+            await db.commit()
+            logger.info("Async generation complete: %s, %d chars", task.task_type, len(full_text))
+
+        except Exception as e:
+            task.status = "failed"
+            task.error_message = str(e)[:500]
+            await db.commit()
+            logger.exception("Async generation failed: %s", task_id)
+
+
 @celery_app.task(name="tasks.run_pipeline_generation")
 def run_pipeline_generation(pipeline_id: str):
     """Execute pipeline generation: iterate chapters, generate, review."""
