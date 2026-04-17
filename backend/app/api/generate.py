@@ -38,6 +38,8 @@ class GenerateOutlineRequest(BaseModel):
     parent_outline_id: str | None = None
     volume_idx: int | None = None
     chapter_idx: int | None = None
+    style_id: str | None = None
+    max_tokens: int = 163840
 
 
 SSE_HEADERS = {
@@ -189,9 +191,18 @@ async def generate_outline(
             if vol_ol:
                 volume_outline = vol_ol.content_json or {}
 
-    # Resolve style for outline generation (same as chapter generation)
+    # Resolve style: explicit style_id > auto-resolve
     style_instruction = ""
-    if req.project_id:
+    if req.style_id:
+        try:
+            from app.models.project import StyleProfile
+            from app.services.style_compiler import compile_style
+            profile = await db.get(StyleProfile, req.style_id)
+            if profile:
+                style_instruction = compile_style(profile)
+        except Exception:
+            pass
+    if not style_instruction and req.project_id:
         try:
             from app.services.style_runtime import resolve_style_prompt
             style_instruction = await resolve_style_prompt(db, req.project_id) or ""
@@ -227,7 +238,7 @@ async def generate_outline(
 
             if req.level == "book":
                 async for chunk in await generator.generate_book_outline(
-                    user_input=enhanced_input, stream=True
+                    user_input=enhanced_input, stream=True, max_tokens=req.max_tokens
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
@@ -238,6 +249,7 @@ async def generate_outline(
                     volume_idx=req.volume_idx or 1,
                     user_notes=req.user_input,
                     stream=True,
+                    max_tokens=req.max_tokens,
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
@@ -249,6 +261,7 @@ async def generate_outline(
                     chapter_idx=req.chapter_idx or 1,
                     user_notes=req.user_input,
                     stream=True,
+                    max_tokens=req.max_tokens,
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
