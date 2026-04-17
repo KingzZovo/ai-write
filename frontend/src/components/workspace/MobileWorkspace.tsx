@@ -233,21 +233,27 @@ export default function MobileWorkspace() {
                     className="text-xs text-blue-600 shrink-0 ml-2">返回</button>
                 </div>
 
-                {/* Show streaming outline during generation */}
-                {isGenerating && outlinePreview && (
+                {/* Generation progress */}
+                {isGenerating && (
                   <div className="space-y-2 mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-blue-600 animate-pulse">生成中...</span>
-                      <span className="text-xs text-gray-400">{outlinePreview.length} 字</span>
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                      <span className="text-sm font-semibold text-blue-600">后台生成中...</span>
+                      {outlinePreview && <span className="text-xs text-gray-400">{outlinePreview.length} 字</span>}
                     </div>
-                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-100 max-h-[50vh] overflow-y-auto leading-relaxed"
-                      style={{ fontFamily: "'Noto Serif SC', serif" }}>
-                      {outlinePreview}
-                    </pre>
+                    {outlinePreview ? (
+                      <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-100 max-h-[50vh] overflow-y-auto leading-relaxed"
+                        style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                        {outlinePreview}
+                      </pre>
+                    ) : (
+                      <p className="text-xs text-gray-400">任务已提交，等待生成...</p>
+                    )}
                   </div>
                 )}
 
-                {volumes.length === 0 && (savedOutline || (!isGenerating && outlinePreview)) ? (
+                {/* Saved outline */}
+                {!isGenerating && volumes.length === 0 && (savedOutline || outlinePreview) ? (
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-gray-700">全书大纲</h3>
                     <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border max-h-[60vh] overflow-y-auto leading-relaxed"
@@ -255,7 +261,7 @@ export default function MobileWorkspace() {
                       {savedOutline || outlinePreview}
                     </pre>
                   </div>
-                ) : volumes.length === 0 && !isGenerating ? (
+                ) : !isGenerating && volumes.length === 0 ? (
                   <div className="space-y-3">
                     <p className="text-sm text-gray-500">暂无大纲，输入你的小说创意：</p>
                     <textarea value={creativeInput} onChange={e => setCreativeInput(e.target.value)}
