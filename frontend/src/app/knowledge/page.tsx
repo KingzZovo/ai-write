@@ -477,14 +477,29 @@ function BooksTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold text-gray-900">参考书库</h2>
-        <button
-          onClick={() => setShowUpload(!showUpload)}
-          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          上传书籍
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowUpload(!showUpload)}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg">
+            上传书籍
+          </button>
+          <button onClick={async () => {
+            try {
+              const authors = await apiFetch<any[]>('/api/styles/authors')
+              for (const a of authors) {
+                if (a.book_count >= 1) {
+                  await apiFetch(`/api/styles/detect-by-author/${encodeURIComponent(a.author)}`, { method: 'POST' })
+                  await apiFetch(`/api/styles/extract-structure-by-author/${encodeURIComponent(a.author)}`, { method: 'POST' })
+                  alert(`已提取 ${a.author} 的综合写法+架构（${a.book_count}本书）`)
+                }
+              }
+            } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
+          }} className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg">
+            按作者提取
+          </button>
+        </div>
       </div>
 
       {showUpload && (

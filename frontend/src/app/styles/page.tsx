@@ -59,6 +59,8 @@ export default function StylesPage() {
     finally { setLoading(false) }
   }, [])
 
+  const [activeTab, setActiveTab] = useState<'styles' | 'structures'>('styles')
+
   useEffect(() => { fetchStyles() }, [fetchStyles])
 
   const handleDelete = async (id: string) => {
@@ -95,10 +97,10 @@ export default function StylesPage() {
   return (
     <div className="pt-14 px-4 md:px-8 max-w-5xl mx-auto pb-12">
       {/* Header */}
-      <div className="flex items-end justify-between mb-8">
+      <div className="flex items-end justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">写法引擎</h1>
-          <p className="text-sm text-gray-500 mt-1">创建、管理和绑定写作风格 — 控制 AI 的笔触</p>
+          <p className="text-sm text-gray-500 mt-1">管理写作风格和剧情架构</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowDetect(true)}
@@ -145,8 +147,23 @@ export default function StylesPage() {
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setActiveTab('styles')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg ${activeTab === 'styles' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`}>
+          写作风格
+        </button>
+        <button onClick={() => setActiveTab('structures')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg ${activeTab === 'structures' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`}>
+          剧情架构
+        </button>
+      </div>
+
+      {/* Architecture section */}
+      {activeTab === 'structures' && <StructuresPanel />}
+
       {/* Style cards */}
-      {loading ? (
+      {activeTab === 'styles' && (loading ? (
         <div className="text-sm text-gray-400 text-center py-16">加载写法列表...</div>
       ) : styles.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
@@ -240,7 +257,45 @@ export default function StylesPage() {
             </div>
           ))}
         </div>
-      )}
+      ))}
+    </div>
+  )
+}
+
+/* ─── Structures Panel ─────────────────────────────────────── */
+
+function StructuresPanel() {
+  const [structures, setStructures] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiFetch<any[]>('/api/styles/structures')
+      .then(setStructures)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <p className="text-sm text-gray-400 text-center py-8">加载架构...</p>
+  if (structures.length === 0) return (
+    <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+      <p className="text-sm text-gray-500">暂无架构数据</p>
+      <p className="text-xs text-gray-400 mt-1">在参考书库中点击"提取架构"或"按作者提取"</p>
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      {structures.map((s: any) => (
+        <div key={s.book_id} className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-medium text-sm text-gray-900">{s.book_title}</h3>
+            <span className="text-[10px] px-2 py-0.5 bg-orange-50 text-orange-600 rounded">
+              {s.arc_pattern || '架构'}
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 leading-relaxed">{s.structure_summary}</p>
+        </div>
+      ))}
     </div>
   )
 }

@@ -449,3 +449,147 @@ async def extract_book_structure(
     await db.flush()
 
     return {"book_title": book.title, "structure": structure}
+
+
+# =========================================================================
+# Author-level aggregation (merge multiple books by same author)
+# =========================================================================
+
+
+@router.post("/detect-by-author/{author_name}", response_model=StyleProfileResponse, status_code=201)
+async def detect_style_by_author(
+    author_name: str,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Merge writing style from all books by the same author into one profile."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.style_detection import detect_style_features, detect_style_with_llm, features_to_rules
+    from urllib.parse import unquote
+
+    author = unquote(author_name)
+
+    # Get all books by this author
+    result = await db.execute(
+        select(ReferenceBook).where(ReferenceBook.author == author)
+    )
+    books = list(result.scalars().all())
+    if not books:
+        raise HTTPException(status_code=404, detail=f"未找到作者"{author}"的书籍")
+
+    # Sample chunks from ALL books (diverse sampling)
+    all_samples: list[str] = []
+    book_titles = []
+    for book in books:
+        book_titles.append(book.title)
+        ch_result = await db.execute(
+            select(TextChunk)
+            .where(TextChunk.book_id == str(book.id))
+            .order_by(TextChunk.sequence_id)
+        )
+        chunks = list(ch_result.scalars().all())
+        if chunks:
+            n = len(chunks)
+            step = max(1, n // 4)
+            for i in range(n // 10, n, step):
+                if i < n:
+                    all_samples.append(chunks[i].content)
+
+    if len(all_samples) < 3:
+        raise HTTPException(status_code=400, detail="该作者的书籍文本不足，无法分析")
+
+    # Take diverse samples across all books
+    import random
+    random.shuffle(all_samples)
+    combined = "\n\n".join(all_samples[:12])
+
+    features = detect_style_features(combined)
+    llm_analysis = await detect_style_with_llm(combined[:5000])
+    rules, anti_ai = features_to_rules(features, llm_analysis)
+
+    profile = StyleProfile(
+        name=f"{author} 综合写法",
+        description=f"从{author}的{len(books)}本书（{'、'.join(t[:10] for t in book_titles)}）综合提取的写作风格",
+        source_book=f"author:{author}",
+        rules_json=rules,
+        anti_ai_rules=anti_ai,
+        tone_keywords=features.get("style_labels", []),
+        sample_passages=[s[:500] for s in all_samples[:3]],
+        config_json={
+            "detection_features": features,
+            "llm_analysis": llm_analysis,
+            "source_books": [str(b.id) for b in books],
+            "author": author,
+        },
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/extract-structure-by-author/{author_name}")
+async def extract_structure_by_author(
+    author_name: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Merge plot structure analysis from all books by the same author."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.plot_structure import extract_plot_structure
+    from urllib.parse import unquote
+
+    author = unquote(author_name)
+    result = await db.execute(
+        select(ReferenceBook).where(ReferenceBook.author == author)
+    )
+    books = list(result.scalars().all())
+    if not books:
+        raise HTTPException(status_code=404, detail=f"未找到作者"{author}"的书籍")
+
+    all_samples: list[str] = []
+    for book in books:
+        ch_result = await db.execute(
+            select(TextChunk)
+            .where(TextChunk.book_id == str(book.id))
+            .order_by(TextChunk.sequence_id)
+        )
+        chunks = list(ch_result.scalars().all())
+        if chunks:
+            n = len(chunks)
+            step = max(1, n // 3)
+            for i in range(0, n, step):
+                if i < n:
+                    all_samples.append(chunks[i].content)
+
+    combined = "\n\n".join(all_samples[:8])
+    structure = await extract_plot_structure(combined)
+
+    # Store as author-level structure
+    for book in books:
+        metadata = book.metadata_json or {}
+        metadata["author_structure"] = structure
+        book.metadata_json = metadata
+    await db.flush()
+
+    return {
+        "author": author,
+        "book_count": len(books),
+        "structure": structure,
+    }
+
+
+@router.get("/authors")
+async def list_authors_with_books(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List authors that have multiple books for aggregation."""
+    from app.models.project import ReferenceBook
+    result = await db.execute(select(ReferenceBook).order_by(ReferenceBook.author))
+    books = result.scalars().all()
+    authors: dict[str, list] = {}
+    for b in books:
+        if b.author:
+            authors.setdefault(b.author, []).append({"id": str(b.id), "title": b.title})
+    return [
+        {"author": a, "book_count": len(bs), "books": bs}
+        for a, bs in authors.items()
+    ]

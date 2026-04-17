@@ -236,12 +236,22 @@ async def _run_async_generation_impl(task_id: str):
             full_text = _re.sub(r'`([^`]+)`', r'\1', full_text)  # `code`
             # Strip AI conversational fluff
             fluff_patterns = [
-                r'^(好的|当然|下面|以下|接下来)[，,。].*?\n',
-                r'^我(会|将|来|给你|不会|不能|可以).*?\n',
-                r'^如果你(愿意|需要|想要|希望).*?\n',
-                r'^希望(这|对你|能|以上).*?\n',
-                r'^(以上|这就是|这是一份).*?(大纲|方案|规划).*?\n',
+                # Opening fluff
+                r'^(好的|当然|下面|以下|接下来|没问题)[，,。！].*?\n',
+                r'^我(会|将|来|给你|不会|不能|可以|不直接|不照搬).*?\n',
+                # Conditional suggestions (delete entire paragraph)
+                r'^如果(你|需要|想|希望|愿意|以后|后续).*?\n',
+                r'^(你也可以|你可以|可以考虑|建议你|需要的话).*?\n',
+                # Closing fluff
+                r'^希望(这|对你|能|以上|你|整).*?\n',
+                r'^(以上|这就是|这是一份|这套|整体).*?(大纲|方案|规划|框架).*?\n',
                 r'^让我.*?\n',
+                # Meta-commentary about the writing process
+                r'^(整体按|整体气质|整体风格|整体来看).*?\n',
+                r'^(注意|提示|说明|备注)[：:].*?\n',
+                # "I won't copy X but will Y" disclaimers
+                r'^我不(会|能|直接|照搬).*?\n',
+                r'^(不直接|不去|不照搬).*?(某|某部|具体|特定).*?\n',
             ]
             for p in fluff_patterns:
                 full_text = _re.sub(p, '', full_text, flags=_re.MULTILINE)
