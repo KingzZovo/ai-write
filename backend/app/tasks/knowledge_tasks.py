@@ -20,10 +20,19 @@ logger = logging.getLogger(__name__)
 def _run_async(coro):
     """Run async function in sync Celery task context."""
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+def _make_session():
+    """Create a fresh async session factory for Celery tasks (avoids event loop conflicts)."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from app.config import settings
+    eng = create_async_engine(settings.DATABASE_URL, echo=False, pool_pre_ping=True, pool_size=3)
+    return async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
 
 
 @celery_app.task(name="tasks.vectorize_book")
@@ -95,15 +104,15 @@ def run_async_generation(task_id: str):
 
 
 async def _run_async_generation_impl(task_id: str):
-    from app.db.session import async_session_factory
     from app.models.generation_task import GenerationTask
     from app.models.project import Outline
     from app.services.model_router import get_model_router_async
     from app.services.outline_generator import OutlineGenerator
 
     router = await get_model_router_async()
+    session_factory = _make_session()
 
-    async with async_session_factory() as db:
+    async with session_factory() as db:
         task = await db.get(GenerationTask, task_id)
         if not task:
             return

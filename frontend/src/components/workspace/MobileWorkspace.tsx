@@ -118,6 +118,10 @@ export default function MobileWorkspace() {
       setCurrentProject(p)
       setNewTitle('')
       setNewGenre('')
+      setSavedOutline('')
+      setOutlinePreview('')
+      setVolumes([])
+      setChapters([])
       setTab('list')
     } catch { /* */ }
   }
@@ -247,7 +251,11 @@ export default function MobileWorkspace() {
                         {outlinePreview}
                       </pre>
                     ) : (
-                      <p className="text-xs text-gray-400">任务已提交，等待生成...</p>
+                      <div className="bg-blue-50 rounded-lg p-4 text-center">
+                        <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
+                        <p className="text-sm text-blue-600">大纲生成中，请稍候...</p>
+                        <p className="text-xs text-gray-400 mt-1">后台处理中，可离开此页面稍后回来查看</p>
+                      </div>
                     )}
                   </div>
                 )}
