@@ -15,10 +15,13 @@ interface Project { id: string; title: string; genre: string }
 interface Volume { id: string; title: string; volume_idx: number }
 interface Chapter { id: string; title: string; chapter_idx: number; word_count: number; status: string; content_text: string; volume_id?: string; volumeId?: string }
 
+interface Outline { id: string; level: string; content_json: Record<string, unknown> }
+
 export default function MobileWorkspace() {
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [volumes, setVolumes] = useState<Volume[]>([])
+  const [savedOutline, setSavedOutline] = useState('')
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null)
   const [editorContent, setEditorContent] = useState('')
@@ -39,6 +42,7 @@ export default function MobileWorkspace() {
   const loadProject = useCallback(async (p: Project) => {
     setCurrentProject(p)
     setSelectedChapter(null)
+    setSavedOutline('')
     setTab('list')
     try {
       const vols = await apiFetch<Volume[]>(`/api/projects/${p.id}/volumes`)
@@ -48,6 +52,13 @@ export default function MobileWorkspace() {
         setChapters(chs)
       } else {
         setChapters([])
+      }
+      // Load saved outlines
+      const outlines = await apiFetch<Outline[]>(`/api/projects/${p.id}/outlines`)
+      const bookOutline = outlines.find(o => o.level === 'book')
+      if (bookOutline) {
+        const raw = String((bookOutline.content_json as any)?.raw_text || JSON.stringify(bookOutline.content_json, null, 2))
+        setSavedOutline(raw)
       }
     } catch { /* */ }
   }, [])
@@ -135,7 +146,15 @@ export default function MobileWorkspace() {
                     className="text-xs text-blue-600 shrink-0 ml-2">返回</button>
                 </div>
 
-                {volumes.length === 0 ? (
+                {volumes.length === 0 && savedOutline ? (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700">全书大纲</h3>
+                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border max-h-[60vh] overflow-y-auto leading-relaxed"
+                      style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                      {savedOutline}
+                    </pre>
+                  </div>
+                ) : volumes.length === 0 ? (
                   <div className="space-y-3">
                     <p className="text-sm text-gray-500">暂无大纲，输入你的小说创意：</p>
                     <textarea value={creativeInput} onChange={e => setCreativeInput(e.target.value)}
