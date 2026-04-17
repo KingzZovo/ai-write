@@ -204,14 +204,27 @@ async def _run_async_generation_impl(task_id: str):
 
             full_text = "".join(collected)
 
-            # Post-process: strip Markdown formatting (AI detection fingerprint)
+            # Post-process: strip Markdown + AI fluff
             import re as _re
-            full_text = _re.sub(r'\*\*([^*]+)\*\*', r'\1', full_text)  # **bold** → bold
+            full_text = _re.sub(r'\*\*([^*]+)\*\*', r'\1', full_text)  # **bold**
+            full_text = _re.sub(r'\*([^*]+)\*', r'\1', full_text)  # *italic*
             full_text = _re.sub(r'^#{1,6}\s*', '', full_text, flags=_re.MULTILINE)  # # headers
             full_text = _re.sub(r'^---+\s*$', '', full_text, flags=_re.MULTILINE)  # --- hr
             full_text = _re.sub(r'^>\s*', '', full_text, flags=_re.MULTILINE)  # > blockquote
             full_text = _re.sub(r'`([^`]+)`', r'\1', full_text)  # `code`
+            # Strip AI conversational fluff
+            fluff_patterns = [
+                r'^(好的|当然|下面|以下|接下来)[，,。].*?\n',
+                r'^我(会|将|来|给你|不会|不能|可以).*?\n',
+                r'^如果你(愿意|需要|想要|希望).*?\n',
+                r'^希望(这|对你|能|以上).*?\n',
+                r'^(以上|这就是|这是一份).*?(大纲|方案|规划).*?\n',
+                r'^让我.*?\n',
+            ]
+            for p in fluff_patterns:
+                full_text = _re.sub(p, '', full_text, flags=_re.MULTILINE)
             full_text = _re.sub(r'\n{3,}', '\n\n', full_text)  # excess newlines
+            full_text = full_text.strip()
 
             task.result_text = full_text
             task.progress_text = full_text
