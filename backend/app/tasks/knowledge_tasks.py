@@ -153,7 +153,7 @@ async def _run_async_generation_impl(task_id: str):
                 ):
                     collected.append(chunk)
                     # Update progress every 20 chunks
-                    if len(collected) % 20 == 0:
+                    if len(collected) % 5 == 0:
                         task.progress_text = "".join(collected)
                         task.char_count = len(task.progress_text)
                         await db.commit()
@@ -173,7 +173,7 @@ async def _run_async_generation_impl(task_id: str):
                     user_notes=enhanced, stream=True
                 ):
                     collected.append(chunk)
-                    if len(collected) % 20 == 0:
+                    if len(collected) % 5 == 0:
                         task.progress_text = "".join(collected)
                         task.char_count = len(task.progress_text)
                         await db.commit()
@@ -191,7 +191,7 @@ async def _run_async_generation_impl(task_id: str):
                     previous_chapter_text="", style_instruction=style_text,
                 ):
                     collected.append(chunk)
-                    if len(collected) % 20 == 0:
+                    if len(collected) % 5 == 0:
                         task.progress_text = "".join(collected)
                         task.char_count = len(task.progress_text)
                         await db.commit()
@@ -203,6 +203,16 @@ async def _run_async_generation_impl(task_id: str):
                     ch.status = "completed"
 
             full_text = "".join(collected)
+
+            # Post-process: strip Markdown formatting (AI detection fingerprint)
+            import re as _re
+            full_text = _re.sub(r'\*\*([^*]+)\*\*', r'\1', full_text)  # **bold** → bold
+            full_text = _re.sub(r'^#{1,6}\s*', '', full_text, flags=_re.MULTILINE)  # # headers
+            full_text = _re.sub(r'^---+\s*$', '', full_text, flags=_re.MULTILINE)  # --- hr
+            full_text = _re.sub(r'^>\s*', '', full_text, flags=_re.MULTILINE)  # > blockquote
+            full_text = _re.sub(r'`([^`]+)`', r'\1', full_text)  # `code`
+            full_text = _re.sub(r'\n{3,}', '\n\n', full_text)  # excess newlines
+
             task.result_text = full_text
             task.progress_text = full_text
             task.char_count = len(full_text)
