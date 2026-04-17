@@ -115,7 +115,6 @@ class OutlineGenerator:
         self,
         user_input: str,
         stream: bool = False,
-        max_tokens: int = 163840,
     ) -> dict | AsyncIterator[str]:
         """Generate a book-level outline from user's creative input."""
         from app.services.prompt_loader import load_prompt
@@ -145,7 +144,6 @@ class OutlineGenerator:
         volume_idx: int,
         user_notes: str = "",
         stream: bool = False,
-        max_tokens: int = 163840,
     ) -> dict | AsyncIterator[str]:
         """Generate a volume-level outline from the book outline."""
         context = (
@@ -164,7 +162,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
-                max_tokens=163840,
+                # max_tokens from task routing config (Settings page)
             )
 
         result = await self.router.generate(
@@ -180,7 +178,6 @@ class OutlineGenerator:
         volume_outline: dict,
         chapter_idx: int,
         previous_chapter_summary: str = "",
-        max_tokens: int = 163840,
         user_notes: str = "",
         stream: bool = False,
     ) -> dict | AsyncIterator[str]:
@@ -204,7 +201,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
-                max_tokens=163840,
+                # max_tokens from task routing config (Settings page)
             )
 
         result = await self.router.generate(

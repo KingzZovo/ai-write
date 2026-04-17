@@ -39,7 +39,6 @@ class GenerateOutlineRequest(BaseModel):
     volume_idx: int | None = None
     chapter_idx: int | None = None
     style_id: str | None = None
-    max_tokens: int = 163840
 
 
 SSE_HEADERS = {
@@ -238,7 +237,7 @@ async def generate_outline(
 
             if req.level == "book":
                 async for chunk in await generator.generate_book_outline(
-                    user_input=enhanced_input, stream=True, max_tokens=req.max_tokens
+                    user_input=enhanced_input, stream=True
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
@@ -249,7 +248,6 @@ async def generate_outline(
                     volume_idx=req.volume_idx or 1,
                     user_notes=req.user_input,
                     stream=True,
-                    max_tokens=req.max_tokens,
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
@@ -261,7 +259,6 @@ async def generate_outline(
                     chapter_idx=req.chapter_idx or 1,
                     user_notes=req.user_input,
                     stream=True,
-                    max_tokens=req.max_tokens,
                 ):
                     collected_text.append(chunk)
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
