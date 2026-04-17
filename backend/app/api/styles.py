@@ -385,3 +385,39 @@ async def compile_preview(
     )
     compiled = compile_style(profile)
     return {"compiled_prompt": compiled, "char_count": len(compiled)}
+
+
+# =========================================================================
+# Plot Structure (optional — separate from writing style)
+# =========================================================================
+
+
+@router.post("/extract-structure/{book_id}")
+async def extract_book_structure(
+    book_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Extract plot structure from a reference book. Separate from style (文笔)."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.plot_structure import extract_plot_structure
+
+    book = await db.get(ReferenceBook, str(book_id))
+    if not book:
+        raise HTTPException(status_code=404, detail="参考书不存在")
+
+    result = await db.execute(
+        select(TextChunk)
+        .where(TextChunk.book_id == str(book_id))
+        .order_by(TextChunk.sequence_id)
+    )
+    chunks = list(result.scalars().all())
+    if not chunks:
+        raise HTTPException(status_code=400, detail="该书没有可分析的文本")
+
+    # Sample from different parts of the book
+    n = len(chunks)
+    samples = [chunks[i].content for i in range(0, n, max(1, n // 6))][:6]
+    combined = "\n\n".join(samples)
+
+    structure = await extract_plot_structure(combined)
+    return {"book_title": book.title, "structure": structure}

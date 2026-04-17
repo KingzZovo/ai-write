@@ -138,10 +138,32 @@ async def _run_async_generation_impl(task_id: str):
                 from app.services.style_runtime import resolve_style_prompt
                 style_text = await resolve_style_prompt(db, project_id) or ""
 
+            # Optional: extract plot structure from reference book
+            structure_text = ""
+            structure_book_id = params.get("structure_book_id")
+            if structure_book_id:
+                try:
+                    from app.models.project import TextChunk as _TC
+                    from app.services.plot_structure import extract_plot_structure, compile_structure_prompt
+                    from sqlalchemy import select as _sel
+                    tc_result = await db.execute(
+                        _sel(_TC).where(_TC.book_id == structure_book_id).order_by(_TC.sequence_id)
+                    )
+                    tc_chunks = list(tc_result.scalars().all())
+                    if tc_chunks:
+                        n = len(tc_chunks)
+                        tc_samples = [tc_chunks[i].content for i in range(0, n, max(1, n // 6))][:6]
+                        ps = await extract_plot_structure("\n\n".join(tc_samples))
+                        structure_text = compile_structure_prompt(ps)
+                except Exception as e:
+                    logger.warning("Plot structure extraction failed: %s", e)
+
             # Build enhanced input
             enhanced = user_input
             if style_text:
-                enhanced = f"{style_text}\n\n---\n\n用户创意：{user_input}"
+                enhanced = f"{style_text}\n\n{user_input}"
+            if structure_text:
+                enhanced = f"{enhanced}\n\n{structure_text}"
 
             # Generate based on task_type
             generator = OutlineGenerator()

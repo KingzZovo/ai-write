@@ -306,6 +306,7 @@ class AsyncGenerateRequest(BaseModel):
     task_type: str = "outline_book"  # outline_book, outline_volume, outline_chapter, chapter
     user_input: str = ""
     style_id: str | None = None
+    structure_book_id: str | None = None  # Optional: extract & use plot structure from this book
     chapter_id: str | None = None
     volume_idx: int | None = None
     chapter_idx: int | None = None
@@ -326,6 +327,7 @@ async def start_async_generation(
         params_json={
             "user_input": req.user_input,
             "style_id": req.style_id,
+            "structure_book_id": req.structure_book_id,
             "chapter_id": req.chapter_id,
             "volume_idx": req.volume_idx,
             "chapter_idx": req.chapter_idx,
