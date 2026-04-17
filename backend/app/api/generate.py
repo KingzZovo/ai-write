@@ -362,6 +362,7 @@ async def get_async_generation(
         "char_count": task.char_count,
         "progress_text": task.progress_text or "",
         "result_text": task.result_text or "",
+        "polished_text": task.polished_text or "",
         "error_message": task.error_message,
         "created_at": str(task.created_at),
     }

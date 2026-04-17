@@ -22,6 +22,8 @@ export default function MobileWorkspace() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [savedOutline, setSavedOutline] = useState('')
+  const [polishedOutline, setPolishedOutline] = useState('')
+  const [outlineVersion, setOutlineVersion] = useState<'raw' | 'polished'>('polished')
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null)
   const [editorContent, setEditorContent] = useState('')
@@ -148,11 +150,14 @@ export default function MobileWorkspace() {
         try {
           const status = await apiFetch<any>(`/api/generate/async/${data.task_id}`)
           setOutlinePreview(status.progress_text || '')
-          if (status.status === 'completed') {
+          if (status.status === 'polishing') {
+            setOutlinePreview(status.progress_text || status.result_text || '')
+          } else if (status.status === 'completed') {
             clearInterval(poll)
             setIsGenerating(false)
             setGenTaskId(null)
             setSavedOutline(status.result_text)
+            setPolishedOutline(status.polished_text || '')
             setOutlinePreview('')
           } else if (status.status === 'failed') {
             clearInterval(poll)
@@ -253,7 +258,7 @@ export default function MobileWorkspace() {
                     ) : (
                       <div className="bg-blue-50 rounded-lg p-4 text-center">
                         <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
-                        <p className="text-sm text-blue-600">大纲生成中，请稍候...</p>
+                        <p className="text-sm text-blue-600">{outlinePreview ? '润色去AI中...' : '大纲生成中，请稍候...'}</p>
                         <p className="text-xs text-gray-400 mt-1">后台处理中，可离开此页面稍后回来查看</p>
                       </div>
                     )}
@@ -263,10 +268,24 @@ export default function MobileWorkspace() {
                 {/* Saved outline */}
                 {!isGenerating && volumes.length === 0 && (savedOutline || outlinePreview) ? (
                   <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-gray-700">全书大纲</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-700">全书大纲</h3>
+                      {polishedOutline && savedOutline && (
+                        <div className="flex gap-1">
+                          <button onClick={() => setOutlineVersion('polished')}
+                            className={`px-2 py-1 text-xs rounded ${outlineVersion === 'polished' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                            润色版
+                          </button>
+                          <button onClick={() => setOutlineVersion('raw')}
+                            className={`px-2 py-1 text-xs rounded ${outlineVersion === 'raw' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                            原始版
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border max-h-[60vh] overflow-y-auto leading-relaxed"
                       style={{ fontFamily: "'Noto Serif SC', serif" }}>
-                      {savedOutline || outlinePreview}
+                      {outlineVersion === 'polished' && polishedOutline ? polishedOutline : (savedOutline || outlinePreview)}
                     </pre>
                   </div>
                 ) : !isGenerating && volumes.length === 0 ? (

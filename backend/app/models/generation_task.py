@@ -21,7 +21,8 @@ class GenerationTask(Base):
     task_type = Column(String(30), nullable=False)  # outline_book, outline_volume, outline_chapter, chapter
     status = Column(String(20), default="pending")  # pending, running, completed, failed
     progress_text = Column(Text, default="")  # accumulated generated text so far
-    result_text = Column(Text, default="")  # final result
+    result_text = Column(Text, default="")  # original version (raw)
+    polished_text = Column(Text, default="")  # anti-AI polished version
     error_message = Column(Text, nullable=True)
     params_json = Column(JSON, default=dict)  # user_input, style_id, chapter_id, etc.
     char_count = Column(Integer, default=0)
