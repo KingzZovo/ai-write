@@ -19,35 +19,34 @@ logger = logging.getLogger(__name__)
 
 
 def compile_style(profile: StyleProfile) -> str:
-    """Compile a StyleProfile into a prompt instruction string."""
+    """Compile a StyleProfile into a prompt instruction string.
+
+    Only injects WRITING STYLE rules (rhythm, tone, sentence patterns).
+    Filters out STRUCTURAL rules (volume count, chapter naming, format).
+    """
     sections: list[str] = []
 
-    # Header
-    sections.append(f"【写法指导：{profile.name}】")
-    if profile.description:
-        sections.append(profile.description)
+    sections.append(f"写作风格参考：{profile.name}")
 
-    # Weighted rules
+    # Filter rules: only keep style/rhythm/dialogue rules, NOT structure/format
     rules = profile.rules_json or []
-    if rules:
-        must_rules = [r for r in rules if r.get("weight", 0.5) >= 0.85]
-        prefer_rules = [r for r in rules if 0.65 <= r.get("weight", 0.5) < 0.85]
-        ref_rules = [r for r in rules if r.get("weight", 0.5) < 0.65]
+    structure_keywords = ["卷", "册", "章节", "篇章", "标题", "命名", "结构", "分卷", "正传", "前传", "开场方式", "仪式化"]
+    style_rules = []
+    for r in rules:
+        rule_text = r.get("rule", "")
+        cat = r.get("category", "")
+        # Skip structural rules
+        if any(kw in rule_text for kw in structure_keywords):
+            continue
+        if cat in ("structure",) and any(kw in rule_text for kw in ["视角", "视点"]):
+            style_rules.append(r)  # Narrative POV is style, keep it
+        elif cat not in ("structure",):
+            style_rules.append(r)
 
-        if must_rules:
-            sections.append("\n【必须保持】")
-            for r in must_rules:
-                sections.append(f"- {r.get('rule', '')}")
-
-        if prefer_rules:
-            sections.append("\n【优先保持】")
-            for r in prefer_rules:
-                sections.append(f"- {r.get('rule', '')}")
-
-        if ref_rules:
-            sections.append("\n【参考风格】")
-            for r in ref_rules:
-                sections.append(f"- {r.get('rule', '')}")
+    if style_rules:
+        sections.append("写作时参考以下风格特征（只影响文笔，不影响故事结构和卷数）：")
+        for r in style_rules[:10]:  # Cap at 10 rules to avoid over-constraining
+            sections.append(f"- {r.get('rule', '')[:100]}")
 
     # Anti-AI rules
     anti_ai = profile.anti_ai_rules or []
