@@ -2,9 +2,11 @@
 
 import React, { useState } from 'react'
 import { useProjectStore } from '@/stores/projectStore'
+import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
 
 interface OutlineTreeProps {
   onSelectChapter?: (chapterId: string) => void
+  volumeOutlines?: Record<number, Record<string, unknown>>
 }
 
 const statusColors: Record<string, string> = {
@@ -19,12 +21,22 @@ const statusLabels: Record<string, string> = {
   completed: '完成',
 }
 
-export function OutlineTree({ onSelectChapter }: OutlineTreeProps) {
+export function OutlineTree({ onSelectChapter, volumeOutlines }: OutlineTreeProps) {
   const { volumes, chapters, selectedChapterId, selectChapter } = useProjectStore()
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+  const [outlineOpen, setOutlineOpen] = useState<Set<string>>(new Set())
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleOutline = (id: string) => {
+    setOutlineOpen((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -52,6 +64,8 @@ export function OutlineTree({ onSelectChapter }: OutlineTreeProps) {
   return (
     <div className="text-sm">
       {sortedVolumes.map((volume) => {
+        const volIdx = volume.volume_idx ?? volume.volumeIdx
+        const volOutline = volumeOutlines?.[volIdx]
         const volChapters = chapters
           .filter((ch) => (ch.volume_id ?? ch.volumeId) === volume.id)
           .sort((a, b) => (a.chapter_idx ?? a.chapterIdx) - (b.chapter_idx ?? b.chapterIdx))
@@ -80,6 +94,24 @@ export function OutlineTree({ onSelectChapter }: OutlineTreeProps) {
 
             {expandedNodes.has(volume.id) && (
               <div className="ml-4">
+                {volOutline && (
+                  <div className="mb-1">
+                    <button
+                      onClick={() => toggleOutline(volume.id)}
+                      className="flex items-center w-full px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded"
+                    >
+                      <span className="mr-1">
+                        {outlineOpen.has(volume.id) ? '▼' : '▶'}
+                      </span>
+                      <span>本卷大纲</span>
+                    </button>
+                    {outlineOpen.has(volume.id) && (
+                      <div className="px-3 py-2 text-xs bg-indigo-50/40 border-l-2 border-indigo-200 ml-2 rounded-r">
+                        <VolumeOutlineBlock data={volOutline} />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {volChapters.map((chapter) => {
                   const wc = chapter.word_count ?? chapter.wordCount ?? 0
                   const st = chapter.status || 'draft'
