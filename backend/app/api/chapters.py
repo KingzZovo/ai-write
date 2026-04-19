@@ -25,6 +25,7 @@ class ChapterUpdate(BaseModel):
     content_text: str | None = None
     outline_json: dict | None = None
     status: str | None = None
+    target_words: int | None = None
 
 
 class ChapterSyncRequest(BaseModel):
@@ -42,6 +43,7 @@ class ChapterResponse(BaseModel):
     word_count: int
     status: str
     summary: str | None
+    target_words: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -139,6 +141,9 @@ async def update_chapter(
         chapter.outline_json = body.outline_json
     if body.status is not None:
         chapter.status = body.status
+    data = body.model_dump(exclude_unset=True)
+    if "target_words" in data:
+        chapter.target_words = body.target_words
 
     await db.flush()
     await db.refresh(chapter)

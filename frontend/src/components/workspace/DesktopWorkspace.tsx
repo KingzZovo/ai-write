@@ -1064,6 +1064,16 @@ export default function DesktopWorkspace() {
                       {currentChapter.title}
                     </h3>
                     <div className="flex items-center gap-2">
+                      <ChapterTargetWordsEditor
+                        projectId={currentProject!.id}
+                        chapter={currentChapter}
+                        projectDefault={
+                          currentProject?.settings_json?.target_chapter_words ?? null
+                        }
+                        onSaved={() => {
+                          if (currentProject) loadProjectData(currentProject.id)
+                        }}
+                      />
                       <span className="text-xs text-gray-400">
                         {(
                           currentChapter.word_count ??
@@ -1278,6 +1288,59 @@ function detectVolumeCount(text: string): number {
 // ================================================================
 // End of module
 // ================================================================
+
+function ChapterTargetWordsEditor({
+  projectId,
+  chapter,
+  projectDefault,
+  onSaved,
+}: {
+  projectId: string
+  chapter: Chapter
+  projectDefault: number | null | undefined
+  onSaved: () => void
+}) {
+  const initial = (chapter as unknown as { target_words?: number | null }).target_words ?? null
+  const [text, setText] = useState(initial != null ? String(initial) : '')
+  const [editing, setEditing] = useState(false)
+  const effective = initial != null ? initial : (projectDefault ?? null)
+  const save = async () => {
+    const trimmed = text.trim()
+    const n: number | null = trimmed ? parseInt(trimmed, 10) : null
+    if (trimmed && (Number.isNaN(n!) || (n as number) <= 0)) return
+    await apiFetch(`/api/projects/${projectId}/chapters/${chapter.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ target_words: n }),
+    })
+    setEditing(false)
+    onSaved()
+  }
+  return (
+    <span className="text-xs text-gray-500">
+      {editing ? (
+        <>
+          目标：
+          <input
+            type="number"
+            min={0}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+            autoFocus
+            className="w-20 px-1 py-0.5 text-xs border border-blue-300 rounded ml-1"
+            placeholder={projectDefault ? String(projectDefault) : '默认'}
+          />
+        </>
+      ) : (
+        <button onClick={() => setEditing(true)} className="hover:text-gray-800">
+          目标 {effective ? `${effective.toLocaleString()} 字` : '未设'}
+          {initial == null && projectDefault ? '（默认）' : ''}
+        </button>
+      )}
+    </span>
+  )
+}
 
 function VolumeOutlineEditor({
   volume,
