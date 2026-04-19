@@ -372,37 +372,71 @@ export default function DesktopWorkspace() {
     const outlinesByIdx: Record<number, Record<string, unknown>> = {}
 
     try {
+      const isEmptyOrInvalid = (p: Record<string, unknown>) => {
+        const hasStructure =
+          typeof p.title === 'string' ||
+          Array.isArray(p.chapter_summaries) ||
+          typeof p.core_conflict === 'string'
+        return !hasStructure
+      }
+
       for (let i = 1; i <= count; i++) {
+        const existing = volumes.find(
+          (v) => (v.volume_idx ?? v.volumeIdx) === i
+        )
+        if (existing) {
+          setWizardProgress((prev) => prev + `\n第 ${i} 卷已存在，跳过`)
+          continue
+        }
+
+        const runOnce = async (): Promise<{
+          text: string
+          outlineId: string | null
+          parsed: Record<string, unknown>
+        }> => {
+          let text = ''
+          let outlineId: string | null = null
+          await new Promise<void>((resolve) => {
+            apiSSE(
+              '/api/generate/outline',
+              {
+                project_id: currentProject.id,
+                level: 'volume',
+                volume_idx: i,
+                parent_outline_id: confirmedOutlineId,
+                user_input: creativeInput,
+              },
+              (t) => {
+                text += t
+                setWizardProgress(
+                  `正在生成第 ${i}/${count} 卷大纲...\n${text.slice(-200)}`
+                )
+              },
+              () => resolve(),
+              (evt) => {
+                if (evt.status === 'saved' && typeof evt.outline_id === 'string') {
+                  outlineId = evt.outline_id
+                }
+              },
+            )
+          })
+          return { text, outlineId, parsed: parseVolumeOutline(text) }
+        }
+
         setWizardProgress(`正在生成第 ${i}/${count} 卷大纲...`)
+        let { text: volumeOutlineText, outlineId: volumeOutlineId, parsed } = await runOnce()
+        if (isEmptyOrInvalid(parsed)) {
+          setWizardProgress((prev) => prev + `\n第 ${i} 卷首次生成无效，重试中...`)
+          const retry = await runOnce()
+          volumeOutlineText = retry.text
+          volumeOutlineId = retry.outlineId
+          parsed = retry.parsed
+        }
+        if (isEmptyOrInvalid(parsed)) {
+          setWizardProgress((prev) => prev + `\n⚠ 第 ${i} 卷生成失败，已跳过`)
+          continue
+        }
 
-        let volumeOutlineText = ''
-        let volumeOutlineId: string | null = null
-        await new Promise<void>((resolve) => {
-          apiSSE(
-            '/api/generate/outline',
-            {
-              project_id: currentProject.id,
-              level: 'volume',
-              volume_idx: i,
-              parent_outline_id: confirmedOutlineId,
-              user_input: creativeInput,
-            },
-            (text) => {
-              volumeOutlineText += text
-              setWizardProgress(
-                `正在生成第 ${i}/${count} 卷大纲...\n${volumeOutlineText.slice(-200)}`
-              )
-            },
-            () => resolve(),
-            (evt) => {
-              if (evt.status === 'saved' && typeof evt.outline_id === 'string') {
-                volumeOutlineId = evt.outline_id
-              }
-            },
-          )
-        })
-
-        const parsed = parseVolumeOutline(volumeOutlineText)
         outlinesByIdx[i] = parsed
         setVolumeOutlines((prev) => ({ ...prev, [i]: parsed }))
 
@@ -491,6 +525,7 @@ export default function DesktopWorkspace() {
     confirmedOutlineId,
     volumeCountInput,
     outlinePreview,
+    volumes,
     setIsGenerating,
     setVolumes,
     setChapters,
