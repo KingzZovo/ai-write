@@ -115,3 +115,67 @@ async def test_soft_delete_and_restore_project(auth_client):
     assert resp.status_code == 204
     resp = await auth_client.get(f"/api/projects/{pid}")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_relationships_crud(auth_client):
+    # Create project
+    resp = await auth_client.post("/api/projects", json={"title": "关系测试", "genre": "测试"})
+    assert resp.status_code == 201
+    pid = resp.json()["id"]
+
+    # Create two characters
+    c1 = (await auth_client.post(f"/api/projects/{pid}/characters", json={"name": "甲"})).json()
+    c2 = (await auth_client.post(f"/api/projects/{pid}/characters", json={"name": "乙"})).json()
+
+    # Create relationship
+    resp = await auth_client.post(
+        f"/api/projects/{pid}/relationships",
+        json={
+            "source_id": c1["id"],
+            "target_id": c2["id"],
+            "rel_type": "rival",
+            "label": "宿敌",
+            "sentiment": "negative",
+        },
+    )
+    assert resp.status_code == 201
+    rid = resp.json()["id"]
+
+    # List
+    resp = await auth_client.get(f"/api/projects/{pid}/relationships")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["relationships"][0]["label"] == "宿敌"
+
+    # Update
+    resp = await auth_client.put(
+        f"/api/projects/{pid}/relationships/{rid}",
+        json={"label": "死敌"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] == "死敌"
+
+    # Bulk
+    resp = await auth_client.post(
+        f"/api/projects/{pid}/relationships/bulk",
+        json={"items": [{
+            "source_id": c2["id"],
+            "target_id": c1["id"],
+            "rel_type": "rival",
+            "label": "反向",
+            "sentiment": "negative",
+        }]},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["created"] == 1
+
+    # Delete
+    resp = await auth_client.delete(f"/api/projects/{pid}/relationships/{rid}")
+    assert resp.status_code == 204
+    resp = await auth_client.get(f"/api/projects/{pid}/relationships")
+    assert resp.json()["total"] == 1
+
+    # Cleanup
+    await auth_client.delete(f"/api/projects/{pid}?purge=true")
