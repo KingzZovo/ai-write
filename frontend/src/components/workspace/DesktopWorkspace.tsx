@@ -207,8 +207,17 @@ export default function DesktopWorkspace() {
           `/api/projects/${projectId}/outlines`
         )
 
-        // Load book outline into preview (prefer confirmed)
-        const bookOutlines = outlines.filter((o) => o.level === 'book')
+        // Load book outline into preview (prefer confirmed).
+        // Filter out legacy garbage: book-level records whose content is actually
+        // a volume outline (has volume_idx key). Sort by id ascending to prefer
+        // the earliest valid record.
+        const bookOutlines = outlines
+          .filter((o) => o.level === 'book')
+          .filter((o) => {
+            const cj = (o.content_json as Record<string, unknown>) || {}
+            return !('volume_idx' in cj)
+          })
+          .sort((a, b) => (a.id < b.id ? -1 : 1))
         const bookOutline =
           bookOutlines.find((o) => o.is_confirmed) || bookOutlines[0] || null
         if (bookOutline) {
