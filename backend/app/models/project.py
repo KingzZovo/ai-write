@@ -33,6 +33,7 @@ class Project(Base):
     settings_json = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # relationships
     volumes = relationship(

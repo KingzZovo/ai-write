@@ -1,5 +1,6 @@
 """Project management endpoints."""
 
+from datetime import datetime, timezone as _tz
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,15 +24,26 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 async def list_projects(
     skip: int = 0,
     limit: int = 50,
+    trashed: bool = False,
     db: AsyncSession = Depends(get_db),
 ) -> ProjectListResponse:
-    """List all projects with pagination."""
-    count_result = await db.execute(select(func.count(Project.id)))
+    """List projects; active by default. Pass ?trashed=true for the trash bin."""
+    deleted_filter = (
+        Project.deleted_at.is_not(None) if trashed else Project.deleted_at.is_(None)
+    )
+    order_col = (
+        Project.deleted_at.desc() if trashed else Project.updated_at.desc()
+    )
+
+    count_result = await db.execute(
+        select(func.count(Project.id)).where(deleted_filter)
+    )
     total = count_result.scalar_one()
 
     result = await db.execute(
         select(Project)
-        .order_by(Project.updated_at.desc())
+        .where(deleted_filter)
+        .order_by(order_col)
         .offset(skip)
         .limit(limit)
     )
@@ -64,9 +76,10 @@ async def create_project(
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: UUID,
+    include_deleted: bool = False,
     db: AsyncSession = Depends(get_db),
 ) -> ProjectResponse:
-    """Get a single project by ID, including its volumes."""
+    """Get a single project by ID. Returns 404 for soft-deleted unless include_deleted=true."""
     result = await db.execute(
         select(Project)
         .options(
@@ -77,6 +90,8 @@ async def get_project(
     project = result.scalar_one_or_none()
 
     if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.deleted_at is not None and not include_deleted:
         raise HTTPException(status_code=404, detail="Project not found")
 
     return ProjectResponse.model_validate(project)
@@ -109,9 +124,10 @@ async def update_project(
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
     project_id: UUID,
+    purge: bool = False,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete a project and all related data."""
+    """Soft-delete by default; pass ?purge=true to hard-delete from trash."""
     result = await db.execute(
         select(Project).where(Project.id == project_id)
     )
@@ -120,7 +136,11 @@ async def delete_project(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    await db.delete(project)
+    if purge:
+        await db.delete(project)
+    else:
+        if project.deleted_at is None:
+            project.deleted_at = datetime.now(_tz.utc)
     await db.flush()
 
 
