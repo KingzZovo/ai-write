@@ -93,6 +93,7 @@ class ChapterUpdate(BaseModel):
     word_count: int | None = None
     status: str | None = Field(None, max_length=20)
     summary: str | None = None
+    target_words: int | None = None
 
 
 class ChapterResponse(BaseModel):
@@ -107,6 +108,7 @@ class ChapterResponse(BaseModel):
     word_count: int
     status: str
     summary: str | None = None
+    target_words: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -316,3 +318,47 @@ class VolumeSummaryResponse(BaseModel):
     character_snapshot_json: dict[str, Any] | None = None
     plot_progress_json: dict[str, Any] | None = None
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Relationship
+# ---------------------------------------------------------------------------
+
+
+class RelationshipCreate(BaseModel):
+    source_id: UUID
+    target_id: UUID
+    rel_type: str = Field(..., max_length=50)
+    label: str = Field(default="", max_length=200)
+    note: str = ""
+    sentiment: str = Field(default="neutral", max_length=20)
+
+
+class RelationshipUpdate(BaseModel):
+    rel_type: str | None = Field(None, max_length=50)
+    label: str | None = Field(None, max_length=200)
+    note: str | None = None
+    sentiment: str | None = Field(None, max_length=20)
+
+
+class RelationshipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    source_id: UUID
+    target_id: UUID
+    rel_type: str
+    label: str
+    note: str
+    sentiment: str
+    created_at: datetime
+
+
+class RelationshipListResponse(BaseModel):
+    relationships: list[RelationshipResponse]
+    total: int
+
+
+class RelationshipBulkRequest(BaseModel):
+    items: list[RelationshipCreate]

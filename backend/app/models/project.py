@@ -94,6 +94,7 @@ class Chapter(Base):
     summary = Column(Text)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    target_words = Column(Integer, nullable=True)
 
     volume = relationship("Volume", back_populates="chapters")
     versions = relationship(
@@ -435,4 +436,30 @@ class FilterWord(Base):
     source = Column(String(20), default="builtin")  # builtin, user, ai_detected
     enabled = Column(Integer, default=1)
     hit_count = Column(Integer, default=0)  # how many times detected
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class Relationship(Base):
+    __tablename__ = "relationships"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rel_type = Column(String(50), nullable=False)
+    label = Column(String(200), default="")
+    note = Column(Text, default="")
+    sentiment = Column(String(20), default="neutral")
     created_at = Column(DateTime(timezone=True), default=_utcnow)
