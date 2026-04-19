@@ -8,6 +8,11 @@ export interface Project {
   created_at?: string
   updated_at?: string
   deleted_at?: string | null
+  settings_json?: {
+    target_total_words?: number | null
+    target_chapter_words?: number | null
+    [key: string]: unknown
+  } | null
 }
 
 export interface Volume {

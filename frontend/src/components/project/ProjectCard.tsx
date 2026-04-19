@@ -18,6 +18,7 @@ interface Props {
   onOpen: (id: string) => void
   onRename: (project: Project) => void
   onDelete: (project: Project) => void
+  onSettings: (project: Project) => void
 }
 
 function formatRelative(iso?: string): string {
@@ -41,6 +42,7 @@ export function ProjectCard({
   onOpen,
   onRename,
   onDelete,
+  onSettings,
 }: Props) {
   const handleBodyClick = () => {
     if (selectable) onToggleSelect?.(project.id)
@@ -99,6 +101,7 @@ export function ProjectCard({
       {!selectable && (
         <ProjectCardMenu
           onRename={() => onRename(project)}
+          onSettings={() => onSettings(project)}
           onDelete={() => onDelete(project)}
         />
       )}
@@ -108,9 +111,11 @@ export function ProjectCard({
 
 function ProjectCardMenu({
   onRename,
+  onSettings,
   onDelete,
 }: {
   onRename: () => void
+  onSettings: () => void
   onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -141,6 +146,12 @@ function ProjectCardMenu({
             className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
           >
             重命名
+          </button>
+          <button
+            onClick={() => { setOpen(false); onSettings() }}
+            className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            项目设置
           </button>
           <button
             onClick={() => { setOpen(false); onDelete() }}

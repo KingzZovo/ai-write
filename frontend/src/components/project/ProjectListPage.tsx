@@ -10,6 +10,7 @@ import { NewProjectModal } from './NewProjectModal'
 import { RenameProjectModal } from './RenameProjectModal'
 import { DeleteProjectModal } from './DeleteProjectModal'
 import { BulkDeleteModal } from './BulkDeleteModal'
+import { ProjectSettingsModal } from './ProjectSettingsModal'
 
 interface ListRes {
   projects: Project[]
@@ -28,6 +29,7 @@ export function ProjectListPage() {
   const [showNew, setShowNew] = useState(false)
   const [renameTarget, setRenameTarget] = useState<Project | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [settingsTarget, setSettingsTarget] = useState<Project | null>(null)
 
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -157,6 +159,7 @@ export function ProjectListPage() {
                 onOpen={handleOpen}
                 onRename={setRenameTarget}
                 onDelete={setDeleteTarget}
+                onSettings={setSettingsTarget}
               />
             ))}
           </div>
@@ -192,6 +195,13 @@ export function ProjectListPage() {
           count={selectedIds.size}
           onClose={() => setShowBulkDelete(false)}
           onConfirm={handleBulkDelete}
+        />
+      )}
+      {settingsTarget && (
+        <ProjectSettingsModal
+          project={settingsTarget}
+          onClose={() => setSettingsTarget(null)}
+          onDone={async () => { setSettingsTarget(null); await load() }}
         />
       )}
     </div>
