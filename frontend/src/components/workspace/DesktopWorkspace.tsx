@@ -1199,9 +1199,15 @@ function detectVolumeCount(text: string): number {
     if (n) indices.add(n)
   }
 
-  if (indices.size === 0) return 0
-  // Count unique volumes found; if outline mentions 第一卷..第三卷 that's 3.
-  return indices.size
+  // Non-numbered volumes: 前传/外传/番外/序卷/终章/终卷. Each unique keyword = +1
+  const keywords = ['前传', '外传', '番外', '序卷', '终章', '终卷']
+  let extras = 0
+  for (const kw of keywords) {
+    if (text.includes(kw)) extras += 1
+  }
+
+  if (indices.size === 0 && extras === 0) return 0
+  return indices.size + extras
 }
 
 // ================================================================
