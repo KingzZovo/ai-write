@@ -142,7 +142,7 @@ export function ProjectListPage() {
           <div className="py-20 text-center text-gray-400">加载中...</div>
         ) : projects.length === 0 ? (
           <div className="py-20 text-center">
-            <p className="text-gray-500 mb-4">还没有项目，点击右上角"+ 新建项目"开始创作。</p>
+            <p className="text-gray-500 mb-4">还没有项目，点击右上角&quot;+ 新建项目&quot;开始创作。</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
