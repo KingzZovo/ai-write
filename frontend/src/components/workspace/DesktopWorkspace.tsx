@@ -60,9 +60,7 @@ interface OutlineRes {
   content_json: Record<string, unknown>
   version: number
   is_confirmed: number
-}
-
-// ----------------------------------------------------------------
+}// ----------------------------------------------------------------
 // CollapsibleSection (unchanged from original)
 // ----------------------------------------------------------------
 

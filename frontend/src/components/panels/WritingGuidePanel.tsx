@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 // ----------------------------------------------------------------
 // Types & Constants
@@ -116,15 +116,47 @@ function Tooltip({ text }: { text: string }) {
 }
 
 // ----------------------------------------------------------------
+// Persisted preferences
+// ----------------------------------------------------------------
+
+const LS_KEY = 'writing-guide-prefs:v1'
+const DEFAULT_MODULES = ['show_not_tell', 'micro_tension', 'info_weaving']
+
+interface WGPrefs {
+  activeModules: string[]
+  genre: string
+}
+
+function loadPrefs(): WGPrefs {
+  if (typeof window === 'undefined') return { activeModules: DEFAULT_MODULES, genre: '' }
+  try {
+    const raw = window.localStorage.getItem(LS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      if (p && Array.isArray(p.activeModules)) return p
+    }
+  } catch {}
+  return { activeModules: DEFAULT_MODULES, genre: '' }
+}
+
+// ----------------------------------------------------------------
 // Component
 // ----------------------------------------------------------------
 
 export function WritingGuidePanel() {
-  const [activeModules, setActiveModules] = useState<Set<string>>(
-    new Set(['show_not_tell', 'micro_tension', 'info_weaving'])
-  )
+  const initial = loadPrefs()
+  const [activeModules, setActiveModules] = useState<Set<string>>(new Set(initial.activeModules))
   const [showProhibitions, setShowProhibitions] = useState(false)
-  const [selectedGenre, setSelectedGenre] = useState('')
+  const [selectedGenre, setSelectedGenre] = useState(initial.genre)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const payload: WGPrefs = {
+      activeModules: Array.from(activeModules),
+      genre: selectedGenre,
+    }
+    try { window.localStorage.setItem(LS_KEY, JSON.stringify(payload)) } catch {}
+  }, [activeModules, selectedGenre])
 
   const toggleModule = (key: string) => {
     setActiveModules((prev) => {
