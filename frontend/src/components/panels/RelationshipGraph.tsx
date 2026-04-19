@@ -6,23 +6,17 @@ import { apiFetch } from '@/lib/api'
 interface Character {
   id: string
   name: string
-  profileJson: {
-    identity?: string
-    [key: string]: unknown
-  }
+  profile_json?: Record<string, unknown>
 }
 
 interface Relationship {
   id: string
-  sourceId: string
-  targetId: string
+  source_id: string
+  target_id: string
+  rel_type: string
   label: string
-  type?: string
-}
-
-interface CharacterData {
-  characters: Character[]
-  relationships: Relationship[]
+  note: string
+  sentiment: string
 }
 
 interface RelationshipGraphProps {
@@ -52,6 +46,12 @@ const NODE_COLORS = [
   '#10B981', '#EF4444', '#6366F1', '#14B8A6',
 ]
 
+function sentimentStroke(sentiment: string): string {
+  if (sentiment === 'positive') return '#10B981'
+  if (sentiment === 'negative') return '#EF4444'
+  return '#9CA3AF'
+}
+
 export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
   const [characters, setCharacters] = useState<Character[]>([])
   const [relationships, setRelationships] = useState<Relationship[]>([])
@@ -61,39 +61,23 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
   useEffect(() => {
     if (!projectId) return
     setLoading(true)
-
-    async function fetchData() {
+    ;(async () => {
       try {
-        // Try fetching characters and relationships
-        const chars = await apiFetch<Character[] | CharacterData>(
+        const charsRes = await apiFetch<{ characters: Character[]; total: number }>(
           `/api/projects/${projectId}/characters`
         )
-
-        if (Array.isArray(chars)) {
-          setCharacters(chars)
-          // Try to fetch relationships separately
-          try {
-            const rels = await apiFetch<Relationship[]>(
-              `/api/projects/${projectId}/relationships`
-            )
-            setRelationships(rels)
-          } catch {
-            setRelationships([])
-          }
-        } else {
-          // API returns { characters, relationships } together
-          setCharacters(chars.characters || [])
-          setRelationships(chars.relationships || [])
-        }
+        setCharacters(charsRes.characters)
+        const relsRes = await apiFetch<{ relationships: Relationship[]; total: number }>(
+          `/api/projects/${projectId}/relationships`
+        )
+        setRelationships(relsRes.relationships)
       } catch {
         setCharacters([])
         setRelationships([])
       } finally {
         setLoading(false)
       }
-    }
-
-    fetchData()
+    })()
   }, [projectId])
 
   const positions = useMemo(
@@ -114,14 +98,14 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
   if (characters.length === 0) {
     return (
       <p className="text-xs text-gray-400">
-        No characters defined. Add characters in Settings to see the relationship graph.
+        还没有角色。先生成大纲并提取设定，或去设定集手动添加。
       </p>
     )
   }
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-semibold text-gray-900">Character Relations</h3>
+      <h3 className="text-sm font-semibold text-gray-900">角色关系图</h3>
 
       <div className="flex justify-center">
         <svg
@@ -132,8 +116,8 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
         >
           {/* Relationship lines */}
           {relationships.map((rel) => {
-            const srcIdx = charIndexMap.get(rel.sourceId)
-            const tgtIdx = charIndexMap.get(rel.targetId)
+            const srcIdx = charIndexMap.get(rel.source_id)
+            const tgtIdx = charIndexMap.get(rel.target_id)
             if (srcIdx === undefined || tgtIdx === undefined) return null
 
             const src = positions[srcIdx]
@@ -142,7 +126,8 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
             const midY = (src.y + tgt.y) / 2
 
             const isHighlighted =
-              hoveredNode === rel.sourceId || hoveredNode === rel.targetId
+              hoveredNode === rel.source_id || hoveredNode === rel.target_id
+            const baseColor = sentimentStroke(rel.sentiment)
 
             return (
               <g key={rel.id}>
@@ -151,9 +136,9 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                   y1={src.y}
                   x2={tgt.x}
                   y2={tgt.y}
-                  stroke={isHighlighted ? '#3B82F6' : '#D1D5DB'}
-                  strokeWidth={isHighlighted ? 2 : 1}
-                  strokeDasharray={isHighlighted ? undefined : '4 2'}
+                  stroke={isHighlighted ? '#3B82F6' : baseColor}
+                  strokeWidth={isHighlighted ? 2 : 1.3}
+                  strokeDasharray={rel.sentiment === 'neutral' && !isHighlighted ? '4 2' : undefined}
                 />
                 {rel.label && (
                   <text
@@ -161,7 +146,7 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                     y={midY - 4}
                     textAnchor="middle"
                     fontSize={9}
-                    fill={isHighlighted ? '#1D4ED8' : '#9CA3AF'}
+                    fill={isHighlighted ? '#1D4ED8' : baseColor}
                     className="pointer-events-none select-none"
                   >
                     {rel.label}
@@ -184,7 +169,6 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                 onMouseLeave={() => setHoveredNode(null)}
                 className="cursor-pointer"
               >
-                {/* Node circle */}
                 <circle
                   cx={pos.x}
                   cy={pos.y}
@@ -194,7 +178,6 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                   stroke={isHovered ? '#1E40AF' : 'white'}
                   strokeWidth={isHovered ? 2 : 1.5}
                 />
-                {/* Character name */}
                 <text
                   x={pos.x}
                   y={pos.y + 1}
@@ -205,11 +188,8 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                   fill="white"
                   className="pointer-events-none select-none"
                 >
-                  {char.name.length > 4
-                    ? char.name.slice(0, 4) + '...'
-                    : char.name}
+                  {char.name.length > 4 ? char.name.slice(0, 4) + '...' : char.name}
                 </text>
-                {/* Full name on hover - shown below node */}
                 {isHovered && char.name.length > 4 && (
                   <text
                     x={pos.x}
@@ -228,11 +208,9 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
         </svg>
       </div>
 
-      {/* Legend showing count */}
       <div className="text-center text-[10px] text-gray-400">
-        {characters.length} character{characters.length !== 1 ? 's' : ''}
-        {relationships.length > 0 &&
-          ` / ${relationships.length} relationship${relationships.length !== 1 ? 's' : ''}`}
+        {characters.length} 位角色
+        {relationships.length > 0 && ` / ${relationships.length} 条关系`}
       </div>
     </div>
   )
