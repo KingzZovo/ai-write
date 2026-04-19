@@ -176,7 +176,7 @@ export default function DesktopWorkspace() {
         setVolumes(normalized)
 
         const chs = await apiFetch<ChapterRes[]>(
-          `/api/projects/${projectId}/chapters`
+          `/api/projects/${projectId}/chapters?lightweight=true`
         )
         const normChs = chs.map((c) => normalizeChapter(c as unknown as Record<string, unknown>))
         setChapters(normChs)
@@ -981,10 +981,16 @@ export default function DesktopWorkspace() {
                 <div className="max-w-3xl mx-auto pt-4 px-6">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-bold text-gray-900">全书大纲</h2>
-                    <button onClick={() => { setActiveView('wizard'); setWizardStep(2) }}
-                      className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg">
-                      继续生成分卷
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { setActiveView('wizard'); setWizardStep(1) }}
+                        className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        编辑大纲
+                      </button>
+                      <button onClick={() => { setActiveView('wizard'); setWizardStep(2) }}
+                        className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        查看分卷
+                      </button>
+                    </div>
                   </div>
                   <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border leading-relaxed"
                     style={{ fontFamily: "'Noto Serif SC', serif" }}>
