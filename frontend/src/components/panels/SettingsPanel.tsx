@@ -38,16 +38,16 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
   const fetchCharacters = async () => {
     if (!projectId) return
     try {
-      const data = await apiFetch<Character[]>(`/api/projects/${projectId}/characters`)
-      setCharacters(data)
+      const data = await apiFetch<{ characters: Character[]; total: number }>(`/api/projects/${projectId}/characters`)
+      setCharacters(data.characters)
     } catch { /* ignore */ }
   }
 
   const fetchWorldRules = async () => {
     if (!projectId) return
     try {
-      const data = await apiFetch<WorldRule[]>(`/api/projects/${projectId}/world-rules`)
-      setWorldRules(data)
+      const data = await apiFetch<{ world_rules: WorldRule[]; total: number }>(`/api/projects/${projectId}/world-rules`)
+      setWorldRules(data.world_rules)
     } catch { /* ignore */ }
   }
 
