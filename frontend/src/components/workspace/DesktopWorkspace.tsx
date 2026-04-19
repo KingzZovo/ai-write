@@ -663,7 +663,11 @@ export default function DesktopWorkspace() {
                 卷 / 章节
               </h3>
               <OutlineTree
+                projectId={currentProject?.id || ''}
                 volumeOutlines={volumeOutlines}
+                onChanged={() => {
+                  if (currentProject) loadProjectData(currentProject.id)
+                }}
                 onSelectChapter={(chapterId) => {
                   selectChapter(chapterId)
                   setActiveView('editor')
