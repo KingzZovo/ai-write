@@ -565,7 +565,7 @@ export default function DesktopWorkspace() {
       {
         project_id: currentProject.id,
         chapter_id: selectedChapterId,
-        style_id: getSelectedStyleId(),
+        style_id: getSelectedStyleId(currentProject.id),
       },
       (text) => {
         appendStreamContent(text)
@@ -1026,6 +1026,7 @@ export default function DesktopWorkspace() {
           <div className="flex-1 overflow-y-auto">
             <CollapsibleSection title="生成设置" defaultOpen>
               <GeneratePanel
+                projectId={currentProject?.id}
                 onGenerate={handleGenerateChapter}
                 onGenerateOutline={handleGenerateOutline}
               />

@@ -177,7 +177,7 @@ export default function MobileWorkspace() {
         method: 'POST',
         body: JSON.stringify({
           project_id: currentProject.id, task_type: taskType, user_input: input,
-          structure_book_id: getSelectedStructureBookId() || undefined,
+          structure_book_id: getSelectedStructureBookId(currentProject?.id) || undefined,
         }),
       })
       setGenTaskId(data.task_id)

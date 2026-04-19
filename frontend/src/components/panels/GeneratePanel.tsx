@@ -14,35 +14,60 @@ interface StyleInfo {
   tone_keywords: string[]
 }
 
-// Exported so DesktopWorkspace can read the selected values
-let _selectedStyleId: string | null = null
-let _selectedStructureBookId: string | null = null
-export function getSelectedStyleId() { return _selectedStyleId }
-export function getSelectedStructureBookId() { return _selectedStructureBookId }
+// Per-project persisted helpers. Call sites pass the projectId; when none,
+// fall back to a "global" bucket.
+export function getSelectedStyleId(projectId?: string): string | null {
+  if (typeof window === 'undefined') return null
+  const key = projectId ? `gp:style:${projectId}` : 'gp:style:global'
+  return window.localStorage.getItem(key) || null
+}
+export function getSelectedStructureBookId(projectId?: string): string | null {
+  if (typeof window === 'undefined') return null
+  const key = projectId ? `gp:structure:${projectId}` : 'gp:structure:global'
+  return window.localStorage.getItem(key) || null
+}
 
-function StyleSelector() {
+function setSelectedStyleId(projectId: string | undefined, id: string | null) {
+  if (typeof window === 'undefined') return
+  const key = projectId ? `gp:style:${projectId}` : 'gp:style:global'
+  if (id) window.localStorage.setItem(key, id)
+  else window.localStorage.removeItem(key)
+}
+function setSelectedStructureBookId(projectId: string | undefined, id: string | null) {
+  if (typeof window === 'undefined') return
+  const key = projectId ? `gp:structure:${projectId}` : 'gp:structure:global'
+  if (id) window.localStorage.setItem(key, id)
+  else window.localStorage.removeItem(key)
+}
+
+function StyleSelector({ projectId }: { projectId?: string }) {
   const [styles, setStyles] = useState<StyleInfo[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string>('')
+  const [selectedId, setSelectedId] = useState<string>(
+    () => (typeof window !== 'undefined' ? getSelectedStyleId(projectId) || '' : '')
+  )
 
   useEffect(() => {
     apiFetch<StyleInfo[]>('/api/styles')
       .then(data => {
         setStyles(data)
-        // Auto-select the first active style
-        const active = data.find(s => s.is_active)
-        if (active) {
-          setSelectedId(active.id)
-          _selectedStyleId = active.id
+        // Auto-select the first active style only if no stored selection
+        if (!selectedId) {
+          const active = data.find(s => s.is_active)
+          if (active) {
+            setSelectedId(active.id)
+            setSelectedStyleId(projectId, active.id)
+          }
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleChange = (id: string) => {
     setSelectedId(id)
-    _selectedStyleId = id || null
+    setSelectedStyleId(projectId, id || null)
   }
 
   const selected = styles.find(s => s.id === selectedId)
@@ -93,6 +118,7 @@ function StyleSelector() {
 interface GeneratePanelProps {
   onGenerate?: () => void
   onGenerateOutline?: (level: string) => void
+  projectId?: string
 }
 
 interface EndpointInfo {
@@ -121,7 +147,7 @@ const TASK_LABELS: Record<string, string> = {
   embedding: '向量嵌入',
 }
 
-export function GeneratePanel({ onGenerate, onGenerateOutline }: GeneratePanelProps) {
+export function GeneratePanel({ onGenerate, onGenerateOutline, projectId }: GeneratePanelProps) {
   const { isGenerating } = useGenerationStore()
   const [endpoints, setEndpoints] = useState<EndpointInfo[]>([])
   const [tasks, setTasks] = useState<TaskConfig[]>([])
@@ -240,21 +266,23 @@ export function GeneratePanel({ onGenerate, onGenerateOutline }: GeneratePanelPr
       {/* Writing style selector */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">写作风格</h3>
-        <StyleSelector />
+        <StyleSelector projectId={projectId} />
       </div>
 
       {/* Plot structure selector (optional) */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">剧情架构（可选）</h3>
-        <StructureSelector />
+        <StructureSelector projectId={projectId} />
       </div>
     </div>
   )
 }
 
-function StructureSelector() {
+function StructureSelector({ projectId }: { projectId?: string }) {
   const [structures, setStructures] = useState<any[]>([])
-  const [selectedId, setSelectedId] = useState<string>('')
+  const [selectedId, setSelectedId] = useState<string>(
+    () => (typeof window !== 'undefined' ? getSelectedStructureBookId(projectId) || '' : '')
+  )
 
   useEffect(() => {
     apiFetch<any[]>('/api/styles/structures')
@@ -264,7 +292,7 @@ function StructureSelector() {
 
   const handleChange = (id: string) => {
     setSelectedId(id)
-    _selectedStructureBookId = id || null
+    setSelectedStructureBookId(projectId, id || null)
   }
 
   if (structures.length === 0) {
