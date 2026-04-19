@@ -7,6 +7,7 @@ import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
 import { RowMenu } from './RowMenu'
 import { DeleteVolumeModal } from './DeleteVolumeModal'
 import { DeleteChapterModal } from './DeleteChapterModal'
+import { RegenerateVolumeModal } from './RegenerateVolumeModal'
 
 interface OutlineTreeProps {
   projectId: string
@@ -38,6 +39,7 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
   const [renameChapterValue, setRenameChapterValue] = useState('')
   const [deleteVolume, setDeleteVolume] = useState<{ id: string; title: string; chapterCount: number } | null>(null)
   const [deleteChapter, setDeleteChapter] = useState<{ id: string; title: string } | null>(null)
+  const [regenerateVolume, setRegenerateVolume] = useState<{ id: string; title: string; chapterCount: number } | null>(null)
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => {
@@ -138,6 +140,15 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
                         setRenameVolumeValue(volume.title)
                         setRenamingVolumeId(volume.id)
                       },
+                    },
+                    {
+                      label: '重新生成',
+                      onClick: () =>
+                        setRegenerateVolume({
+                          id: volume.id,
+                          title: volume.title,
+                          chapterCount: volChapters.length,
+                        }),
                     },
                     {
                       label: '删除',
@@ -289,6 +300,19 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
           onClose={() => setDeleteChapter(null)}
           onDone={() => {
             setDeleteChapter(null)
+            onChanged?.()
+          }}
+        />
+      )}
+      {regenerateVolume && (
+        <RegenerateVolumeModal
+          projectId={projectId}
+          volumeId={regenerateVolume.id}
+          volumeTitle={regenerateVolume.title}
+          chapterCount={regenerateVolume.chapterCount}
+          onClose={() => setRegenerateVolume(null)}
+          onDone={() => {
+            setRegenerateVolume(null)
             onChanged?.()
           }}
         />
