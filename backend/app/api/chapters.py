@@ -50,9 +50,13 @@ class ChapterResponse(BaseModel):
 async def list_chapters(
     project_id: str,
     volume_id: str | None = None,
+    lightweight: bool = False,
     db: AsyncSession = Depends(get_db),
-) -> list[ChapterResponse]:
-    """List chapters, optionally filtered by volume."""
+):
+    """List chapters, optionally filtered by volume.
+
+    lightweight=true omits content_text and outline_json for fast loading.
+    """
     if volume_id:
         query = select(Chapter).where(Chapter.volume_id == volume_id).order_by(Chapter.chapter_idx)
     else:
@@ -66,6 +70,19 @@ async def list_chapters(
 
     result = await db.execute(query)
     chapters = result.scalars().all()
+    if lightweight:
+        return [
+            {
+                "id": str(c.id),
+                "volume_id": str(c.volume_id),
+                "title": c.title,
+                "chapter_idx": c.chapter_idx,
+                "word_count": c.word_count,
+                "status": c.status,
+                "target_words": c.target_words,
+            }
+            for c in chapters
+        ]
     return [ChapterResponse.model_validate(c) for c in chapters]
 
 
