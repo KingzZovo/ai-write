@@ -144,6 +144,23 @@ async def delete_project(
     await db.flush()
 
 
+@router.post("/{project_id}/restore", response_model=ProjectResponse)
+async def restore_project(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> ProjectResponse:
+    """Restore a soft-deleted project."""
+    project = await db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Project is not deleted")
+    project.deleted_at = None
+    await db.flush()
+    await db.refresh(project)
+    return ProjectResponse.model_validate(project)
+
+
 @router.get("/{project_id}/export")
 async def export_project(
     project_id: UUID,

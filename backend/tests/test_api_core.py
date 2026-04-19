@@ -9,7 +9,7 @@ async def test_projects_crud(auth_client):
     resp = await auth_client.post("/api/projects", json={
         "title": "pytest测试项目", "genre": "玄幻"
     })
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     project = resp.json()
     pid = project["id"]
 
@@ -73,3 +73,45 @@ async def test_rankings(auth_client):
     assert resp.status_code == 200
     data = resp.json()
     assert "sources" in data
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_and_restore_project(auth_client):
+    # Create
+    resp = await auth_client.post("/api/projects", json={"title": "软删测试", "genre": "测试"})
+    assert resp.status_code in (200, 201)
+    pid = resp.json()["id"]
+
+    # Soft delete
+    resp = await auth_client.delete(f"/api/projects/{pid}")
+    assert resp.status_code == 204
+
+    # Should be hidden from active list
+    resp = await auth_client.get("/api/projects")
+    ids = [p["id"] for p in resp.json()["projects"]]
+    assert pid not in ids
+
+    # Should appear in trashed list
+    resp = await auth_client.get("/api/projects?trashed=true")
+    trashed_ids = [p["id"] for p in resp.json()["projects"]]
+    assert pid in trashed_ids
+
+    # GET on soft-deleted returns 404
+    resp = await auth_client.get(f"/api/projects/{pid}")
+    assert resp.status_code == 404
+
+    # Restore
+    resp = await auth_client.post(f"/api/projects/{pid}/restore")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == pid
+
+    # Back in active list
+    resp = await auth_client.get("/api/projects")
+    ids = [p["id"] for p in resp.json()["projects"]]
+    assert pid in ids
+
+    # Purge
+    resp = await auth_client.delete(f"/api/projects/{pid}?purge=true")
+    assert resp.status_code == 204
+    resp = await auth_client.get(f"/api/projects/{pid}")
+    assert resp.status_code == 404
