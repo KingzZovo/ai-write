@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, apiSSE } from '@/lib/api'
 import { getSelectedStructureBookId } from '@/components/panels/GeneratePanel'
 
@@ -19,6 +20,10 @@ interface Chapter { id: string; title: string; chapter_idx: number; word_count: 
 interface Outline { id: string; level: string; content_json: Record<string, unknown> }
 
 export default function MobileWorkspace() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlProjectId = searchParams.get('id')
+
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [volumes, setVolumes] = useState<Volume[]>([])
@@ -41,6 +46,25 @@ export default function MobileWorkspace() {
       .then(d => setProjects(d.projects))
       .catch(() => {})
   }, [])
+
+  // Auto-load project specified in URL ?id=
+  useEffect(() => {
+    if (!urlProjectId) {
+      router.replace('/')
+      return
+    }
+    if (currentProject?.id === urlProjectId) return
+    const target = projects.find((p) => p.id === urlProjectId)
+    if (target) {
+      loadProject(target)
+    } else if (projects.length > 0) {
+      // not found among loaded list; fetch directly
+      apiFetch<Project>(`/api/projects/${urlProjectId}`)
+        .then((p) => loadProject(p))
+        .catch(() => router.replace('/'))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlProjectId, projects, currentProject?.id])
 
   const loadProject = useCallback(async (p: Project) => {
     setCurrentProject(p)
@@ -250,8 +274,8 @@ export default function MobileWorkspace() {
               <>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-lg font-bold text-gray-900 truncate">{currentProject.title}</h2>
-                  <button onClick={() => { setCurrentProject(null); setVolumes([]); setChapters([]) }}
-                    className="text-xs text-blue-600 shrink-0 ml-2">返回</button>
+                  <button onClick={() => router.push('/')}
+                    className="text-xs text-blue-600 shrink-0 ml-2">返回项目列表</button>
                 </div>
 
                 {/* Generation progress */}

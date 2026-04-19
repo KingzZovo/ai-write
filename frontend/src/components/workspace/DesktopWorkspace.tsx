@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
 import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
@@ -30,11 +31,6 @@ import { apiFetch, apiSSE } from '@/lib/api'
 // ----------------------------------------------------------------
 // Types for API responses
 // ----------------------------------------------------------------
-
-interface ProjectListRes {
-  projects: Project[]
-  total: number
-}
 
 interface VolumeRes {
   id: string
@@ -65,12 +61,6 @@ interface OutlineRes {
   version: number
   is_confirmed: number
 }
-
-// ----------------------------------------------------------------
-// Genres
-// ----------------------------------------------------------------
-
-const GENRES = ['玄幻', '仙侠', '都市', '言情', '悬疑', '科幻', '历史', '其他'] as const
 
 // ----------------------------------------------------------------
 // CollapsibleSection (unchanged from original)
@@ -116,11 +106,11 @@ function CollapsibleSection({
 // ================================================================
 
 export default function DesktopWorkspace() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlProjectId = searchParams.get('id')
+
   const {
-    projects,
-    projectsLoaded,
-    setProjects,
-    setProjectsLoaded,
     currentProject,
     selectedChapterId,
     setCurrentProject,
@@ -140,19 +130,9 @@ export default function DesktopWorkspace() {
   const [editorContent, setEditorContent] = useState('')
   const [creativeInput, setCreativeInput] = useState('')
   const [outlinePreview, setOutlinePreview] = useState('')
-  const [activeView, setActiveView] = useState<'editor' | 'outline' | 'creative' | 'wizard'>(
-    'creative'
+  const [activeView, setActiveView] = useState<'editor' | 'outline' | 'wizard'>(
+    'wizard'
   )
-
-  // New project modal
-  const [showNewProject, setShowNewProject] = useState(false)
-  const [newTitle, setNewTitle] = useState('')
-  const [newGenre, setNewGenre] = useState<string>(GENRES[0])
-  const [newPremise, setNewPremise] = useState('')
-  const [creating, setCreating] = useState(false)
-
-  // Project selector dropdown
-  const [selectorOpen, setSelectorOpen] = useState(false)
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1)
@@ -172,18 +152,18 @@ export default function DesktopWorkspace() {
   const lastSavedRef = useRef<string>('')
 
   // ----------------------------------------------------------------
-  // Load project list on mount
+  // Sync URL ?id=... → currentProject; redirect to / if missing/invalid
   // ----------------------------------------------------------------
   useEffect(() => {
-    if (!projectsLoaded) {
-      apiFetch<ProjectListRes>('/api/projects')
-        .then((data) => {
-          setProjects(data.projects)
-          setProjectsLoaded(true)
-        })
-        .catch((err) => console.error('Failed to load projects:', err))
+    if (!urlProjectId) {
+      router.replace('/')
+      return
     }
-  }, [projectsLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (currentProject?.id === urlProjectId) return
+    apiFetch<Project>(`/api/projects/${urlProjectId}`)
+      .then((p) => setCurrentProject(p))
+      .catch(() => router.replace('/'))
+  }, [urlProjectId, currentProject?.id, router, setCurrentProject])
 
   // ----------------------------------------------------------------
   // Load volumes + chapters when a project is selected
@@ -264,63 +244,6 @@ export default function DesktopWorkspace() {
       loadProjectData(currentProject.id)
     }
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ----------------------------------------------------------------
-  // Select a project from the dropdown
-  // ----------------------------------------------------------------
-  const handleSelectProject = useCallback(
-    (project: Project) => {
-      setCurrentProject(project)
-      selectChapter(null)
-      setEditorContent('')
-      setOutlinePreview('')
-      setSelectorOpen(false)
-    },
-    [setCurrentProject, selectChapter]
-  )
-
-  // ----------------------------------------------------------------
-  // Create new project
-  // ----------------------------------------------------------------
-  const handleCreateProject = useCallback(async () => {
-    if (!newTitle.trim() || creating) return
-    setCreating(true)
-    try {
-      const project = await apiFetch<Project>('/api/projects', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          genre: newGenre,
-          premise: newPremise.trim() || null,
-        }),
-      })
-      setProjects([project, ...projects])
-      setCurrentProject(project)
-      selectChapter(null)
-      setVolumes([])
-      setChapters([])
-      setShowNewProject(false)
-      setNewTitle('')
-      setNewPremise('')
-      setActiveView('wizard')
-      setWizardStep(1)
-    } catch (err) {
-      console.error('Failed to create project:', err)
-    } finally {
-      setCreating(false)
-    }
-  }, [
-    newTitle,
-    newGenre,
-    newPremise,
-    creating,
-    projects,
-    setProjects,
-    setCurrentProject,
-    selectChapter,
-    setVolumes,
-    setChapters,
-  ])
 
   // ----------------------------------------------------------------
   // Outline generation (SSE)
@@ -719,62 +642,18 @@ export default function DesktopWorkspace() {
     <WorkspaceLayout
       sidebar={
         <div className="flex flex-col h-full">
-          {/* ---- Project selector ---- */}
+          {/* ---- Header: back to project list + current title ---- */}
           <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">AI Write</h2>
-
-            {/* Project dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setSelectorOpen(!selectorOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <span className="truncate text-left flex-1">
-                  {currentProject ? currentProject.title : '选择项目...'}
-                </span>
-                <svg
-                  className={`w-4 h-4 text-gray-400 ml-1 transition-transform ${
-                    selectorOpen ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-
-              {selectorOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {projects.length === 0 && (
-                    <div className="px-3 py-2 text-sm text-gray-400">
-                      暂无项目
-                    </div>
-                  )}
-                  {projects.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleSelectProject(p)}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${
-                        currentProject?.id === p.id
-                          ? 'bg-blue-50 text-blue-700 font-medium'
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      <div className="truncate">{p.title}</div>
-                      {p.genre && (
-                        <div className="text-[10px] text-gray-400">{p.genre}</div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => router.push('/')}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-2"
+            >
+              <span>←</span>
+              <span>返回项目列表</span>
+            </button>
+            <h2 className="text-lg font-semibold text-gray-900 truncate">
+              {currentProject?.title || 'AI Write'}
+            </h2>
           </div>
 
           {/* ---- Volume/Chapter tree ---- */}
@@ -792,122 +671,10 @@ export default function DesktopWorkspace() {
               />
             </div>
           </div>
-
-          {/* ---- New project button ---- */}
-          <div className="p-3 border-t border-gray-200">
-            <button
-              onClick={() => setShowNewProject(true)}
-              className="w-full px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              + 新建项目
-            </button>
-          </div>
         </div>
       }
       editor={
         <div className="h-full flex flex-col">
-          {/* ---- New Project Modal ---- */}
-          {showNewProject && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">
-                  新建项目
-                </h3>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      书名 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={newTitle}
-                      onChange={(e) => setNewTitle(e.target.value)}
-                      placeholder="输入小说名称"
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      autoFocus
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      类型
-                    </label>
-                    <select
-                      value={newGenre}
-                      onChange={(e) => setNewGenre(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      {GENRES.map((g) => (
-                        <option key={g} value={g}>
-                          {g}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      故事梗概
-                    </label>
-                    <textarea
-                      value={newPremise}
-                      onChange={(e) => setNewPremise(e.target.value)}
-                      placeholder="简要描述你的小说设定和核心创意..."
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={() => setShowNewProject(false)}
-                    className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={handleCreateProject}
-                    disabled={!newTitle.trim() || creating}
-                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {creating ? '创建中...' : '创建项目'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Creative input (no project selected) ---- */}
-          {activeView === 'creative' && (
-            <div className="flex-1 p-8 max-w-2xl mx-auto w-full flex flex-col items-center justify-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                开始你的创作之旅
-              </h2>
-              <p className="text-gray-500 mb-6 text-center">
-                选择一个现有项目，或者点击左下角 &quot;新建项目&quot; 创建一本新书。
-              </p>
-              {!currentProject && projects.length > 0 && (
-                <div className="w-full max-w-sm space-y-2">
-                  {projects.slice(0, 5).map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleSelectProject(p)}
-                      className="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors"
-                    >
-                      <div className="font-medium text-gray-800">{p.title}</div>
-                      {p.genre && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {p.genre}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ---- Outline Wizard ---- */}
           {activeView === 'wizard' && currentProject && (
             <div className="flex-1 p-8 overflow-y-auto">

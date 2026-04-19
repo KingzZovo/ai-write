@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { Component, useEffect, useState } from 'react'
+import { Component, Suspense, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 // Error boundary to catch runtime crashes
@@ -68,8 +68,14 @@ export default function WorkspacePage() {
   }
 
   return (
-    <ErrorBoundary>
-      {mobile ? <MobileWorkspace /> : <DesktopWorkspace />}
-    </ErrorBoundary>
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen pt-12 bg-gray-50">
+        <p className="text-gray-400">加载工作区...</p>
+      </div>
+    }>
+      <ErrorBoundary>
+        {mobile ? <MobileWorkspace /> : <DesktopWorkspace />}
+      </ErrorBoundary>
+    </Suspense>
   )
 }
