@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.project import Character, Outline, WorldRule
+from app.models.project import Character, Outline, Relationship, WorldRule
 from app.services.settings_extractor import extract_settings_from_outline
 
 router = APIRouter(prefix="/api/projects/{project_id}/outlines", tags=["outlines"])
@@ -140,6 +140,7 @@ async def delete_outline(
 class ExtractResponse(BaseModel):
     characters_created: int
     world_rules_created: int
+    relationships_created: int
 
 
 @router.post("/{outline_id}/extract-settings", response_model=ExtractResponse)
@@ -207,8 +208,52 @@ async def extract_settings(
         existing_rule_keys.add(key)
         rules_created += 1
 
+    # Flush so newly-created characters have IDs available for relationship mapping
+    await db.flush()
+    name_to_id_result = await db.execute(
+        select(Character.id, Character.name).where(Character.project_id == project_id)
+    )
+    name_to_id: dict[str, str] = {name: str(cid) for cid, name in name_to_id_result.all()}
+
+    rels_created = 0
+    for r in extracted.get("relationships", []):
+        if not isinstance(r, dict):
+            continue
+        src_name = (r.get("source_name") or "").strip()
+        tgt_name = (r.get("target_name") or "").strip()
+        src = name_to_id.get(src_name)
+        tgt = name_to_id.get(tgt_name)
+        if not src or not tgt or src == tgt:
+            continue
+        rel_type = (r.get("rel_type") or "other").strip()
+        label = (r.get("label") or "").strip()
+        note = (r.get("note") or "").strip()
+        sentiment = (r.get("sentiment") or "neutral").strip()
+        dup = await db.execute(
+            select(Relationship.id).where(
+                Relationship.project_id == project_id,
+                Relationship.source_id == src,
+                Relationship.target_id == tgt,
+                Relationship.rel_type == rel_type,
+                Relationship.label == label,
+            )
+        )
+        if dup.scalar_one_or_none():
+            continue
+        db.add(Relationship(
+            project_id=project_id,
+            source_id=src,
+            target_id=tgt,
+            rel_type=rel_type,
+            label=label,
+            note=note,
+            sentiment=sentiment,
+        ))
+        rels_created += 1
+
     await db.flush()
     return ExtractResponse(
         characters_created=chars_created,
         world_rules_created=rules_created,
+        relationships_created=rels_created,
     )
