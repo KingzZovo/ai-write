@@ -141,6 +141,8 @@ export default function DesktopWorkspace() {
   const [volumeOutlines, setVolumeOutlines] = useState<Record<number, Record<string, unknown>>>({})
   // Tracks the backend auto-saved outline id for the current in-progress book outline
   const pendingBookOutlineIdRef = useRef<string | null>(null)
+  // Outline inline editing
+  const [outlineEditing, setOutlineEditing] = useState(false)
 
   // Drawer panel
   const [drawerPanel, setDrawerPanel] = useState<string | null>(null)
@@ -733,17 +735,18 @@ export default function DesktopWorkspace() {
                 <div className="flex items-center gap-2 mb-6">
                   {[1, 2, 3].map((step) => (
                     <div key={step} className="flex items-center gap-2">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                      <button
+                        onClick={() => setWizardStep(step)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
                           wizardStep === step
                             ? 'bg-blue-600 text-white'
                             : wizardStep > step
-                              ? 'bg-green-500 text-white'
-                              : 'bg-gray-200 text-gray-500'
+                              ? 'bg-green-500 text-white hover:bg-green-600'
+                              : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
                         }`}
                       >
                         {wizardStep > step ? '✓' : step}
-                      </div>
+                      </button>
                       {step < 3 && (
                         <div
                           className={`w-12 h-0.5 ${
@@ -785,14 +788,47 @@ export default function DesktopWorkspace() {
                     {/* Outline preview */}
                     {outlinePreview && (
                       <div className="mt-6">
-                        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                          大纲预览
-                        </h3>
-                        <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-4 rounded-xl border max-h-96 overflow-y-auto">
-                          {outlinePreview}
-                        </pre>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-sm font-semibold text-gray-700">大纲预览</h3>
+                          {!isGenerating && confirmedOutlineId && (
+                            <button
+                              onClick={() => setOutlineEditing((v) => !v)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              {outlineEditing ? '取消编辑' : '编辑'}
+                            </button>
+                          )}
+                        </div>
+                        {outlineEditing ? (
+                          <div>
+                            <textarea
+                              value={outlinePreview}
+                              onChange={(e) => setOutlinePreview(e.target.value)}
+                              className="w-full h-96 px-4 py-3 text-sm border border-gray-300 rounded-xl resize-none font-mono"
+                            />
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  if (!currentProject || !confirmedOutlineId) return
+                                  await apiFetch(`/api/projects/${currentProject.id}/outlines/${confirmedOutlineId}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ content_json: { raw_text: outlinePreview } }),
+                                  })
+                                  setOutlineEditing(false)
+                                }}
+                                className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg"
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-4 rounded-xl border max-h-96 overflow-y-auto">
+                            {outlinePreview}
+                          </pre>
+                        )}
 
-                        {!isGenerating && (
+                        {!isGenerating && !confirmedOutlineId && (
                           <div className="mt-4 flex gap-3">
                             <button
                               onClick={handleConfirmOutline}
@@ -871,7 +907,7 @@ export default function DesktopWorkspace() {
                         disabled={isGenerating || !confirmedOutlineId}
                         className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                       >
-                        {isGenerating ? '正在生成...' : '生成分卷大纲'}
+                        {isGenerating ? '正在生成...' : (volumes.length > 0 ? '补齐缺失卷' : '生成分卷大纲')}
                       </button>
                       <button
                         onClick={() => setWizardStep(1)}
@@ -881,6 +917,29 @@ export default function DesktopWorkspace() {
                         返回修改大纲
                       </button>
                     </div>
+
+                    {Object.keys(volumeOutlines).length > 0 && currentProject && (
+                      <div className="mt-6 space-y-2">
+                        <h3 className="text-sm font-semibold text-gray-700">已生成分卷</h3>
+                        {volumes
+                          .slice()
+                          .sort((a, b) => (a.volume_idx ?? a.volumeIdx) - (b.volume_idx ?? b.volumeIdx))
+                          .map((v) => {
+                            const vi = v.volume_idx ?? v.volumeIdx
+                            const vo = volumeOutlines[vi]
+                            if (!vo) return null
+                            return (
+                              <VolumeOutlineEditor
+                                key={v.id}
+                                volume={v}
+                                data={vo}
+                                projectId={currentProject.id}
+                                onSaved={(updated) => setVolumeOutlines((prev) => ({ ...prev, [vi]: updated }))}
+                              />
+                            )
+                          })}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1219,3 +1278,87 @@ function detectVolumeCount(text: string): number {
 // ================================================================
 // End of module
 // ================================================================
+
+function VolumeOutlineEditor({
+  volume,
+  data,
+  projectId,
+  onSaved,
+}: {
+  volume: Volume
+  data: Record<string, unknown>
+  projectId: string
+  onSaved: (data: Record<string, unknown>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(() => {
+    if (typeof data.raw_text === 'string') return data.raw_text
+    return JSON.stringify(data, null, 2)
+  })
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const outlines = await apiFetch<OutlineRes[]>(
+        `/api/projects/${projectId}/outlines?level=volume`
+      )
+      const target = outlines.find((o) => {
+        const cj = (o.content_json as Record<string, unknown>) || {}
+        return cj.volume_idx === (volume.volume_idx ?? volume.volumeIdx)
+      })
+      if (!target) return
+      let contentJson: Record<string, unknown>
+      try {
+        contentJson = JSON.parse(text)
+      } catch {
+        contentJson = { ...data, raw_text: text }
+      }
+      await apiFetch(`/api/projects/${projectId}/outlines/${target.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content_json: contentJson }),
+      })
+      onSaved(contentJson)
+      setEditing(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <details className="border rounded-xl overflow-hidden">
+      <summary className="cursor-pointer px-4 py-2 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between">
+        <span>{volume.title}</span>
+        <button
+          onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {editing ? '取消' : '编辑'}
+        </button>
+      </summary>
+      <div className="px-4 py-3 bg-white border-t text-sm">
+        {editing ? (
+          <div>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="w-full h-64 px-3 py-2 text-xs border border-gray-300 rounded-lg font-mono resize-none"
+            />
+            <div className="mt-2">
+              <button
+                onClick={save}
+                disabled={busy}
+                className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg disabled:opacity-50"
+              >
+                {busy ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <VolumeOutlineBlock data={data} />
+        )}
+      </div>
+    </details>
+  )
+}
