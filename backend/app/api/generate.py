@@ -83,12 +83,14 @@ async def generate_chapter(
     chapter_outline: dict = {}
     previous_text = ""
     current_text = ""
+    target_words: int | None = None
 
     if req.chapter_id:
         chapter = await db.get(Chapter, req.chapter_id)
         if chapter:
             chapter_outline = chapter.outline_json or {}
             current_text = chapter.content_text or ""
+            target_words = chapter.target_words
             prev_result = await db.execute(
                 select(Chapter).where(
                     Chapter.volume_id == chapter.volume_id,
@@ -98,6 +100,10 @@ async def generate_chapter(
             prev_chapter = prev_result.scalar_one_or_none()
             if prev_chapter:
                 previous_text = prev_chapter.content_text or ""
+
+    # Fall back to project default for target_words
+    if target_words is None and isinstance(project_settings.get("target_chapter_words"), int):
+        target_words = int(project_settings["target_chapter_words"])
 
     # Resolve style: explicit style_id > manual text > auto-resolve
     resolved_style = req.style_instruction
@@ -121,6 +127,13 @@ async def generate_chapter(
         try:
             yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
 
+            effective_user_instruction = req.user_instruction or ""
+            if target_words:
+                effective_user_instruction = (
+                    effective_user_instruction
+                    + f"\n\n【本章目标字数】约 {target_words} 字（允许 ±15% 浮动）。"
+                )
+
             generator = ChapterGenerator()
             async for chunk in generator.generate_stream(
                 project_settings=project_settings,
@@ -130,7 +143,7 @@ async def generate_chapter(
                 previous_chapter_text=previous_text,
                 current_chapter_text=current_text,
                 style_instruction=resolved_style,
-                user_instruction=req.user_instruction,
+                user_instruction=effective_user_instruction,
                 max_tokens=req.max_tokens,
             ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
