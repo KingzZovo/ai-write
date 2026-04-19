@@ -49,7 +49,13 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   return res.json()
 }
 
-export function apiSSE(path: string, body: Record<string, unknown>, onChunk: (text: string) => void, onDone: () => void) {
+export function apiSSE(
+  path: string,
+  body: Record<string, unknown>,
+  onChunk: (text: string) => void,
+  onDone: () => void,
+  onEvent?: (event: Record<string, unknown>) => void,
+) {
   const controller = new AbortController()
 
   fetch(`${API_BASE}${path}`, {
@@ -87,7 +93,11 @@ export function apiSSE(path: string, body: Record<string, unknown>, onChunk: (te
           }
           try {
             const parsed = JSON.parse(data)
-            if (parsed.text) onChunk(parsed.text)
+            if (typeof parsed.text === 'string') {
+              onChunk(parsed.text)
+            } else if (onEvent) {
+              onEvent(parsed)
+            }
           } catch {
             onChunk(data)
           }
