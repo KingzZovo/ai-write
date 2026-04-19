@@ -317,6 +317,19 @@ export default function DesktopWorkspace() {
       setConfirmedOutlineId(outlineId)
       pendingBookOutlineIdRef.current = null
       setWizardStep(2)
+
+      // Fire-and-forget: extract structured characters + world rules for later use.
+      // Ignore failures; user can still proceed.
+      apiFetch<{ characters_created: number; world_rules_created: number }>(
+        `/api/projects/${currentProject.id}/outlines/${outlineId}/extract-settings`,
+        { method: 'POST' }
+      )
+        .then((r) =>
+          console.info(
+            `Extracted settings: ${r.characters_created} characters, ${r.world_rules_created} world rules`
+          )
+        )
+        .catch((err) => console.warn('Settings extraction failed:', err))
     } catch (err) {
       console.error('Failed to confirm outline:', err)
     }
