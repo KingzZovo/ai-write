@@ -1,6 +1,6 @@
 # AI Write 迭代计划
 
-## 当前版本 v0.3.0 (2026-04-16)
+## 当前版本 v0.4.0 (2026-04-19)
 
 ### 已完成功能
 
@@ -24,45 +24,61 @@
 | 书源 | 健康评分 + 自动停用 + 分页搜索 + 启用/停用 | ✅ |
 | 排行榜 | 夸克热搜/好评 + 分类 + 书籍搜索 | ✅ |
 | 上传 | 大文件书源JSON上传（12MB+） | ✅ |
+| **v0.4 项目管理页** | `/` 网格卡片 + `/trash` 回收站 + 软删 + 批量 + 重命名 + type-to-confirm 确认删除 | ✅ |
+| **v0.4 工作区重构** | URL 驱动 `/workspace?id=X` + 返回按钮；向导步骤可跳可编辑；大纲 / 分卷行内编辑保存 | ✅ |
+| **v0.4 分卷生成健壮化** | 空返回重试 + 跳过失败卷；前传/外传/番外/终章等非数字卷识别；已有卷跳过避免重复堆叠 | ✅ |
+| **v0.4 字数目标系统** | 项目级 `target_total_words` / `target_chapter_words` + 章节 `target_words` 覆盖 + 生成时注入 prompt | ✅ |
+| **v0.4 单卷重新生成** | `POST /volumes/{id}/regenerate` SSE 端点 + 侧栏三点菜单入口 | ✅ |
+| **v0.4 关系表与关系图** | 新增 `relationships` 表 + CRUD + 批量 + extractor 自动提取写入 + 带 label 与 sentiment 色的 SVG 关系图 | ✅ |
+| **v0.4 设定集提取 v2** | BOOK_OUTLINE_SYSTEM 扩展到 9 块（加主角小传 / 能力成长表 / 世界观设定集）；提取后同时写 characters / world_rules / relationships | ✅ |
+| **v0.4 性能 + 体验 bug 修复** | lightweight chapters list（体积 -63%）；WritingGuidePanel / StyleSelector / StructureSelector 偏好持久化；SettingsPanel envelope 解包；修复刷新后误导按钮 | ✅ |
 
 ### 技术统计
 
 ```
-42 commits | 70+ 后端文件 | 30+ 前端文件 | ~25,000 行代码 | 85+ API 端点
+60+ commits | 70+ 后端文件 | 50+ 前端文件 | ~30,000 行代码 | 90+ API 端点 | 18 ORM 模型
 ```
 
 ---
 
-## Iteration 1: E2E 验证与 Bug 修复
+## Iteration 1: E2E 验证与 Bug 修复 ✅
 
-**目标：** 接入真实 LLM API，跑通全流程，修复运行时 bug。
+**状态：** 主要目标已达成
 
-- [ ] 在 Settings 页面配置 LLM 端点
-- [ ] 完整流程：创建项目 → 生成全书大纲 → 分卷 → 章节 → 正文
-- [ ] 验证 SSE 流式生成在浏览器中正常工作
-- [ ] 测试书源导入 + 爬虫抓取
-- [ ] 测试文件上传 → 清洗 → 风格提取完整链路
-- [ ] 验证 6 Checker 带真实 ContextPack 的运行结果
-- [ ] PC 端 DesktopWorkspace 稳定性修复
+- [x] 在 Settings 页面配置 LLM 端点
+- [x] 完整流程：创建项目 → 生成全书大纲 → 分卷 → 章节 → 正文
+- [x] 验证 SSE 流式生成在浏览器中正常工作
+- [x] 测试书源导入 + 爬虫抓取
+- [x] PC 端 DesktopWorkspace 稳定性修复（URL 驱动 + 向导重构）
+- [ ] 完整跑通一本 5 章短篇小说自动化（留给用户实测）
 
-**成功标准：** 从零生成一本 5 章短篇小说，全程无手动干预。
+## Iteration 2: 测试套件与 CI（上调优先级）
 
-## Iteration 2: 写法引擎资产化
+**目标：** 消除测试 gap，建立自动化质量保障。当前只有少量 pytest 覆盖 + asyncpg 事件循环冲突需要修。
+
+- [ ] 修复 conftest.py 的 session-scoped event_loop 与 asyncpg 跨协程冲突
+- [ ] 核心 API 集成测试：projects / volumes / chapters / outlines / relationships CRUD
+- [ ] OutlineGenerator / settings_extractor 单元测试（可 mock LLM）
+- [ ] detectVolumeCount / parseVolumeOutline 前端纯函数单测
+- [ ] GitHub Actions CI（pytest + tsc + eslint + next build）
+- [ ] pre-commit hooks（ruff / prettier）
+
+## Iteration 3: 写法引擎资产化
 
 **目标：** 将写法从静态模板升级为可编辑、可绑定、可编译的持久资产。
 
 **参考：** AI-Novel-Writing-Assistant 的 StyleEngine（10 个服务模块）
 
-- [ ] StyleProfile 持久化（DB 存储，前端 CRUD）
+- [ ] StyleProfile 持久化（DB 存储已有，前端 CRUD 待完善）
 - [ ] StyleCompiler：将写法规则编译为 prompt 指令（带权重：≥0.85 必须保持 / ≥0.65 优先保持）
 - [ ] StyleBinding：写法绑定到整本书 / 单个章节 / 单次生成（优先级层级）
 - [ ] StyleDetection：从现有文本提取写法特征 → 保存为 Profile
 - [ ] StyleRuntime：生成时动态解析当前激活的写法规则
 - [ ] Anti-AI 规则升级：增加 `autoRewrite` 和 `detectPatterns` 字段
 - [ ] 写法试写功能：选定写法 → 试写一段 → 评估匹配度
-- [ ] 前端写法管理页面
+- [ ] 前端写法管理页面强化
 
-## Iteration 3: Prompt Registry 统一管理
+## Iteration 4: Prompt Registry 统一管理
 
 **目标：** 所有产品级 prompt 统一注册、版本化、可追溯。
 
@@ -71,13 +87,13 @@
 - [ ] `PromptAsset` 数据结构（id/version/taskType/mode/contextPolicy/outputSchema）
 - [ ] `PromptRegistry` 注册表
 - [ ] 统一 Runner（`runStructuredPrompt` / `runTextPrompt` / `streamTextPrompt`）
-- [ ] 将所有散落在 agent/service 中的 prompt 迁入 registry
+- [ ] 将散落在 agent/service 中的 prompt（outline_generator / chapter_generator / settings_extractor / rewrite 等）迁入 registry
 - [ ] 前端 prompt 管理页面（查看/编辑/版本对比）
 - [ ] Prompt 效果追踪（每个 prompt 的成功率/评分）
 
-## Iteration 4: 生产 Pipeline 增强
+## Iteration 5: 生产 Pipeline 增强
 
-**目标：** 整本书生产流水线，支持断点恢复、快照回滚、状态机追踪。
+**目标：** 整本书生产流水线，支持断点恢复、快照回滚、状态机追踪、导出。
 
 **参考：** AI-Novel-Writing-Assistant 的 NovelPipelineService
 
@@ -86,20 +102,19 @@
 - [ ] 章节审校服务（生成 → 审校 → 修复 → 确认，最多 3 轮）
 - [ ] 整本批量执行 + 断点恢复
 - [ ] 生产状态面板（前端实时显示当前阶段/进度/失败原因）
-- [ ] 导出功能：TXT / EPUB / PDF / DOCX
+- [ ] 导出：TXT（已有）→ EPUB / PDF / DOCX
 
-## Iteration 5: 测试套件与 CI
+## Iteration 6: 关系与设定集深化
 
-**目标：** 消除测试 gap，建立自动化质量保障。
+**目标：** 把 v0.4 提取出来的 characters / world_rules / relationships 变成可交互可编辑的一等公民。
 
-- [ ] pytest + pytest-asyncio 后端测试框架
-- [ ] 核心服务单元测试
-- [ ] API 集成测试
-- [ ] 前端组件测试
-- [ ] GitHub Actions CI
-- [ ] pre-commit hooks
+- [ ] 设定集页面强化：角色卡详情 + 能力成长表可视化 + 世界观按 category 分组 + 搜索
+- [ ] 角色关系图：力导向布局（d3-force）替代圆形排列
+- [ ] 关系 CRUD UI：拖线新建关系、右键删除、点击编辑 label/sentiment
+- [ ] 关系变化时间线：按卷记录关系演变（如第一卷盟友 → 第三卷宿敌）
+- [ ] 设定集修改联动：修改角色 profile_json 时触发 context pack 重建
 
-## Iteration 6: LoRA 训练集成
+## Iteration 7: LoRA 训练集成
 
 **目标：** 从 Web UI 完成微调全流程。
 
@@ -110,7 +125,7 @@
 - [ ] RWKV-7 模型集成
 - [ ] vLLM/Ollama 自动检测
 
-## Iteration 7: 高级写作技术
+## Iteration 8: 高级写作技术
 
 **目标：** 深度集成研究级写作技术。
 
@@ -143,6 +158,8 @@
 | v0.1.0 | 2026-04-15 | Phase 1-4 初始发布 |
 | v0.2.0 | 2026-04-15 | 认证+上下文引擎+Checker+写作指南+面板 |
 | v0.3.0 | 2026-04-16 | 中文化+移动端+过滤词+书源评分+排行榜+搜索 |
-| v0.4.0 | TBD | Iteration 1: E2E 验证 |
-| v0.5.0 | TBD | Iteration 2: 写法引擎资产化 |
-| v1.0.0 | TBD | Iteration 4: 生产就绪 |
+| v0.4.0 | 2026-04-19 | 项目管理页+回收站+向导可编辑+字数目标+单卷重生+关系表+7 bug 修复 |
+| v0.5.0 | TBD | Iteration 2: 测试套件与 CI |
+| v0.6.0 | TBD | Iteration 3: 写法引擎资产化 |
+| v1.0.0 | TBD | Iteration 5: 生产就绪 |
+
