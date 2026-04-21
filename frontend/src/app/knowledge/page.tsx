@@ -670,6 +670,12 @@ function BooksTab() {
                       alert(`已提取架构：${JSON.stringify(data.structure?.structure_summary || '完成').slice(0, 100)}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
                   }} className="px-2.5 py-1 text-xs bg-orange-50 text-orange-600 rounded">提取架构</button>
+                  <button onClick={async () => {
+                    try {
+                      const data = await apiFetch<any>(`/api/reference-books/${book.id}/reprocess`, { method: 'POST' })
+                      alert(`反编译已${data.status === 'queued' ? '排队' : '完成'}`)
+                    } catch (e) { alert(e instanceof Error ? e.message : '反编译失败') }
+                  }} className="px-2.5 py-1 text-xs bg-teal-50 text-teal-600 rounded" title="v0.6: 风格剖面 + 情节骨架 + 脱敏样本">反编译</button>
                   <button onClick={() => deleteBook(book.id)}
                     className="px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded">删除</button>
                 </div>

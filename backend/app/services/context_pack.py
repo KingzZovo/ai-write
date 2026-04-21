@@ -893,6 +893,16 @@ class ContextPackBuilder:
                     summary = payload.get("summary", payload.get("text", ""))
                     if summary:
                         pack.rag_snippets.append(summary)
+                # v0.6 — ContextPack v2: three-way recall from decompile collections
+                # Gated on CONTEXT_PACK_V2_ENABLED env flag. Safe no-op if disabled
+                # or if the project has no bound reference book.
+                import os
+
+                if os.getenv("CONTEXT_PACK_V2_ENABLED", "false").lower() in ("1", "true", "yes"):
+                    try:
+                        await self._v2_three_way_recall(pack, embedding, client)
+                    except Exception as v2_exc:
+                        logger.debug("v2 three-way recall skipped: %s", v2_exc)
             except Exception:
                 logger.debug("Qdrant search failed, collection may not exist")
             finally:
@@ -900,6 +910,55 @@ class ContextPackBuilder:
 
         except (ImportError, Exception) as e:
             logger.debug("Qdrant RAG retrieval skipped: %s", e)
+
+    async def _v2_three_way_recall(self, pack: ContextPack, embedding: list, client) -> None:
+        """v0.6 ContextPack v2: pull style_profiles + beat_sheets + redacted samples
+        from the reference book bound to this project."""
+        from app.services.qdrant_store import QdrantStore
+
+        # Resolve bound reference book via project settings
+        project_id = getattr(pack, "project_id", None) or getattr(pack.meta, "project_id", None)
+        ref_book_id: str | None = None
+        if project_id:
+            try:
+                db = await self._get_db()
+                project = await db.get(Project, project_id)
+                if project:
+                    ref = (project.settings_json or {}).get("style_reference", {})
+                    ref_book_id = ref.get("reference_book_id") or ref.get("book_id")
+            except Exception:
+                ref_book_id = None
+
+        store = QdrantStore(client)
+        # style_profiles: structured style prompts (top 3)
+        style_hits = await store.search_style_profiles(embedding, book_id=ref_book_id, top_k=3)
+        for h in style_hits:
+            prof = (h.get("payload") or {}).get("profile") or {}
+            if prof:
+                line = (
+                    f"[风格] pov={prof.get('pov','?')} 节奏={prof.get('sentence_rhythm','?')} "
+                    f"情感={prof.get('emotional_register','?')} "
+                    f"词汇={','.join(prof.get('vocab_tone') or [])}"
+                )
+                pack.rag_snippets.append(line)
+        # beat_sheets: entity-redacted plot scaffolds (top 2)
+        beat_hits = await store.search_beat_sheets(embedding, book_id=ref_book_id, top_k=2)
+        for h in beat_hits:
+            beat = (h.get("payload") or {}).get("beat") or {}
+            if beat:
+                line = (
+                    f"[骨架] {beat.get('scene_type','?')}: {beat.get('reusable_pattern','?')} "
+                    f"→ {beat.get('outcome','?')}"
+                )
+                pack.rag_snippets.append(line)
+        # style_samples_redacted: one redacted sample passage for few-shot
+        sample_hits = await store.search_style_samples_redacted(
+            embedding, book_id=ref_book_id, top_k=1
+        )
+        for h in sample_hits:
+            redacted = (h.get("payload") or {}).get("redacted_text")
+            if redacted:
+                pack.style_samples.append(redacted)
 
     async def _load_style_samples(
         self,
