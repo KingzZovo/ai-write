@@ -6,6 +6,15 @@ import type { ReactNode } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AskUserPrompt } from '@/components/AskUserPrompt'
 
+// Isolates useSearchParams() inside a Suspense boundary so /workspace can be
+// statically prerendered (Next.js requires this — see https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout).
+function AskUserMount() {
+  const searchParams = useSearchParams()
+  const projectId = searchParams?.get('id') || ''
+  if (!projectId) return null
+  return <AskUserPrompt projectId={projectId} />
+}
+
 // Error boundary to catch runtime crashes
 class ErrorBoundary extends Component<{children: ReactNode}, {error: string | null}> {
   constructor(props: {children: ReactNode}) {
@@ -55,8 +64,6 @@ const MobileWorkspace = dynamic(() => import('@/components/workspace/MobileWorks
 export default function WorkspacePage() {
   const [ready, setReady] = useState(false)
   const [mobile, setMobile] = useState(false)
-  const searchParams = useSearchParams()
-  const projectId = searchParams?.get('id') || ''
 
   useEffect(() => {
     setMobile(window.innerWidth < 768)
@@ -79,7 +86,9 @@ export default function WorkspacePage() {
     }>
       <ErrorBoundary>
         {mobile ? <MobileWorkspace /> : <DesktopWorkspace />}
-        {projectId ? <AskUserPrompt projectId={projectId} /> : null}
+        <Suspense fallback={null}>
+          <AskUserMount />
+        </Suspense>
       </ErrorBoundary>
     </Suspense>
   )
