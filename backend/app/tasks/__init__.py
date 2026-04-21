@@ -32,3 +32,15 @@ celery_app.conf.beat_schedule = {
 # Explicitly import task modules so Celery registers them.
 import app.tasks.knowledge_tasks  # noqa: F401, E402
 import app.tasks.style_tasks  # noqa: F401, E402
+
+
+# v0.5 — RAG rebuild task
+@celery_app.task(name="rebuild_rag_for_project", bind=True, max_retries=3)
+def rebuild_rag_for_project(self, project_id: str, force: bool = False):
+    import asyncio
+
+    from app.services.rag_rebuild import rebuild_rag_for_project_async
+
+    return asyncio.run(
+        rebuild_rag_for_project_async(project_id=project_id, force=force)
+    )
