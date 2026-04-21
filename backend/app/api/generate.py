@@ -134,17 +134,33 @@ async def generate_chapter(
                     + f"\n\n【本章目标字数】约 {target_words} 字（允许 ±15% 浮动）。"
                 )
 
+            # v0.5: ChapterGenerator takes project_id/volume_id/chapter_idx.
+            # Resolve them — prefer loaded `chapter` above, fall back to request fields.
+            resolved_volume_id: str | None = None
+            resolved_chapter_idx: int | None = None
+            if req.chapter_id:
+                ch = await db.get(Chapter, req.chapter_id)
+                if ch:
+                    resolved_volume_id = str(ch.volume_id)
+                    resolved_chapter_idx = ch.chapter_idx
+            if resolved_volume_id is None:
+                resolved_volume_id = req.volume_id
+            if resolved_chapter_idx is None:
+                resolved_chapter_idx = req.chapter_idx
+
+            if not resolved_volume_id or resolved_chapter_idx is None:
+                yield f"data: {json.dumps({'error': 'volume_id and chapter_idx required (directly or via chapter_id)'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             generator = ChapterGenerator()
             async for chunk in generator.generate_stream(
-                project_settings=project_settings,
-                world_rules=world_rules,
-                book_outline_summary=book_summary,
-                chapter_outline=chapter_outline,
-                previous_chapter_text=previous_text,
-                current_chapter_text=current_text,
-                style_instruction=resolved_style,
+                project_id=req.project_id,
+                volume_id=resolved_volume_id,
+                chapter_idx=resolved_chapter_idx,
+                db=db,
+                chapter_id=req.chapter_id,
                 user_instruction=effective_user_instruction,
-                max_tokens=req.max_tokens,
             ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
 

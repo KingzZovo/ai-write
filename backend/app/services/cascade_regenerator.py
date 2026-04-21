@@ -184,38 +184,28 @@ class CascadeRegenerator:
         if not chapter:
             raise ValueError(f"Chapter {chapter_id} not found")
 
-        # Build context using the existing context assembler
-        from app.services.context_assembler import build_context_for_chapter
+        # v0.5: use ChapterGenerator which routes through ContextPack + logger
+        from app.services.chapter_generator import ChapterGenerator
 
-        # Get the previous chapter for recent-text context
-        prev_text = ""
-        if chapter.chapter_idx > 0:
-            prev_result = await self.db.execute(
-                select(Chapter).where(
-                    Chapter.volume_id == chapter.volume_id,
-                    Chapter.chapter_idx == chapter.chapter_idx - 1,
-                )
-            )
-            prev_chapter = prev_result.scalar_one_or_none()
-            if prev_chapter and prev_chapter.content_text:
-                prev_text = prev_chapter.content_text
-
-        messages = build_context_for_chapter(
-            chapter_outline=chapter.outline_json or {},
-            previous_chapter_text=prev_text,
-            user_instruction=(
-                f"请根据以上设定和大纲，重新生成第{chapter.chapter_idx}章"
-                f"《{chapter.title}》的正文内容。"
-            ),
-        )
+        # Look up project_id via volume
+        from app.models.project import Volume
+        vol = await self.db.get(Volume, chapter.volume_id)
+        if not vol:
+            raise ValueError(f"Volume {chapter.volume_id} not found")
 
         try:
-            result = await self.router.generate(
-                task_type="generation",
-                messages=messages,
-                max_tokens=4096,
+            generator = ChapterGenerator()
+            new_text = await generator.generate(
+                project_id=vol.project_id,
+                volume_id=chapter.volume_id,
+                chapter_idx=chapter.chapter_idx,
+                db=self.db,
+                chapter_id=chapter.id,
+                user_instruction=(
+                    f"请根据以上设定和大纲，重新生成第{chapter.chapter_idx}章"
+                    f"《{chapter.title}》的正文内容。"
+                ),
             )
-            new_text = result.text
 
             # Update the chapter in DB
             chapter.content_text = new_text
