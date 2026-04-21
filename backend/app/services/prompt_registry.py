@@ -32,7 +32,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "generation",
         "name": "小说正文生成",
+        "name_en": "Chapter Generation",
         "description": "根据大纲和上下文生成章节正文",
+        "description_en": "Generate chapter prose from context pack.",
+        "category": "Core Writing",
+        "order": 10,
+        "always_enabled": 1,
         "mode": "text",
         "system_prompt": (
             "你是一位专业的小说内容生成引擎。你的任务是根据提供的设定、大纲和上下文，"
@@ -48,7 +53,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "polishing",
         "name": "文本润色",
+        "name_en": "Text Polishing",
         "description": "对初稿进行风格润色，提升文学表现力",
+        "description_en": "Polish draft prose while preserving plot and logic.",
+        "category": "Core Writing",
+        "order": 20,
+        "always_enabled": 0,
         "mode": "text",
         "system_prompt": (
             "你是一位专业的文学润色编辑。你的任务是对初稿进行风格润色，"
@@ -64,7 +74,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "outline_book",
         "name": "全书大纲生成",
+        "name_en": "Book Outline",
         "description": "根据创意生成完整的全书大纲",
+        "description_en": "Generate a full-book outline from a pitch.",
+        "category": "Outline",
+        "order": 30,
+        "always_enabled": 1,
         "mode": "text",
         "system_prompt": (
             "你是一位经验丰富的小说策划师。根据用户提供的创意和设定，"
@@ -81,7 +96,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "outline_volume",
         "name": "分卷大纲生成",
+        "name_en": "Volume Outline",
         "description": "根据全书大纲生成单卷详细大纲",
+        "description_en": "Generate detailed outline for a single volume.",
+        "category": "Outline",
+        "order": 40,
+        "always_enabled": 1,
         "mode": "text",
         "system_prompt": (
             "你是一位经验丰富的小说策划师。根据全书大纲和指定的卷号，"
@@ -97,7 +117,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "outline_chapter",
         "name": "章节大纲生成",
+        "name_en": "Chapter Outline",
         "description": "根据卷大纲生成单章详细大纲",
+        "description_en": "Generate detailed outline for a single chapter.",
+        "category": "Outline",
+        "order": 50,
+        "always_enabled": 1,
         "mode": "text",
         "system_prompt": (
             "你是一位经验丰富的小说策划师。根据卷大纲和指定的章号，"
@@ -113,7 +138,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "evaluation",
         "name": "质量评估",
+        "name_en": "Quality Evaluation",
         "description": "评估小说文本的写作质量",
+        "description_en": "Evaluate writing quality across five axes.",
+        "category": "Quality",
+        "order": 60,
+        "always_enabled": 0,
         "mode": "structured",
         "system_prompt": "你是文学评论专家，只输出 JSON。",
         "output_schema": {
@@ -130,7 +160,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "extraction",
         "name": "实体提取",
+        "name_en": "Entity Extraction",
         "description": "从文本中提取角色、地点、事件等实体",
+        "description_en": "Extract characters, locations, events from text.",
+        "category": "Extraction",
+        "order": 70,
+        "always_enabled": 0,
         "mode": "structured",
         "system_prompt": (
             "你是一个文本分析助手。从小说文本中提取以下实体信息，输出纯 JSON。\n"
@@ -146,7 +181,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "summary",
         "name": "章节摘要",
+        "name_en": "Chapter Summary",
         "description": "生成章节的结构化摘要",
+        "description_en": "Generate structured summary for a chapter.",
+        "category": "Extraction",
+        "order": 80,
+        "always_enabled": 1,
         "mode": "structured",
         "system_prompt": (
             "你是一个小说分析助手。请为以下章节内容生成结构化摘要。\n"
@@ -157,7 +197,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
     {
         "task_type": "rewrite",
         "name": "文本改写",
+        "name_en": "Text Rewrite",
         "description": "根据指令对选中文本进行改写",
+        "description_en": "Rewrite selected text per instruction.",
+        "category": "Editing",
+        "order": 90,
+        "always_enabled": 0,
         "mode": "text",
         "system_prompt": (
             "你是一位专业的小说文本编辑。请根据指令对所选文本进行改写。\n"
@@ -190,12 +235,17 @@ class PromptRegistry:
             asset = PromptAsset(
                 task_type=p["task_type"],
                 name=p["name"],
+                name_en=p.get("name_en", ""),
                 description=p.get("description", ""),
+                description_en=p.get("description_en", ""),
                 mode=p.get("mode", "text"),
                 system_prompt=p["system_prompt"],
                 user_template=p.get("user_template", ""),
                 output_schema=p.get("output_schema"),
                 context_policy=p.get("context_policy", "default"),
+                category=p.get("category", "Core"),
+                order=p.get("order", 0),
+                always_enabled=p.get("always_enabled", 0),
             )
             self.db.add(asset)
             seeded += 1
