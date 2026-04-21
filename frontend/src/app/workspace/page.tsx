@@ -3,6 +3,8 @@
 import dynamic from 'next/dynamic'
 import { Component, Suspense, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { AskUserPrompt } from '@/components/AskUserPrompt'
 
 // Error boundary to catch runtime crashes
 class ErrorBoundary extends Component<{children: ReactNode}, {error: string | null}> {
@@ -53,6 +55,8 @@ const MobileWorkspace = dynamic(() => import('@/components/workspace/MobileWorks
 export default function WorkspacePage() {
   const [ready, setReady] = useState(false)
   const [mobile, setMobile] = useState(false)
+  const searchParams = useSearchParams()
+  const projectId = searchParams?.get('id') || ''
 
   useEffect(() => {
     setMobile(window.innerWidth < 768)
@@ -75,6 +79,7 @@ export default function WorkspacePage() {
     }>
       <ErrorBoundary>
         {mobile ? <MobileWorkspace /> : <DesktopWorkspace />}
+        {projectId ? <AskUserPrompt projectId={projectId} /> : null}
       </ErrorBoundary>
     </Suspense>
   )
