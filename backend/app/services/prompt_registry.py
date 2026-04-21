@@ -332,26 +332,49 @@ async def run_text_prompt(
     user_content: str,
     db: AsyncSession,
     extra_system: str = "",
+    project_id: Any = None,
+    chapter_id: Any = None,
+    rag_hits: list[dict] | None = None,
+    messages: list[dict] | None = None,
     **kwargs,
 ) -> GenerationResult:
-    """Run a text prompt from the registry. Falls back to model router defaults."""
+    """Run a text prompt from the registry (v0.5: uses RouteSpec + logs calls).
+
+    If `messages` is provided, it is used directly (skip system/user build).
+    Otherwise build `[system, user_content]` from the prompt's system + extra_system.
+    """
+    from app.services.llm_call_logger import log_llm_call
+
     registry = PromptRegistry(db)
-    asset = await registry.get(task_type)
+    route = await registry.resolve_route(task_type)
+
+    if messages is None:
+        system = route.system_prompt
+        if extra_system:
+            system = f"{system}\n\n{extra_system}" if system else extra_system
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user_content})
 
     router = get_model_router()
-    system = asset.system_prompt if asset else ""
-    if extra_system:
-        system = f"{system}\n\n{extra_system}" if system else extra_system
+    async with log_llm_call(
+        db=db,
+        task_type=task_type,
+        prompt_id=route.prompt_id,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        messages=messages,
+        rag_hits=rag_hits or [],
+        model=route.model or "",
+        endpoint_id=route.endpoint_id,
+    ) as ctx:
+        result = await router.generate_by_route(route, messages, **kwargs)
+        ctx.add_chunk(result.text)
+        ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
 
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": user_content})
-
-    result = await router.generate(task_type=task_type, messages=messages, **kwargs)
-
-    if asset:
-        await registry.track_result(asset.id, success=bool(result.text))
+    if route.prompt_id:
+        await registry.track_result(route.prompt_id, success=bool(result.text))
 
     return result
 
@@ -361,13 +384,22 @@ async def run_structured_prompt(
     user_content: str,
     db: AsyncSession,
     extra_system: str = "",
+    project_id: Any = None,
+    chapter_id: Any = None,
     **kwargs,
 ) -> dict:
     """Run a structured prompt (expects JSON output). Returns parsed dict."""
-    result = await run_text_prompt(task_type, user_content, db, extra_system, **kwargs)
+    result = await run_text_prompt(
+        task_type,
+        user_content,
+        db,
+        extra_system,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        **kwargs,
+    )
 
     try:
-        # Try to extract JSON from the response
         text = result.text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -381,21 +413,43 @@ async def stream_text_prompt(
     user_content: str,
     db: AsyncSession,
     extra_system: str = "",
+    project_id: Any = None,
+    chapter_id: Any = None,
+    rag_hits: list[dict] | None = None,
+    messages: list[dict] | None = None,
     **kwargs,
 ) -> AsyncIterator[str]:
-    """Stream a text prompt from the registry."""
+    """Stream a text prompt from the registry (v0.5).
+
+    If `messages` is provided, use directly (ContextPack path). Otherwise
+    build messages from the prompt's system + user_content.
+    """
+    from app.services.llm_call_logger import log_llm_call
+
     registry = PromptRegistry(db)
-    asset = await registry.get(task_type)
+    route = await registry.resolve_route(task_type)
+
+    if messages is None:
+        system = route.system_prompt
+        if extra_system:
+            system = f"{system}\n\n{extra_system}" if system else extra_system
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user_content})
 
     router = get_model_router()
-    system = asset.system_prompt if asset else ""
-    if extra_system:
-        system = f"{system}\n\n{extra_system}" if system else extra_system
-
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": user_content})
-
-    async for chunk in router.generate_stream(task_type=task_type, messages=messages, **kwargs):
-        yield chunk
+    async with log_llm_call(
+        db=db,
+        task_type=task_type,
+        prompt_id=route.prompt_id,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        messages=messages,
+        rag_hits=rag_hits or [],
+        model=route.model or "",
+        endpoint_id=route.endpoint_id,
+    ) as ctx:
+        async for chunk in router.stream_by_route(route, messages, **kwargs):
+            ctx.add_chunk(chunk)
+            yield chunk
