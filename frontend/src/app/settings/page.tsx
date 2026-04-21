@@ -20,24 +20,10 @@ interface Endpoint {
   created_at: string
 }
 
-interface TaskConfig {
-  task_type: string
-  endpoint: Endpoint | null
-  model_name: string
-  temperature: number
-  max_tokens: number
-}
-
 interface TestResult {
   success: boolean
   message: string
   latency_ms: number | null
-}
-
-interface Preset {
-  name: string
-  description: string
-  tasks: Record<string, { model_name: string; temperature: number; max_tokens: number }>
 }
 
 // =========================================================================
@@ -56,24 +42,12 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
   openai_compatible: [],
 }
 
-const TASK_LABELS: Record<string, string> = {
-  outline: '\u5927\u7EB2\u751F\u6210',
-  generation: '\u7AE0\u8282\u751F\u6210',
-  polishing: '\u98CE\u683C\u6DA6\u8272',
-  extraction: '\u6458\u8981\u63D0\u53D6',
-  summary: '\u5185\u5BB9\u603B\u7ED3',
-  evaluation: '\u8D28\u91CF\u8BC4\u4F30',
-  embedding: '\u6587\u672C\u5411\u91CF\u5316',
-}
-
 // =========================================================================
 // Main Page
 // =========================================================================
 
 export default function SettingsPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([])
-  const [tasks, setTasks] = useState<TaskConfig[]>([])
-  const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -81,14 +55,8 @@ export default function SettingsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [epRes, taskRes, presetRes] = await Promise.all([
-        apiFetch<{ endpoints: Endpoint[]; total: number }>('/api/model-config/endpoints'),
-        apiFetch<{ tasks: TaskConfig[] }>('/api/model-config/tasks'),
-        apiFetch<Preset[]>('/api/model-config/presets'),
-      ])
+      const epRes = await apiFetch<{ endpoints: Endpoint[]; total: number }>('/api/model-config/endpoints')
       setEndpoints(epRes.endpoints)
-      setTasks(taskRes.tasks)
-      setPresets(presetRes)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载设置失败')
     } finally {
@@ -96,9 +64,7 @@ export default function SettingsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
+  useEffect(() => { fetchAll() }, [fetchAll])
 
   if (loading) {
     return (
@@ -118,15 +84,18 @@ export default function SettingsPage() {
         </div>
       )}
 
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+        <p className="font-medium mb-1">v0.5 变更</p>
+        <p className="text-xs">任务路由已下沉到每个 Prompt。请在 <a href="/prompts" className="underline">Prompt 注册表</a> 为每个 Prompt 独立指定端点、模型与温度。本页只管理端点本身。</p>
+      </div>
+
       <EndpointsSection endpoints={endpoints} onRefresh={fetchAll} />
-      <TaskRoutingSection endpoints={endpoints} tasks={tasks} onRefresh={fetchAll} />
-      <PresetsSection presets={presets} endpoints={endpoints} onRefresh={fetchAll} />
     </div>
   )
 }
 
 // =========================================================================
-// Section 1: API Endpoints
+// Section: API Endpoints (unchanged from v0.4)
 // =========================================================================
 
 function EndpointsSection({
@@ -149,7 +118,6 @@ function EndpointsSection({
   const [formError, setFormError] = useState<string | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<string, TestResult>>(() => {
-    // Initialize from persisted endpoint data
     const init: Record<string, TestResult> = {}
     for (const ep of endpoints) {
       if (ep.last_test_latency != null) {
@@ -218,7 +186,7 @@ function EndpointsSection({
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!confirm('确定删除此端点？引用该端点的任务配置将失去关联。')) return
+      if (!confirm('确定删除此端点？引用该端点的 Prompt 将失去关联。')) return
       try {
         await apiFetch(`/api/model-config/endpoints/${id}`, { method: 'DELETE' })
         onRefresh()
@@ -442,261 +410,6 @@ function EndpointsSection({
           })}
         </div>
       )}
-    </section>
-  )
-}
-
-// =========================================================================
-// Section 2: Task Routing
-// =========================================================================
-
-function TaskRoutingSection({
-  endpoints,
-  tasks,
-  onRefresh,
-}: {
-  endpoints: Endpoint[]
-  tasks: TaskConfig[]
-  onRefresh: () => void
-}) {
-  const [localTasks, setLocalTasks] = useState<TaskConfig[]>(tasks)
-  const [saving, setSaving] = useState<string | null>(null)
-  const [savedTasks, setSavedTasks] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    setLocalTasks(tasks)
-  }, [tasks])
-
-  const updateLocal = useCallback((taskType: string, updates: Partial<TaskConfig>) => {
-    setLocalTasks((prev) =>
-      prev.map((t) => (t.task_type === taskType ? { ...t, ...updates } : t))
-    )
-    setSavedTasks((prev) => {
-      const next = new Set(prev)
-      next.delete(taskType)
-      return next
-    })
-  }, [])
-
-  const handleSave = useCallback(
-    async (taskType: string) => {
-      const task = localTasks.find((t) => t.task_type === taskType)
-      if (!task) return
-      setSaving(taskType)
-      try {
-        const body: Record<string, unknown> = {
-          temperature: task.temperature,
-          max_tokens: task.max_tokens,
-        }
-        if (task.endpoint) {
-          body.endpoint_id = task.endpoint.id
-        }
-        if (task.model_name) {
-          body.model_name = task.model_name
-        }
-        await apiFetch(`/api/model-config/tasks/${taskType}`, {
-          method: 'PUT',
-          body: JSON.stringify(body),
-        })
-        setSavedTasks((prev) => new Set(prev).add(taskType))
-        onRefresh()
-      } catch (err) {
-        alert(err instanceof Error ? err.message : '保存失败')
-      } finally {
-        setSaving(null)
-      }
-    },
-    [localTasks, onRefresh]
-  )
-
-  return (
-    <section>
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">任务路由</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          为每种任务类型分配端点和模型
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        {localTasks.map((task) => (
-          <div key={task.task_type} className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="font-medium text-gray-900 text-sm">
-                  {TASK_LABELS[task.task_type] || task.task_type}
-                </div>
-                <div className="text-[10px] text-gray-400">{task.task_type}</div>
-              </div>
-              <button
-                onClick={() => handleSave(task.task_type)}
-                disabled={saving === task.task_type}
-                className={`px-3 py-1.5 text-xs rounded ${
-                  savedTasks.has(task.task_type)
-                    ? 'bg-green-50 text-green-700'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                } disabled:opacity-50`}
-              >
-                {saving === task.task_type ? '保存中...' : savedTasks.has(task.task_type) ? '已保存' : '保存'}
-              </button>
-            </div>
-            <div className="space-y-2">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">选择端点</label>
-                <select
-                  value={task.endpoint?.id || ''}
-                  onChange={(e) => {
-                    const ep = endpoints.find((x) => x.id === e.target.value) || null
-                    updateLocal(task.task_type, { endpoint: ep })
-                  }}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white"
-                >
-                  <option value="">-- 未分配 --</option>
-                  {endpoints.map((ep) => (
-                    <option key={ep.id} value={ep.id}>{ep.name} ({ep.provider_type})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">模型覆盖</label>
-                <input type="text" value={task.model_name}
-                  onChange={(e) => updateLocal(task.task_type, { model_name: e.target.value })}
-                  placeholder={task.endpoint?.default_model || '使用端点默认模型'}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">创造性: {task.temperature}</label>
-                  <input type="range" min="0" max="1" step="0.1" value={task.temperature}
-                    onChange={(e) => updateLocal(task.task_type, { temperature: parseFloat(e.target.value) })}
-                    className="w-full" />
-                </div>
-                <div className="w-24">
-                  <label className="block text-xs text-gray-500 mb-1">最大长度</label>
-                  <input type="number" value={task.max_tokens}
-                    onChange={(e) => updateLocal(task.task_type, { max_tokens: parseInt(e.target.value) || 0 })}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" min={1} max={65536} />
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {endpoints.length === 0 && (
-        <p className="text-sm text-amber-600 mt-2">
-          请先在上方添加至少一个端点，然后再分配任务。
-        </p>
-      )}
-    </section>
-  )
-}
-
-// =========================================================================
-// Section 3: Quick Setup / Presets
-// =========================================================================
-
-function PresetsSection({
-  presets,
-  endpoints,
-  onRefresh,
-}: {
-  presets: Preset[]
-  endpoints: Endpoint[]
-  onRefresh: () => void
-}) {
-  const [applying, setApplying] = useState<string | null>(null)
-
-  const handleApplyPreset = useCallback(
-    async (preset: Preset) => {
-      if (endpoints.length === 0) {
-        alert('请先添加至少一个端点，然后再应用预设。')
-        return
-      }
-
-      const targetEndpoint = endpoints[0]
-      if (!confirm(`使用端点"${targetEndpoint.name}"应用"${preset.description}"？这将覆盖所有当前任务分配。`)) {
-        return
-      }
-
-      setApplying(preset.name)
-      try {
-        for (const [taskType, config] of Object.entries(preset.tasks)) {
-          await apiFetch(`/api/model-config/tasks/${taskType}`, {
-            method: 'PUT',
-            body: JSON.stringify({
-              endpoint_id: targetEndpoint.id,
-              model_name: config.model_name,
-              temperature: config.temperature,
-              max_tokens: config.max_tokens,
-            }),
-          })
-        }
-        onRefresh()
-      } catch (err) {
-        alert(err instanceof Error ? err.message : '应用预设失败')
-      } finally {
-        setApplying(null)
-      }
-    },
-    [endpoints, onRefresh]
-  )
-
-  const presetStyles: Record<string, { label: string; desc: string; color: string }> = {
-    cloud_anthropic: {
-      label: '纯云端 (Anthropic)',
-      desc: '所有任务使用同一个 Anthropic 端点',
-      color: 'border-purple-200 hover:border-purple-400',
-    },
-    cloud_openai: {
-      label: '纯云端 (OpenAI)',
-      desc: '所有任务使用同一个 OpenAI 端点',
-      color: 'border-green-200 hover:border-green-400',
-    },
-    hybrid: {
-      label: '混合模式',
-      desc: '生成用云端，提取用本地，向量化独立',
-      color: 'border-blue-200 hover:border-blue-400',
-    },
-    local_only: {
-      label: '纯本地',
-      desc: '所有任务使用同一个 OpenAI 兼容的本地端点',
-      color: 'border-orange-200 hover:border-orange-400',
-    },
-  }
-
-  return (
-    <section>
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">快速设置</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          应用预设快速配置所有任务，需要至少一个端点。
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {presets.map((preset) => {
-          const style = presetStyles[preset.name] || {
-            label: preset.name,
-            desc: preset.description,
-            color: 'border-gray-200 hover:border-gray-400',
-          }
-          return (
-            <button
-              key={preset.name}
-              onClick={() => handleApplyPreset(preset)}
-              disabled={applying !== null || endpoints.length === 0}
-              className={`bg-white rounded-lg border-2 ${style.color} p-5 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              <h3 className="text-sm font-semibold text-gray-900 mb-1">{style.label}</h3>
-              <p className="text-xs text-gray-500">{style.desc}</p>
-              {applying === preset.name && (
-                <p className="text-xs text-blue-600 mt-2">应用中...</p>
-              )}
-            </button>
-          )
-        })}
-      </div>
     </section>
   )
 }
