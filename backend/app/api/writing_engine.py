@@ -11,8 +11,6 @@ Each resource exposes list / create / update / delete and, where relevant,
 a /{id}/toggle endpoint for quick enable/disable.
 """
 
-from __future__ import annotations
-
 import uuid
 from typing import Any
 from uuid import UUID
@@ -156,23 +154,32 @@ def _register_crud(
     schema_out,
     order_col,
 ):
-    @router.get(path_prefix, response_model=list[schema_out])
+    # NOTE: we dynamically build handlers with explicit parameter annotations
+    # because FastAPI resolves Pydantic request-body types from closure names
+    # at openapi generation, which fails when the name is a local variable.
+    # Constructing the function via exec with a concrete annotation namespace
+    # binds the type correctly.
+
+    list_resp = list[schema_out]
+
     async def _list(db: AsyncSession = Depends(get_db)):
         rows = await db.execute(select(model_cls).order_by(order_col))
         return list(rows.scalars().all())
 
-    @router.post(path_prefix, response_model=schema_out)
-    async def _create(payload: schema_in, db: AsyncSession = Depends(get_db)):
+    _list.__annotations__ = {"db": AsyncSession, "return": list_resp}
+    router.get(path_prefix, response_model=list_resp)(_list)
+
+    async def _create(payload, db: AsyncSession = Depends(get_db)):
         obj = model_cls(id=uuid.uuid4(), **payload.model_dump(exclude_none=True))
         db.add(obj)
         await db.commit()
         await db.refresh(obj)
         return obj
 
-    @router.put(path_prefix + "/{item_id}", response_model=schema_out)
-    async def _update(
-        item_id: UUID, payload: schema_in, db: AsyncSession = Depends(get_db)
-    ):
+    _create.__annotations__ = {"payload": schema_in, "db": AsyncSession, "return": schema_out}
+    router.post(path_prefix, response_model=schema_out)(_create)
+
+    async def _update(item_id: UUID, payload, db: AsyncSession = Depends(get_db)):
         obj = await db.get(model_cls, item_id)
         if obj is None:
             raise HTTPException(404, f"{model_cls.__name__} not found")
@@ -182,7 +189,14 @@ def _register_crud(
         await db.refresh(obj)
         return obj
 
-    @router.delete(path_prefix + "/{item_id}")
+    _update.__annotations__ = {
+        "item_id": UUID,
+        "payload": schema_in,
+        "db": AsyncSession,
+        "return": schema_out,
+    }
+    router.put(path_prefix + "/{item_id}", response_model=schema_out)(_update)
+
     async def _delete(item_id: UUID, db: AsyncSession = Depends(get_db)):
         obj = await db.get(model_cls, item_id)
         if obj is None:
@@ -191,7 +205,8 @@ def _register_crud(
         await db.commit()
         return {"deleted": str(item_id)}
 
-    @router.post(path_prefix + "/{item_id}/toggle", response_model=schema_out)
+    router.delete(path_prefix + "/{item_id}")(_delete)
+
     async def _toggle(item_id: UUID, db: AsyncSession = Depends(get_db)):
         obj = await db.get(model_cls, item_id)
         if obj is None:
@@ -200,6 +215,9 @@ def _register_crud(
         await db.commit()
         await db.refresh(obj)
         return obj
+
+    _toggle.__annotations__ = {"item_id": UUID, "db": AsyncSession, "return": schema_out}
+    router.post(path_prefix + "/{item_id}/toggle", response_model=schema_out)(_toggle)
 
 
 _register_crud(
