@@ -23,7 +23,9 @@ class PromptResponse(BaseModel):
     id: UUID
     task_type: str
     name: str
+    name_en: str = ""
     description: str
+    description_en: str = ""
     mode: str
     system_prompt: str
     user_template: str
@@ -31,6 +33,13 @@ class PromptResponse(BaseModel):
     context_policy: str
     version: int
     is_active: int
+    endpoint_id: UUID | None = None
+    model_name: str = ""
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    category: str = "Core"
+    order: int = 0
+    always_enabled: int = 0
     success_count: int
     fail_count: int
     avg_score: int
@@ -41,22 +50,40 @@ class PromptResponse(BaseModel):
 class PromptCreate(BaseModel):
     task_type: str
     name: str
+    name_en: str = ""
     description: str = ""
+    description_en: str = ""
     mode: str = "text"
     system_prompt: str
     user_template: str = ""
     output_schema: dict | None = None
     context_policy: str = "default"
+    endpoint_id: UUID | None = None
+    model_name: str = ""
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    category: str = "Core"
+    order: int = 0
+    always_enabled: int = 0
 
 
 class PromptUpdate(BaseModel):
     name: str | None = None
+    name_en: str | None = None
     description: str | None = None
+    description_en: str | None = None
     system_prompt: str | None = None
     user_template: str | None = None
     output_schema: dict | None = None
     context_policy: str | None = None
     is_active: int | None = None
+    endpoint_id: UUID | None = None
+    model_name: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    category: str | None = None
+    order: int | None = None
+    always_enabled: int | None = None
 
 
 @router.get("", response_model=list[PromptResponse])
@@ -101,7 +128,9 @@ async def create_prompt(
     asset = PromptAsset(
         task_type=body.task_type,
         name=body.name,
+        name_en=body.name_en,
         description=body.description,
+        description_en=body.description_en,
         mode=body.mode,
         system_prompt=body.system_prompt,
         user_template=body.user_template,
@@ -109,10 +138,19 @@ async def create_prompt(
         context_policy=body.context_policy,
         version=new_version,
         is_active=1,
+        endpoint_id=body.endpoint_id,
+        model_name=body.model_name,
+        temperature=body.temperature,
+        max_tokens=body.max_tokens,
+        category=body.category,
+        order=body.order,
+        always_enabled=body.always_enabled,
     )
     db.add(asset)
     await db.flush()
     await db.refresh(asset)
+    from app.services.model_router import reset_model_router
+    reset_model_router()
     return PromptResponse.model_validate(asset)
 
 
@@ -144,6 +182,9 @@ async def update_prompt(
 
     await db.flush()
     await db.refresh(asset)
+    # v0.5: mutations to routing fields must re-seed ModelRouter cache
+    from app.services.model_router import reset_model_router
+    reset_model_router()
     return PromptResponse.model_validate(asset)
 
 
