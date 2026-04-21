@@ -1,6 +1,30 @@
 # AI Write 迭代计划
 
-## 当前版本 v0.4.0 (2026-04-19)
+## 当前版本 v0.5.0 (2026-04-21)
+
+### v0.5 交付内容：Prompt Routing + 可观测性 + AskUser
+
+| 模块 | 内容 | 状态 |
+|------|------|------|
+| PromptRegistry | RouteSpec + resolve_route 统一路由 | ✅ |
+| ModelRouter | 改用 PromptAsset 路由，废弃 ModelConfig + /tasks 端点 | ✅ |
+| LLM 日志 | llm_call_logger async ctx + run/stream_text_prompt 包裹 | ✅ |
+| ChapterGenerator | 基于 ContextPack + PromptRegistry 重写，generate.py / cascade_regenerator 迁移 | ✅ |
+| VectorStore | QdrantStore 扩展 list/delete/stats/search_by_vector + /api/vector-store | ✅ |
+| RAG Rebuild | rag_rebuild 服务 + Celery 任务 | ✅ |
+| CallLogs API | /api/call-logs 读/删 | ✅ |
+| AskUserService | /api/ask-user/pending｜answer｜cancel | ✅ |
+| 前端 /prompts | endpoint/model/temp/max_tokens + 分类 | ✅ |
+| 前端 /settings | 去掉 task routing，端点为本 + v0.5 notice | ✅ |
+| 前端 /vector | 3 集合 + points CRUD + 搜索 + rebuild | ✅ |
+| 前端 /logs | 过滤 + 详情视图（messages + RAG hits） | ✅ |
+| 前端 AskUserPrompt | 组件 + 挂载到 /workspace（URL 驱动 projectId） | ✅ |
+
+烟测：`/api/ask-user/pending` 已在后端 `:8000` 注册，未鉴权返回 401；tsc --noEmit 通过。
+
+---
+
+## 历史版本 v0.4.0 (2026-04-19)
 
 ### 已完成功能
 
@@ -159,7 +183,7 @@
 | v0.2.0 | 2026-04-15 | 认证+上下文引擎+Checker+写作指南+面板 |
 | v0.3.0 | 2026-04-16 | 中文化+移动端+过滤词+书源评分+排行榜+搜索 |
 | v0.4.0 | 2026-04-19 | 项目管理页+回收站+向导可编辑+字数目标+单卷重生+关系表+7 bug 修复 |
-| v0.5.0 | TBD | Iteration 2: 测试套件与 CI |
+| v0.5.0 | 2026-04-21 | Prompt Routing + ModelRouter 重构 + LLM 日志 + /api/ask-user + Vector/RAG + 前端 5 新页 |
 | v0.6.0 | TBD | Iteration 3: 写法引擎资产化 |
 | v1.0.0 | TBD | Iteration 5: 生产就绪 |
 
