@@ -12,6 +12,13 @@ from app.models.generation_run import CriticReport, GenerationRun  # noqa: F401
 from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
+from app.models.writing_engine import (  # noqa: F401
+    AntiAITrap,
+    BeatPattern,
+    GenreProfile,
+    ToolSpec,
+    WritingRule,
+)
 from app.models.project import (
     BookSource,
     Chapter,
@@ -34,7 +41,9 @@ from app.models.project import (
 
 __all__ = [
     "Base",
+    "AntiAITrap",
     "AskUserPause",
+    "BeatPattern",
     "BeatSheetCard",
     "BookSource",
     "Chapter",
@@ -44,6 +53,7 @@ __all__ = [
     "CrawlTask",
     "FilterWord",
     "Foreshadow",
+    "GenreProfile",
     "LLMCallLog",
     "LLMEndpoint",
     "Outline",
@@ -53,9 +63,11 @@ __all__ = [
     "StyleProfile",
     "StyleProfileCard",
     "TextChunk",
+    "ToolSpec",
     "Volume",
     "VolumeSummary",
     "WorldRule",
+    "WritingRule",
     "PromptAsset",
     "PipelineRun",
     "PipelineChapterStatus",
