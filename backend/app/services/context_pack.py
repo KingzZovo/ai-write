@@ -208,6 +208,8 @@ class ContextPack:
     timeline_anchors: list[TimeAnchor] = field(default_factory=list)
     contradiction_cache: list[str] = field(default_factory=list)
     strand_tracker: StrandTracker = field(default_factory=StrandTracker)
+    # v0.8 ContextPack v3: 4th recall path, scoped to project.genre_profile.
+    writing_rules: list[str] = field(default_factory=list)
 
     # Layer 3: RAG (~20%)
     rag_snippets: list[str] = field(default_factory=list)
@@ -277,6 +279,10 @@ class ContextPack:
         if self.world_rules:
             rules_text = "\n".join(f"- {r}" for r in self.world_rules)
             l2_parts.append(f"【世界规则(不可违反)】\n{rules_text}")
+
+        if self.writing_rules:
+            wr_text = "\n".join(f"- {r}" for r in self.writing_rules)
+            l2_parts.append(f"【写作规则(必须遵守)】\n{wr_text}")
 
         if self.character_cards:
             cards_text = "\n".join(c.to_prompt() for c in self.character_cards)
@@ -1004,3 +1010,73 @@ class ContextPackBuilder:
 
         except Exception as e:
             logger.debug("Style sample loading skipped: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# v0.8 — ContextPack v3 fourth recall path: writing_rules
+# ---------------------------------------------------------------------------
+
+
+async def fetch_writing_rules(
+    db,
+    project_id: str,
+    *,
+    top_k: int = 6,
+) -> list[str]:
+    """Return the top-K active writing_rules for a project.
+
+    Resolution path:
+    1. Look up ``project.genre_profile_code`` → ``genre_profiles`` row.
+    2. If the profile has ``default_writing_rule_ids``, use those IDs.
+    3. Otherwise fall back to active rules whose ``genre`` matches the code
+       (or rules with an empty/global ``genre``).
+    4. Sort by ``priority`` desc, return at most ``top_k`` rendered strings.
+
+    Returns an empty list on any error so callers can degrade silently.
+    """
+    try:
+        from sqlalchemy import select
+
+        from app.models.project import Project
+        from app.models.writing_engine import GenreProfile, WritingRule
+
+        proj = (
+            await db.execute(select(Project).where(Project.id == project_id))
+        ).scalars().first()
+        if proj is None:
+            return []
+        code = getattr(proj, "genre_profile_code", None) or ""
+
+        profile = None
+        if code:
+            profile = (
+                await db.execute(select(GenreProfile).where(GenreProfile.code == code))
+            ).scalars().first()
+
+        rules: list[WritingRule] = []
+        if profile and profile.default_writing_rule_ids:
+            ids = [str(x) for x in (profile.default_writing_rule_ids or [])]
+            if ids:
+                q = (
+                    await db.execute(
+                        select(WritingRule).where(
+                            WritingRule.id.in_(ids),
+                            WritingRule.is_active.is_(True),
+                        )
+                    )
+                )
+                rules = list(q.scalars().all())
+
+        if not rules:
+            stmt = select(WritingRule).where(WritingRule.is_active.is_(True))
+            if code:
+                stmt = stmt.where((WritingRule.genre == code) | (WritingRule.genre == ""))
+            else:
+                stmt = stmt.where(WritingRule.genre == "")
+            rules = list((await db.execute(stmt)).scalars().all())
+
+        rules.sort(key=lambda r: (-(r.priority or 0), r.title or ""))
+        return [f"{r.title}：{r.rule_text}".strip() for r in rules[:top_k]]
+    except Exception as exc:
+        logger.debug("fetch_writing_rules skipped: %s", exc)
+        return []

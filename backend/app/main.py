@@ -109,6 +109,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("Could not seed built-in prompts: %s", e)
 
+    # v0.8: seed writing-engine defaults (incremental, idempotent)
+    try:
+        from app.services.writing_engine_seed import seed_writing_engine
+        from app.db.session import async_session_factory
+        async with async_session_factory() as seed_db:
+            added = await seed_writing_engine(seed_db)
+            if any(v > 0 for v in added.values()):
+                logger.info("Seeded writing-engine defaults: %s", added)
+            else:
+                logger.info("Writing-engine defaults already up to date")
+    except Exception as e:
+        logger.warning("Could not seed writing-engine defaults: %s", e)
+
     yield
 
     # Shutdown
@@ -209,6 +222,8 @@ from app.api import decompile  # noqa: E402
 app.include_router(decompile.router)
 from app.api import generation_runs  # noqa: E402
 app.include_router(generation_runs.router)
+from app.api import writing_engine  # noqa: E402
+app.include_router(writing_engine.router)
 
 
 # ---------------------------------------------------------------------------
