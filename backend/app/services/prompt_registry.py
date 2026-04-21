@@ -225,6 +225,166 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
             "只输出改写后的文本，不要解释。"
         ),
     },
+    # v0.6 — decompile pipeline
+    {
+        "task_type": "style_abstraction",
+        "name": "风格抽象化",
+        "name_en": "Style Abstraction",
+        "description": "从参考书片段提取结构化风格指令，不保留原文",
+        "description_en": "Distill structured style directives from reference slice without retaining raw text.",
+        "category": "Decompile",
+        "order": 100,
+        "always_enabled": 1,
+        "mode": "structured",
+        "system_prompt": (
+            "你是文本风格分析官。阅读小说片段后，输出结构化风格画像 JSON，"
+            "不要引用或复述原文句子。\n"
+            "输出字段：\n"
+            "- pov：叙事视角（first/third_limited/third_omni）\n"
+            "- tense：时态（past/present）\n"
+            "- sentence_rhythm：句式节奏描述（长句/短句比例、排比候使用频率等）\n"
+            "- dialogue_style：对话特征（描述比例、乡土化/书面化、口头禅等）\n"
+            "- sensory_mix：感官调用分布（视/听/崅/触/味相对占比）\n"
+            "- pacing：节奏特征（慢镜头/跳写/起起伏伏）\n"
+            "- emotional_register：情感温度（冷峻/热烈/疏离/谐谑）\n"
+            "- vocab_tone：词汇色彩标签列表（古风/柔软/硬核/市井/奇幻/科技等）\n"
+            "- forbidden_tells：该风格应避免的标签或句式\n"
+            "- signature_moves：该风格独特的写法（抽象描述，例如“用天气映射人物内心”）\n"
+            "硬性约束：绝不出现原文完整句子、人名、专有名词。只输出 JSON。"
+        ),
+        "output_schema": {
+            "pov": "string",
+            "tense": "string",
+            "sentence_rhythm": "string",
+            "dialogue_style": "string",
+            "sensory_mix": "string",
+            "pacing": "string",
+            "emotional_register": "string",
+            "vocab_tone": ["string"],
+            "forbidden_tells": ["string"],
+            "signature_moves": ["string"],
+        },
+    },
+    {
+        "task_type": "beat_extraction",
+        "name": "情节骨架抽取",
+        "name_en": "Beat Sheet Extraction",
+        "description": "从参考片段提取去专名的情节骨架（主体、诉求、障碍、转折）",
+        "description_en": "Extract entity-redacted plot beats (subject/goal/obstacle/turn) from a reference slice.",
+        "category": "Decompile",
+        "order": 110,
+        "always_enabled": 1,
+        "mode": "structured",
+        "system_prompt": (
+            "你是剧本结构分析官。阅读小说片段后，输出按骨架组织的 beat sheet JSON，"
+            "所有具体人名/地名/法宝名/门派名替换为角色标签（A/B/C）或类型词（老者/派系/圣器）。\n"
+            "字段：\n"
+            "- scene_type：场景类型（开篇/冲突/悔悟/类型转折）\n"
+            "- subject：主角标签\n"
+            "- goal：主角目标\n"
+            "- stakes：起教点\n"
+            "- obstacle：阻力\n"
+            "- turn：转折/升级\n"
+            "- outcome：结果\n"
+            "- emotional_arc：情感曲线\n"
+            "- foreshadow：伏笔埋下或回收\n"
+            "- reusable_pattern：骨架模板一句话（例如“弱者被歺侮后获遗宝反杀”）\n"
+            "硬性约束：不得包含原文人名/地名/专有名词。只输出 JSON。"
+        ),
+        "output_schema": {
+            "scene_type": "string",
+            "subject": "string",
+            "goal": "string",
+            "stakes": "string",
+            "obstacle": "string",
+            "turn": "string",
+            "outcome": "string",
+            "emotional_arc": "string",
+            "foreshadow": "string",
+            "reusable_pattern": "string",
+        },
+    },
+    {
+        "task_type": "redaction",
+        "name": "实体脱敏",
+        "name_en": "Entity Redaction",
+        "description": "将人名/地名/法宝名/门派名替换为中性标签，保留句式和风格",
+        "description_en": "Redact proper nouns from text while preserving sentence structure and style.",
+        "category": "Decompile",
+        "order": 120,
+        "always_enabled": 1,
+        "mode": "text",
+        "system_prompt": (
+            "你是文本脱敏工具。将所有具体人名、地名、法宝名、门派名、功法名替换为占位符，"
+            "保留句式、节奏、丰富程度不变。\n"
+            "替换规则：\n"
+            "- 人名→《角色A》、《角色B》…（按出场顺序）\n"
+            "- 地名→《地点1》、《地点1-山岰》（保留类型描述）\n"
+            "- 法宝/功法→《法宝1-剑》、《功法1-剑法》\n"
+            "- 门派→《势力1-剑派》\n"
+            "- 时代/年号→《纪年1》\n"
+            "绝不更改描述性词汇、动作词、形容词。只输出脱敏后的纯文本。"
+        ),
+    },
+    {
+        "task_type": "critic",
+        "name": "一致性审校",
+        "name_en": "Consistency Critic",
+        "description": "比对初稿与人物/世界观/历史设定，指出冲突问题",
+        "description_en": "Audit draft vs characters/world/history for inconsistencies.",
+        "category": "Quality",
+        "order": 130,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是一致性审校官。比对提供的 draft 与 ContextPack（人物卡/世界观/历史摘要），"
+            "找出 draft 中与设定或已有情节冲突的地方，输出 JSON：\n"
+            "{issues: [{severity: hard|soft|info, category, desc, location, suggestion}]}\n"
+            "severity 划分：\n"
+            "- hard: 位置矛盾/实力跨级/关系翻转，必须重写\n"
+            "- soft: 风格粽頋、细节含糊、不建议重写但值得记录\n"
+            "- info: 下一章需要注意的提醒点\n"
+            "如无问题，输出 {issues: []}。不要引用原文长篇，location 用短引可。"
+        ),
+        "output_schema": {
+            "issues": [
+                {
+                    "severity": "string",
+                    "category": "string",
+                    "desc": "string",
+                    "location": "string",
+                    "suggestion": "string",
+                }
+            ]
+        },
+    },
+    {
+        "task_type": "compact",
+        "name": "记忆压缩",
+        "name_en": "Memory Compaction",
+        "description": "将多章摘要合并为一条高密度叙事脚手架",
+        "description_en": "Compress N chapter summaries into one dense narrative scaffold.",
+        "category": "Quality",
+        "order": 140,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是小说记忆压缩器。输入为连续多章的摘要列表，输出一条高信息密度的 JSON：\n"
+            "{span: [start_chapter, end_chapter], arc: string, key_events: [string], "
+            "character_deltas: {name: string_delta}, world_changes: [string], "
+            "open_threads: [string], callback_hooks: [string]}\n"
+            "保留下文可能复使用的钩子和影响，删除不影响后续的细节。"
+        ),
+        "output_schema": {
+            "span": ["int"],
+            "arc": "string",
+            "key_events": ["string"],
+            "character_deltas": {},
+            "world_changes": ["string"],
+            "open_threads": ["string"],
+            "callback_hooks": ["string"],
+        },
+    },
 ]
 
 
@@ -242,11 +402,15 @@ class PromptRegistry:
         """Seed built-in prompts if the registry is empty. Returns count seeded."""
         from sqlalchemy import func
         count = await self.db.scalar(select(func.count(PromptAsset.id)))
+        existing_task_types: set[str] = set()
         if count and count > 0:
-            return 0
+            rows = await self.db.execute(select(PromptAsset.task_type))
+            existing_task_types = {r for r in rows.scalars().all() if r}
 
         seeded = 0
         for p in BUILTIN_PROMPTS:
+            if p["task_type"] in existing_task_types:
+                continue
             asset = PromptAsset(
                 task_type=p["task_type"],
                 name=p["name"],

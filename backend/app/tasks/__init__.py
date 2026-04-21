@@ -44,3 +44,13 @@ def rebuild_rag_for_project(self, project_id: str, force: bool = False):
     return asyncio.run(
         rebuild_rag_for_project_async(project_id=project_id, force=force)
     )
+
+
+# v0.6 — Reference book decompile task
+@celery_app.task(name="reprocess_reference_book", bind=True, max_retries=2)
+def reprocess_reference_book(self, book_id: str):
+    import asyncio
+
+    from app.services.reference_ingestor import reprocess_reference_book as _run
+
+    return asyncio.run(_run(book_id=book_id))

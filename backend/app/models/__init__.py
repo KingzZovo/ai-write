@@ -7,6 +7,7 @@ via a single import of this package.
 from app.db.session import Base
 from app.models.ask_user import AskUserPause
 from app.models.call_log import LLMCallLog
+from app.models.decompile import BeatSheetCard, ReferenceBookSlice, StyleProfileCard
 from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
@@ -33,6 +34,7 @@ from app.models.project import (
 __all__ = [
     "Base",
     "AskUserPause",
+    "BeatSheetCard",
     "BookSource",
     "Chapter",
     "ChapterEvaluation",
@@ -46,7 +48,9 @@ __all__ = [
     "Outline",
     "Project",
     "ReferenceBook",
+    "ReferenceBookSlice",
     "StyleProfile",
+    "StyleProfileCard",
     "TextChunk",
     "Volume",
     "VolumeSummary",

@@ -180,6 +180,8 @@ app.include_router(pipeline.router)
 app.include_router(vector_store.router)
 app.include_router(call_logs.router)
 app.include_router(ask_user.router)
+from app.api import decompile  # noqa: E402
+app.include_router(decompile.router)
 
 
 # ---------------------------------------------------------------------------
