@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -35,9 +36,10 @@ from app.models.generation_run import (
     CriticReport,
     GenerationRun,
 )
-from app.services.context_pack import ContextPackBuilder
+from app.services.context_pack import ContextPackBuilder, fetch_writing_rules
 from app.services.critic_service import run_critic
 from app.services.prompt_registry import run_text_prompt
+from app.services.tool_registry import run_tool
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +80,16 @@ async def _phase_planning(run: GenerationRun, db: AsyncSession) -> dict[str, Any
         project_id=str(run.project_id),
         chapter_id=str(run.chapter_id) if run.chapter_id else None,
     )
+    # v0.8 ContextPack v3: 4th recall path — writing_rules scoped to genre_profile.
+    try:
+        pack.writing_rules = await fetch_writing_rules(db, str(run.project_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("writing_rules fetch skipped: %s", exc)
+        pack.writing_rules = []
     pack_snapshot = {
         "rag_snippets": list(getattr(pack, "rag_snippets", []) or [])[:20],
         "style_samples": list(getattr(pack, "style_samples", []) or [])[:5],
+        "writing_rules": list(getattr(pack, "writing_rules", []) or [])[:10],
         "meta_project_id": str(run.project_id),
     }
     return {"pack": pack_snapshot}
@@ -93,9 +102,26 @@ async def _phase_drafting(
 ) -> dict[str, Any]:
     pack = planning_data.get("pack", {})
     context_block = "\n".join(pack.get("rag_snippets") or [])
-    user_content = (
-        f"<上下文>\n{context_block}\n</上下文>\n\n请撰写本章正文。"
-    )
+    rules = pack.get("writing_rules") or []
+    rule_block = "\n".join(f"- {r}" for r in rules) if rules else ""
+
+    # v0.8 Agent tool loop (max 3 rounds, default off)
+    tool_context = ""
+    if os.getenv("AGENT_TOOL_LOOP_ENABLED", "false").lower() in ("true", "1", "yes"):
+        tool_context = await _run_tool_loop(
+            db,
+            project_id=str(run.project_id),
+            chapter_id=str(run.chapter_id) if run.chapter_id else None,
+            context_block=context_block,
+        )
+
+    parts = [f"<上下文>\n{context_block}\n</上下文>"]
+    if rule_block:
+        parts.append(f"<写作规则>\n{rule_block}\n</写作规则>")
+    if tool_context:
+        parts.append(f"<工具核实>\n{tool_context}\n</工具核实>")
+    parts.append("请撰写本章正文。")
+    user_content = "\n\n".join(parts)
     result = await run_text_prompt(
         "generation",
         user_content,
@@ -105,6 +131,72 @@ async def _phase_drafting(
     )
     draft = getattr(result, "text", "") or str(result or "")
     return {"text": draft}
+
+
+async def _run_tool_loop(
+    db: AsyncSession,
+    *,
+    project_id: str,
+    chapter_id: str | None,
+    context_block: str,
+    max_rounds: int = 3,
+) -> str:
+    """Minimal v0.8 tool loop.
+
+    Runs up to ``max_rounds`` tool calls per drafting attempt and returns a
+    flat text block that the main generation prompt can read. The concrete
+    calls here are intentionally conservative so the feature can be enabled
+    safely even without careful per-project tuning.
+    """
+    fragments: list[str] = []
+    rounds = 0
+
+    # Round 1: suggest_beat for current progress (best-effort 0.5 if unknown).
+    if rounds < max_rounds:
+        try:
+            beat = await run_tool(
+                "suggest_beat",
+                {"chapter_progress": 0.5},
+                db,
+                project_id=project_id,
+                chapter_id=chapter_id,
+            )
+            if isinstance(beat, dict) and beat.get("beat_title"):
+                fragments.append(
+                    f"beat: {beat.get('beat_title')} — {beat.get('beat_description','')}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("tool suggest_beat skipped: %s", exc)
+        rounds += 1
+
+    # Round 2+: check_character_fact for characters detected in context.
+    try:
+        from sqlalchemy import select as _sel
+        from app.models.project import Character
+
+        chars = (
+            await db.execute(_sel(Character.name).where(Character.project_id == project_id))
+        ).scalars().all()
+        mentioned = [n for n in chars if n and n in (context_block or "")]
+        for name in mentioned[: max_rounds - rounds]:
+            fact = await run_tool(
+                "check_character_fact",
+                {"character_name": name},
+                db,
+                project_id=project_id,
+                chapter_id=chapter_id,
+            )
+            if isinstance(fact, dict):
+                loc = fact.get("location", "") or "?"
+                lvl = fact.get("power_level", "") or "?"
+                fragments.append(f"char[{name}]: 位置={loc} 实力={lvl}")
+            rounds += 1
+            if rounds >= max_rounds:
+                break
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("tool check_character_fact loop skipped: %s", exc)
+
+    return "\n".join(fragments)
 
 
 async def _phase_critic(

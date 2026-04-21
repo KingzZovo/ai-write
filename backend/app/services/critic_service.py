@@ -1,8 +1,13 @@
-"""v0.7 — Critic node.
+"""v0.8 — 3-layer Critic node.
 
-Combines deterministic rule checks (character location / power level / relationship
-consistency) with an LLM-based review using task_type="critic". Emits a JSON issue
-list graded hard / soft / info.
+Layers (in order):
+1. Deterministic rule check  — character state vs draft (v0.7 behaviour).
+2. Anti-AI scan              — loads active ``anti_ai_traps`` and reports hits.
+3. LLM critic pass           — task_type="critic", aggregates the above into
+                                 a structured issue list.
+
+The combined output keeps the v0.7 shape so ``generation_runner`` and the API
+don't need to change: ``{issues, hard_count, soft_count, info_count}``.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Character
+from app.services.anti_ai_scanner import scan_anti_ai
 from app.services.prompt_registry import run_structured_prompt
 
 logger = logging.getLogger(__name__)
@@ -27,16 +33,18 @@ async def _rule_check(draft: str, project_id: str, db: AsyncSession) -> list[dic
     for ch in chars:
         if not ch.name or ch.name not in draft:
             continue
-        # Location check
-        loc = (ch.current_location or "").strip() if hasattr(ch, "current_location") else ""
-        if loc and f"{ch.name}" in draft and loc not in draft:
-            # Not authoritative but flag as soft hint for LLM follow-up
-            issues.append({
-                "severity": "soft",
-                "category": "location",
-                "desc": f"角色 {ch.name} 已知位置 {loc}，章节未明确交代。",
-                "location": "",
-            })
+        profile = ch.profile_json or {}
+        loc = (profile.get("location") or "").strip() if isinstance(profile, dict) else ""
+        if loc and loc not in draft:
+            issues.append(
+                {
+                    "severity": "soft",
+                    "category": "location",
+                    "desc": f"角色 {ch.name} 已知位置 {loc}，章节未明确交代。",
+                    "location": "",
+                    "source": "rule",
+                }
+            )
     return issues
 
 
@@ -48,7 +56,7 @@ async def run_critic(
     db: AsyncSession,
     pack_summary: str = "",
 ) -> dict[str, Any]:
-    """Return {issues:[{severity, category, desc, location}], hard_count, soft_count, info_count}."""
+    """Return aggregated critic output across the 3 layers."""
     issues: list[dict[str, Any]] = []
 
     # 1) deterministic rules
@@ -57,7 +65,13 @@ async def run_critic(
     except Exception as exc:
         logger.warning("critic rule_check failed: %s", exc)
 
-    # 2) LLM critic pass (task_type="critic")
+    # 2) v0.8 anti-AI scan
+    try:
+        issues.extend(await scan_anti_ai(draft, db))
+    except Exception as exc:
+        logger.warning("critic anti_ai scan failed: %s", exc)
+
+    # 3) LLM critic pass
     try:
         user_content = (
             f"<上下文摘要>\n{pack_summary}\n</上下文摘要>\n\n"
@@ -72,7 +86,10 @@ async def run_critic(
             chapter_id=chapter_id,
         )
         if isinstance(out, dict) and isinstance(out.get("issues"), list):
-            issues.extend(out["issues"])
+            for it in out["issues"]:
+                if isinstance(it, dict):
+                    it.setdefault("source", "llm")
+                    issues.append(it)
     except Exception as exc:
         logger.warning("critic LLM pass failed: %s", exc)
 
