@@ -255,3 +255,98 @@ class QdrantStore:
         """Generate a deterministic integer point ID from a string key."""
         h = hashlib.md5(key.encode()).hexdigest()
         return int(h[:16], 16)
+
+    # ------------------------------------------------------------------
+    # v0.5 — CRUD for the /vector management panel
+    # ------------------------------------------------------------------
+
+    async def list_points(
+        self,
+        collection: str,
+        limit: int = 50,
+        offset: Any = None,
+        filter_dict: dict | None = None,
+    ) -> dict:
+        """Scroll through points — returns {points: [{id, payload}], next_offset}."""
+        qfilter = None
+        if filter_dict:
+            qfilter = Filter(
+                must=[
+                    FieldCondition(key=k, match=MatchValue(value=v))
+                    for k, v in filter_dict.items()
+                ]
+            )
+        points, next_offset = await self.client.scroll(
+            collection_name=collection,
+            limit=limit,
+            offset=offset,
+            scroll_filter=qfilter,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return {
+            "points": [
+                {"id": p.id, "payload": p.payload or {}} for p in points
+            ],
+            "next_offset": next_offset,
+        }
+
+    async def delete_points(self, collection: str, point_ids: list) -> None:
+        """Delete points by ID list."""
+        from qdrant_client.models import PointIdsList
+        await self.client.delete(
+            collection_name=collection,
+            points_selector=PointIdsList(points=point_ids),
+        )
+
+    async def collection_stats(self, collection: str) -> dict:
+        """Return {name, count, dim, distance, sample_payloads}."""
+        info = await self.client.get_collection(collection)
+        sample_result, _ = await self.client.scroll(
+            collection_name=collection,
+            limit=3,
+            with_payload=True,
+            with_vectors=False,
+        )
+        vectors = info.config.params.vectors
+        # Some Qdrant versions expose .size / .distance directly on vectors
+        size = getattr(vectors, "size", None)
+        distance = getattr(vectors, "distance", None)
+        if size is None and isinstance(vectors, dict):
+            # Named-vectors mode: fall back to first entry
+            first = next(iter(vectors.values()))
+            size = getattr(first, "size", 0)
+            distance = getattr(first, "distance", "Cosine")
+        return {
+            "name": collection,
+            "count": info.points_count,
+            "dim": size,
+            "distance": str(distance) if distance is not None else "Cosine",
+            "sample_payloads": [p.payload or {} for p in sample_result],
+        }
+
+    async def search_by_vector(
+        self,
+        collection: str,
+        query_vector: list[float],
+        filter_dict: dict | None = None,
+        top_k: int = 5,
+    ) -> list[dict]:
+        """Generic vector search (any collection, any filter)."""
+        qfilter = None
+        if filter_dict:
+            qfilter = Filter(
+                must=[
+                    FieldCondition(key=k, match=MatchValue(value=v))
+                    for k, v in filter_dict.items()
+                ]
+            )
+        hits = await self.client.search(
+            collection_name=collection,
+            query_vector=query_vector,
+            query_filter=qfilter,
+            limit=top_k,
+        )
+        return [
+            {"score": h.score, "id": h.id, "payload": h.payload or {}} for h in hits
+        ]
