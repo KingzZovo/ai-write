@@ -84,6 +84,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Could not pre-load model router")
 
+    # v0.6: ensure Qdrant collections exist (style_profiles / beat_sheets / style_samples_redacted + legacy ones)
+    try:
+        from app.db.qdrant import get_qdrant
+        from app.services.qdrant_store import QdrantStore
+        async for _qc in get_qdrant():
+            await QdrantStore(_qc).ensure_collections()
+            break
+        logger.info("Qdrant collections ensured")
+    except Exception as e:
+        logger.warning("Could not ensure Qdrant collections: %s", e)
+
+    # v0.6: seed built-in prompts incrementally (adds missing task_types without overwriting user edits)
+    try:
+        from app.services.prompt_registry import PromptRegistry
+        from app.db.session import async_session_factory
+        async with async_session_factory() as seed_db:
+            added = await PromptRegistry(seed_db).seed_builtins()
+            if added:
+                await seed_db.commit()
+                logger.info("Seeded %d built-in prompt(s)", added)
+            else:
+                logger.info("Built-in prompts already up to date")
+    except Exception as e:
+        logger.warning("Could not seed built-in prompts: %s", e)
+
     yield
 
     # Shutdown
