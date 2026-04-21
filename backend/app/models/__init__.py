@@ -8,6 +8,7 @@ from app.db.session import Base
 from app.models.ask_user import AskUserPause
 from app.models.call_log import LLMCallLog
 from app.models.decompile import BeatSheetCard, ReferenceBookSlice, StyleProfileCard
+from app.models.generation_run import CriticReport, GenerationRun  # noqa: F401
 from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
