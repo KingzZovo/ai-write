@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
+from dataclasses import dataclass
 from typing import Any, AsyncIterator
 from uuid import UUID
 
@@ -23,6 +25,19 @@ from app.models.prompt import PromptAsset
 from app.services.model_router import get_model_router, GenerationResult
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RouteSpec:
+    """Resolved routing for a task: which endpoint + model + sampling params."""
+
+    prompt_id: uuid.UUID | None
+    endpoint_id: uuid.UUID | None
+    model: str
+    temperature: float
+    max_tokens: int
+    system_prompt: str
+    mode: str
 
 # =========================================================================
 # Built-in prompts — auto-seeded on first access if DB is empty
@@ -269,6 +284,28 @@ class PromptRegistry:
             select(PromptAsset).order_by(PromptAsset.task_type, PromptAsset.version.desc())
         )
         return list(result.scalars().all())
+
+    async def resolve_route(self, task_type: str) -> RouteSpec:
+        """Return routing spec for a task. Raises if no prompt or no endpoint."""
+        asset = await self.get(task_type)
+        if asset is None:
+            raise ValueError(
+                f"No active prompt registered for task '{task_type}'. Create one at /prompts."
+            )
+        if asset.endpoint_id is None:
+            raise ValueError(
+                f"Prompt '{asset.name}' (task {task_type}) has no endpoint configured. "
+                "Assign one at /prompts."
+            )
+        return RouteSpec(
+            prompt_id=asset.id,
+            endpoint_id=asset.endpoint_id,
+            model=asset.model_name or "",
+            temperature=asset.temperature if asset.temperature is not None else 0.7,
+            max_tokens=asset.max_tokens if asset.max_tokens is not None else 4096,
+            system_prompt=asset.system_prompt,
+            mode=asset.mode,
+        )
 
     async def track_result(self, asset_id: str | UUID, success: bool, score: int = 0) -> None:
         """Track prompt execution result for analytics."""
