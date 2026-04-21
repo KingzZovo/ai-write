@@ -213,23 +213,6 @@ class LLMEndpoint(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
-class ModelConfig(Base):
-    """Maps each task type to a specific LLM endpoint + model."""
-
-    __tablename__ = "model_configs"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    task_type = Column(String(50), nullable=False, unique=True)
-    # task_type values: generation, polishing, outline, extraction, evaluation, summary, embedding
-    endpoint_id = Column(UUID(as_uuid=True), ForeignKey("llm_endpoints.id", ondelete="SET NULL"), nullable=True)
-    model_name = Column(String(200), default="")  # Override endpoint's default_model if set
-    temperature = Column(Float, default=0.7)
-    max_tokens = Column(Integer, default=4096)
-    params_json = Column(JSON, default=dict)  # Extra params
-
-    endpoint = relationship("LLMEndpoint")
-
-
 class Foreshadow(Base):
     __tablename__ = "foreshadows"
 

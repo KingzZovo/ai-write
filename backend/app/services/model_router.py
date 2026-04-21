@@ -206,11 +206,16 @@ class ModelRouter:
         self.embedding_provider = provider
 
     async def load_from_db(self) -> None:
-        """Load endpoint configs and task routing from database."""
+        """Load endpoint configs and task routing from database.
+
+        v0.5: task routing now comes from `PromptAsset.endpoint_id` + `model_name`,
+        not from the deleted `model_configs` table.
+        """
         try:
             from sqlalchemy import select
             from app.db.session import async_session_factory
-            from app.models.project import LLMEndpoint, ModelConfig
+            from app.models.project import LLMEndpoint
+            from app.models.prompt import PromptAsset
 
             async with async_session_factory() as db:
                 result = await db.execute(
@@ -229,29 +234,37 @@ class ModelRouter:
                         self.register_provider(key, OpenAIProvider(
                             api_key=api_key, base_url=ep.base_url or ""))
 
-                result = await db.execute(select(ModelConfig))
-                configs = result.scalars().all()
+                # Load task routing from active PromptAssets (v0.5)
+                result = await db.execute(
+                    select(PromptAsset).where(PromptAsset.is_active == 1))
+                prompts_rows = result.scalars().all()
 
-                for cfg in configs:
-                    if cfg.endpoint_id and str(cfg.endpoint_id) in self.providers:
-                        self.task_routing[cfg.task_type] = TaskRouteConfig(
-                            provider_key=str(cfg.endpoint_id),
-                            model_name=cfg.model_name or "",
-                            temperature=cfg.temperature or 0.7,
-                            max_tokens=cfg.max_tokens or 4096,
+                for p in prompts_rows:
+                    if p.endpoint_id and str(p.endpoint_id) in self.providers:
+                        self.task_routing[p.task_type] = TaskRouteConfig(
+                            provider_key=str(p.endpoint_id),
+                            model_name=p.model_name or "",
+                            temperature=p.temperature if p.temperature is not None else 0.7,
+                            max_tokens=p.max_tokens if p.max_tokens is not None else 4096,
                         )
 
-                # Embedding endpoint
-                emb_cfg = next((c for c in configs
-                                if c.task_type == "embedding" and c.endpoint_id), None)
-                if emb_cfg:
-                    emb_ep = next((e for e in endpoints
-                                  if str(e.id) == str(emb_cfg.endpoint_id)), None)
+                # Embedding endpoint — find prompt with task_type="embedding"
+                emb_prompt = next(
+                    (p for p in prompts_rows
+                     if p.task_type == "embedding" and p.endpoint_id),
+                    None,
+                )
+                if emb_prompt:
+                    emb_ep = next(
+                        (e for e in endpoints
+                         if str(e.id) == str(emb_prompt.endpoint_id)),
+                        None,
+                    )
                     if emb_ep:
                         self.embedding_provider = EmbeddingProvider(
                             api_key=decrypt_api_key(emb_ep.api_key or ""),
                             base_url=emb_ep.base_url or "",
-                            model=emb_cfg.model_name or emb_ep.default_model,
+                            model=emb_prompt.model_name or emb_ep.default_model,
                         )
 
                 self._db_loaded = True
@@ -310,6 +323,35 @@ class ModelRouter:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
         model = self._resolve_model(route)
+        async for chunk in provider.generate_stream(
+            messages=messages, model=model,
+            temperature=temperature if temperature is not None else route.temperature,
+            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
+            yield chunk
+
+    async def generate_by_route(self, route, messages: list[dict],
+                                temperature: float | None = None,
+                                max_tokens: int | None = None,
+                                **kw) -> GenerationResult:
+        """Generate using an explicit RouteSpec (v0.5 path)."""
+        ep_key = str(route.endpoint_id)
+        provider = self._get_provider(ep_key)
+        model = route.model or self._endpoint_defaults.get(ep_key, "")
+        result = await provider.generate(
+            messages=messages, model=model,
+            temperature=temperature if temperature is not None else route.temperature,
+            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
+        self._track(result.usage)
+        return result
+
+    async def stream_by_route(self, route, messages: list[dict],
+                              temperature: float | None = None,
+                              max_tokens: int | None = None,
+                              **kw) -> AsyncIterator[str]:
+        """Stream using an explicit RouteSpec (v0.5 path)."""
+        ep_key = str(route.endpoint_id)
+        provider = self._get_provider(ep_key)
+        model = route.model or self._endpoint_defaults.get(ep_key, "")
         async for chunk in provider.generate_stream(
             messages=messages, model=model,
             temperature=temperature if temperature is not None else route.temperature,

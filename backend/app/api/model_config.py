@@ -1,7 +1,7 @@
-"""LLM endpoint and task routing configuration endpoints.
+"""LLM endpoint configuration endpoints.
 
-Allows users to configure API endpoints and assign them to task types
-from the frontend UI instead of .env files.
+v0.5: task routing has moved into PromptAsset (see /api/prompts). This module
+now only manages LLM endpoints (add/edit/test/delete).
 """
 
 from __future__ import annotations
@@ -13,24 +13,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.models.project import LLMEndpoint, ModelConfig as ModelConfigModel
+from app.models.project import LLMEndpoint
 from app.services.model_router import reset_model_router
 
 router = APIRouter(prefix="/api/model-config", tags=["model-config"])
 
 VALID_PROVIDER_TYPES = {"anthropic", "openai", "openai_compatible"}
-VALID_TASK_TYPES = {
-    "generation",
-    "polishing",
-    "outline",
-    "extraction",
-    "evaluation",
-    "summary",
-    "embedding",
-}
 
 
 # =========================================================================
@@ -97,35 +87,10 @@ class EndpointListResponse(BaseModel):
     total: int
 
 
-class TaskConfigUpdate(BaseModel):
-    endpoint_id: UUID | None = None
-    model_name: str | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-
-
-class TaskConfigResponse(BaseModel):
-    task_type: str
-    endpoint: EndpointResponse | None = None
-    model_name: str
-    temperature: float
-    max_tokens: int
-
-
-class TaskConfigListResponse(BaseModel):
-    tasks: list[TaskConfigResponse]
-
-
 class TestResult(BaseModel):
     success: bool
     message: str
     latency_ms: float | None = None
-
-
-class PresetResponse(BaseModel):
-    name: str
-    description: str
-    tasks: dict[str, dict[str, Any]]
 
 
 # =========================================================================
@@ -307,170 +272,3 @@ async def test_endpoint(
             message=f"Connection failed: {str(e)}",
             latency_ms=round(elapsed, 1),
         )
-
-
-# =========================================================================
-# Task Routing
-# =========================================================================
-
-
-@router.get("/tasks", response_model=TaskConfigListResponse)
-async def list_task_configs(
-    db: AsyncSession = Depends(get_db),
-) -> TaskConfigListResponse:
-    """List all task type configurations with their assigned endpoints."""
-    result = await db.execute(
-        select(ModelConfigModel)
-        .options(selectinload(ModelConfigModel.endpoint))
-        .order_by(ModelConfigModel.task_type)
-    )
-    configs = {cfg.task_type: cfg for cfg in result.scalars().all()}
-
-    tasks = []
-    for task_type in sorted(VALID_TASK_TYPES):
-        cfg = configs.get(task_type)
-        if cfg and cfg.endpoint:
-            endpoint_resp = EndpointResponse.from_orm_endpoint(cfg.endpoint)
-        else:
-            endpoint_resp = None
-
-        tasks.append(
-            TaskConfigResponse(
-                task_type=task_type,
-                endpoint=endpoint_resp,
-                model_name=cfg.model_name if cfg else "",
-                temperature=cfg.temperature if cfg else 0.7,
-                max_tokens=cfg.max_tokens if cfg else 4096,
-            )
-        )
-
-    return TaskConfigListResponse(tasks=tasks)
-
-
-@router.put("/tasks/{task_type}", response_model=TaskConfigResponse)
-async def update_task_config(
-    task_type: str,
-    body: TaskConfigUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> TaskConfigResponse:
-    """Assign an endpoint and model settings to a task type."""
-    if task_type not in VALID_TASK_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid task_type. Must be one of: {', '.join(sorted(VALID_TASK_TYPES))}",
-        )
-
-    # Verify endpoint exists if provided
-    endpoint_obj = None
-    if body.endpoint_id:
-        ep_result = await db.execute(
-            select(LLMEndpoint).where(LLMEndpoint.id == body.endpoint_id)
-        )
-        endpoint_obj = ep_result.scalar_one_or_none()
-        if endpoint_obj is None:
-            raise HTTPException(status_code=404, detail="Endpoint not found")
-
-    # Upsert the task config
-    result = await db.execute(
-        select(ModelConfigModel).where(ModelConfigModel.task_type == task_type)
-    )
-    cfg = result.scalar_one_or_none()
-
-    if cfg is None:
-        cfg = ModelConfigModel(task_type=task_type)
-        db.add(cfg)
-
-    if body.endpoint_id is not None:
-        cfg.endpoint_id = body.endpoint_id
-    if body.model_name is not None:
-        cfg.model_name = body.model_name
-    if body.temperature is not None:
-        cfg.temperature = body.temperature
-    if body.max_tokens is not None:
-        cfg.max_tokens = body.max_tokens
-
-    await db.flush()
-    await db.refresh(cfg)
-
-    # Reload with endpoint
-    result = await db.execute(
-        select(ModelConfigModel)
-        .options(selectinload(ModelConfigModel.endpoint))
-        .where(ModelConfigModel.id == cfg.id)
-    )
-    cfg = result.scalar_one()
-
-    reset_model_router()
-
-    endpoint_resp = EndpointResponse.from_orm_endpoint(cfg.endpoint) if cfg.endpoint else None
-    return TaskConfigResponse(
-        task_type=cfg.task_type,
-        endpoint=endpoint_resp,
-        model_name=cfg.model_name or "",
-        temperature=cfg.temperature,
-        max_tokens=cfg.max_tokens,
-    )
-
-
-# =========================================================================
-# Presets
-# =========================================================================
-
-
-@router.get("/presets", response_model=list[PresetResponse])
-async def list_presets() -> list[PresetResponse]:
-    """Return sensible default presets for common setups."""
-    return [
-        PresetResponse(
-            name="cloud_anthropic",
-            description="All tasks use Anthropic Claude",
-            tasks={
-                "generation": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.8, "max_tokens": 4096},
-                "polishing": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.7, "max_tokens": 4096},
-                "outline": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.8, "max_tokens": 8192},
-                "extraction": {"model_name": "claude-haiku-4-5-20251001", "temperature": 0.3, "max_tokens": 2048},
-                "evaluation": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.3, "max_tokens": 2048},
-                "summary": {"model_name": "claude-haiku-4-5-20251001", "temperature": 0.3, "max_tokens": 1024},
-                "embedding": {"model_name": "claude-haiku-4-5-20251001", "temperature": 0.0, "max_tokens": 1024},
-            },
-        ),
-        PresetResponse(
-            name="cloud_openai",
-            description="All tasks use OpenAI GPT",
-            tasks={
-                "generation": {"model_name": "gpt-4o", "temperature": 0.8, "max_tokens": 4096},
-                "polishing": {"model_name": "gpt-4o", "temperature": 0.7, "max_tokens": 4096},
-                "outline": {"model_name": "gpt-4o", "temperature": 0.8, "max_tokens": 8192},
-                "extraction": {"model_name": "gpt-4o-mini", "temperature": 0.3, "max_tokens": 2048},
-                "evaluation": {"model_name": "gpt-4o", "temperature": 0.3, "max_tokens": 2048},
-                "summary": {"model_name": "gpt-4o-mini", "temperature": 0.3, "max_tokens": 1024},
-                "embedding": {"model_name": "text-embedding-3-small", "temperature": 0.0, "max_tokens": 1024},
-            },
-        ),
-        PresetResponse(
-            name="hybrid",
-            description="Generation on cloud, extraction/summary on local, embedding separate",
-            tasks={
-                "generation": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.8, "max_tokens": 4096},
-                "polishing": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.7, "max_tokens": 4096},
-                "outline": {"model_name": "claude-sonnet-4-20250514", "temperature": 0.8, "max_tokens": 8192},
-                "extraction": {"model_name": "default", "temperature": 0.3, "max_tokens": 2048},
-                "evaluation": {"model_name": "default", "temperature": 0.3, "max_tokens": 2048},
-                "summary": {"model_name": "default", "temperature": 0.3, "max_tokens": 1024},
-                "embedding": {"model_name": "text-embedding-3-small", "temperature": 0.0, "max_tokens": 1024},
-            },
-        ),
-        PresetResponse(
-            name="local_only",
-            description="All tasks use one OpenAI-compatible local endpoint",
-            tasks={
-                "generation": {"model_name": "default", "temperature": 0.8, "max_tokens": 4096},
-                "polishing": {"model_name": "default", "temperature": 0.7, "max_tokens": 4096},
-                "outline": {"model_name": "default", "temperature": 0.8, "max_tokens": 8192},
-                "extraction": {"model_name": "default", "temperature": 0.3, "max_tokens": 2048},
-                "evaluation": {"model_name": "default", "temperature": 0.3, "max_tokens": 2048},
-                "summary": {"model_name": "default", "temperature": 0.3, "max_tokens": 1024},
-                "embedding": {"model_name": "default", "temperature": 0.0, "max_tokens": 1024},
-            },
-        ),
-    ]

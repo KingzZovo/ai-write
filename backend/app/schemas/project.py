@@ -221,37 +221,6 @@ class StyleProfileResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# ModelConfig
-# ---------------------------------------------------------------------------
-
-class ModelConfigCreate(BaseModel):
-    task_type: str = Field(..., max_length=50)
-    provider: str = Field(..., max_length=50)
-    model_name: str = Field(..., max_length=200)
-    params_json: dict[str, Any] | None = None
-    is_active: int | None = 1
-
-
-class ModelConfigUpdate(BaseModel):
-    task_type: str | None = Field(None, max_length=50)
-    provider: str | None = Field(None, max_length=50)
-    model_name: str | None = Field(None, max_length=200)
-    params_json: dict[str, Any] | None = None
-    is_active: int | None = None
-
-
-class ModelConfigResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    task_type: str
-    provider: str
-    model_name: str
-    params_json: dict[str, Any] | None = None
-    is_active: int
-
-
-# ---------------------------------------------------------------------------
 # Foreshadow
 # ---------------------------------------------------------------------------
 

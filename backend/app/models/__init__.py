@@ -5,6 +5,8 @@ via a single import of this package.
 """
 
 from app.db.session import Base
+from app.models.ask_user import AskUserPause
+from app.models.call_log import LLMCallLog
 from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
@@ -18,7 +20,6 @@ from app.models.project import (
     FilterWord,
     Foreshadow,
     LLMEndpoint,
-    ModelConfig,
     Outline,
     Project,
     ReferenceBook,
@@ -31,6 +32,7 @@ from app.models.project import (
 
 __all__ = [
     "Base",
+    "AskUserPause",
     "BookSource",
     "Chapter",
     "ChapterEvaluation",
@@ -39,8 +41,8 @@ __all__ = [
     "CrawlTask",
     "FilterWord",
     "Foreshadow",
+    "LLMCallLog",
     "LLMEndpoint",
-    "ModelConfig",
     "Outline",
     "Project",
     "ReferenceBook",
