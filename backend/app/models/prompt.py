@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, JSON, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.session import Base
@@ -30,5 +30,16 @@ class PromptAsset(Base):
     success_count = Column(Integer, default=0)
     fail_count = Column(Integer, default=0)
     avg_score = Column(Integer, default=0)  # 0-100
+    # v0.5 — direct route binding
+    endpoint_id = Column(UUID(as_uuid=True), ForeignKey("llm_endpoints.id", ondelete="SET NULL"), nullable=True)
+    model_name = Column(String(200), default="")
+    temperature = Column(Float, default=0.7)
+    max_tokens = Column(Integer, default=4096)
+    # v0.5 — capability metadata (NovelClaw-inspired)
+    category = Column(String(50), default="Core")
+    order = Column(Integer, default=0)
+    always_enabled = Column(Integer, default=0)
+    name_en = Column(String(200), default="")
+    description_en = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
