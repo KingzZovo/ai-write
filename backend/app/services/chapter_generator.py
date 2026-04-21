@@ -1,136 +1,98 @@
 """
-Chapter Generation Service
+Chapter Generation Service (v0.5)
 
-Orchestrates the full chapter generation pipeline:
-1. Build context (ContextAssembler)
-2. Generate draft (PlotAgent)
-3. Polish with style (StyleAgent)
-4. Save result
+Uses ContextPackBuilder (L1 proximity + L2 facts + L3 RAG) and routes
+through PromptRegistry so every call is logged in llm_call_logs.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import AsyncIterator
+from uuid import UUID
 
-from app.services.context_assembler import build_context_for_chapter
-from app.services.agents.plot_agent import PlotAgent
-from app.services.agents.style_agent import StyleAgent
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.context_pack import ContextPackBuilder
+from app.services.prompt_registry import run_text_prompt, stream_text_prompt
 
 logger = logging.getLogger(__name__)
 
 
 class ChapterGenerator:
-    """Orchestrates chapter generation through the dual-agent pipeline."""
-
-    def __init__(self):
-        self.plot_agent = PlotAgent()
-        self.style_agent = StyleAgent()
+    """Orchestrates chapter generation via ContextPack + PromptRegistry."""
 
     async def generate(
         self,
-        project_settings: dict,
-        world_rules: list[str],
-        book_outline_summary: str,
-        chapter_outline: dict,
-        previous_chapter_text: str,
-        current_chapter_text: str = "",
-        style_instruction: str = "",
+        *,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        db: AsyncSession,
+        chapter_id: str | UUID | None = None,
         user_instruction: str = "",
-        max_tokens: int = 4096,
-        skip_polish: bool = False,
     ) -> str:
-        """
-        Generate a full chapter through the dual-agent pipeline.
-
-        Args:
-            project_settings: Project settings JSON
-            world_rules: List of world rule texts
-            book_outline_summary: Book-level outline summary
-            chapter_outline: Current chapter's outline
-            previous_chapter_text: Previous chapter's full text
-            current_chapter_text: Current chapter's existing text
-            style_instruction: Style guidance
-            user_instruction: User's specific instruction
-            max_tokens: Max tokens for generation
-            skip_polish: If True, skip the StyleAgent step
-
-        Returns:
-            Final chapter text
-        """
-        # Step 1: Build context
-        context_messages = build_context_for_chapter(
-            project_settings=project_settings,
-            world_rules=world_rules,
-            book_outline_summary=book_outline_summary,
-            chapter_outline=chapter_outline,
-            previous_chapter_text=previous_chapter_text,
-            current_chapter_text=current_chapter_text,
-            style_instruction="" if not skip_polish else style_instruction,
-            user_instruction=user_instruction,
+        """Non-streaming: build pack, call run_text_prompt, return full text."""
+        pack = await ContextPackBuilder(db=db).build(
+            project_id=project_id,
+            volume_id=volume_id,
+            chapter_idx=chapter_idx,
         )
+        messages = pack.to_messages(user_instruction)
+        rag_hits = self._collect_rag_hits(pack)
 
-        # Step 2: Generate draft via PlotAgent
-        logger.info("PlotAgent: generating draft...")
-        draft = await self.plot_agent.generate(context_messages, max_tokens=max_tokens)
-        logger.info("PlotAgent: draft generated (%d chars)", len(draft))
-
-        if skip_polish or not style_instruction:
-            return draft
-
-        # Step 3: Polish via StyleAgent
-        logger.info("StyleAgent: polishing draft...")
-        polished = await self.style_agent.polish(
-            draft_text=draft,
-            style_instruction=style_instruction,
-            max_tokens=max_tokens,
+        result = await run_text_prompt(
+            task_type="generation",
+            user_content="",
+            db=db,
+            project_id=str(project_id),
+            chapter_id=str(chapter_id) if chapter_id else None,
+            rag_hits=rag_hits,
+            messages=messages,
         )
-        logger.info("StyleAgent: polished (%d chars)", len(polished))
-
-        return polished
+        return result.text
 
     async def generate_stream(
         self,
-        project_settings: dict,
-        world_rules: list[str],
-        book_outline_summary: str,
-        chapter_outline: dict,
-        previous_chapter_text: str,
-        current_chapter_text: str = "",
-        style_instruction: str = "",
+        *,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        db: AsyncSession,
+        chapter_id: str | UUID | None = None,
         user_instruction: str = "",
-        max_tokens: int = 4096,
     ) -> AsyncIterator[str]:
-        """
-        Generate chapter with streaming output.
-
-        For streaming, we run PlotAgent in non-streaming mode first,
-        then stream the StyleAgent output. If no style instruction,
-        we stream PlotAgent directly.
-        """
-        context_messages = build_context_for_chapter(
-            project_settings=project_settings,
-            world_rules=world_rules,
-            book_outline_summary=book_outline_summary,
-            chapter_outline=chapter_outline,
-            previous_chapter_text=previous_chapter_text,
-            current_chapter_text=current_chapter_text,
-            user_instruction=user_instruction,
+        """SSE streaming: build pack, stream through PromptRegistry."""
+        pack = await ContextPackBuilder(db=db).build(
+            project_id=project_id,
+            volume_id=volume_id,
+            chapter_idx=chapter_idx,
         )
+        messages = pack.to_messages(user_instruction)
+        rag_hits = self._collect_rag_hits(pack)
 
-        if not style_instruction:
-            # Stream PlotAgent directly
-            async for chunk in self.plot_agent.generate_stream(
-                context_messages, max_tokens=max_tokens
-            ):
-                yield chunk
-        else:
-            # Generate draft first, then stream polish
-            draft = await self.plot_agent.generate(context_messages, max_tokens=max_tokens)
-            async for chunk in self.style_agent.polish_stream(
-                draft_text=draft,
-                style_instruction=style_instruction,
-                max_tokens=max_tokens,
-            ):
-                yield chunk
+        async for chunk in stream_text_prompt(
+            task_type="generation",
+            user_content="",
+            db=db,
+            project_id=str(project_id),
+            chapter_id=str(chapter_id) if chapter_id else None,
+            rag_hits=rag_hits,
+            messages=messages,
+        ):
+            yield chunk
+
+    @staticmethod
+    def _collect_rag_hits(pack) -> list[dict]:
+        """Flatten ContextPack RAG layers into a serializable list for logging."""
+        hits: list[dict] = []
+        for s in pack.rag_snippets:
+            hits.append({"collection": "chapter_summaries", "payload": {"summary": s}})
+        for name, lines in pack.dialogue_samples.items():
+            hits.append({
+                "collection": "dialogue_samples",
+                "payload": {"character": name, "lines": lines},
+            })
+        for s in pack.style_samples:
+            hits.append({"collection": "style_samples", "payload": {"text": s}})
+        return hits
