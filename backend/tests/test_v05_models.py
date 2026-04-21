@@ -47,3 +47,18 @@ def test_llm_call_log_construction():
     assert log.rag_hits_json[0]["collection"] == "chapter_summaries"
     assert log.input_tokens == 10
 
+
+def test_ask_user_pause_construction():
+    from app.models.ask_user import AskUserPause
+
+    p = AskUserPause(
+        project_id=None,
+        chapter_id=None,
+        run_id=uuid.uuid4(),
+        question="死吗?",
+        status="pending",
+        timeout_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    assert p.status == "pending"
+    assert p.answer is None
+
