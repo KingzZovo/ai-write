@@ -61,6 +61,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        GIT_TAG: ${GIT_TAG:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     env_file: .env
     ports:
       - "127.0.0.1:8000:8000"
@@ -82,6 +86,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        GIT_TAG: ${GIT_TAG:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     env_file: .env
     volumes:
       - ./backend:/app
