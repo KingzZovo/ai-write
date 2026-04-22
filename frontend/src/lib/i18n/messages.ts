@@ -17,6 +17,13 @@ export const zh = {
   "locale.switch": "语言",
   "locale.zh": "中文",
   "locale.en": "English",
+  "workspace.tab.sidebar": "目录",
+  "workspace.tab.editor": "编辑",
+  "workspace.tab.panel": "工具",
+  "workspace.sidebar.collapse": "折叠侧栏",
+  "workspace.sidebar.expand": "展开侧栏",
+  "workspace.panel.collapse": "折叠工具栏",
+  "workspace.panel.expand": "展开工具栏",
 } as const
 
 export type MessageKey = keyof typeof zh
@@ -33,6 +40,13 @@ export const en: Record<MessageKey, string> = {
   "locale.switch": "Language",
   "locale.zh": "中文",
   "locale.en": "English",
+  "workspace.tab.sidebar": "Outline",
+  "workspace.tab.editor": "Editor",
+  "workspace.tab.panel": "Tools",
+  "workspace.sidebar.collapse": "Collapse sidebar",
+  "workspace.sidebar.expand": "Expand sidebar",
+  "workspace.panel.collapse": "Collapse tools",
+  "workspace.panel.expand": "Expand tools",
 }
 
 export const catalogs = { zh, en } as const
