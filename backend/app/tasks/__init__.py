@@ -31,11 +31,16 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.run_style_clustering",
         "schedule": 3600.0,  # every hour
     },
+    "daily-backup": {
+        "task": "tasks.run_daily_backup",
+        "schedule": 86400.0,  # every 24h; first run ~24h after worker start
+    },
 }
 
 # Explicitly import task modules so Celery registers them.
 import app.tasks.knowledge_tasks  # noqa: F401, E402
 import app.tasks.style_tasks  # noqa: F401, E402
+import app.tasks.backup_tasks  # noqa: F401, E402
 
 
 # v0.5 — RAG rebuild task
