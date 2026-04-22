@@ -1,10 +1,122 @@
+/* ai-write design tokens (chunk-14).
+ *
+ * Tailwind v4 reads custom tokens from the @theme block. Each token here is
+ * exposed to utilities automatically, e.g.
+ *   --color-brand-500 -> bg-brand-500 / text-brand-500 / border-brand-500
+ *   --radius-card     -> rounded-card
+ *   --shadow-card     -> shadow-card
+ *   --text-display    -> text-display
+ *
+ * Semantic aliases (surface/border/text/brand) are the canonical API;
+ * the numeric scales underneath keep raw palette access when needed.
+ */
+
 @import "tailwindcss";
 
 @theme inline {
+  /* Typography */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.15;
+  --text-h1: 2rem;
+  --text-h1--line-height: 1.25;
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.3;
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.4;
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.45;
+
+  /* Brand scale (indigo-leaning) */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+
+  /* Status colors */
+  --color-success-50: #ecfdf5;
+  --color-success-500: #10b981;
+  --color-success-700: #047857;
+  --color-warning-50: #fffbeb;
+  --color-warning-500: #f59e0b;
+  --color-warning-700: #b45309;
+  --color-danger-50: #fef2f2;
+  --color-danger-500: #ef4444;
+  --color-danger-700: #b91c1c;
+  --color-info-50: #eff6ff;
+  --color-info-500: #3b82f6;
+  --color-info-700: #1d4ed8;
+
+  /* Semantic surface + text + border (light defaults; dark overrides below) */
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-inverted: var(--surface-inverted);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverted: var(--text-inverted);
+  --color-text-brand: var(--color-brand-600);
+
+  /* Radii */
+  --radius-card: 0.75rem;
+  --radius-panel: 1rem;
+  --radius-pill: 9999px;
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-popover: 0 8px 24px rgb(15 23 42 / 0.12);
+  --shadow-modal: 0 24px 48px rgb(15 23 42 / 0.18);
+
+  /* Layout containers */
+  --container-readable: 48rem;
+  --container-workspace: 80rem;
+}
+
+/* Light theme (default) */
+:root {
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-raised: #ffffff;
+  --surface-inverted: #0f172a;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-inverted: #f8fafc;
+}
+
+/* Dark theme -- opt-in via prefers-color-scheme today; switchable to a
+ *  `.dark` class later without touching token names. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #0f172a;
+    --surface-muted: #0b1220;
+    --surface-raised: #111827;
+    --surface-inverted: #f8fafc;
+    --border: #1f2937;
+    --border-strong: #334155;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --text-inverted: #0f172a;
+  }
 }
 
 body {
   font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
+  background-color: var(--surface);
+  color: var(--text);
 }
