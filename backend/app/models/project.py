@@ -446,3 +446,15 @@ class Relationship(Base):
     note = Column(Text, default="")
     sentiment = Column(String(20), default="neutral")
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+    # v0.9: relationship evolution across volumes
+    since_volume_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("volumes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    until_volume_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("volumes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    evolution_json = Column(JSON, default=list)  # [{volume_id, label, sentiment, note}]

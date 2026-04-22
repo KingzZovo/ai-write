@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.project import Character, WorldRule
+from app.services.change_log import record_change
+
 
 router = APIRouter(
     prefix="/api/projects/{project_id}",
@@ -123,6 +125,14 @@ async def create_character(
     db.add(character)
     await db.flush()
     await db.refresh(character)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="character",
+        target_id=character.id,
+        action="create",
+        after={"name": character.name, "profile_json": character.profile_json},
+    )
     return CharacterResponse.model_validate(character)
 
 
@@ -144,12 +154,22 @@ async def update_character(
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
 
+    before_state = {"name": character.name, "profile_json": character.profile_json}
     update_data = body.model_dump(exclude_unset=True)
     for field_name, value in update_data.items():
         setattr(character, field_name, value)
 
     await db.flush()
     await db.refresh(character)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="character",
+        target_id=character.id,
+        action="update",
+        before=before_state,
+        after={"name": character.name, "profile_json": character.profile_json},
+    )
     return CharacterResponse.model_validate(character)
 
 
@@ -170,8 +190,18 @@ async def delete_character(
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
 
+    before_state = {"name": character.name, "profile_json": character.profile_json}
+    deleted_id = character.id
     await db.delete(character)
     await db.flush()
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="character",
+        target_id=deleted_id,
+        action="delete",
+        before=before_state,
+    )
 
 
 # =========================================================================
@@ -212,6 +242,14 @@ async def create_world_rule(
     db.add(rule)
     await db.flush()
     await db.refresh(rule)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="world_rule",
+        target_id=rule.id,
+        action="create",
+        after={"category": rule.category, "rule_text": rule.rule_text},
+    )
     return WorldRuleResponse.model_validate(rule)
 
 
@@ -233,12 +271,22 @@ async def update_world_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="World rule not found")
 
+    before_state = {"category": rule.category, "rule_text": rule.rule_text}
     update_data = body.model_dump(exclude_unset=True)
     for field_name, value in update_data.items():
         setattr(rule, field_name, value)
 
     await db.flush()
     await db.refresh(rule)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="world_rule",
+        target_id=rule.id,
+        action="update",
+        before=before_state,
+        after={"category": rule.category, "rule_text": rule.rule_text},
+    )
     return WorldRuleResponse.model_validate(rule)
 
 
@@ -259,8 +307,18 @@ async def delete_world_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="World rule not found")
 
+    before_state = {"category": rule.category, "rule_text": rule.rule_text}
+    deleted_id = rule.id
     await db.delete(rule)
     await db.flush()
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="world_rule",
+        target_id=deleted_id,
+        action="delete",
+        before=before_state,
+    )
 
 
 # =========================================================================
@@ -310,10 +368,26 @@ async def create_relationship(
         label=body.label,
         note=body.note,
         sentiment=body.sentiment,
+        since_volume_id=body.since_volume_id,
+        until_volume_id=body.until_volume_id,
     )
     db.add(rel)
     await db.flush()
     await db.refresh(rel)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="relationship",
+        target_id=rel.id,
+        action="create",
+        after={
+            "source_id": str(rel.source_id),
+            "target_id": str(rel.target_id),
+            "rel_type": rel.rel_type,
+            "label": rel.label,
+            "sentiment": rel.sentiment,
+        },
+    )
     return RelationshipResponse.model_validate(rel)
 
 
@@ -350,11 +424,31 @@ async def update_relationship(
     rel = await db.get(Relationship, relationship_id)
     if rel is None or str(rel.project_id) != project_id:
         raise HTTPException(status_code=404, detail="Relationship not found")
+    before_state = {
+        "rel_type": rel.rel_type,
+        "label": rel.label,
+        "note": rel.note,
+        "sentiment": rel.sentiment,
+    }
     data = body.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(rel, k, v)
     await db.flush()
     await db.refresh(rel)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="relationship",
+        target_id=rel.id,
+        action="update",
+        before=before_state,
+        after={
+            "rel_type": rel.rel_type,
+            "label": rel.label,
+            "note": rel.note,
+            "sentiment": rel.sentiment,
+        },
+    )
     return RelationshipResponse.model_validate(rel)
 
 
@@ -367,5 +461,159 @@ async def delete_relationship(
     rel = await db.get(Relationship, relationship_id)
     if rel is None or str(rel.project_id) != project_id:
         raise HTTPException(status_code=404, detail="Relationship not found")
+    before_state = {
+        "source_id": str(rel.source_id),
+        "target_id": str(rel.target_id),
+        "rel_type": rel.rel_type,
+        "label": rel.label,
+        "sentiment": rel.sentiment,
+    }
+    deleted_id = rel.id
     await db.delete(rel)
     await db.flush()
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="relationship",
+        target_id=deleted_id,
+        action="delete",
+        before=before_state,
+    )
+
+
+# =========================================================================
+# v0.9: Relationship evolution & as-of snapshot
+# =========================================================================
+
+
+class RelationshipEvolutionEntry(BaseModel):
+    volume_id: UUID
+    label: str | None = None
+    sentiment: str | None = None
+    note: str | None = None
+
+
+@router.post(
+    "/relationships/{relationship_id}/evolution",
+    response_model=RelationshipResponse,
+)
+async def append_relationship_evolution(
+    project_id: str,
+    relationship_id: str,
+    body: RelationshipEvolutionEntry,
+    db: AsyncSession = Depends(get_db),
+) -> RelationshipResponse:
+    """Append an evolution entry for a relationship at a given volume.
+
+    Evolution entries describe how a relationship's label/sentiment/note
+    shift as the story progresses. The ``evolution_json`` column holds an
+    ordered list of ``{volume_id, label?, sentiment?, note?}`` dicts.
+    """
+    rel = await db.get(Relationship, relationship_id)
+    if rel is None or str(rel.project_id) != project_id:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+
+    entry = body.model_dump(mode="json", exclude_none=True)
+    before_state = {"evolution_json": list(rel.evolution_json or [])}
+    new_list = list(rel.evolution_json or [])
+    new_list.append(entry)
+    rel.evolution_json = new_list
+    await db.flush()
+    await db.refresh(rel)
+    await record_change(
+        db,
+        project_id=project_id,
+        target_type="relationship",
+        target_id=rel.id,
+        action="update",
+        before=before_state,
+        after={"evolution_json": list(rel.evolution_json or [])},
+        reason="evolution append",
+    )
+    return RelationshipResponse.model_validate(rel)
+
+
+@router.get(
+    "/relationships/as-of/{volume_id}",
+    response_model=RelationshipListResponse,
+)
+async def list_relationships_as_of_volume(
+    project_id: str,
+    volume_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> RelationshipListResponse:
+    """Return the relationship snapshot visible at ``volume_id``.
+
+    A relationship is visible if its ``since_volume_id`` is null or
+    comes before ``volume_id`` (by volume ``order_index``), and its
+    ``until_volume_id`` is null or comes on/after ``volume_id``.
+    Evolution entries whose ``volume_id`` is on/before the target
+    volume are applied in order to override ``label``/``sentiment``/
+    ``note`` on the returned response objects.
+    """
+    from app.models.project import Volume  # noqa: E402
+
+    target = await db.get(Volume, volume_id)
+    if target is None or str(target.project_id) != project_id:
+        raise HTTPException(status_code=404, detail="Volume not found")
+    target_idx = target.volume_idx
+
+    vol_result = await db.execute(
+        select(Volume.id, Volume.volume_idx).where(
+            Volume.project_id == project_id
+        )
+    )
+    vol_index: dict[str, int] = {
+        str(vid): idx for vid, idx in vol_result.all()
+    }
+
+    result = await db.execute(
+        select(Relationship).where(Relationship.project_id == project_id)
+    )
+    rels = list(result.scalars().all())
+
+    visible: list[RelationshipResponse] = []
+    for rel in rels:
+        since_idx = (
+            vol_index.get(str(rel.since_volume_id))
+            if rel.since_volume_id
+            else None
+        )
+        until_idx = (
+            vol_index.get(str(rel.until_volume_id))
+            if rel.until_volume_id
+            else None
+        )
+        if since_idx is not None and since_idx > target_idx:
+            continue
+        if until_idx is not None and until_idx < target_idx:
+            continue
+
+        merged_label = rel.label
+        merged_sentiment = rel.sentiment
+        merged_note = rel.note
+        for entry in rel.evolution_json or []:
+            e_vid = entry.get("volume_id")
+            e_idx = vol_index.get(str(e_vid)) if e_vid else None
+            if e_idx is None or e_idx > target_idx:
+                continue
+            if entry.get("label") is not None:
+                merged_label = entry["label"]
+            if entry.get("sentiment") is not None:
+                merged_sentiment = entry["sentiment"]
+            if entry.get("note") is not None:
+                merged_note = entry["note"]
+
+        resp = RelationshipResponse.model_validate(rel)
+        resp = resp.model_copy(
+            update={
+                "label": merged_label,
+                "sentiment": merged_sentiment,
+                "note": merged_note,
+            }
+        )
+        visible.append(resp)
+
+    return RelationshipListResponse(
+        relationships=visible, total=len(visible)
+    )

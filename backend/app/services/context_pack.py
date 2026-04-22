@@ -432,6 +432,24 @@ class ContextPackBuilder:
         if db is not None:
             self._db = db
 
+        # v0.9: check ctxpack invalidation flag. When settings (characters /
+        # world_rules / relationships) change, ``services.change_log`` writes
+        # a Redis flag ``ctxpack:invalid:{project_id}`` so any cached or
+        # memoised context pack is bypassed. Logged for observability; the
+        # flag is cleared after a successful rebuild below.
+        cache_was_invalidated = False
+        try:
+            from app.services import ctxpack_cache
+
+            cache_was_invalidated = await ctxpack_cache.is_invalid(project_id)
+            if cache_was_invalidated:
+                logger.info(
+                    "ContextPack rebuild forced by invalidation flag (project_id=%s)",
+                    project_id,
+                )
+        except Exception as exc:  # never block generation on cache check
+            logger.debug("ctxpack invalidation check failed: %s", exc)
+
         pack = ContextPack()
 
         # Layer 1: Proximity
@@ -444,6 +462,16 @@ class ContextPackBuilder:
         # Strand warnings
         warnings = pack.strand_tracker.get_warnings(chapter_idx)
         pack.writing_guidance.extend(warnings)
+
+        # v0.9: clear the invalidation flag after a successful rebuild so
+        # subsequent builds can hit any downstream cache again.
+        if cache_was_invalidated:
+            try:
+                from app.services import ctxpack_cache
+
+                await ctxpack_cache.clear(project_id)
+            except Exception as exc:
+                logger.debug("ctxpack invalidation clear failed: %s", exc)
 
         return pack
 
