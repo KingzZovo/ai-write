@@ -4,19 +4,23 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { getToken, clearToken } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
+import { LocaleSwitcher } from '@/components/LocaleSwitcher'
+import type { MessageKey } from '@/lib/i18n/messages'
 
-const NAV_LINKS = [
-  { href: '/workspace', label: '工作区' },
-  { href: '/knowledge', label: '知识库' },
-  { href: '/styles', label: '写法' },
-  { href: '/filter-words', label: '过滤词' },
-  { href: '/prompts', label: 'Prompt' },
-  { href: '/settings', label: '设置' },
+const NAV_LINKS: Array<{ href: string; key: MessageKey }> = [
+  { href: '/workspace', key: 'nav.workspace' },
+  { href: '/knowledge', key: 'nav.knowledge' },
+  { href: '/styles', key: 'nav.styles' },
+  { href: '/filter-words', key: 'nav.filterWords' },
+  { href: '/prompts', key: 'nav.prompts' },
+  { href: '/settings', key: 'nav.settings' },
 ]
 
 export function Navbar() {
   const pathname = usePathname()
   const [authenticated, setAuthenticated] = useState(false)
+  const t = useT()
 
   useEffect(() => {
     setAuthenticated(!!getToken())
@@ -35,11 +39,11 @@ export function Navbar() {
         href="/workspace"
         className="text-sm md:text-base font-bold text-gray-900 mr-4 md:mr-8 shrink-0"
       >
-        AI Write
+        {t('app.name')}
       </Link>
 
       <div className="flex-1 flex items-center justify-center gap-3 md:gap-6">
-        {NAV_LINKS.map(({ href, label }) => {
+        {NAV_LINKS.map(({ href, key }) => {
           const isActive = pathname.startsWith(href)
           return (
             <Link
@@ -51,19 +55,20 @@ export function Navbar() {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              {label}
+              {t(key)}
             </Link>
           )
         })}
       </div>
 
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        <LocaleSwitcher />
         <span className="text-xs md:text-sm text-gray-600 hidden sm:inline">king</span>
         <button
           onClick={handleLogout}
           className="text-xs md:text-sm text-gray-500 hover:text-red-600 transition-colors"
         >
-          登出
+          {t('auth.logout')}
         </button>
       </div>
     </nav>

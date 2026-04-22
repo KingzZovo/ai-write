@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Navbar } from "@/components/Navbar";
+import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,10 +28,12 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <body className="min-h-full">
-        <Suspense fallback={null}>
-          <Navbar />
-        </Suspense>
-        {children}
+        <I18nProvider>
+          <Suspense fallback={null}>
+            <Navbar />
+          </Suspense>
+          {children}
+        </I18nProvider>
       </body>
     </html>
   );
