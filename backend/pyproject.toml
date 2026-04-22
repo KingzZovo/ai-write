@@ -33,6 +33,8 @@ dependencies = [
     "cryptography",
     "prometheus-client",
     "sentry-sdk[fastapi,celery]",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
 ]
 
 [build-system]
