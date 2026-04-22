@@ -120,3 +120,18 @@ body {
   background-color: var(--surface);
   color: var(--text);
 }
+
+/* chunk-16: safe-area utility classes.
+ * Apply to fixed bars / drawers so iOS notches and Android gesture bars
+ * don't clip content. Uses max() so existing padding is respected on
+ * devices without safe-area insets. */
+.safe-area-x {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
