@@ -301,6 +301,8 @@ class RelationshipCreate(BaseModel):
     label: str = Field(default="", max_length=200)
     note: str = ""
     sentiment: str = Field(default="neutral", max_length=20)
+    since_volume_id: UUID | None = None
+    until_volume_id: UUID | None = None
 
 
 class RelationshipUpdate(BaseModel):
@@ -308,6 +310,8 @@ class RelationshipUpdate(BaseModel):
     label: str | None = Field(None, max_length=200)
     note: str | None = None
     sentiment: str | None = Field(None, max_length=20)
+    since_volume_id: UUID | None = None
+    until_volume_id: UUID | None = None
 
 
 class RelationshipResponse(BaseModel):
@@ -322,6 +326,9 @@ class RelationshipResponse(BaseModel):
     note: str
     sentiment: str
     created_at: datetime
+    since_volume_id: UUID | None = None
+    until_volume_id: UUID | None = None
+    evolution_json: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RelationshipListResponse(BaseModel):

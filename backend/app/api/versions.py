@@ -195,6 +195,51 @@ async def get_diff(
     return DiffResponse(version_a=a, version_b=b, diff=diff_text)
 
 
+class RollbackResponse(BaseModel):
+    status: str
+    chapter_id: str
+    active_version_id: str
+    word_count: int
+
+
+@router.post(
+    "/versions/{version_id}/rollback",
+    response_model=RollbackResponse,
+)
+async def rollback_version(
+    chapter_id: str,
+    version_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> RollbackResponse:
+    """Rollback a chapter to a previous version.
+
+    Activates the target version (via VersionControlService.switch_active)
+    and syncs the chapter's ``content_text`` + ``word_count`` to the
+    activated version so downstream consumers (ContextPack, vector store
+    sync, exports) see the rolled-back content as the canonical chapter.
+    """
+    chapter = await _get_chapter_or_404(chapter_id, db)
+    svc = VersionControlService(db)
+    try:
+        await svc.switch_active(chapter_id, version_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    active = await svc.get_active_version(chapter_id)
+    if active is None:
+        raise HTTPException(
+            status_code=500, detail="No active version after rollback"
+        )
+    chapter.content_text = active.content_text
+    chapter.word_count = active.word_count
+    await db.flush()
+    return RollbackResponse(
+        status="ok",
+        chapter_id=chapter_id,
+        active_version_id=active.id,
+        word_count=active.word_count,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Evaluation endpoint
 # ---------------------------------------------------------------------------

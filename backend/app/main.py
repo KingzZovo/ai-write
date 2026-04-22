@@ -224,6 +224,8 @@ from app.api import generation_runs  # noqa: E402
 app.include_router(generation_runs.router)
 from app.api import writing_engine  # noqa: E402
 app.include_router(writing_engine.router)
+from app.api import changelog  # noqa: E402
+app.include_router(changelog.router)
 
 
 # ---------------------------------------------------------------------------
