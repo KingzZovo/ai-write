@@ -281,6 +281,51 @@ async def execute_run(
         # drafting
         if run.phase == PHASE_DRAFTING:
             data = await _phase_drafting(run, db, cp.get(PHASE_PLANNING, {}))
+            # v1.0 BVSR: optionally generate N-1 more drafts, critic each,
+            # persist all variants, and promote the lowest-scoring one.
+            from app.services.bvsr import (
+                VariantCandidate,
+                bvsr_n,
+                is_bvsr_enabled,
+                persist_variants,
+                rank,
+            )
+            if is_bvsr_enabled() and run.chapter_id:
+                candidates: list[VariantCandidate] = []
+                # Critic the first draft
+                first_text = data.get("text") or ""
+                try:
+                    first_critic = await _phase_critic(run, db, first_text, 0)
+                except Exception:
+                    first_critic = {}
+                candidates.append(
+                    VariantCandidate(variant_idx=0, content_text=first_text, critic_report=first_critic or {})
+                )
+                n = bvsr_n()
+                for idx in range(1, n):
+                    try:
+                        d = await _phase_drafting(run, db, cp.get(PHASE_PLANNING, {}))
+                        text_i = d.get("text") or ""
+                        crit_i = await _phase_critic(run, db, text_i, 0)
+                        candidates.append(
+                            VariantCandidate(variant_idx=idx, content_text=text_i, critic_report=crit_i or {})
+                        )
+                    except Exception as _e:
+                        logger.warning("BVSR variant %s failed: %s", idx, _e)
+                ranked = rank(candidates)
+                winner = ranked[0]
+                try:
+                    await persist_variants(
+                        db,
+                        chapter_id=run.chapter_id,
+                        run_id=run.id,
+                        candidates=candidates,
+                        winner_idx=winner.variant_idx,
+                        commit=False,
+                    )
+                except Exception as _e:
+                    logger.warning("BVSR persist_variants failed: %s", _e)
+                data = {"text": winner.content_text, "bvsr": {"n": len(candidates), "winner_idx": winner.variant_idx, "winner_score": winner.score}}
             _checkpoint_set(run, PHASE_DRAFTING, data)
             run.phase = PHASE_CRITIC
             await db.commit()
