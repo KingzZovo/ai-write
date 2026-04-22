@@ -12,6 +12,7 @@ from app.models.generation_run import CriticReport, GenerationRun  # noqa: F401
 from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineRun, PipelineChapterStatus
 from app.models.prompt import PromptAsset
+from app.models.settings_change_log import SettingsChangeLog
 from app.models.writing_engine import (  # noqa: F401
     AntiAITrap,
     BeatPattern,
@@ -60,6 +61,7 @@ __all__ = [
     "Project",
     "ReferenceBook",
     "ReferenceBookSlice",
+    "SettingsChangeLog",
     "StyleProfile",
     "StyleProfileCard",
     "TextChunk",
