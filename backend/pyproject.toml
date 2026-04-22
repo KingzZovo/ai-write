@@ -35,6 +35,8 @@ dependencies = [
     "sentry-sdk[fastapi,celery]",
     "langgraph",
     "langgraph-checkpoint-postgres",
+    "reportlab",
+    "python-docx",
 ]
 
 [build-system]

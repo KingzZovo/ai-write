@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse as StarletteJSONResponse
 from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshadows, generate, knowledge, lora, model_config, outlines, pipeline, projects, prompts, quality, rewrite, settings, styles, vector_store, versions, volumes
 from app.api.auth import verify_token
 from app.api import admin_usage
+from app.api import export as export_api
 from app.middlewares.quota import QuotaMiddleware
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
@@ -244,6 +245,7 @@ app.include_router(variants_api.router)
 from app.api import run_bus as run_bus_api  # noqa: E402
 app.include_router(run_bus_api.router)
 app.include_router(admin_usage.router)
+app.include_router(export_api.router)
 
 # Prometheus HTTP duration middleware
 # ---------------------------------------------------------------------------
