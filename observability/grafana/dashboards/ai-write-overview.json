@@ -1,0 +1,51 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP requests / sec",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum by (path_template, status) (rate(http_request_total[1m]))", "legendFormat": "__auto"}],
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP p95 latency (s)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, path_template) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "__auto"}],
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM calls / min by task_type",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "sum by (task_type, status) (rate(llm_call_total[5m])) * 60", "legendFormat": "__auto"}],
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM p95 latency (s)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, task_type) (rate(llm_call_duration_seconds_bucket[5m])))", "legendFormat": "__auto"}],
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM tokens / min",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "targets": [{"expr": "sum by (task_type, direction) (rate(llm_token_total[5m])) * 60", "legendFormat": "__auto"}],
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["ai-write"],
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "AI Write - Overview",
+  "uid": "ai-write-overview",
+  "version": 1
+}

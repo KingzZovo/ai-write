@@ -146,6 +146,7 @@ _PUBLIC_PATHS = frozenset({
     "/api/auth/login",
     "/api/health",
     "/api/version",
+    "/metrics",
     "/docs",
     "/openapi.json",
 })
@@ -227,6 +228,43 @@ from app.api import writing_engine  # noqa: E402
 app.include_router(writing_engine.router)
 from app.api import version  # noqa: E402
 app.include_router(version.router)
+from app.api import metrics as metrics_api  # noqa: E402
+app.include_router(metrics_api.router)
+
+# Prometheus HTTP duration middleware
+# ---------------------------------------------------------------------------
+import time as _time  # noqa: E402
+
+from app.observability.metrics import (  # noqa: E402
+    HTTP_REQUEST_DURATION,
+    HTTP_REQUEST_TOTAL,
+)
+
+
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    """Records request duration + count. Uses route.path_template to avoid
+    cardinality blowup from path params."""
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        start = _time.monotonic()
+        status = "500"
+        try:
+            response = await call_next(request)
+            status = str(response.status_code)
+            return response
+        finally:
+            elapsed = _time.monotonic() - start
+            route = request.scope.get("route")
+            path_tpl = getattr(route, "path", None) or request.url.path
+            # Collapse unmatched paths (e.g. 404) to avoid label explosion.
+            if route is None and not path_tpl.startswith("/api/") and path_tpl not in ("/metrics", "/docs", "/openapi.json"):
+                path_tpl = "__other__"
+            method = request.method
+            HTTP_REQUEST_DURATION.labels(method, path_tpl, status).observe(elapsed)
+            HTTP_REQUEST_TOTAL.labels(method, path_tpl, status).inc()
+
+
+app.add_middleware(PrometheusMiddleware)
 from app.api import changelog  # noqa: E402
 app.include_router(changelog.router)
 
