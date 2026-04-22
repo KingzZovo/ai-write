@@ -238,6 +238,8 @@ from app.api import debug as debug_api  # noqa: E402
 app.include_router(debug_api.router)
 from app.api import variants as variants_api  # noqa: E402
 app.include_router(variants_api.router)
+from app.api import run_bus as run_bus_api  # noqa: E402
+app.include_router(run_bus_api.router)
 
 # Prometheus HTTP duration middleware
 # ---------------------------------------------------------------------------
