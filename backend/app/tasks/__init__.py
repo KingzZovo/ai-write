@@ -3,6 +3,10 @@
 from celery import Celery
 
 from app.config import settings
+from app.observability.sentry_init import init_sentry
+
+# Initialize Sentry in the celery process as early as possible (no-op if DSN unset).
+init_sentry(component="celery")
 
 celery_app = Celery(
     "ai_write",

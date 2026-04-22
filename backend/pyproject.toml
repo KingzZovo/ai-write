@@ -32,6 +32,7 @@ dependencies = [
     "bcrypt",
     "cryptography",
     "prometheus-client",
+    "sentry-sdk[fastapi,celery]",
 ]
 
 [build-system]
