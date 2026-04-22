@@ -55,6 +55,8 @@ async def run_critic(
     chapter_id: str | None,
     db: AsyncSession,
     pack_summary: str = "",
+    chapter_idx: int | None = None,
+    item_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """Return aggregated critic output across the 3 layers."""
     issues: list[dict[str, Any]] = []
@@ -70,6 +72,55 @@ async def run_critic(
         issues.extend(await scan_anti_ai(draft, db))
     except Exception as exc:
         logger.warning("critic anti_ai scan failed: %s", exc)
+
+    # 2.5) v1.0 ConStory v1 consistency checks (best-effort, Neo4j-backed)
+    try:
+        from app.db.neo4j import get_neo4j
+        from app.services.checkers.time_reversal import scan_time_reversal
+        from app.services.checkers.geo_jump import scan_geo_jump
+        from app.services.checkers.item_missing import scan_item_missing
+        _driver = None
+        try:
+            async for d in get_neo4j():
+                _driver = d
+                break
+        except Exception as exc:
+            logger.debug("critic: neo4j unavailable: %s", exc)
+        try:
+            issues.extend(
+                await scan_time_reversal(
+                    draft,
+                    project_id=project_id,
+                    chapter_idx=chapter_idx,
+                    neo4j_driver=_driver,
+                )
+            )
+        except Exception as exc:
+            logger.warning("critic time_reversal failed: %s", exc)
+        try:
+            issues.extend(
+                await scan_geo_jump(
+                    draft,
+                    project_id=project_id,
+                    chapter_idx=chapter_idx,
+                    neo4j_driver=_driver,
+                )
+            )
+        except Exception as exc:
+            logger.warning("critic geo_jump failed: %s", exc)
+        try:
+            issues.extend(
+                await scan_item_missing(
+                    draft,
+                    project_id=project_id,
+                    chapter_idx=chapter_idx,
+                    item_names=item_names,
+                )
+            )
+        except Exception as exc:
+            logger.warning("critic item_missing failed: %s", exc)
+    except Exception as exc:
+        logger.warning("critic consistency suite failed: %s", exc)
 
     # 3) LLM critic pass
     try:
