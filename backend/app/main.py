@@ -18,8 +18,12 @@ from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
 from app.db.session import engine
+from app.observability.sentry_init import init_sentry
 
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry as early as possible (no-op without SENTRY_DSN)
+init_sentry(component="backend")
 
 
 @asynccontextmanager
@@ -230,6 +234,8 @@ from app.api import version  # noqa: E402
 app.include_router(version.router)
 from app.api import metrics as metrics_api  # noqa: E402
 app.include_router(metrics_api.router)
+from app.api import debug as debug_api  # noqa: E402
+app.include_router(debug_api.router)
 
 # Prometheus HTTP duration middleware
 # ---------------------------------------------------------------------------
