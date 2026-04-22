@@ -40,6 +40,7 @@ from app.services.context_pack import ContextPackBuilder, fetch_writing_rules
 from app.services.critic_service import run_critic
 from app.services.prompt_registry import run_text_prompt
 from app.services.tool_registry import run_tool
+from app.services import run_bus
 
 logger = logging.getLogger(__name__)
 
@@ -269,17 +270,22 @@ async def execute_run(
         raise ValueError(f"GenerationRun {run_id} not found")
 
     cp = dict(run.checkpoint_data or {})
+    _rid = str(run.id)
+    await run_bus.publish(_rid, agent="runner", event="run.start", payload={"phase": run.phase, "resume": bool(resume)})
     try:
         # planning
         if run.phase == PHASE_PLANNING or (resume and PHASE_PLANNING not in cp):
+            await run_bus.publish(_rid, agent="runner", event="phase.start", payload={"phase": PHASE_PLANNING})
             data = await _phase_planning(run, db)
             _checkpoint_set(run, PHASE_PLANNING, data)
             run.phase = PHASE_DRAFTING
             await db.commit()
             cp[PHASE_PLANNING] = data
+            await run_bus.publish(_rid, agent="runner", event="phase.end", payload={"phase": PHASE_PLANNING})
 
         # drafting
         if run.phase == PHASE_DRAFTING:
+            await run_bus.publish(_rid, agent="runner", event="phase.start", payload={"phase": PHASE_DRAFTING})
             data = await _phase_drafting(run, db, cp.get(PHASE_PLANNING, {}))
             # v1.0 BVSR: optionally generate N-1 more drafts, critic each,
             # persist all variants, and promote the lowest-scoring one.
@@ -330,6 +336,7 @@ async def execute_run(
             run.phase = PHASE_CRITIC
             await db.commit()
             cp[PHASE_DRAFTING] = data
+            await run_bus.publish(_rid, agent="runner", event="phase.end", payload={"phase": PHASE_DRAFTING, "bvsr": (data or {}).get("bvsr")})
 
         draft_text = (cp.get(PHASE_DRAFTING) or {}).get("text") or ""
 
@@ -337,6 +344,7 @@ async def execute_run(
         while run.phase in (PHASE_CRITIC, PHASE_REWRITE):
             if run.phase == PHASE_CRITIC:
                 round_num = run.rewrite_count + 1
+                await run_bus.publish(_rid, agent="runner", event="phase.start", payload={"phase": PHASE_CRITIC, "round": round_num})
                 critic_out = await _phase_critic(run, db, draft_text, round_num)
                 cp[PHASE_CRITIC] = {"report": critic_out, "round": round_num}
                 _checkpoint_set(run, PHASE_CRITIC, cp[PHASE_CRITIC])
@@ -346,8 +354,10 @@ async def execute_run(
                 else:
                     run.phase = PHASE_FINALIZE
                 await db.commit()
+                await run_bus.publish(_rid, agent="runner", event="phase.end", payload={"phase": PHASE_CRITIC, "round": round_num, "hard_count": hard_count, "next": run.phase})
 
             if run.phase == PHASE_REWRITE:
+                await run_bus.publish(_rid, agent="runner", event="phase.start", payload={"phase": PHASE_REWRITE, "round": run.rewrite_count + 1})
                 rewrite_out = await _phase_rewrite(
                     run, db, draft_text, cp.get(PHASE_CRITIC, {}).get("report", {})
                 )
@@ -357,14 +367,18 @@ async def execute_run(
                 run.rewrite_count += 1
                 run.phase = PHASE_CRITIC
                 await db.commit()
+                await run_bus.publish(_rid, agent="runner", event="phase.end", payload={"phase": PHASE_REWRITE, "round": run.rewrite_count})
 
         # finalize
         if run.phase == PHASE_FINALIZE:
+            await run_bus.publish(_rid, agent="runner", event="phase.start", payload={"phase": PHASE_FINALIZE})
             cp[PHASE_FINALIZE] = {"final_text": draft_text}
             _checkpoint_set(run, PHASE_FINALIZE, cp[PHASE_FINALIZE])
             run.phase = PHASE_DONE
             run.status = STATUS_DONE
             await db.commit()
+            await run_bus.publish(_rid, agent="runner", event="phase.end", payload={"phase": PHASE_FINALIZE})
+            await run_bus.publish(_rid, agent="runner", event="run.done", payload={"status": run.status})
 
         return {
             "status": run.status,
@@ -378,4 +392,8 @@ async def execute_run(
         run.phase = PHASE_FAILED
         run.last_error = str(exc)[:2000]
         await db.commit()
+        try:
+            await run_bus.publish(_rid, agent="runner", event="run.failed", payload={"error": str(exc)[:500]})
+        except Exception:
+            pass
         return {"status": STATUS_FAILED, "error": str(exc)[:500]}
