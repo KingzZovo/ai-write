@@ -253,7 +253,7 @@ export default function MobileWorkspace() {
 
         {/* 项目列表 / 章节列表 */}
         {tab === 'list' && (
-          <div className="p-4">
+          <div className="p-4" data-testid="mobile-outline-drawer">
             {!currentProject ? (
               <>
                 <h2 className="text-lg font-bold text-gray-900 mb-3">我的项目</h2>
@@ -375,7 +375,18 @@ export default function MobileWorkspace() {
         {tab === 'editor' && selectedChapter && (
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-gray-900 truncate">{selectedChapter.title}</h2>
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setTab('list')}
+                  aria-label="open outline"
+                  data-testid="mobile-outline-toggle"
+                  className="shrink-0 p-1.5 rounded hover:bg-gray-100 text-gray-700 border border-gray-200"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <h2 className="text-base font-bold text-gray-900 truncate">{selectedChapter.title}</h2>
+              </div>
               <button onClick={handleGenerateChapter} disabled={isGenerating}
                 className="px-3 py-1.5 bg-green-600 text-white rounded text-xs disabled:opacity-50 shrink-0 ml-2">
                 {isGenerating ? '生成中...' : 'AI 生成'}

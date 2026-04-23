@@ -99,10 +99,13 @@ export function ProjectListPage() {
 
   return (
     <div className="min-h-screen pt-12 bg-gray-50">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">我的项目</h1>
-          <div className="flex items-center gap-2">
+      <div className="max-w-6xl mx-auto px-3 md:px-6 py-6 md:py-8">
+        <div
+          data-testid="project-list-header"
+          className="flex flex-wrap items-center justify-between gap-y-3 mb-6"
+        >
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">我的项目</h1>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => router.push('/trash')}
               className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
@@ -147,7 +150,10 @@ export function ProjectListPage() {
             <p className="text-gray-500 mb-4">还没有项目，点击右上角&quot;+ 新建项目&quot;开始创作。</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div
+            data-testid="project-list-grid"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+          >
             {projects.map((p) => (
               <ProjectCard
                 key={p.id}
