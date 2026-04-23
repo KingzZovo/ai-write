@@ -84,6 +84,23 @@ if grep -q 'sidebar-collapsed' "$WL" && grep -q 'panel-collapsed' "$WL" && grep 
 else
   bad "WorkspaceLayout collapse state missing"
 fi
+# chunk-23: per-project key composition + [/] shortcut + mobile auto-collapse.
+DWS="$REPO/frontend/src/components/workspace/DesktopWorkspace.tsx"
+if grep -q 'composeKey' "$WL" && grep -q 'projectId' "$WL" && grep -q "base}:\${projectId" "$WL"; then
+  ok "WorkspaceLayout composes per-project storage key from projectId"
+else
+  bad "WorkspaceLayout per-project key composition missing"
+fi
+if grep -q 'projectId={currentProject?.id}' "$DWS"; then
+  ok "DesktopWorkspace passes currentProject?.id into WorkspaceLayout"
+else
+  bad "DesktopWorkspace does not wire projectId prop"
+fi
+if grep -q "e.key === '\\['" "$WL" && grep -q "e.key === '\\]'" "$WL" && grep -q 'max-width: 767px' "$WL"; then
+  ok "WorkspaceLayout wires [ / ] shortcuts + <768px auto-collapse"
+else
+  bad "WorkspaceLayout shortcut / auto-collapse missing"
+fi
 
 # ---------- 9. i18n language switcher + cookie (Chunk 20) ----------
 head "[9/9] i18n language switcher + cookie"
