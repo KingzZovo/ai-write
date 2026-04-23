@@ -84,3 +84,14 @@ if grep -q 'sidebar-collapsed' "$WL" && grep -q 'panel-collapsed' "$WL" && grep 
 else
   bad "WorkspaceLayout collapse state missing"
 fi
+
+# ---------- 9. i18n language switcher + cookie (Chunk 20) ----------
+head "[9/9] i18n language switcher + cookie"
+SET="$REPO/frontend/src/app/settings/page.tsx"
+PROV="$REPO/frontend/src/lib/i18n/I18nProvider.tsx"
+MSGS="$REPO/frontend/src/lib/i18n/messages.ts"
+if grep -q 'language-switcher' "$SET" && grep -q 'useLocale' "$SET" && grep -q 'ai-write-locale' "$PROV" && grep -q 'settings.preferences.language' "$MSGS"; then
+  ok "settings page wires LanguageSwitcher + cookie ai-write-locale + en catalog"
+else
+  bad "language switcher or cookie assertion missing"
+fi

@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT, useLocale } from '@/lib/i18n/I18nProvider'
+import { LOCALES, type Locale } from '@/lib/i18n/messages'
 
 // =========================================================================
 // Types
@@ -50,6 +52,7 @@ export default function SettingsPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const t = useT()
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -58,11 +61,11 @@ export default function SettingsPage() {
       const epRes = await apiFetch<{ endpoints: Endpoint[]; total: number }>('/api/model-config/endpoints')
       setEndpoints(epRes.endpoints)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载设置失败')
+      setError(err instanceof Error ? err.message : t('settings.error.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -70,7 +73,7 @@ export default function SettingsPage() {
     return (
       <div className="space-y-6">
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-          <p className="text-sm text-gray-500">正在加载模型配置...</p>
+          <p className="text-sm text-gray-500">{t('settings.endpoints.loading')}</p>
         </div>
       </div>
     )
@@ -84,12 +87,82 @@ export default function SettingsPage() {
         </div>
       )}
 
+      <PreferencesSection />
+
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-        <p className="font-medium mb-1">v0.5 变更</p>
-        <p className="text-xs">任务路由已下沉到每个 Prompt。请在 <a href="/prompts" className="underline">Prompt 注册表</a> 为每个 Prompt 独立指定端点、模型与温度。本页只管理端点本身。</p>
+        <p className="font-medium mb-1">{t('settings.v05.title')}</p>
+        <p className="text-xs">
+          {t('settings.v05.body')}{' '}
+          <a href="/prompts" className="underline">{t('settings.v05.link')}</a>
+        </p>
       </div>
 
       <EndpointsSection endpoints={endpoints} onRefresh={fetchAll} />
+    </div>
+  )
+}
+
+// =========================================================================
+// Section: Preferences (chunk-20)
+// =========================================================================
+
+function PreferencesSection() {
+  const t = useT()
+  return (
+    <section
+      data-testid="preferences-section"
+      className="bg-white rounded-lg border border-gray-200 p-5 space-y-3"
+    >
+      <h2 className="text-base font-semibold text-gray-900">
+        {t('settings.preferences.title')}
+      </h2>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-800">
+            {t('settings.preferences.language')}
+          </p>
+          <p className="text-xs text-gray-500">
+            {t('settings.preferences.languageHint')}
+          </p>
+        </div>
+        <LanguageSwitcher />
+      </div>
+    </section>
+  )
+}
+
+function LanguageSwitcher() {
+  const { locale, setLocale } = useLocale()
+  const t = useT()
+  return (
+    <div
+      role="group"
+      aria-label={t('locale.switch')}
+      data-testid="language-switcher"
+      data-locale={locale}
+      className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5"
+    >
+      {LOCALES.map((loc: Locale) => {
+        const active = loc === locale
+        const label = loc === 'zh' ? t('locale.zh') : t('locale.en')
+        return (
+          <button
+            key={loc}
+            type="button"
+            onClick={() => setLocale(loc)}
+            aria-pressed={active}
+            data-locale={loc}
+            className={
+              'px-3 py-1 text-xs rounded ' +
+              (active
+                ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                : 'text-gray-500 hover:text-gray-700')
+            }
+          >
+            {label}
+          </button>
+        )
+      })}
     </div>
   )
 }
