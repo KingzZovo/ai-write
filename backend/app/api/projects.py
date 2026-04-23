@@ -462,14 +462,17 @@ async def budget_status(
     project_total = int(project.target_word_count or 0)
     volumes_sum = 0
     chapters_sum = 0
+    project_written = 0
     per_volume: list[dict] = []
     for v in volumes:
         v_target = int(v.target_word_count or 0)
         v_chapters = chapters_by_vol.get(str(v.id), [])
         v_ch_sum = sum(int(c.target_word_count or 0) for c in v_chapters)
+        v_written = sum(len(c.content_text or "") for c in v_chapters)
         v_drift = v_ch_sum - v_target
         volumes_sum += v_target
         chapters_sum += v_ch_sum
+        project_written += v_written
         per_volume.append(
             {
                 "volume_id": str(v.id),
@@ -479,11 +482,15 @@ async def budget_status(
                 "chapters_sum": v_ch_sum,
                 "chapters_drift": v_drift,
                 "chapters_healthy": v_drift == 0,
+                "chapters_written": v_written,
             }
         )
 
     volumes_drift = volumes_sum - project_total
     chapters_drift_vs_project = chapters_sum - project_total
+    completion_ratio = (
+        round(project_written / project_total, 4) if project_total > 0 else 0.0
+    )
 
     return {
         "project_id": str(project.id),
@@ -495,5 +502,8 @@ async def budget_status(
         "chapters_sum": chapters_sum,
         "chapters_drift": chapters_drift_vs_project,
         "chapters_healthy": chapters_drift_vs_project == 0,
+        "chapters_written": project_written,
+        "project_written": project_written,
+        "completion_ratio": completion_ratio,
         "per_volume": per_volume,
     }
