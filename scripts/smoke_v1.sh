@@ -196,3 +196,64 @@ if [ -n "$rid" ]; then
 else
   bad "/api/version response missing X-Request-ID header"
 fi
+
+# ---------- 13. Prometheus metrics + dashboard (Chunk 25) ----------
+head "[13/13] prometheus metrics"
+METRICS_PY="$REPO/backend/app/observability/metrics.py"
+TASKS_PY="$REPO/backend/app/tasks/__init__.py"
+if grep -q 'http_requests_total' "$METRICS_PY" && grep -q 'CELERY_TASK_TOTAL' "$METRICS_PY" && grep -q 'CELERY_TASK_DURATION' "$METRICS_PY" && grep -q 'DB_POOL_SIZE' "$METRICS_PY" && grep -q '_refresh_db_pool_gauges' "$METRICS_PY"; then
+  ok "observability/metrics.py: http_requests_total + celery + db_pool collectors"
+else
+  bad "observability/metrics.py missing one of: http_requests_total / CELERY_* / DB_POOL_*"
+fi
+if grep -q 'task_prerun' "$TASKS_PY" && grep -q 'task_postrun' "$TASKS_PY" && grep -q 'CELERY_TASK_DURATION' "$TASKS_PY"; then
+  ok "tasks/__init__.py wires celery signals to Prometheus counters"
+else
+  bad "tasks/__init__.py missing celery signal instrumentation"
+fi
+# /metrics endpoint reachable + exposes the renamed counter + new families.
+# /metrics is intentionally NOT proxied through nginx; scrape the backend port
+# directly (same target prometheus uses inside the docker network).
+METRICS_URL="http://127.0.0.1:8000/metrics"
+m_code=$(curl -sS -o /tmp/_metrics.out -w '%{http_code}' "$METRICS_URL")
+if [ "$m_code" = "200" ]; then
+  ok "/metrics -> 200"
+else
+  bad "/metrics -> $m_code"
+fi
+if grep -q '^# HELP http_requests_total' /tmp/_metrics.out; then
+  ok "/metrics exposes http_requests_total"
+else
+  bad "/metrics missing http_requests_total"
+fi
+if grep -q '^# HELP celery_task_total' /tmp/_metrics.out && grep -q '^# HELP celery_task_duration_seconds' /tmp/_metrics.out; then
+  ok "/metrics exposes celery_task_total + celery_task_duration_seconds"
+else
+  bad "/metrics missing celery task families"
+fi
+if grep -q '^db_pool_size{pool="main"}' /tmp/_metrics.out; then
+  ok "/metrics exposes db_pool_size for main pool"
+else
+  bad "/metrics missing db_pool_size{pool=main}"
+fi
+# prometheus + grafana containers are running.
+if docker compose ps --status running --services 2>/dev/null | grep -qx prometheus; then
+  ok "prometheus container running"
+else
+  bad "prometheus container not running"
+fi
+if docker compose ps --status running --services 2>/dev/null | grep -qx grafana; then
+  ok "grafana container running"
+else
+  bad "grafana container not running"
+fi
+# prometheus is actually scraping the backend.
+sleep 1
+PROM_URL="http://127.0.0.1:9091/api/v1/query"
+PROM_QUERY='up{job="ai-write-backend"}'
+pq=$(curl -sS --get --data-urlencode "query=$PROM_QUERY" "$PROM_URL" 2>/dev/null)
+if echo "$pq" | grep -q '"value":\[.*"1"\]'; then
+  ok "prometheus reports up{job=ai-write-backend} == 1"
+else
+  bad "prometheus does not yet report backend as up ($(echo "$pq" | head -c 200))"
+fi
