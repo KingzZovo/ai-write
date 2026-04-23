@@ -631,3 +631,50 @@ else
   skip "PUT cascade default-rebalance (static-only mode)"
   skip "PUT cascade no-op (static-only mode)"
 fi
+
+# ---------- 21. v1.3.0 budget-status written-progress fields (chunk-33) ----------
+head "[21/21] v1.3.0 budget-status written progress (chunk-33)"
+PROJ_API="backend/app/api/projects.py"
+if grep -q 'project_written' "$PROJ_API" && grep -q 'chapters_written' "$PROJ_API" && grep -q 'completion_ratio' "$PROJ_API"; then
+  ok "budget-status shape exposes chapters_written + project_written + completion_ratio"
+else
+  bad "budget-status shape missing written/completion_ratio fields"
+fi
+if grep -q 'len(c.content_text or "")' "$PROJ_API"; then
+  ok "budget-status aggregates len(content_text) per chapter"
+else
+  bad "budget-status does not aggregate len(content_text)"
+fi
+if is_runtime; then
+  wp_pid=$(curl -sS "${AUTH[@]}" -H 'content-type: application/json' \
+    -X POST "$BASE/api/projects" -d '{"title":"wp_smoke","target_word_count":600000}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+  if [ -n "$wp_pid" ]; then
+    for vi in 1 2 3; do
+      curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+        -X POST "$BASE/api/projects/$wp_pid/volumes" \
+        -d "{\"title\":\"W$vi\",\"volume_idx\":$vi}"
+    done
+    curl -sS -o /dev/null "${AUTH[@]}" -X POST "$BASE/api/projects/$wp_pid/allocate-budget?force=true"
+    wp_json=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$wp_pid/budget-status")
+    wp_cw=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("chapters_written"))' 2>/dev/null)
+    wp_pw=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("project_written"))' 2>/dev/null)
+    wp_cr=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("completion_ratio"))' 2>/dev/null)
+    if [ "$wp_cw" = "0" ] && [ "$wp_pw" = "0" ] && [ "$wp_cr" = "0.0" ]; then
+      ok "budget-status empty project: chapters_written=0, project_written=0, completion_ratio=0.0"
+    else
+      bad "budget-status written fields wrong: cw=$wp_cw pw=$wp_pw cr=$wp_cr body=$(echo "$wp_json" | head -c 200)"
+    fi
+    wp_pv_keys=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); pv=d.get("per_volume") or []; print(all("chapters_written" in v for v in pv) if pv else True)' 2>/dev/null)
+    if [ "$wp_pv_keys" = "True" ]; then
+      ok "budget-status per_volume rows include chapters_written"
+    else
+      bad "budget-status per_volume rows missing chapters_written"
+    fi
+  else
+    bad "written-progress smoke: could not create smoke project"
+  fi
+else
+  skip "budget-status written fields runtime (static-only mode)"
+  skip "budget-status per_volume written keys (static-only mode)"
+fi
