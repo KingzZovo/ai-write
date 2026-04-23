@@ -257,3 +257,33 @@ if echo "$pq" | grep -q '"value":\[.*"1"\]'; then
 else
   bad "prometheus does not yet report backend as up ($(echo "$pq" | head -c 200))"
 fi
+
+# ---------- 14. Sentry wiring (Chunk 26) ----------
+head "[14/14] sentry wiring"
+SENTRY_PY="$REPO/backend/app/observability/sentry_init.py"
+SENTRY_TS="$REPO/frontend/src/sentry.client.config.ts"
+if grep -q 'before_send=_scrub_event' "$SENTRY_PY" && grep -q 'def _scrub_event' "$SENTRY_PY" && grep -q 'redact' "$SENTRY_PY"; then
+  ok "sentry_init.py wires before_send=_scrub_event using redact()"
+else
+  bad "sentry_init.py missing before_send/redact wiring"
+fi
+# Backend runtime: sentry_sdk importable inside the container.
+sv=$(docker compose exec -T backend python -c "import sentry_sdk, sys; sys.stderr.write('__SMOKE_SDK_OK__ ' + sentry_sdk.VERSION + '\n')" 2>&1 >/dev/null | tr -d '\r')
+if echo "$sv" | grep -q '__SMOKE_SDK_OK__'; then
+  ok "backend runtime: sentry_sdk importable ($(echo "$sv" | awk '/__SMOKE_SDK_OK__/ {print $2}'))"
+else
+  bad "backend sentry_sdk import failed ($sv)"
+fi
+# Backend runtime: init_sentry no-op without DSN (must not throw, must return False).
+iv=$(docker compose exec -T backend python -c "import os; os.environ.pop('SENTRY_DSN', None); from app.observability.sentry_init import init_sentry; import sys; sys.stderr.write('__SMOKE_INIT_RET__ ' + str(init_sentry(component='smoke-test')) + '\n')" 2>&1 >/dev/null | tr -d '\r')
+if echo "$iv" | grep -q '__SMOKE_INIT_RET__ False'; then
+  ok "init_sentry() silently returns False when SENTRY_DSN unset"
+else
+  bad "init_sentry() did not silent-skip without DSN ($iv)"
+fi
+# Frontend client config exists + DSN env var name + initClientSentry export.
+if [ -f "$SENTRY_TS" ] && grep -q 'NEXT_PUBLIC_SENTRY_DSN' "$SENTRY_TS" && grep -q 'initClientSentry' "$SENTRY_TS" && grep -q '@sentry/browser' "$SENTRY_TS"; then
+  ok "frontend sentry.client.config.ts present + DSN gated + dynamic @sentry/browser shim"
+else
+  bad "frontend sentry.client.config.ts missing or incomplete"
+fi
