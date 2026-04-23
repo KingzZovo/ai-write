@@ -103,7 +103,15 @@ async def update_project(
     body: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> ProjectResponse:
-    """Update an existing project."""
+    """Update an existing project.
+
+    Side-effect (chunk-32): if ``target_word_count`` is changed by this call,
+    we cascade the new total to the project's volumes and chapters via
+    ``allocate_project_budget`` with the soft-guard (``force=False``) --
+    values the user manually overrode stay put; values still equal to the
+    documented default (Volume=200000, Chapter=50000) are re-balanced so
+    ``SUM(volumes)`` lines up with the new project total.
+    """
     result = await db.execute(
         select(Project).where(Project.id == project_id)
     )
@@ -113,10 +121,72 @@ async def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     update_data = body.model_dump(exclude_unset=True)
+    old_total = int(project.target_word_count or 0)
     for field, value in update_data.items():
         setattr(project, field, value)
 
     await db.flush()
+
+    # chunk-32: cascade allocator only when the total actually changed.
+    new_total = int(project.target_word_count or 0)
+    if "target_word_count" in update_data and new_total != old_total and new_total > 0:
+        from app.models.project import Chapter, Volume
+        from app.services.budget_allocator import allocate_project_budget
+
+        vol_rows = (await db.execute(
+            select(Volume)
+            .where(Volume.project_id == project_id)
+            .order_by(Volume.volume_idx)
+        )).scalars().all()
+        vol_list = list(vol_rows)
+        chapters_by_vol: dict[str, list] = {str(v.id): [] for v in vol_list}
+        if vol_list:
+            vol_ids = [v.id for v in vol_list]
+            ch_rows = (await db.execute(
+                select(Chapter)
+                .where(Chapter.volume_id.in_(vol_ids))
+                .order_by(Chapter.chapter_idx)
+            )).scalars().all()
+            for ch in ch_rows:
+                chapters_by_vol.setdefault(str(ch.volume_id), []).append(ch)
+        vol_input: list[dict] = []
+        for v in vol_list:
+            vol_input.append({
+                "id": str(v.id),
+                "volume_idx": v.volume_idx,
+                "current_target": int(v.target_word_count or 0),
+                "chapters": [
+                    {
+                        "id": str(c.id),
+                        "chapter_idx": c.chapter_idx,
+                        "current_target": int(c.target_word_count or 0),
+                    }
+                    for c in chapters_by_vol.get(str(v.id), [])
+                ],
+            })
+        if vol_input:
+            plan = allocate_project_budget(
+                project_total=new_total,
+                volumes=vol_input,
+                force=False,
+            )
+            v_by_id = {str(v.id): v for v in vol_list}
+            ch_by_id: dict[str, object] = {}
+            for chs in chapters_by_vol.values():
+                for c in chs:
+                    ch_by_id[str(c.id)] = c
+            for v_plan in plan["volumes"]:
+                if v_plan["changed"]:
+                    vm = v_by_id.get(v_plan["id"])
+                    if vm is not None:
+                        vm.target_word_count = int(v_plan["new_target"])
+                for c_plan in v_plan["chapters"]:
+                    if c_plan["changed"]:
+                        cm = ch_by_id.get(c_plan["id"])
+                        if cm is not None:
+                            cm.target_word_count = int(c_plan["new_target"])
+            await db.flush()
+
     await db.refresh(project)
     return ProjectResponse.model_validate(project)
 
