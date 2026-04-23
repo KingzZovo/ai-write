@@ -116,3 +116,29 @@ if grep -q 'nav-hamburger' "$NAV" && grep -q 'nav-mobile-drawer' "$NAV"; then
 else
   bad "Navbar hamburger/drawer markers missing"
 fi
+
+# ---------- 11. Design-token migration: no hex/rgba in business UI (Chunk 22) ----------
+head "[11/11] design-token migration"
+# Whitelist: globals.css is the token source; graph-palette.ts is the documented
+# data-viz mirror; layout.tsx themeColor meta tag; lib/graph-palette.ts import lines.
+hits=$(grep -RIl -E '#[0-9a-fA-F]{6}\b|rgba?\(' "$REPO/frontend/src" 2>/dev/null \
+  | grep -vE '(app/globals\.css|lib/graph-palette\.ts|app/layout\.tsx)$' || true)
+if [ -z "$hits" ]; then
+  ok "no hex/rgba literals outside tokens + graph-palette + layout themeColor"
+else
+  bad "stray hex/rgba literals found in: $(echo "$hits" | tr '\n' ' ')"
+fi
+# EditorView.tsx ProseMirror style must use CSS vars
+EV="$REPO/frontend/src/components/editor/EditorView.tsx"
+if grep -q 'var(--text)' "$EV" && grep -q 'var(--color-info-500)' "$EV"; then
+  ok "EditorView style uses --text + --color-info-500 tokens"
+else
+  bad "EditorView style tokens missing"
+fi
+# WritingGuidePanel active card uses shadow-card
+WG="$REPO/frontend/src/components/panels/WritingGuidePanel.tsx"
+if grep -q 'shadow-card' "$WG"; then
+  ok "WritingGuidePanel active card uses shadow-card"
+else
+  bad "WritingGuidePanel shadow-card missing"
+fi

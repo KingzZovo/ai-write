@@ -205,7 +205,7 @@ export function WritingGuidePanel() {
               onClick={() => toggleModule(mod.key)}
               className={`w-full text-left rounded-lg border p-2.5 transition-all ${
                 isActive
-                  ? 'border-stone-400 bg-white shadow-[0_0_8px_rgba(120,113,108,0.08)]'
+                  ? 'border-stone-400 bg-white shadow-card'
                   : 'border-stone-150 bg-stone-50/40 hover:bg-white hover:border-stone-200'
               }`}
             >

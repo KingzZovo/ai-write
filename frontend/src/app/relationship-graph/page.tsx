@@ -4,6 +4,14 @@ import dynamic from 'next/dynamic'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
+import {
+  GRAPH_BG_DARK,
+  GRAPH_TEXT_ON_DARK,
+  NODE_FILL_PRIMARY,
+  SENTIMENT_NEGATIVE,
+  SENTIMENT_NEUTRAL,
+  SENTIMENT_POSITIVE_ALT,
+} from '@/lib/graph-palette'
 
 // react-force-graph-2d touches window/canvas — must be client-only.
 const ForceGraph2D = dynamic(
@@ -92,9 +100,9 @@ function GraphInner() {
   }, [loadRels])
 
   const sentimentColor = (s: string) => {
-    if (s === 'positive' || s === 'ally' || s === 'love') return '#22c55e'
-    if (s === 'negative' || s === 'enemy' || s === 'rival') return '#ef4444'
-    return '#64748b'
+    if (s === 'positive' || s === 'ally' || s === 'love') return SENTIMENT_POSITIVE_ALT
+    if (s === 'negative' || s === 'enemy' || s === 'rival') return SENTIMENT_NEGATIVE
+    return SENTIMENT_NEUTRAL
   }
 
   const graphData = useMemo(() => {
@@ -148,15 +156,15 @@ function GraphInner() {
           <ForceGraph2D
             graphData={graphData}
             nodeLabel="name"
-            nodeColor={() => '#60a5fa'}
+            nodeColor={() => NODE_FILL_PRIMARY}
             linkLabel="label"
             linkColor={(link: Record<string, unknown>) =>
-              (link.color as string) || '#64748b'
+              (link.color as string) || SENTIMENT_NEUTRAL
             }
             linkWidth={2}
             linkDirectionalArrowLength={4}
             linkDirectionalArrowRelPos={1}
-            backgroundColor="#0f172a"
+            backgroundColor={GRAPH_BG_DARK}
             nodeCanvasObject={(
               node: Record<string, unknown>,
               ctx: CanvasRenderingContext2D,
@@ -165,7 +173,7 @@ function GraphInner() {
               const name = (node.name as string) || ''
               const fontSize = 12 / globalScale
               ctx.font = `${fontSize}px sans-serif`
-              ctx.fillStyle = '#60a5fa'
+              ctx.fillStyle = NODE_FILL_PRIMARY
               ctx.beginPath()
               ctx.arc(
                 node.x as number,
@@ -175,7 +183,7 @@ function GraphInner() {
                 2 * Math.PI,
               )
               ctx.fill()
-              ctx.fillStyle = '#e2e8f0'
+              ctx.fillStyle = GRAPH_TEXT_ON_DARK
               ctx.textAlign = 'center'
               ctx.textBaseline = 'middle'
               ctx.fillText(
