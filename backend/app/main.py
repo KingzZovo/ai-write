@@ -17,11 +17,16 @@ from app.api.auth import verify_token
 from app.api import admin_usage
 from app.api import export as export_api
 from app.middlewares.quota import QuotaMiddleware
+from app.middlewares.request_logging import RequestLoggingMiddleware
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
 from app.db.session import engine
+from app.observability.logging import setup_logging
 from app.observability.sentry_init import init_sentry
+
+# Initialize structured JSON logging before any other side-effecting import.
+setup_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +208,10 @@ app.add_middleware(
 )
 app.add_middleware(AuthMiddleware)
 app.add_middleware(QuotaMiddleware)
+# RequestLoggingMiddleware is registered *last* via add_middleware so it ends
+# up outermost (Starlette wraps middleware in reverse order). That way every
+# request -- including 401s from AuthMiddleware -- gets one JSON access line.
+app.add_middleware(RequestLoggingMiddleware)
 
 # ---------------------------------------------------------------------------
 # Routers

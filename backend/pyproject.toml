@@ -33,6 +33,7 @@ dependencies = [
     "cryptography",
     "prometheus-client",
     "sentry-sdk[fastapi,celery]",
+    "loguru",
     "langgraph",
     "langgraph-checkpoint-postgres",
     "reportlab",

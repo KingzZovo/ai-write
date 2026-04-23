@@ -159,3 +159,40 @@ if grep -q 'shadow-card' "$WG"; then
 else
   bad "WritingGuidePanel shadow-card missing"
 fi
+
+# ---------- 12. Backend structured JSON logging (Chunk 24) ----------
+head "[12/12] backend structured logging"
+LOGPY="$REPO/backend/app/observability/logging.py"
+REQMW="$REPO/backend/app/middlewares/request_logging.py"
+MAIN="$REPO/backend/app/main.py"
+if grep -q 'from loguru import logger' "$LOGPY" && grep -q 'def setup_logging' "$LOGPY" && grep -q '_json_sink' "$LOGPY" && grep -q '_SENSITIVE_KEYS' "$LOGPY"; then
+  ok "observability/logging.py: loguru imported + setup_logging + JSON sink + redactor"
+else
+  bad "observability/logging.py missing loguru/setup_logging/JSON sink"
+fi
+if grep -q 'class RequestLoggingMiddleware' "$REQMW" && grep -q 'X-Request-ID' "$REQMW" && grep -q 'log_http_request' "$REQMW"; then
+  ok "middlewares/request_logging.py: RequestLoggingMiddleware + X-Request-ID + http log"
+else
+  bad "request_logging middleware missing"
+fi
+if grep -q 'setup_logging()' "$MAIN" && grep -q 'RequestLoggingMiddleware' "$MAIN"; then
+  ok "main.py wires setup_logging() + RequestLoggingMiddleware"
+else
+  bad "main.py does not wire structured logging"
+fi
+# runtime: loguru importable inside the backend container + sink attached.
+# setup_logging itself emits one JSON line, so grep a unique marker instead of
+# equality-matching stdout.
+rt=$(docker compose exec -T backend python -c "from app.observability.logging import setup_logging, is_configured; setup_logging(); import sys; sys.stderr.write('__SMOKE_LOG_OK__\n' if is_configured() else '__SMOKE_LOG_NO__\n')" 2>&1 >/dev/null | tr -d '\r')
+if echo "$rt" | grep -q '__SMOKE_LOG_OK__'; then
+  ok "backend runtime: loguru JSON sink mounted after setup_logging"
+else
+  bad "backend runtime structured logging not initialized ($rt)"
+fi
+# runtime: X-Request-ID echoed back on /api/version response header.
+rid=$(curl -sSI "$BASE/api/version" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^x-request-id:/ {print $2}' | tr -d '\r\n')
+if [ -n "$rid" ]; then
+  ok "/api/version response includes X-Request-ID header ($rid)"
+else
+  bad "/api/version response missing X-Request-ID header"
+fi
