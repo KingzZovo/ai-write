@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api", tags=["version"])
 _BUILD_INFO_FILE = Path("/build-info/git_sha")
 
 # Application semantic version. Bumped per release.
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 
 def _read_build_info_file() -> dict[str, str]:
