@@ -492,3 +492,39 @@ else
   skip "allocate-budget endpoint roundtrip (static-only mode)"
   skip "psql volumes sum verification (static-only mode)"
 fi
+
+# ---------- 18. v1.3.0 regenerate-volume budget auto-wire (chunk-30) ----------
+head "[18/18] v1.3.0 regenerate_volume budget auto-wire"
+VOL_API="backend/app/api/volumes.py"
+REGEN_TEST="backend/tests/services/test_regenerate_budget_flow.py"
+if grep -q 'from app.services.budget_allocator import allocate_even' "$VOL_API"; then
+  ok "volumes.py imports allocate_even"
+else
+  bad "volumes.py does NOT import allocate_even"
+fi
+if grep -q 'allocate_even(volume_target' "$VOL_API" && grep -q 'chapter_word_counts' "$VOL_API"; then
+  ok "regenerate_volume wires allocate_even into new chapters + SSE done event"
+else
+  bad "regenerate_volume not wired to allocator (allocate_even call or chapter_word_counts missing)"
+fi
+if [ -f "$REGEN_TEST" ] && grep -q 'def test_regenerate_' "$REGEN_TEST"; then
+  ok "test_regenerate_budget_flow.py present with regression tests"
+else
+  bad "test_regenerate_budget_flow.py missing or empty"
+fi
+if is_runtime; then
+  # Run the regenerate unit tests on the host (backend container lacks pytest).
+  if command -v pytest >/dev/null 2>&1; then
+    rt=$(cd "$REPO" && PYTHONPATH=backend pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_regenerate_budget_flow.py 2>&1 | tr -d '\r')
+  else
+    rt=$(docker compose exec -T backend python -m pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_regenerate_budget_flow.py 2>&1 | tr -d '\r')
+  fi
+  if echo "$rt" | awk '/[0-9]+ passed/ { found=1; exit } END { exit !found }'; then
+    npass=$(echo "$rt" | grep -oE '[0-9]+ passed' | head -n1 | awk '{print $1}')
+    ok "pytest test_regenerate_budget_flow.py: ${npass:-?} passed"
+  else
+    bad "pytest test_regenerate_budget_flow.py failed ($(echo "$rt" | tail -3 | tr '\n' ' '))"
+  fi
+else
+  skip "pytest test_regenerate_budget_flow.py (static-only mode)"
+fi

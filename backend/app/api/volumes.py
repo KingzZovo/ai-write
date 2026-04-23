@@ -131,6 +131,7 @@ from fastapi.responses import StreamingResponse  # noqa: E402
 from app.db.session import async_session_factory  # noqa: E402
 from app.models.project import Chapter, Outline  # noqa: E402
 from app.services.outline_generator import OutlineGenerator  # noqa: E402
+from app.services.budget_allocator import allocate_even  # noqa: E402
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -219,6 +220,8 @@ async def regenerate_volume(
                 parsed = {"raw_text": full}
 
             chapters_created = 0
+            chapter_word_counts: list[int] = []
+            volume_target: int = 0
             async with async_session_factory() as save_db:
                 new_ol = Outline(
                     project_id=project_id,
@@ -236,6 +239,7 @@ async def regenerate_volume(
                     vol.summary = summary
 
                 chs = parsed.get("chapter_summaries") if isinstance(parsed, dict) else None
+                new_chapter_rows: list[Chapter] = []
                 if isinstance(chs, list):
                     for i, cs in enumerate(chs):
                         if not isinstance(cs, dict):
@@ -243,16 +247,27 @@ async def regenerate_volume(
                         chapter_idx = cs.get("chapter_idx") if isinstance(cs.get("chapter_idx"), int) else i + 1
                         title_raw = cs.get("title")
                         title = title_raw.strip() if isinstance(title_raw, str) and title_raw.strip() else f"第{chapter_idx}章"
-                        save_db.add(Chapter(
+                        ch_row = Chapter(
                             volume_id=volume_id,
                             title=title,
                             chapter_idx=chapter_idx,
                             outline_json=cs,
-                        ))
+                        )
+                        save_db.add(ch_row)
+                        new_chapter_rows.append(ch_row)
                         chapters_created += 1
+
+                # chunk-30: auto-allocate volume budget across new chapters
+                # (local to this volume, force=True because all new rows still
+                # carry the Chapter default of 50000).
+                volume_target = int(vol.target_word_count or 0)
+                if new_chapter_rows and volume_target > 0:
+                    chapter_word_counts = allocate_even(volume_target, len(new_chapter_rows))
+                    for ch_row, wc in zip(new_chapter_rows, chapter_word_counts):
+                        ch_row.target_word_count = int(wc)
                 await save_db.commit()
 
-            yield f"data: {json.dumps({'status': 'done', 'chapters_created': chapters_created})}\n\n"
+            yield f"data: {json.dumps({'status': 'done', 'chapters_created': chapters_created, 'volume_target': volume_target, 'chapter_word_counts': chapter_word_counts})}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
