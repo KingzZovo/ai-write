@@ -95,3 +95,24 @@ if grep -q 'language-switcher' "$SET" && grep -q 'useLocale' "$SET" && grep -q '
 else
   bad "language switcher or cookie assertion missing"
 fi
+
+# ---------- 10. Mobile landing: project list + outline drawer + nav hamburger (Chunk 21) ----------
+head "[10/10] mobile landing"
+PLP="$REPO/frontend/src/components/project/ProjectListPage.tsx"
+MWS="$REPO/frontend/src/components/workspace/MobileWorkspace.tsx"
+NAV="$REPO/frontend/src/components/Navbar.tsx"
+if grep -q 'project-list-grid' "$PLP" && grep -q 'grid-cols-1 md:grid-cols-2' "$PLP" && grep -q 'px-3 md:px-6' "$PLP"; then
+  ok "ProjectListPage: single-col default + mobile padding + data-testid hook"
+else
+  bad "ProjectListPage mobile-landing markers missing"
+fi
+if grep -q 'mobile-outline-drawer' "$MWS" && grep -q 'mobile-outline-toggle' "$MWS"; then
+  ok "MobileWorkspace: outline drawer + toggle present"
+else
+  bad "MobileWorkspace outline drawer markers missing"
+fi
+if grep -q 'nav-hamburger' "$NAV" && grep -q 'nav-mobile-drawer' "$NAV"; then
+  ok "Navbar: hamburger + mobile drawer wired"
+else
+  bad "Navbar hamburger/drawer markers missing"
+fi
