@@ -366,3 +366,65 @@ if [ -f "$JWT_FIX" ] && grep -q 'def sign_smoke_jwt' "$JWT_FIX" 2>/dev/null; the
 else
   bad "tests/fixtures/self_sign_jwt.py missing or lacks sign_smoke_jwt"
 fi
+
+# ---------- 16. v1.3.0 target_word_count schema (chunk-28) ----------
+head "[16/16] v1.3.0 target_word_count schema"
+MIG_V13="backend/alembic/versions/a1001300_v13_target_word_count.py"
+MODEL_PY="backend/app/models/project.py"
+if [ -f "$MIG_V13" ] && grep -q 'revision = "a1001300"' "$MIG_V13" 2>/dev/null; then
+  ok "alembic revision a1001300_v13_target_word_count.py present"
+else
+  bad "alembic revision a1001300 missing or malformed"
+fi
+if grep -q 'down_revision = "a1001200"' "$MIG_V13" 2>/dev/null; then
+  ok "a1001300 chains onto a1001200"
+else
+  bad "a1001300 does not chain onto a1001200"
+fi
+if grep -q 'target_word_count' "$MODEL_PY" 2>/dev/null \
+    && ! grep -q 'target_words = Column' "$MODEL_PY" 2>/dev/null; then
+  ok "Chapter.target_words renamed to target_word_count in ORM"
+else
+  bad "Chapter model still has legacy target_words column"
+fi
+if grep -c 'target_word_count = Column' "$MODEL_PY" 2>/dev/null | grep -q '^3$'; then
+  ok "Project/Volume/Chapter all carry target_word_count ORM field"
+else
+  bad "Project/Volume/Chapter ORM missing target_word_count (expected 3 occurrences)"
+fi
+if is_runtime; then
+  ALEMBIC_CUR=$(docker compose exec -T backend alembic current 2>/dev/null | awk '/head/ {print $1; exit}')
+  if [ "$ALEMBIC_CUR" = "a1001300" ]; then
+    ok "alembic current head = a1001300"
+  else
+    bad "alembic current head != a1001300 (got: '$ALEMBIC_CUR')"
+  fi
+  PG_OUT=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT table_name || '.' || column_name || ':' || is_nullable || ':' || COALESCE(column_default,'') FROM information_schema.columns WHERE table_name IN ('projects','volumes','chapters') AND column_name = 'target_word_count' ORDER BY table_name" 2>/dev/null)
+  if echo "$PG_OUT" | grep -q '^projects.target_word_count:NO:3000000'; then
+    ok "projects.target_word_count column NOT NULL default 3000000"
+  else
+    bad "projects.target_word_count shape wrong: $(echo "$PG_OUT" | grep '^projects')"
+  fi
+  if echo "$PG_OUT" | grep -q '^volumes.target_word_count:NO:200000'; then
+    ok "volumes.target_word_count column NOT NULL default 200000"
+  else
+    bad "volumes.target_word_count shape wrong: $(echo "$PG_OUT" | grep '^volumes')"
+  fi
+  if echo "$PG_OUT" | grep -q '^chapters.target_word_count:NO:50000'; then
+    ok "chapters.target_word_count column NOT NULL default 50000"
+  else
+    bad "chapters.target_word_count shape wrong: $(echo "$PG_OUT" | grep '^chapters')"
+  fi
+  LEGACY=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT 1 FROM information_schema.columns WHERE table_name='chapters' AND column_name='target_words'" 2>/dev/null | tr -d '[:space:]')
+  if [ -z "$LEGACY" ]; then
+    ok "chapters.target_words legacy column removed (renamed)"
+  else
+    bad "chapters.target_words legacy column still present"
+  fi
+else
+  skip "alembic head check (static-only mode)"
+  skip "projects.target_word_count column shape (static-only mode)"
+  skip "volumes.target_word_count column shape (static-only mode)"
+  skip "chapters.target_word_count column shape (static-only mode)"
+  skip "chapters.target_words legacy column removal (static-only mode)"
+fi
