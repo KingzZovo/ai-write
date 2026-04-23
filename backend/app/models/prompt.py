@@ -35,6 +35,8 @@ class PromptAsset(Base):
     model_name = Column(String(200), default="")
     temperature = Column(Float, default=0.7)
     max_tokens = Column(Integer, default=4096)
+    # v1.4 — preferred model tier (nullable)
+    model_tier = Column(String(20), nullable=True)
     # v0.5 — capability metadata (NovelClaw-inspired)
     category = Column(String(50), default="Core")
     order = Column(Integer, default=0)
