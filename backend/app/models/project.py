@@ -32,6 +32,9 @@ class Project(Base):
     genre = Column(String(100))
     premise = Column(Text)
     settings_json = Column(JSON, default=dict)
+    target_word_count = Column(
+        Integer, nullable=False, server_default="3000000", default=3000000
+    )
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
@@ -66,6 +69,9 @@ class Volume(Base):
     title = Column(String(500), nullable=False)
     volume_idx = Column(Integer, nullable=False)
     summary = Column(Text)
+    target_word_count = Column(
+        Integer, nullable=False, server_default="200000", default=200000
+    )
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="volumes")
@@ -95,7 +101,9 @@ class Chapter(Base):
     summary = Column(Text)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
-    target_words = Column(Integer, nullable=True)
+    target_word_count = Column(
+        Integer, nullable=False, server_default="50000", default=50000
+    )
 
     volume = relationship("Volume", back_populates="chapters")
     versions = relationship(

@@ -90,7 +90,7 @@ async def generate_chapter(
         if chapter:
             chapter_outline = chapter.outline_json or {}
             current_text = chapter.content_text or ""
-            target_words = chapter.target_words
+            target_words = chapter.target_word_count
             prev_result = await db.execute(
                 select(Chapter).where(
                     Chapter.volume_id == chapter.volume_id,
