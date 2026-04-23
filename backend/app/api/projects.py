@@ -257,3 +257,92 @@ async def export_project(
         )
 
     raise HTTPException(status_code=400, detail="不支持的格式，请使用 txt 或 epub")
+
+
+@router.post("/{project_id}/allocate-budget")
+async def allocate_budget(
+    project_id: UUID,
+    force: bool = False,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Allocate target_word_count across volumes and chapters of a project.
+
+    Strategy: equal split with remainder absorbed by the last slot.
+
+    Query params:
+      - force:   when true, overwrite all targets regardless of current value.
+                 when false (default), only overwrite values still equal to the
+                 documented default (Volume=200000, Chapter=50000).
+      - dry_run: when true, return the computed plan without persisting.
+    """
+    from app.models.project import Chapter, Volume
+    from app.services.budget_allocator import allocate_project_budget
+
+    project = await db.get(Project, project_id)
+    if project is None or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    vol_result = await db.execute(
+        select(Volume)
+        .where(Volume.project_id == project_id)
+        .order_by(Volume.volume_idx)
+    )
+    volumes = list(vol_result.scalars().all())
+
+    chapters_by_vol: dict[str, list] = {str(v.id): [] for v in volumes}
+    if volumes:
+        vol_ids = [v.id for v in volumes]
+        ch_result = await db.execute(
+            select(Chapter)
+            .where(Chapter.volume_id.in_(vol_ids))
+            .order_by(Chapter.chapter_idx)
+        )
+        for ch in ch_result.scalars().all():
+            chapters_by_vol.setdefault(str(ch.volume_id), []).append(ch)
+
+    vol_input: list[dict] = []
+    for v in volumes:
+        vol_input.append(
+            {
+                "id": str(v.id),
+                "volume_idx": v.volume_idx,
+                "current_target": int(v.target_word_count or 0),
+                "chapters": [
+                    {
+                        "id": str(c.id),
+                        "chapter_idx": c.chapter_idx,
+                        "current_target": int(c.target_word_count or 0),
+                    }
+                    for c in chapters_by_vol.get(str(v.id), [])
+                ],
+            }
+        )
+
+    plan = allocate_project_budget(
+        project_total=int(project.target_word_count or 0),
+        volumes=vol_input,
+        force=force,
+    )
+
+    if not dry_run:
+        v_by_id = {str(v.id): v for v in volumes}
+        ch_by_id: dict[str, object] = {}
+        for chs in chapters_by_vol.values():
+            for c in chs:
+                ch_by_id[str(c.id)] = c
+        for v_plan in plan["volumes"]:
+            if v_plan["changed"]:
+                vm = v_by_id.get(v_plan["id"])
+                if vm is not None:
+                    vm.target_word_count = int(v_plan["new_target"])
+            for c_plan in v_plan["chapters"]:
+                if c_plan["changed"]:
+                    cm = ch_by_id.get(c_plan["id"])
+                    if cm is not None:
+                        cm.target_word_count = int(c_plan["new_target"])
+        await db.flush()
+
+    plan["dry_run"] = dry_run
+    plan["force"] = force
+    return plan

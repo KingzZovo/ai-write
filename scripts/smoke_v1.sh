@@ -428,3 +428,67 @@ else
   skip "chapters.target_word_count column shape (static-only mode)"
   skip "chapters.target_words legacy column removal (static-only mode)"
 fi
+
+# ---------- 17. v1.3.0 budget allocator (chunk-29) ----------
+head "[17/17] v1.3.0 budget allocator"
+ALLOC_PY="backend/app/services/budget_allocator.py"
+ALLOC_TEST="backend/tests/services/test_budget_allocator.py"
+PROJ_API="backend/app/api/projects.py"
+if [ -f "$ALLOC_PY" ] && grep -q 'def allocate_even' "$ALLOC_PY" && grep -q 'def allocate_project_budget' "$ALLOC_PY"; then
+  ok "budget_allocator.py: allocate_even + allocate_project_budget present"
+else
+  bad "budget_allocator.py missing or incomplete"
+fi
+if [ -f "$ALLOC_TEST" ] && grep -q 'def test_' "$ALLOC_TEST"; then
+  ok "test_budget_allocator.py present with unit tests"
+else
+  bad "test_budget_allocator.py missing"
+fi
+if grep -q '/allocate-budget' "$PROJ_API" && grep -q 'allocate_project_budget' "$PROJ_API"; then
+  ok "projects.py exposes POST /{project_id}/allocate-budget wired to allocator"
+else
+  bad "projects.py missing /allocate-budget endpoint or allocator wiring"
+fi
+if is_runtime; then
+  # Try host pytest first (backend image does not ship pytest). Fallback to
+  # in-container python -m pytest if the host has no pytest on PATH.
+  if command -v pytest >/dev/null 2>&1; then
+    rt=$(cd "$REPO" && PYTHONPATH=backend pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_budget_allocator.py 2>&1 | tr -d '\r')
+  else
+    rt=$(docker compose exec -T backend python -m pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_budget_allocator.py 2>&1 | tr -d '\r')
+  fi
+  if echo "$rt" | awk '/[0-9]+ passed/ { found=1; exit } END { exit !found }'; then
+    npass=$(echo "$rt" | grep -oE '[0-9]+ passed' | head -n1 | awk '{print $1}')
+    ok "pytest test_budget_allocator.py: ${npass:-?} passed"
+  else
+    bad "pytest test_budget_allocator.py failed ($(echo "$rt" | tail -3 | tr '\n' ' '))"
+  fi
+  NP=$(curl -sS -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d '{"title":"chunk29-smoke","genre":"test","premise":"budget allocator smoke"}' "$BASE/api/projects" 2>/dev/null)
+  PID=$(echo "$NP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null)
+  if [ -n "$PID" ]; then
+    for i in 1 2 3; do
+      curl -sS -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d "{\"title\":\"vol$i\",\"volume_idx\":$i}" "$BASE/api/projects/$PID/volumes" >/dev/null 2>&1
+    done
+    plan=$(curl -sS -X POST "${AUTH[@]}" "$BASE/api/projects/$PID/allocate-budget?force=true" 2>/dev/null)
+    vsum=$(echo "$plan" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('volume_sum',0))" 2>/dev/null)
+    ptot=$(echo "$plan" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('project_total',0))" 2>/dev/null)
+    if [ -n "$vsum" ] && [ "$vsum" = "$ptot" ] && [ "$ptot" != "0" ]; then
+      ok "allocate-budget: volume_sum == project_total ($vsum)"
+    else
+      bad "allocate-budget: volume_sum=$vsum project_total=$ptot"
+    fi
+    psum=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT COALESCE(SUM(target_word_count),0) FROM volumes WHERE project_id='$PID'" 2>/dev/null | tr -d '[:space:]')
+    if [ "$psum" = "$ptot" ] && [ -n "$psum" ]; then
+      ok "psql SUM(volumes.target_word_count) == project_total ($psum)"
+    else
+      bad "psql volumes sum=$psum project_total=$ptot"
+    fi
+    curl -sS -X DELETE "${AUTH[@]}" "$BASE/api/projects/$PID?purge=true" >/dev/null 2>&1 || true
+  else
+    bad "could not create smoke project for allocator runtime test"
+  fi
+else
+  skip "pytest test_budget_allocator.py (static-only mode)"
+  skip "allocate-budget endpoint roundtrip (static-only mode)"
+  skip "psql volumes sum verification (static-only mode)"
+fi
