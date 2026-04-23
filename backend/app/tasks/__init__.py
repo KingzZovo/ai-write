@@ -1,8 +1,18 @@
 """Celery application configuration."""
 
+import time
+
 from celery import Celery
+from celery.signals import (
+    task_failure,
+    task_prerun,
+    task_postrun,
+    task_retry,
+    task_revoked,
+)
 
 from app.config import settings
+from app.observability.metrics import CELERY_TASK_DURATION, CELERY_TASK_TOTAL
 from app.observability.sentry_init import init_sentry
 
 # Initialize Sentry in the celery process as early as possible (no-op if DSN unset).
@@ -41,6 +51,56 @@ celery_app.conf.beat_schedule = {
 import app.tasks.knowledge_tasks  # noqa: F401, E402
 import app.tasks.style_tasks  # noqa: F401, E402
 import app.tasks.backup_tasks  # noqa: F401, E402
+
+
+# ---------------------------------------------------------------------------
+# Prometheus instrumentation via celery signals.
+# task_prerun stamps a monotonic start; task_postrun records duration; status
+# is filled by either task_postrun (success), task_failure, task_retry, or
+# task_revoked (whichever fires first wins per-task-instance).
+# ---------------------------------------------------------------------------
+_TASK_START_TIMES: dict[str, float] = {}
+_TASK_STATUS: dict[str, str] = {}
+
+
+def _task_key(task_id: object) -> str:
+    return str(task_id) if task_id is not None else "unknown"
+
+
+@task_prerun.connect
+def _on_task_prerun(task_id=None, task=None, **_kwargs):  # type: ignore[no-untyped-def]
+    _TASK_START_TIMES[_task_key(task_id)] = time.monotonic()
+
+
+@task_postrun.connect
+def _on_task_postrun(task_id=None, task=None, state=None, **_kwargs):  # type: ignore[no-untyped-def]
+    key = _task_key(task_id)
+    start = _TASK_START_TIMES.pop(key, None)
+    name = getattr(task, "name", None) or "unknown"
+    status = _TASK_STATUS.pop(key, None)
+    if status is None:
+        s = (state or "SUCCESS").upper()
+        status = "success" if s == "SUCCESS" else s.lower()
+    elapsed = (time.monotonic() - start) if start is not None else 0.0
+    CELERY_TASK_DURATION.labels(name, status).observe(elapsed)
+    CELERY_TASK_TOTAL.labels(name, status).inc()
+
+
+@task_failure.connect
+def _on_task_failure(task_id=None, **_kwargs):  # type: ignore[no-untyped-def]
+    _TASK_STATUS[_task_key(task_id)] = "failure"
+
+
+@task_retry.connect
+def _on_task_retry(request=None, **_kwargs):  # type: ignore[no-untyped-def]
+    tid = getattr(request, "id", None)
+    _TASK_STATUS[_task_key(tid)] = "retry"
+
+
+@task_revoked.connect
+def _on_task_revoked(request=None, **_kwargs):  # type: ignore[no-untyped-def]
+    tid = getattr(request, "id", None)
+    _TASK_STATUS[_task_key(tid)] = "revoked"
 
 
 # v0.5 — RAG rebuild task
