@@ -346,3 +346,84 @@ async def allocate_budget(
     plan["dry_run"] = dry_run
     plan["force"] = force
     return plan
+
+
+@router.get("/{project_id}/budget-status")
+async def budget_status(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Read-only audit of how target_word_count is distributed on a project.
+
+    Returns three coherence levels:
+      - project_total vs SUM(volumes.target_word_count)   => volumes_drift
+      - each volume.target_word_count vs SUM(its chapters) => per_volume[].chapters_drift
+      - project_total vs SUM(all chapters.target_word_count) => chapters_drift
+
+    drift > 0 means over-allocated (assigned more than the parent budget).
+    drift < 0 means under-allocated. healthy = (drift == 0).
+
+    Never mutates data. Safe to poll.
+    """
+    from app.models.project import Chapter, Volume
+
+    project = await db.get(Project, project_id)
+    if project is None or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    vol_result = await db.execute(
+        select(Volume)
+        .where(Volume.project_id == project_id)
+        .order_by(Volume.volume_idx)
+    )
+    volumes = list(vol_result.scalars().all())
+
+    chapters_by_vol: dict[str, list] = {str(v.id): [] for v in volumes}
+    if volumes:
+        vol_ids = [v.id for v in volumes]
+        ch_result = await db.execute(
+            select(Chapter)
+            .where(Chapter.volume_id.in_(vol_ids))
+            .order_by(Chapter.chapter_idx)
+        )
+        for ch in ch_result.scalars().all():
+            chapters_by_vol.setdefault(str(ch.volume_id), []).append(ch)
+
+    project_total = int(project.target_word_count or 0)
+    volumes_sum = 0
+    chapters_sum = 0
+    per_volume: list[dict] = []
+    for v in volumes:
+        v_target = int(v.target_word_count or 0)
+        v_chapters = chapters_by_vol.get(str(v.id), [])
+        v_ch_sum = sum(int(c.target_word_count or 0) for c in v_chapters)
+        v_drift = v_ch_sum - v_target
+        volumes_sum += v_target
+        chapters_sum += v_ch_sum
+        per_volume.append(
+            {
+                "volume_id": str(v.id),
+                "volume_idx": v.volume_idx,
+                "target": v_target,
+                "chapter_count": len(v_chapters),
+                "chapters_sum": v_ch_sum,
+                "chapters_drift": v_drift,
+                "chapters_healthy": v_drift == 0,
+            }
+        )
+
+    volumes_drift = volumes_sum - project_total
+    chapters_drift_vs_project = chapters_sum - project_total
+
+    return {
+        "project_id": str(project.id),
+        "project_total": project_total,
+        "volume_count": len(volumes),
+        "volumes_sum": volumes_sum,
+        "volumes_drift": volumes_drift,
+        "volumes_healthy": volumes_drift == 0,
+        "chapters_sum": chapters_sum,
+        "chapters_drift": chapters_drift_vs_project,
+        "chapters_healthy": chapters_drift_vs_project == 0,
+        "per_volume": per_volume,
+    }

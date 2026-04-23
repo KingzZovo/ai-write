@@ -528,3 +528,54 @@ if is_runtime; then
 else
   skip "pytest test_regenerate_budget_flow.py (static-only mode)"
 fi
+
+# ---------- 19. v1.3.0 budget-status read-only audit (chunk-31) ----------
+head "[19/19] v1.3.0 GET /projects/{id}/budget-status"
+PROJ_API="backend/app/api/projects.py"
+if grep -q '@router.get("/{project_id}/budget-status")' "$PROJ_API"; then
+  ok "projects.py exposes GET /{project_id}/budget-status"
+else
+  bad "projects.py missing GET /{project_id}/budget-status"
+fi
+if grep -q 'volumes_drift' "$PROJ_API" && grep -q 'chapters_drift' "$PROJ_API" && grep -q 'per_volume' "$PROJ_API"; then
+  ok "budget-status shape includes volumes_drift + chapters_drift + per_volume"
+else
+  bad "budget-status shape missing drift/per_volume keys"
+fi
+if is_runtime; then
+  # Create a fresh project, add 3 volumes, then curl budget-status; assert healthy.
+  bs_pid=$(curl -sS "${AUTH[@]}" -H 'content-type: application/json' \
+    -X POST "$BASE/api/projects" -d '{"title":"bs_smoke","target_word_count":600000}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+  if [ -n "$bs_pid" ]; then
+    for vi in 1 2 3; do
+      curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+        -X POST "$BASE/api/projects/$bs_pid/volumes" \
+        -d "{\"title\":\"V$vi\",\"volume_idx\":$vi}"
+    done
+    # Trigger allocator so volumes sum to 600000 exactly.
+    curl -sS -o /dev/null "${AUTH[@]}" -X POST "$BASE/api/projects/$bs_pid/allocate-budget?force=true"
+    bs_json=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$bs_pid/budget-status")
+    vd=$(echo "$bs_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_drift"])' 2>/dev/null)
+    vh=$(echo "$bs_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_healthy"])' 2>/dev/null)
+    vc=$(echo "$bs_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volume_count"])' 2>/dev/null)
+    if [ "$vd" = "0" ] && [ "$vh" = "True" ] && [ "$vc" = "3" ]; then
+      ok "budget-status: 3 volumes sum to project_total, drift=0, healthy"
+    else
+      bad "budget-status unhealthy: vd=$vd vh=$vh vc=$vc body=$(echo "$bs_json" | head -c 200)"
+    fi
+    # 404 path: non-existent project
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" \
+      "$BASE/api/projects/00000000-0000-0000-0000-000000000000/budget-status")
+    if [ "$code" = "404" ]; then
+      ok "budget-status returns 404 for missing project"
+    else
+      bad "budget-status missing-project expected 404, got $code"
+    fi
+  else
+    bad "budget-status: could not create smoke project"
+  fi
+else
+  skip "budget-status runtime curl (static-only mode)"
+  skip "budget-status 404 path (static-only mode)"
+fi
