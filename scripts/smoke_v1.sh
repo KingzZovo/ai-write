@@ -579,3 +579,55 @@ else
   skip "budget-status runtime curl (static-only mode)"
   skip "budget-status 404 path (static-only mode)"
 fi
+
+# ---------- 20. v1.3.0 PUT project.target_word_count cascades allocator (chunk-32) ----------
+head "[20/20] v1.3.0 PUT /projects/{id} cascades allocator on total change"
+PROJ_API="backend/app/api/projects.py"
+if grep -q 'allocate_project_budget' "$PROJ_API" && grep -q '"target_word_count" in update_data' "$PROJ_API"; then
+  ok "update_project wires allocate_project_budget on target_word_count change"
+else
+  bad "update_project missing allocator cascade"
+fi
+if is_runtime; then
+  cs2_pid=$(curl -sS "${AUTH[@]}" -H 'content-type: application/json' \
+    -X POST "$BASE/api/projects" -d '{"title":"cascade_smoke2","target_word_count":3000000}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+  if [ -n "$cs2_pid" ]; then
+    for vi in 1 2 3 4; do
+      curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+        -X POST "$BASE/api/projects/$cs2_pid/volumes" \
+        -d "{\"title\":\"D$vi\",\"volume_idx\":$vi}"
+    done
+    curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+      -X PUT "$BASE/api/projects/$cs2_pid" -d '{"target_word_count":4000000}'
+    cs2_json=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$cs2_pid/budget-status")
+    cs2_total=$(echo "$cs2_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["project_total"])' 2>/dev/null)
+    cs2_vsum=$(echo "$cs2_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_sum"])' 2>/dev/null)
+    cs2_healthy=$(echo "$cs2_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_healthy"])' 2>/dev/null)
+    if [ "$cs2_total" = "4000000" ]; then
+      ok "PUT target_word_count=4000000 persisted"
+    else
+      bad "PUT total not persisted: $cs2_total"
+    fi
+    if [ "$cs2_vsum" = "4000000" ] && [ "$cs2_healthy" = "True" ]; then
+      ok "PUT cascades allocator: 4 default volumes rebalanced to sum=4000000"
+    else
+      bad "PUT cascade unhealthy: sum=$cs2_vsum healthy=$cs2_healthy"
+    fi
+    curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+      -X PUT "$BASE/api/projects/$cs2_pid" -d '{"title":"cascade_smoke2_renamed"}'
+    cs2_after=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$cs2_pid/budget-status" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_sum"])' 2>/dev/null)
+    if [ "$cs2_after" = "4000000" ]; then
+      ok "PUT title-only does not re-cascade allocator"
+    else
+      bad "PUT title-only re-cascaded unexpectedly, sum=$cs2_after"
+    fi
+  else
+    bad "cascade smoke: could not create smoke project"
+  fi
+else
+  skip "PUT cascade runtime (static-only mode)"
+  skip "PUT cascade default-rebalance (static-only mode)"
+  skip "PUT cascade no-op (static-only mode)"
+fi
