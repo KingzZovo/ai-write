@@ -22,6 +22,44 @@ v1.4.1 是 v1.4 的**收尾补丁**，聚焦三处打磨，不触动 tier schema
   - 前端 `settings/page.tsx` 新增 `NVIDIA Embeddings` 供应商选项，`base_url` 占位符为 `https://integrate.api.nvidia.com/v1`，模型建议列表内置 `nvidia/llama-nemotron-embed-vl-1b-v2` 与 `nvidia/nv-embedqa-e5-v5`。
 - **Chunk 20 — CHANGELOG / RELEASE_NOTES_v1.4.1**：本段 + `RELEASE_NOTES_v1.4.1.md` 记录三处补丁；smoke `[38/40]` 覆盖静态 + runtime 断言。
 
+### Fixed
+
+- Endpoint test probe now surfaces empty / reasoning replies with `finish_reason`
+  and usage info (previously showed a blank response). Implemented by raising
+  `probe_max_tokens` to 256 and synthesizing a fallback message that lists
+  `finish_reason`, `usage`, and `reasoning_tokens` with a hint that the endpoint
+  is likely a reasoning model.
+
+### Changed
+
+- Default prompt `max_tokens` raised 4096 → 8192 across all four provider
+  signatures, `TaskRouteConfig` / `RouteSpec` fallbacks, and the
+  `PromptAsset.max_tokens` column default. Outline task types
+  (`outline_book` / `outline_volume` / `outline_chapter`) were further raised
+  to 16384 to support long-form generation. Alembic head is now `a1001401`
+  with existing prompt rows backfilled (outlines → 16384, others → 8192).
+- Book outline generation is now staged by default: stage A produces the
+  skeleton, then stages B (characters) and C (world) run in parallel and are
+  reassembled into the canonical 9-section document. Avoids the long-output
+  quality cliff on a single 10K+ char response. `stream=True, staged=False`
+  keeps the legacy single-call behavior.
+- Streaming book outline now emits structured per-stage SSE progress events
+  (`stage_start` / `stage_chunk` / `stage_end` / `error` / `done`) when the
+  client opts in with `staged_stream=1` (query param or request body). Stages
+  B and C interleave their chunks by arrival via `asyncio.Queue`, and the
+  final `done` event carries the reassembled full outline so auto-save stays
+  correct. The Workspace UI shows three progress dots (skeleton / characters
+  / world) that flip from gray to blue (running) to green (done) as each
+  stage completes.
+- Volume outline generation now splits meta from chapter summaries: stage V1
+  emits only the per-volume meta (integer `chapter_count`, no
+  `chapter_summaries`), then stage V2 loops `ceil(chapter_count / 10)` batches
+  of 10 chapters each, carrying the V1 meta plus the last 3 previous summaries
+  for continuity. `chapter_idx` is normalized to stay strictly contiguous.
+  Merged result keeps the legacy `{...meta, chapter_summaries}` shape.
+  Stabilizes long volumes (30+ chapters) where the single-call JSON used to
+  truncate or drop indices.
+
 ### API / schema
 
 - `GET /api/llm-routing/matrix` 响应字段扩展（兼容老消费者：新字段纯加法）。
