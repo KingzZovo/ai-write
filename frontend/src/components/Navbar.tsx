@@ -14,6 +14,7 @@ const NAV_LINKS: Array<{ href: string; key: MessageKey }> = [
   { href: '/styles', key: 'nav.styles' },
   { href: '/filter-words', key: 'nav.filterWords' },
   { href: '/prompts', key: 'nav.prompts' },
+  { href: '/llm-routing', key: 'nav.llmRouting' },
   { href: '/settings', key: 'nav.settings' },
 ]
 
