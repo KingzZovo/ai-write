@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,8 @@ class PromptResponse(BaseModel):
     category: str = "Core"
     order: int = 0
     always_enabled: int = 0
+    # v1.4 — preferred LLM tier
+    model_tier: str | None = None
     success_count: int
     fail_count: int
     avg_score: int
@@ -65,6 +67,11 @@ class PromptCreate(BaseModel):
     category: str = "Core"
     order: int = 0
     always_enabled: int = 0
+    # v1.4 — preferred LLM tier (flagship|standard|small|distill|embedding)
+    model_tier: str | None = Field(
+        default=None,
+        pattern=r"^(flagship|standard|small|distill|embedding)$",
+    )
 
 
 class PromptUpdate(BaseModel):
@@ -84,6 +91,11 @@ class PromptUpdate(BaseModel):
     category: str | None = None
     order: int | None = None
     always_enabled: int | None = None
+    # v1.4 — preferred LLM tier (flagship|standard|small|distill|embedding)
+    model_tier: str | None = Field(
+        default=None,
+        pattern=r"^(flagship|standard|small|distill|embedding)$",
+    )
 
 
 @router.get("", response_model=list[PromptResponse])
@@ -145,6 +157,7 @@ async def create_prompt(
         category=body.category,
         order=body.order,
         always_enabled=body.always_enabled,
+        model_tier=body.model_tier,
     )
     db.add(asset)
     await db.flush()
