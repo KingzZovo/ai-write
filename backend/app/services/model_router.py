@@ -382,6 +382,16 @@ class ModelRouter:
                     self._endpoint_tiers[key] = getattr(ep, "tier", "standard") or "standard"
                     self._endpoint_names[key] = getattr(ep, "name", "") or ""
                     api_key = decrypt_api_key(ep.api_key or "")
+                    # v1.4.1 hardening: NVIDIA endpoints are embedding-only.
+                    # Never register them into the chat provider dict where they
+                    # would otherwise be wrapped as OpenAIProvider. With an
+                    # empty base_url the OpenAI SDK silently defaults to
+                    # https://api.openai.com/v1, causing chat tasks that fell
+                    # into the fallback branch to leak the nvapi- key to the
+                    # public OpenAI API. Their embedding role is still handled
+                    # via the dedicated embedding_provider path below.
+                    if ep.provider_type == "nvidia":
+                        continue
                     if ep.provider_type == "anthropic":
                         self.register_provider(key, AnthropicProvider(api_key=api_key))
                     else:
@@ -429,14 +439,29 @@ class ModelRouter:
 
     def _get_route(self, task_type: str) -> TaskRouteConfig:
         route = self.task_routing.get(task_type)
-        if not route and self.providers:
-            first = next(iter(self.providers))
-            return TaskRouteConfig(provider_key=first, model_name="")
-        if not route:
+        if route:
+            return route
+        # v1.4.1 hardening: fall back only to chat-capable providers.
+        # Skip endpoints whose tier is "embedding" so a chat task never gets
+        # silently routed to an embeddings endpoint. If no chat-capable
+        # provider is configured, raise an explicit error pointing the user
+        # to the Prompt management UI instead of leaking requests.
+        chat_keys = [
+            k for k in self.providers
+            if self._endpoint_tiers.get(k, "standard") != "embedding"
+        ]
+        if chat_keys:
+            return TaskRouteConfig(provider_key=chat_keys[0], model_name="")
+        if self.providers:
             raise ValueError(
-                f"No model configured for '{task_type}'. "
-                "Configure at Settings > Model Configuration.")
-        return route
+                f"No chat-capable model configured for task '{task_type}'. "
+                "All registered endpoints are embedding-tier. Open "
+                "/prompts and bind a non-embedding endpoint to this prompt."
+            )
+        raise ValueError(
+            f"No model configured for '{task_type}'. "
+            "Configure at Settings > Model Configuration."
+        )
 
     def _pick_endpoint_by_tier(self, tier: str) -> str | None:
         """v1.4 — return the first registered provider_key whose endpoint tier matches.
