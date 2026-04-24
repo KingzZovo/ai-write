@@ -34,7 +34,11 @@ export async function initClientSentry(): Promise<SentryShimStatus> {
   try {
     // Dynamic import so the bundler does not hard-require @sentry/browser.
     // If the package is absent, the import throws and we silently skip.
-    SentryModule = await import(/* webpackIgnore: true */ "@sentry/browser").catch(
+    // v1.4.1: route the specifier through a variable so TypeScript does not
+    // attempt to resolve the missing optional dep at build time.
+    const sentrySpecifier = "@sentry/browser";
+    // @ts-ignore -- optional peer dep, resolved at runtime only.
+    SentryModule = await import(/* webpackIgnore: true */ sentrySpecifier).catch(
       () => null,
     );
   } catch {
