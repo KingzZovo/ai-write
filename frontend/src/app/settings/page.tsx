@@ -27,6 +27,14 @@ interface TestResult {
   success: boolean
   message: string
   latency_ms: number | null
+  // v1.4 chunk-18 — endpoint-test visibility (all optional; backend populates
+  // best-effort so the panel can degrade gracefully on older deployments).
+  sent_text?: string | null
+  request_summary?: string | null
+  response_text?: string | null
+  response_preview?: string | null
+  embedding_dim?: number | null
+  response_first_floats?: number[] | null
 }
 
 // =========================================================================
@@ -37,6 +45,8 @@ const PROVIDER_OPTIONS = [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'openai_compatible', label: 'OpenAI 兼容' },
+  // v1.4 chunk-19 — NVIDIA embeddings (integrate.api.nvidia.com/v1)
+  { value: 'nvidia', label: 'NVIDIA Embeddings' },
 ]
 
 // v1.4 — LLM tier enum (matches backend LLMEndpoint.tier + prompt_assets.model_tier).
@@ -60,6 +70,11 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
   anthropic: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'text-embedding-3-small'],
   openai_compatible: [],
+  // v1.4 chunk-19 — NVIDIA-hosted embedding models
+  nvidia: [
+    'nvidia/llama-nemotron-embed-vl-1b-v2',
+    'nvidia/nv-embedqa-e5-v5',
+  ],
 }
 
 // =========================================================================
@@ -384,14 +399,19 @@ function EndpointsSection({
               </p>
             </div>
 
-            {formData.provider_type === 'openai_compatible' && (
+            {(formData.provider_type === 'openai_compatible' ||
+              formData.provider_type === 'nvidia') && (
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">基础地址 *</label>
                 <input
                   type="text"
                   value={formData.base_url}
                   onChange={(e) => setFormData((d) => ({ ...d, base_url: e.target.value }))}
-                  placeholder="http://localhost:11434/v1"
+                  placeholder={
+                    formData.provider_type === 'nvidia'
+                      ? 'https://integrate.api.nvidia.com/v1'
+                      : 'http://localhost:11434/v1'
+                  }
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -517,6 +537,61 @@ function EndpointsSection({
                   <div><span className="text-gray-400">密钥:</span> <span className="font-mono">{ep.api_key_masked}</span></div>
                   <div><span className="text-gray-400">模型:</span> <span className="font-mono text-gray-700">{ep.default_model}</span></div>
                 </div>
+                {/* v1.4 chunk-18 — endpoint test visibility panel: request + response */}
+                {tr && (
+                  <div
+                    data-testid="endpoint-test-panel"
+                    data-success={tr.success ? '1' : '0'}
+                    className={`mb-3 rounded border p-2 text-[11px] space-y-1 ${
+                      tr.success
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-700">测试过程</span>
+                      {tr.latency_ms != null && (
+                        <span className="text-gray-500">{tr.latency_ms} ms</span>
+                      )}
+                    </div>
+                    {tr.request_summary && (
+                      <div className="text-gray-600">
+                        <span className="text-gray-400">请求:</span>{' '}
+                        <span className="font-mono break-all">{tr.request_summary}</span>
+                      </div>
+                    )}
+                    <div className="text-gray-600">
+                      <span className="text-gray-400">发送:</span>{' '}
+                      <span className="font-mono">{tr.sent_text ?? 'hi'}</span>
+                    </div>
+                    {tr.response_preview ? (
+                      <div className="text-gray-700">
+                        <span className="text-gray-400">响应:</span>{' '}
+                        <span className="font-mono whitespace-pre-wrap break-words">
+                          {tr.response_preview}
+                        </span>
+                      </div>
+                    ) : tr.embedding_dim != null ? (
+                      <div className="text-gray-700">
+                        <span className="text-gray-400">向量:</span>{' '}
+                        <span className="font-mono">
+                          dim={tr.embedding_dim}
+                          {tr.response_first_floats && tr.response_first_floats.length > 0
+                            ? ` head=[${tr.response_first_floats
+                                .map((x) => x.toFixed(4))
+                                .join(', ')}]`
+                            : ''}
+                        </span>
+                      </div>
+                    ) : null}
+                    {!tr.success && (
+                      <div className="text-red-700">
+                        <span className="text-red-400">错误:</span>{' '}
+                        <span className="font-mono break-words">{tr.message}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button onClick={() => handleTest(ep.id)} disabled={testingId === ep.id}
                     className="flex-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">

@@ -20,7 +20,7 @@ from app.services.model_router import reset_model_router
 
 router = APIRouter(prefix="/api/model-config", tags=["model-config"])
 
-VALID_PROVIDER_TYPES = {"anthropic", "openai", "openai_compatible"}
+VALID_PROVIDER_TYPES = {"anthropic", "openai", "openai_compatible", "nvidia"}
 
 
 # =========================================================================
@@ -37,7 +37,10 @@ def _mask_key(key: str) -> str:
 
 class EndpointCreate(BaseModel):
     name: str = Field(..., max_length=200)
-    provider_type: str = Field(..., description="anthropic | openai | openai_compatible")
+    provider_type: str = Field(
+        ...,
+        description="anthropic | openai | openai_compatible | nvidia",
+    )
     base_url: str = Field("", max_length=1000)
     api_key: str = Field("", max_length=500)
     default_model: str = Field(..., max_length=200)
@@ -104,6 +107,21 @@ class TestResult(BaseModel):
     success: bool
     message: str
     latency_ms: float | None = None
+    # v1.4 chunk-18 — endpoint-test visibility.
+    # All fields below are populated on a best-effort basis so the frontend
+    # can render the actual request and response instead of only a latency.
+    sent_text: str | None = None
+    """The literal prompt sent to the endpoint (``"hi"`` for chat models)."""
+    request_summary: str | None = None
+    """One-line human-readable summary of the outgoing request."""
+    response_text: str | None = None
+    """Full text of the model's reply (chat models only, may be long)."""
+    response_preview: str | None = None
+    """Short preview of the response (≤ 400 chars) safe for inline display."""
+    embedding_dim: int | None = None
+    """Dimensionality of the returned vector (embedding models only)."""
+    response_first_floats: list[float] | None = None
+    """First 3 floats of the returned vector (embedding models only)."""
 
 
 # =========================================================================
@@ -217,7 +235,19 @@ async def test_endpoint(
     endpoint_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> TestResult:
-    """Test connectivity for an LLM endpoint by making a minimal API call."""
+    """Probe an LLM endpoint and return request/response for visibility.
+
+    v1.4 chunk-18 — the handler now sends the literal string ``"hi"`` to
+    chat endpoints (or a short embedding probe for embedding endpoints) and
+    returns the model's actual reply alongside latency. The frontend uses
+    the ``sent_text`` / ``response_text`` / ``response_preview`` /
+    ``embedding_dim`` / ``response_first_floats`` fields to render the full
+    round-trip instead of only a pass/fail latency pill.
+
+    NVIDIA embeddings endpoints (chunk-19) are routed through
+    ``NvidiaEmbeddingProvider`` in ``app.services.model_router`` so this
+    handler also covers ``provider_type == "nvidia"``.
+    """
     import time
 
     result = await db.execute(
@@ -230,16 +260,43 @@ async def test_endpoint(
     from app.utils.crypto import decrypt_api_key
     decrypted_key = decrypt_api_key(endpoint.api_key or "")
 
+    probe_text = "hi"
+    model_lower = (endpoint.default_model or "").lower()
+    # Heuristic shared with ModelRouter: any model that mentions an
+    # embedding family keyword is probed via the embeddings API.
+    is_embedding_model = any(
+        kw in model_lower
+        for kw in ("embed", "embedding", "bge", "jina", "e5")
+    )
+    # NVIDIA provider is always embedding in v1.4 (chunk-19).
+    if endpoint.provider_type == "nvidia":
+        is_embedding_model = True
+
+    response_text: str | None = None
+    embedding_dim: int | None = None
+    first_floats: list[float] | None = None
+    request_summary: str
+
     start = time.monotonic()
     try:
         if endpoint.provider_type == "anthropic":
             import anthropic
 
             client = anthropic.AsyncAnthropic(api_key=decrypted_key)
-            await client.messages.create(
+            msg = await client.messages.create(
                 model=endpoint.default_model,
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Say hi"}],
+                max_tokens=32,
+                messages=[{"role": "user", "content": probe_text}],
+            )
+            parts: list[str] = []
+            for block in getattr(msg, "content", []) or []:
+                text = getattr(block, "text", None)
+                if isinstance(text, str):
+                    parts.append(text)
+            response_text = "".join(parts).strip() or None
+            request_summary = (
+                f"POST anthropic.messages model={endpoint.default_model} "
+                f"max_tokens=32 content={probe_text!r}"
             )
         elif endpoint.provider_type in ("openai", "openai_compatible"):
             import openai
@@ -247,34 +304,83 @@ async def test_endpoint(
             kwargs: dict[str, Any] = {"api_key": decrypted_key or "not-needed"}
             if endpoint.provider_type == "openai_compatible" and endpoint.base_url:
                 kwargs["base_url"] = endpoint.base_url
-
             client = openai.AsyncOpenAI(**kwargs)
 
-            # Detect embedding models — use embeddings API instead of chat
-            model_lower = (endpoint.default_model or "").lower()
-            is_embedding = any(kw in model_lower for kw in ["embed", "embedding", "bge", "jina", "e5"])
-            if is_embedding:
-                await client.embeddings.create(
+            if is_embedding_model:
+                emb = await client.embeddings.create(
                     model=endpoint.default_model,
-                    input="test",
+                    input=probe_text,
+                )
+                vec = list(emb.data[0].embedding) if emb.data else []
+                embedding_dim = len(vec)
+                first_floats = [float(x) for x in vec[:3]]
+                request_summary = (
+                    f"POST {endpoint.base_url or 'openai'}/embeddings "
+                    f"model={endpoint.default_model} input={probe_text!r}"
                 )
             else:
-                await client.chat.completions.create(
+                chat = await client.chat.completions.create(
                     model=endpoint.default_model,
-                    max_tokens=10,
-                    messages=[{"role": "user", "content": "Say hi"}],
+                    max_tokens=32,
+                    messages=[{"role": "user", "content": probe_text}],
                 )
+                if chat.choices:
+                    response_text = (
+                        chat.choices[0].message.content or ""
+                    ).strip() or None
+                request_summary = (
+                    f"POST {endpoint.base_url or 'openai'}/chat/completions "
+                    f"model={endpoint.default_model} max_tokens=32 "
+                    f"content={probe_text!r}"
+                )
+        elif endpoint.provider_type == "nvidia":
+            # chunk-19: NVIDIA embeddings use their own HTTP contract.
+            from app.services.model_router import NvidiaEmbeddingProvider
+
+            provider = NvidiaEmbeddingProvider(
+                base_url=endpoint.base_url
+                or "https://integrate.api.nvidia.com/v1",
+                api_key=decrypted_key,
+                model=endpoint.default_model,
+            )
+            vec = await provider.embed_one(probe_text, input_type="query")
+            embedding_dim = len(vec)
+            first_floats = [float(x) for x in vec[:3]]
+            request_summary = (
+                f"POST {endpoint.base_url or 'https://integrate.api.nvidia.com/v1'}"
+                f"/embeddings model={endpoint.default_model} "
+                f"input={[probe_text]!r} modality=['text'] input_type='query'"
+            )
         else:
             return TestResult(
                 success=False,
                 message=f"Unknown provider_type: {endpoint.provider_type}",
+                sent_text=probe_text,
             )
 
         elapsed = (time.monotonic() - start) * 1000
         endpoint.last_test_ok = 1
         endpoint.last_test_latency = round(elapsed, 1)
         await db.flush()
-        return TestResult(success=True, message="Connection successful", latency_ms=round(elapsed, 1))
+
+        preview: str | None = None
+        if response_text:
+            preview = response_text[:400]
+        elif embedding_dim is not None:
+            preview = (
+                f"embedding dim={embedding_dim}, first 3 floats={first_floats}"
+            )
+        return TestResult(
+            success=True,
+            message="Connection successful",
+            latency_ms=round(elapsed, 1),
+            sent_text=probe_text,
+            request_summary=request_summary,
+            response_text=response_text,
+            response_preview=preview,
+            embedding_dim=embedding_dim,
+            response_first_floats=first_floats,
+        )
 
     except Exception as e:
         elapsed = (time.monotonic() - start) * 1000
@@ -285,4 +391,5 @@ async def test_endpoint(
             success=False,
             message=f"Connection failed: {str(e)}",
             latency_ms=round(elapsed, 1),
+            sent_text=probe_text,
         )
