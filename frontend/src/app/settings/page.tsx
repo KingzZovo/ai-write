@@ -16,6 +16,7 @@ interface Endpoint {
   base_url: string
   api_key_masked: string
   default_model: string
+  tier: string
   enabled: number
   last_test_ok: number
   last_test_latency: number | null
@@ -37,6 +38,23 @@ const PROVIDER_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'openai_compatible', label: 'OpenAI 兼容' },
 ]
+
+// v1.4 — LLM tier enum (matches backend LLMEndpoint.tier + prompt_assets.model_tier).
+const TIER_OPTIONS = [
+  { value: 'flagship', label: 'Flagship' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'small', label: 'Small' },
+  { value: 'distill', label: 'Distill' },
+  { value: 'embedding', label: 'Embedding' },
+]
+
+const TIER_BADGE_CLASS: Record<string, string> = {
+  flagship: 'bg-purple-50 text-purple-700',
+  standard: 'bg-blue-50 text-blue-700',
+  small: 'bg-gray-100 text-gray-700',
+  distill: 'bg-amber-50 text-amber-700',
+  embedding: 'bg-emerald-50 text-emerald-700',
+}
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
   anthropic: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
@@ -186,6 +204,7 @@ function EndpointsSection({
     base_url: '',
     api_key: '',
     default_model: '',
+    tier: 'standard',
   })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -205,7 +224,7 @@ function EndpointsSection({
   })
 
   const resetForm = useCallback(() => {
-    setFormData({ name: '', provider_type: 'anthropic', base_url: '', api_key: '', default_model: '' })
+    setFormData({ name: '', provider_type: 'anthropic', base_url: '', api_key: '', default_model: '', tier: 'standard' })
     setShowForm(false)
     setEditingId(null)
     setFormError(null)
@@ -218,6 +237,7 @@ function EndpointsSection({
       base_url: ep.base_url,
       api_key: '',
       default_model: ep.default_model,
+      tier: ep.tier || 'standard',
     })
     setEditingId(ep.id)
     setShowForm(true)
@@ -234,6 +254,7 @@ function EndpointsSection({
           provider_type: formData.provider_type,
           base_url: formData.base_url,
           default_model: formData.default_model,
+          tier: formData.tier,
         }
         if (formData.api_key) {
           body.api_key = formData.api_key
@@ -343,6 +364,26 @@ function EndpointsSection({
               </select>
             </div>
 
+            {/* v1.4 — tier dropdown (flagship / standard / small / distill / embedding) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">模型等级 *</label>
+              <select
+                data-testid="endpoint-tier-select"
+                value={formData.tier}
+                onChange={(e) => setFormData((d) => ({ ...d, tier: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                {TIER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-500">
+                用于 LLM 路由：flagship (旗舰) / standard (常规) / small (轻量) / distill (蒸馏) / embedding (向量)。
+              </p>
+            </div>
+
             {formData.provider_type === 'openai_compatible' && (
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">基础地址 *</label>
@@ -445,9 +486,21 @@ function EndpointsSection({
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <h4 className="font-medium text-gray-900 text-sm">{ep.name}</h4>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 mt-1">
-                      {ep.provider_type}
-                    </span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700">
+                        {ep.provider_type}
+                      </span>
+                      {/* v1.4 — tier badge */}
+                      <span
+                        data-testid="endpoint-tier-badge"
+                        data-tier={ep.tier || 'standard'}
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
+                          TIER_BADGE_CLASS[ep.tier || 'standard'] || 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {ep.tier || 'standard'}
+                      </span>
+                    </div>
                   </div>
                   {tr ? (
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
