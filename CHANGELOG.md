@@ -2,6 +2,43 @@
 
 本项目遵循语义化版本号（SemVer）。
 
+## [1.4.1] - 2026-04-24
+
+v1.4.1 是 v1.4 的**收尾补丁**，聚焦三处打磨，不触动 tier schema 与路由语义：
+
+### 新增 / 改进
+
+- **Chunk 17 — `/llm-routing/matrix` 字段对齐 + tier helper 单测**：
+  - `backend/app/services/model_router.py` 新增 `VALID_TIERS` / `is_valid_tier()` / `compute_effective_tier()` 三件套，作为 `prompt.model_tier ≫ endpoint.tier ≫ 'standard'` 的唯一真源。
+  - `backend/app/api/llm_routing.py` 重写为 DB 驱动：对每个 active `PromptAsset` 左联 `LLMEndpoint`，逐行计算 `effective_tier` 和 `overridden`，返回前端 `MatrixRow` 期望的完整字段（`task_type / mode / prompt_id / prompt_name / endpoint_id / endpoint_name / endpoint_tier / model_name / model_tier / effective_tier / overridden`）。非法 `?tier=` 继续回 200 + `error: "invalid tier"`。
+  - 新增 `backend/tests/services/test_model_router_tier.py`（18 个 pytest 全通）覆盖三级回落、非法 / 空值拒绝、embedding tier 透传。
+- **Chunk 18 — 端点测试可见性**：
+  - `backend/app/api/model_config.py::TestResult` 扩展为 `sent_text / request_summary / response_text / response_preview / embedding_dim / response_first_floats`。
+  - `test_endpoint` 发送**字面量 `"hi"`**（替代旧的 `"Say hi"`），捕获 anthropic content block 或 openai chat choices；embedding 端点返回 `embedding_dim` + 前 3 位浮点。
+  - `frontend/src/app/settings/page.tsx` 在每个端点卡下新增 `data-testid="endpoint-test-panel"`，同时展示 `请求 / 发送 / 响应` 或 `向量 dim=N head=[...]`；失败时显示红色错误体。用户不再只能看到 `XX ms`。
+- **Chunk 19 — NVIDIA embeddings 兼容**（`https://integrate.api.nvidia.com/v1/embeddings`）：
+  - `backend/app/services/model_router.py` 新增 `NvidiaEmbeddingProvider`，使用 `httpx.AsyncClient` 直接 POST，载荷固定为 `{input: [...], model, modality: ["text"], input_type, encoding_format: "float", truncate: "NONE"}`，响应兼容 OpenAI schema（`data[0].embedding`）。
+  - `VALID_PROVIDER_TYPES` 增加 `"nvidia"`；`test_endpoint` 增加 nvidia 分支（走 `NvidiaEmbeddingProvider.embed_one`，返回 dim + head floats）。
+  - 前端 `settings/page.tsx` 新增 `NVIDIA Embeddings` 供应商选项，`base_url` 占位符为 `https://integrate.api.nvidia.com/v1`，模型建议列表内置 `nvidia/llama-nemotron-embed-vl-1b-v2` 与 `nvidia/nv-embedqa-e5-v5`。
+- **Chunk 20 — CHANGELOG / RELEASE_NOTES_v1.4.1**：本段 + `RELEASE_NOTES_v1.4.1.md` 记录三处补丁；smoke `[38/40]` 覆盖静态 + runtime 断言。
+
+### API / schema
+
+- `GET /api/llm-routing/matrix` 响应字段扩展（兼容老消费者：新字段纯加法）。
+- `POST /api/model-config/endpoints/{id}/test` 响应字段扩展（同上）。
+- `POST/PUT /api/model-config/endpoints` 的 `provider_type` 新增 `nvidia`。
+- 无数据库迁移（不改 alembic head，维持 `a1001400`）。
+
+### smoke 矩阵
+
+- `scripts/smoke_v1.sh` 新增 `[38/38]` / `[39/39]` / `[40/40]` 三段（chunk-17/18/19），静态子集绿；runtime 依赖部署一个 NVIDIA endpoint key 时覆盖 provider_type 创建路径。
+- `test_model_router_tier.py`：18 passed in 0.04s。
+
+### 兼容性
+
+- 不影响既有 v1.4 行为：`MatrixRow` 旧字段仍返回，旧 `TestResult.success/message/latency_ms` 语义不变，非 nvidia provider 走原路径。
+- 不打 git tag，chunk-17 / chunk-18+19 / chunk-20 三次提交构成补丁集。
+
 ## [1.4.0] - 2026-04-24
 
 v1.4.0 **LLM tier routing**。引入“endpoint × prompt 两层 tier”模型，使每个 task 能按能力等级而非单一端点路由 LLM；同时在 env flag 控制下拆分了 critic / extractor 并推出 RAG query rewrite 钩子。所有变更默认 **向前兼容**，flag 关闭时行为与 v1.3 等价；**本版不打 git tag**，仅在 CHANGELOG / RELEASE_NOTES 层面记录。
