@@ -228,6 +228,12 @@ class OutlineGenerator:
             {"role": "user", "content": f"请根据以下创意生成全书大纲：\n\n{user_input}"},
         ]
 
+        if stream and staged:
+            # v1.4.2 Task B: structured staged SSE stream.
+            # Emits stage_start / stage_chunk / stage_end / done dicts
+            # that api/generate.py serializes over SSE.
+            return self._generate_book_outline_staged_stream(user_input)
+
         if stream:
             return self.router.generate_stream(
                 task_type="outline",
@@ -345,6 +351,181 @@ class OutlineGenerator:
             start = m.start()
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             yield m.group("num"), text[start:end]
+
+    # ------------------------------------------------------------------
+    # v1.4.2 Task B — staged book-outline SSE stream
+    # ------------------------------------------------------------------
+    async def _generate_book_outline_staged_stream(
+        self, user_input: str
+    ):
+        """Stream the staged book outline as structured SSE-ready events.
+
+        Yields dicts with one of the following ``event`` values:
+
+        - ``stage_start``: {stage, label, index, total}
+        - ``stage_chunk``: {stage, delta}
+        - ``stage_end``:   {stage, full_text}
+        - ``error``:       {stage, message}
+        - ``done``:        {full_outline, _stages}
+
+        Stage A (skeleton) is streamed first and must complete before B/C
+        start. Stages B (characters) and C (world) run concurrently and
+        interleave their chunks by arrival order via an ``asyncio.Queue``.
+        """
+        # Stage A — skeleton (一、三、七、八、九).
+        yield {
+            "event": "stage_start",
+            "stage": "A",
+            "label": "骨架",
+            "index": 1,
+            "total": 3,
+        }
+        a_buf: list[str] = []
+        skeleton_msgs = [
+            {"role": "system", "content": BOOK_OUTLINE_SKELETON_SYSTEM},
+            {
+                "role": "user",
+                "content": f"创意：\n{user_input}\n\n请生成骨架五段。",
+            },
+        ]
+        try:
+            async for delta in self.router.generate_stream(
+                task_type="outline_book",
+                messages=skeleton_msgs,
+            ):
+                if not delta:
+                    continue
+                a_buf.append(delta)
+                yield {"event": "stage_chunk", "stage": "A", "delta": delta}
+        except Exception as exc:  # noqa: BLE001 — surface as structured event
+            logger.warning("Staged stream: stage A failed: %s", exc)
+            yield {"event": "error", "stage": "A", "message": str(exc)}
+            yield {
+                "event": "done",
+                "full_outline": "",
+                "_stages": {"skeleton": False, "characters": False, "world": False},
+            }
+            return
+
+        skeleton_text = "".join(a_buf).strip()
+        yield {"event": "stage_end", "stage": "A", "full_text": skeleton_text}
+
+        if not skeleton_text:
+            yield {
+                "event": "done",
+                "full_outline": "",
+                "_stages": {"skeleton": False, "characters": False, "world": False},
+            }
+            return
+
+        shared_context = (
+            f"创意：\n{user_input}\n\n已生成的骨架：\n{skeleton_text}\n"
+        )
+        stages = [
+            {
+                "code": "B",
+                "label": "角色",
+                "index": 2,
+                "msgs": [
+                    {
+                        "role": "system",
+                        "content": BOOK_OUTLINE_CHARACTERS_SYSTEM,
+                    },
+                    {
+                        "role": "user",
+                        "content": shared_context + "\n请生成二、四、五三段。",
+                    },
+                ],
+            },
+            {
+                "code": "C",
+                "label": "世界观",
+                "index": 3,
+                "msgs": [
+                    {
+                        "role": "system",
+                        "content": BOOK_OUTLINE_WORLD_SYSTEM,
+                    },
+                    {
+                        "role": "user",
+                        "content": shared_context + "\n请生成六、世界观设定集。",
+                    },
+                ],
+            },
+        ]
+
+        queue: asyncio.Queue = asyncio.Queue()
+        buffers: dict[str, list[str]] = {"B": [], "C": []}
+        DONE_MARK = object()
+
+        async def _worker(stage: dict) -> None:
+            code = stage["code"]
+            await queue.put(
+                {
+                    "event": "stage_start",
+                    "stage": code,
+                    "label": stage["label"],
+                    "index": stage["index"],
+                    "total": 3,
+                }
+            )
+            try:
+                async for delta in self.router.generate_stream(
+                    task_type="outline_book",
+                    messages=stage["msgs"],
+                ):
+                    if not delta:
+                        continue
+                    buffers[code].append(delta)
+                    await queue.put(
+                        {"event": "stage_chunk", "stage": code, "delta": delta}
+                    )
+                await queue.put(
+                    {
+                        "event": "stage_end",
+                        "stage": code,
+                        "full_text": "".join(buffers[code]).strip(),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Staged stream: stage %s failed: %s", code, exc
+                )
+                await queue.put(
+                    {"event": "error", "stage": code, "message": str(exc)}
+                )
+            finally:
+                await queue.put(DONE_MARK)
+
+        tasks = [asyncio.create_task(_worker(s)) for s in stages]
+        remaining = len(tasks)
+        try:
+            while remaining > 0:
+                item = await queue.get()
+                if item is DONE_MARK:
+                    remaining -= 1
+                    continue
+                yield item
+        finally:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        characters_text = "".join(buffers["B"]).strip()
+        world_text = "".join(buffers["C"]).strip()
+        combined = self._reassemble_sections(
+            skeleton_text, characters_text, world_text
+        )
+        yield {
+            "event": "done",
+            "full_outline": combined,
+            "_stages": {
+                "skeleton": bool(skeleton_text),
+                "characters": bool(characters_text),
+                "world": bool(world_text),
+            },
+        }
 
     async def generate_volume_outline(
         self,
