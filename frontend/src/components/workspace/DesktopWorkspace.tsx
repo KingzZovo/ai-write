@@ -132,6 +132,20 @@ export default function DesktopWorkspace() {
     'wizard'
   )
 
+  // v1.4.2 Task B: per-stage progress for the staged book outline SSE.
+  // status: idle | running | done | error. Stages A/B/C correspond to
+  // skeleton / characters / world.
+  type StageKey = 'A' | 'B' | 'C'
+  type StageStatus = 'idle' | 'running' | 'done' | 'error'
+  const [stageStates, setStageStates] = useState<Record<StageKey, StageStatus>>({
+    A: 'idle',
+    B: 'idle',
+    C: 'idle',
+  })
+  const stageLabels: Record<StageKey, string> = { A: '骨架', B: '角色', C: '世界观' }
+  const resetStageStates = () =>
+    setStageStates({ A: 'idle', B: 'idle', C: 'idle' })
+
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1)
   const [wizardProgress, setWizardProgress] = useState('')
@@ -257,6 +271,7 @@ export default function DesktopWorkspace() {
         pendingBookOutlineIdRef.current = null
         setConfirmedOutlineId(null)
         setActiveView('wizard')
+        resetStageStates()
       } else {
         setActiveView('outline')
       }
@@ -267,6 +282,9 @@ export default function DesktopWorkspace() {
           project_id: currentProject?.id || '',
           level,
           user_input: creativeInput,
+          // v1.4.2 Task B: request structured staged SSE events for the
+          // book outline so we can drive per-stage progress indicators.
+          ...(level === 'book' ? { staged_stream: true } : {}),
         },
         (text) => {
           setOutlinePreview((prev) => prev + text)
@@ -277,6 +295,27 @@ export default function DesktopWorkspace() {
         (evt) => {
           if (level === 'book' && evt.status === 'saved' && typeof evt.outline_id === 'string') {
             pendingBookOutlineIdRef.current = evt.outline_id
+          }
+          // v1.4.2 Task B: structured staged events for book outline.
+          if (level === 'book' && typeof evt.event === 'string') {
+            const kind = evt.event as string
+            const stage = evt.stage as StageKey | undefined
+            if (kind === 'stage_start' && stage) {
+              setStageStates((s) => ({ ...s, [stage]: 'running' }))
+            } else if (kind === 'stage_chunk' && stage && typeof evt.delta === 'string') {
+              setOutlinePreview((prev) => prev + (evt.delta as string))
+            } else if (kind === 'stage_end' && stage) {
+              setStageStates((s) => ({ ...s, [stage]: 'done' }))
+            } else if (kind === 'error' && stage) {
+              setStageStates((s) => ({ ...s, [stage]: 'error' }))
+            } else if (kind === 'done') {
+              const full = evt.full_outline
+              if (typeof full === 'string' && full.length > 0) {
+                // Replace the per-chunk interleaved preview with the
+                // canonical reassembled 9-section outline.
+                setOutlinePreview(full)
+              }
+            }
           }
         },
       )
@@ -800,6 +839,32 @@ export default function DesktopWorkspace() {
                             </button>
                           )}
                         </div>
+                        {/* v1.4.2 Task B: per-stage progress indicators. */}
+                        {(stageStates.A !== 'idle' ||
+                          stageStates.B !== 'idle' ||
+                          stageStates.C !== 'idle') && (
+                          <div className="flex items-center gap-4 mb-3 text-xs">
+                            {(['A', 'B', 'C'] as const).map((k) => {
+                              const st = stageStates[k]
+                              const cls =
+                                st === 'running'
+                                  ? 'bg-blue-500 animate-pulse'
+                                  : st === 'done'
+                                    ? 'bg-green-500'
+                                    : st === 'error'
+                                      ? 'bg-red-500'
+                                      : 'bg-gray-300'
+                              return (
+                                <div key={k} className="flex items-center gap-1.5">
+                                  <span
+                                    className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`}
+                                  />
+                                  <span className="text-gray-600">{stageLabels[k]}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                         {outlineEditing ? (
                           <div>
                             <textarea
