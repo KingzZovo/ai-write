@@ -385,12 +385,132 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
             "callback_hooks": ["string"],
         },
     },
+    # v1.4 — tier-aware specialized prompts (fallback to critic/extraction if no row)
+    {
+        "task_type": "critic_hard",
+        "name": "硬性审校（flagship）",
+        "name_en": "Hard Consistency Critic",
+        "description": "高等级模型做硬性矛盾审校；回落到 critic",
+        "description_en": "Flagship-tier hard inconsistency audit; falls back to critic.",
+        "category": "Quality",
+        "order": 131,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是高级一致性审校官（hard）。重点捕捉位置矛盾、实力跨级、关系翻转等必须重写的问题。\n"
+            "输出 JSON：{issues: [{severity: hard, category, desc, location, suggestion}]}。无问题时输出 {issues: []}。"
+        ),
+    },
+    {
+        "task_type": "critic_soft",
+        "name": "软性审校（standard/small）",
+        "name_en": "Soft Consistency Critic",
+        "description": "较低度模型做软性提醒/细节建议；回落到 critic",
+        "description_en": "Standard/small-tier soft critique; falls back to critic.",
+        "category": "Quality",
+        "order": 132,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是软性审校官（soft/info）。关注风格粗糙、细节含糊、可优化点。\n"
+            "输出 JSON：{issues: [{severity: soft|info, category, desc, location, suggestion}]}。"
+        ),
+    },
+    {
+        "task_type": "consistency_llm_check",
+        "name": "一致性 LLM 快检",
+        "name_en": "Consistency LLM Check",
+        "description": "针对单个候选点做二元判定；回落到 critic",
+        "description_en": "Binary LLM check for a single candidate issue; falls back to critic.",
+        "category": "Quality",
+        "order": 133,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是一致性快速检验器。输入一个候选矛盾点，判断是否成立。\n"
+            "输出 JSON：{is_issue: bool, severity: hard|soft|info, reason: string}。"
+        ),
+    },
+    {
+        "task_type": "rag_query_rewrite",
+        "name": "RAG 查询改写",
+        "name_en": "RAG Query Rewrite",
+        "description": "将用户原始查询改写为检索友好形式；回落到 extraction",
+        "description_en": "Rewrite raw query into retrieval-friendly forms; falls back to extraction.",
+        "category": "Extraction",
+        "order": 71,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是 RAG 查询改写器。输入原始查询，输出 JSON："
+            "{queries: [string], keywords: [string]}，覆盖同义词、实体别名、相关上下文。"
+        ),
+    },
+    {
+        "task_type": "characters_extraction",
+        "name": "角色抽取",
+        "name_en": "Characters Extraction",
+        "description": "从文本中抽取角色卡；回落到 extraction",
+        "description_en": "Extract character cards from text; falls back to extraction.",
+        "category": "Extraction",
+        "order": 72,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是角色信息抽取器。输出 JSON："
+            "{characters: [{name, aliases, role, traits, goals, relationships}]}。"
+        ),
+    },
+    {
+        "task_type": "world_rules_extraction",
+        "name": "世界规则抽取",
+        "name_en": "World Rules Extraction",
+        "description": "从文本中抽取世界规则/设定；回落到 extraction",
+        "description_en": "Extract world-building rules from text; falls back to extraction.",
+        "category": "Extraction",
+        "order": 73,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是世界规则抽取器。输出 JSON："
+            "{rules: [{scope, statement, evidence}]}。"
+        ),
+    },
+    {
+        "task_type": "relationships_extraction",
+        "name": "关系抽取",
+        "name_en": "Relationships Extraction",
+        "description": "从文本中抽取角色间关系；回落到 extraction",
+        "description_en": "Extract character relationships; falls back to extraction.",
+        "category": "Extraction",
+        "order": 74,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是角色关系抽取器。输出 JSON："
+            "{relationships: [{source, target, type, sentiment, evidence}]}。"
+        ),
+    },
 ]
 
 
 # =========================================================================
 # Registry class
 # =========================================================================
+
+# v1.4 — task_type fallback for specialized tier-aware tasks.
+# If a specialized task_type has no registered PromptAsset, fall back to the
+# general task_type on the right.
+_TASK_TYPE_FALLBACK: dict[str, str] = {
+    "critic_hard": "critic",
+    "critic_soft": "critic",
+    "consistency_llm_check": "critic",
+    "rag_query_rewrite": "extraction",
+    "characters_extraction": "extraction",
+    "world_rules_extraction": "extraction",
+    "relationships_extraction": "extraction",
+}
+
 
 class PromptRegistry:
     """Central registry for prompt assets. Provides lookup and execution."""
@@ -452,6 +572,11 @@ class PromptRegistry:
     async def resolve_route(self, task_type: str) -> RouteSpec:
         """Return routing spec for a task. Raises if no prompt or no endpoint."""
         asset = await self.get(task_type)
+        # v1.4 — task_type fallback for specialized tier-aware tasks
+        if asset is None:
+            fallback = _TASK_TYPE_FALLBACK.get(task_type)
+            if fallback:
+                asset = await self.get(fallback)
         if asset is None:
             raise ValueError(
                 f"No active prompt registered for task '{task_type}'. Create one at /prompts."
@@ -470,6 +595,22 @@ class PromptRegistry:
             system_prompt=asset.system_prompt,
             mode=asset.mode,
         )
+
+    async def resolve_tier(self, task_type: str) -> str | None:
+        """v1.4 — return preferred model_tier for a task_type, with fallback.
+
+        Looks up the PromptAsset for task_type (or its fallback) and returns its
+        ``model_tier`` (one of flagship|standard|small|distill|embedding) or
+        ``None`` if not set. Does not raise when no prompt is registered.
+        """
+        asset = await self.get(task_type)
+        if asset is None:
+            fallback = _TASK_TYPE_FALLBACK.get(task_type)
+            if fallback:
+                asset = await self.get(fallback)
+        if asset is None:
+            return None
+        return getattr(asset, "model_tier", None)
 
     async def track_result(self, asset_id: str | UUID, success: bool, score: int = 0) -> None:
         """Track prompt execution result for analytics."""
