@@ -750,3 +750,62 @@ else
   skip "llm-routing invalid tier runtime (static-only mode)"
   skip "endpoints tier field runtime (static-only mode)"
 fi
+
+# ---------- 38. v1.4 收尾 — routing matrix full fields + tier helpers (chunk-17) ----------
+head "[38/38] v1.4 routing matrix full fields + tier helpers (chunk-17)"
+MRP="$REPO/backend/app/services/model_router.py"
+LRP="$REPO/backend/app/api/llm_routing.py"
+TIER_TEST="$REPO/backend/tests/services/test_model_router_tier.py"
+if grep -q 'VALID_TIERS' "$MRP" \
+    && grep -q 'def is_valid_tier' "$MRP" \
+    && grep -q 'def compute_effective_tier' "$MRP"; then
+  ok "model_router.py exposes VALID_TIERS + is_valid_tier + compute_effective_tier"
+else
+  bad "model_router.py tier helpers missing"
+fi
+if grep -q 'effective_tier' "$LRP" \
+    && grep -q 'prompt_name' "$LRP" \
+    && grep -q 'endpoint_tier' "$LRP" \
+    && grep -q 'overridden' "$LRP" \
+    && grep -q 'compute_effective_tier' "$LRP"; then
+  ok "llm_routing.py matrix returns prompt/endpoint/effective_tier/overridden fields"
+else
+  bad "llm_routing.py matrix missing expected MatrixRow fields"
+fi
+if [ -f "$TIER_TEST" ] \
+    && grep -q 'test_prompt_tier_wins_over_endpoint_tier' "$TIER_TEST" \
+    && grep -q 'test_defaults_to_standard_when_both_missing' "$TIER_TEST" \
+    && grep -q 'test_invalid_prompt_tier_falls_through_to_endpoint' "$TIER_TEST"; then
+  ok "tests/services/test_model_router_tier.py covers 3-level fallback + invalid tier"
+else
+  bad "tier helper unit tests missing or incomplete"
+fi
+if is_runtime; then
+  # Run the tier helper unit tests (no DB, pure-function).
+  if command -v pytest >/dev/null 2>&1; then
+    rt=$(cd "$REPO" && PYTHONPATH=backend pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_model_router_tier.py 2>&1 | tr -d '\r')
+  else
+    rt=$(docker compose exec -T backend python -m pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_model_router_tier.py 2>&1 | tr -d '\r')
+  fi
+  if echo "$rt" | awk '/[0-9]+ passed/ { found=1; exit } END { exit !found }'; then
+    npass=$(echo "$rt" | grep -oE '[0-9]+ passed' | head -n1 | awk '{print $1}')
+    ok "pytest test_model_router_tier.py: ${npass:-?} passed"
+  else
+    bad "pytest test_model_router_tier.py failed ($(echo "$rt" | tail -3 | tr '\n' ' '))"
+  fi
+  # Runtime: matrix rows now carry the extended MatrixRow field set.
+  mx_row0=$(curl -sS "${AUTH[@]}" "$BASE/api/llm-routing/matrix" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); r=(d.get("rows") or [{}])[0]; print(",".join(sorted(r.keys())))' 2>/dev/null)
+  if echo "$mx_row0" | grep -q 'effective_tier' \
+      && echo "$mx_row0" | grep -q 'prompt_name' \
+      && echo "$mx_row0" | grep -q 'endpoint_tier' \
+      && echo "$mx_row0" | grep -q 'model_tier' \
+      && echo "$mx_row0" | grep -q 'overridden'; then
+    ok "matrix row0 contains effective_tier/prompt_name/endpoint_tier/model_tier/overridden"
+  else
+    bad "matrix row0 missing v1.4 fields: keys=$mx_row0"
+  fi
+else
+  skip "pytest test_model_router_tier.py (static-only mode)"
+  skip "matrix row0 extended fields runtime (static-only mode)"
+fi
