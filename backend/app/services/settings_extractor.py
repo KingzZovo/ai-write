@@ -7,8 +7,10 @@ characters, world_rules and relationships tables.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 
 from app.services.model_router import get_model_router
 
@@ -68,12 +70,134 @@ JSON 结构：
 - relationships.rel_type 只能是上面列出的枚举之一"""
 
 
+# v1.4 — per-stream system prompts for parallel extraction.
+CHARACTERS_EXTRACTOR_SYSTEM = """你是小说设定编辑。从用户提供的全书大纲中，只提取 characters。只输出一个 JSON 对象，不要 markdown、不要解释。
+
+JSON 结构：{ "characters": [ { ...同统一 schema } ] }
+
+规则：
+- 覆盖大纲里所有被点名的主要角色，不要遗漏
+- 某个字段缺信息就填空字符串或省略，不要编造
+- 同一份输出只关心 characters，world_rules / relationships 会由其他 pass 处理"""
+
+WORLD_RULES_EXTRACTOR_SYSTEM = """你是小说设定编辑。从用户提供的全书大纲中，只提取 world_rules。只输出一个 JSON 对象，不要 markdown、不要解释。
+
+JSON 结构：{ "world_rules": [ { "category": "...", "rule_text": "..." } ] }
+
+规则：
+- category 只能是 geography|history|religion|politics|economy|culture|magic_system|race|artifact|faction
+- 覆盖大纲里明确提到的地理、历史、宗教、政治、经济、文化、力量体系、种族、法宝、势力
+- 拆成多条，单条只讲一件事"""
+
+RELATIONSHIPS_EXTRACTOR_SYSTEM = """你是小说设定编辑。从用户提供的全书大纲中，只提取角色关系。只输出一个 JSON 对象，不要 markdown、不要解释。
+
+JSON 结构：{ "relationships": [ { "source_name": "...", "target_name": "...", "rel_type": "...", "label": "...", "note": "...", "sentiment": "..." } ] }
+
+规则：
+- rel_type 只能是 ally|enemy|mentor|lover|rival|family|other
+- sentiment 只能是 positive|negative|neutral
+- 覆盖大纲里所有明显的人物关系；单向关系不要正反重复"""
+
+
+def _settings_split_enabled() -> bool:
+    """v1.4 — env toggle for 3-way extractor split (default on)."""
+    raw = os.getenv("SETTINGS_EXTRACTOR_SPLIT_ENABLED", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off", "")
+
+
+def _strip_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
+
+
+async def _extract_stream(
+    task_type: str, system_prompt: str, outline_text: str
+) -> dict:
+    """v1.4 — run one extraction stream and return a parsed JSON dict.
+
+    On any LLM/parse failure raises; callers use return_exceptions to isolate.
+    """
+    router = get_model_router()
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"大纲原文：\n\n{outline_text}"},
+    ]
+    result = await router.generate(task_type=task_type, messages=messages)
+    text = _strip_fences(result.text)
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError(f"{task_type} returned non-object JSON")
+    return data
+
+
 async def extract_settings_from_outline(outline_text: str) -> dict:
     """Run the LLM to extract characters + world rules + relationships JSON.
 
     Returns a dict with 'characters', 'world_rules', 'relationships' keys
     (each a list). Returns empty lists on parse failure rather than raising.
     """
+    # v1.4 — fast path: run three specialized extractions in parallel.
+    if _settings_split_enabled():
+        try:
+            results = await asyncio.gather(
+                _extract_stream(
+                    "characters_extraction",
+                    CHARACTERS_EXTRACTOR_SYSTEM,
+                    outline_text,
+                ),
+                _extract_stream(
+                    "world_rules_extraction",
+                    WORLD_RULES_EXTRACTOR_SYSTEM,
+                    outline_text,
+                ),
+                _extract_stream(
+                    "relationships_extraction",
+                    RELATIONSHIPS_EXTRACTOR_SYSTEM,
+                    outline_text,
+                ),
+                return_exceptions=True,
+            )
+            chars_r, rules_r, rels_r = results
+            all_failed = all(isinstance(r, Exception) for r in results)
+            if not all_failed:
+                chars = (
+                    chars_r.get("characters")
+                    if isinstance(chars_r, dict)
+                    else None
+                )
+                rules = (
+                    rules_r.get("world_rules")
+                    if isinstance(rules_r, dict)
+                    else None
+                )
+                rels = (
+                    rels_r.get("relationships")
+                    if isinstance(rels_r, dict)
+                    else None
+                )
+                for label, r in zip(
+                    ("characters_extraction", "world_rules_extraction", "relationships_extraction"),
+                    results,
+                ):
+                    if isinstance(r, Exception):
+                        logger.warning("settings extractor %s failed: %s", label, r)
+                return {
+                    "characters": chars if isinstance(chars, list) else [],
+                    "world_rules": rules if isinstance(rules, list) else [],
+                    "relationships": rels if isinstance(rels, list) else [],
+                }
+            logger.warning(
+                "settings extractor split: all 3 streams failed, falling back to single extraction"
+            )
+        except Exception as e:  # defensive
+            logger.warning("settings extractor split raised: %s; falling back", e)
+
     router = get_model_router()
     messages = [
         {"role": "system", "content": SETTINGS_EXTRACTOR_SYSTEM},
@@ -87,12 +211,7 @@ async def extract_settings_from_outline(outline_text: str) -> dict:
         return {"characters": [], "world_rules": [], "relationships": []}
 
     # Strip possible markdown fences
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
+    text = _strip_fences(text)
 
     try:
         data = json.loads(text)
