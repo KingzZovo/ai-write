@@ -247,6 +247,12 @@ celery -A app.tasks:celery_app beat --loglevel=info
 
 详见 [ITERATION_PLAN.md](ITERATION_PLAN.md)
 
+**v1.4.0 — LLM tier routing**（详见 [RELEASE_NOTES_v1.4.md](RELEASE_NOTES_v1.4.md)）：
+- `llm_endpoints.tier` + `prompt_assets.model_tier`（alembic `a1001400`），路由优先级 `prompt.model_tier ≫ endpoint.tier ≫ 'standard'`
+- `GET /api/llm-routing/matrix`（可选 `?tier=<enum>`），前端新增 `/llm-routing` 路由矩阵页
+- Env flag 可开关：`CRITIC_SPLIT_ENABLED`、`CRITIC_CONSISTENCY_LLM_ENABLED`、`SETTINGS_EXTRACTOR_SPLIT_ENABLED`、`RAG_QUERY_REWRITE_ENABLED`
+- settings / prompts 页补 tier 下拉 + 徽章；`scripts/smoke_v1.sh [22/22]` 覆盖 tier schema + 路由矩阵
+
 **当前版本 v0.4.0** — 项目管理、工作区 UX、数据质量大幅提升：
 - `/` 项目列表 + `/trash` 回收站 + 软删除/批量/重命名
 - URL 驱动工作区 + 向导可跳可编辑
