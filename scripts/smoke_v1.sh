@@ -809,3 +809,82 @@ else
   skip "pytest test_model_router_tier.py (static-only mode)"
   skip "matrix row0 extended fields runtime (static-only mode)"
 fi
+
+# ---------- 39. v1.4 收尾 — endpoint test visibility (chunk-18) ----------
+head "[39/39] v1.4 endpoint test visibility (chunk-18)"
+MC="$REPO/backend/app/api/model_config.py"
+ST="$REPO/frontend/src/app/settings/page.tsx"
+if grep -q 'sent_text' "$MC" \
+    && grep -q 'request_summary' "$MC" \
+    && grep -q 'response_preview' "$MC" \
+    && grep -q 'embedding_dim' "$MC" \
+    && grep -q 'response_first_floats' "$MC"; then
+  ok "TestResult schema exposes sent_text/request_summary/response_preview/embedding_dim/response_first_floats"
+else
+  bad "TestResult schema missing visibility fields"
+fi
+if grep -q 'probe_text = "hi"' "$MC"; then
+  ok "test_endpoint sends literal probe 'hi' (not 'Say hi')"
+else
+  bad "test_endpoint does not send literal 'hi'"
+fi
+if grep -q 'endpoint-test-panel' "$ST" \
+    && grep -q 'response_preview' "$ST" \
+    && grep -q 'response_first_floats' "$ST"; then
+  ok "settings page renders endpoint-test-panel with response preview + embedding head"
+else
+  bad "settings page missing endpoint-test-panel visibility widget"
+fi
+
+# ---------- 40. v1.4 收尾 — NVIDIA embeddings provider (chunk-19) ----------
+head "[40/40] v1.4 NVIDIA embeddings provider (chunk-19)"
+MR="$REPO/backend/app/services/model_router.py"
+if grep -q 'class NvidiaEmbeddingProvider' "$MR" \
+    && grep -q 'integrate.api.nvidia.com' "$MR" \
+    && grep -q 'modality' "$MR" \
+    && grep -q 'input_type' "$MR" \
+    && grep -q 'encoding_format' "$MR" \
+    && grep -q 'truncate' "$MR"; then
+  ok "NvidiaEmbeddingProvider present with NVIDIA-specific fields"
+else
+  bad "NvidiaEmbeddingProvider missing or incomplete"
+fi
+if grep -q '\"nvidia\"' "$MC" \
+    && grep -q 'VALID_PROVIDER_TYPES = {\"anthropic\", \"openai\", \"openai_compatible\", \"nvidia\"}' "$MC"; then
+  ok "VALID_PROVIDER_TYPES includes 'nvidia'"
+else
+  bad "VALID_PROVIDER_TYPES does not accept 'nvidia'"
+fi
+if grep -q "'nvidia'" "$ST" \
+    && grep -q 'llama-nemotron-embed-vl-1b-v2' "$ST" \
+    && grep -q 'integrate.api.nvidia.com' "$ST"; then
+  ok "settings page offers NVIDIA provider option + model suggestion + base_url hint"
+else
+  bad "settings page missing NVIDIA provider wiring"
+fi
+if is_runtime; then
+  # Runtime: confirm the API accepts nvidia provider_type on create (negative
+  # test — we expect a 201 or a 400 that is NOT about 'Invalid provider_type').
+  code=$(curl -sS -o /tmp/nvidia_probe.json -w '%{http_code}' "${AUTH[@]}" \
+    -H 'content-type: application/json' -X POST "$BASE/api/model-config/endpoints" \
+    -d '{"name":"nvidia_smoke_probe","provider_type":"nvidia","base_url":"https://integrate.api.nvidia.com/v1","api_key":"sk-dummy","default_model":"nvidia/llama-nemotron-embed-vl-1b-v2","tier":"embedding"}')
+  if [ "$code" = "201" ] || [ "$code" = "200" ]; then
+    eid=$(python3 -c 'import json; print(json.load(open("/tmp/nvidia_probe.json")).get("id",""))' 2>/dev/null)
+    ok "POST /endpoints accepts provider_type=nvidia (created id=${eid:0:8}...)"
+    if [ -n "$eid" ]; then
+      curl -sS -o /dev/null -X DELETE "${AUTH[@]}" "$BASE/api/model-config/endpoints/$eid" || true
+    fi
+  elif [ "$code" = "400" ]; then
+    detail=$(python3 -c 'import json; d=json.load(open("/tmp/nvidia_probe.json")); print(d.get("detail",""))' 2>/dev/null)
+    if ! echo "$detail" | grep -qi 'invalid provider_type'; then
+      ok "POST /endpoints nvidia: 400 but not rejected as invalid provider_type ($detail)"
+    else
+      bad "nvidia provider still rejected: $detail"
+    fi
+  else
+    bad "nvidia endpoint create returned unexpected http=$code"
+  fi
+  rm -f /tmp/nvidia_probe.json
+else
+  skip "nvidia provider create runtime (static-only mode)"
+fi

@@ -226,6 +226,111 @@ class EmbeddingProvider:
         return resp.data[0].embedding
 
 
+class NvidiaEmbeddingProvider:
+    """NVIDIA NIM / ``integrate.api.nvidia.com`` embeddings provider (v1.4 chunk-19).
+
+    NVIDIA's embeddings endpoint speaks a superset of the OpenAI schema
+    and requires four extra fields that the OpenAI SDK will not emit:
+
+    - ``input`` — always an *array* of strings (not a plain string)
+    - ``modality`` — e.g. ``["text"]``
+    - ``input_type`` — ``"query"`` or ``"passage"``
+    - ``encoding_format`` — ``"float"`` (base64 also accepted upstream)
+    - ``truncate`` — ``"NONE"`` | ``"START"`` | ``"END"``
+
+    We therefore drop the OpenAI SDK for this provider and POST the request
+    directly via ``httpx``. The response shape matches OpenAI's
+    ``{"data": [{"embedding": [float, ...]}]}`` so downstream callers can
+    treat the returned vector identically.
+
+    Reference (user-supplied curl):
+
+        curl -X POST https://integrate.api.nvidia.com/v1/embeddings \
+          -H "Authorization: Bearer $NVIDIA_API_KEY" \
+          -d '{"input": ["..."], "model": "nvidia/llama-nemotron-embed-vl-1b-v2",
+               "modality": ["text"], "input_type": "query",
+               "encoding_format": "float", "truncate": "NONE"}'
+    """
+
+    DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "",
+        model: str = "nvidia/llama-nemotron-embed-vl-1b-v2",
+        modality: list[str] | None = None,
+        encoding_format: str = "float",
+        truncate: str = "NONE",
+        timeout: float = 30.0,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        self.model = model
+        self.modality = modality or ["text"]
+        self.encoding_format = encoding_format
+        self.truncate = truncate
+        self.timeout = timeout
+
+    async def _post(
+        self, inputs: list[str], input_type: str
+    ) -> dict:
+        import httpx
+
+        if not inputs:
+            return {"data": []}
+        # Soft-clip each input to 8k chars to avoid accidental massive
+        # payloads; NVIDIA will also truncate per ``truncate`` policy.
+        clipped = [s[:8000] for s in inputs]
+        payload = {
+            "input": clipped,
+            "model": self.model,
+            "modality": self.modality,
+            "input_type": input_type,
+            "encoding_format": self.encoding_format,
+            "truncate": self.truncate,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        url = f"{self.base_url}/embeddings"
+        async with httpx.AsyncClient(timeout=self.timeout) as http:
+            resp = await http.post(url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            # Surface the server's error body to the caller — test_endpoint
+            # re-wraps this in TestResult.message for UI visibility.
+            snippet = resp.text[:400]
+            raise RuntimeError(
+                f"NVIDIA embeddings HTTP {resp.status_code}: {snippet}"
+            )
+        return resp.json()
+
+    async def embed_one(
+        self, text: str, *, input_type: str = "query"
+    ) -> list[float]:
+        """Embed a single string and return the raw float vector."""
+        data = await self._post([text], input_type=input_type)
+        rows = data.get("data") or []
+        if not rows:
+            return []
+        return list(rows[0].get("embedding") or [])
+
+    async def embed(self, text: str) -> list[float]:
+        """Compat shim mirroring ``EmbeddingProvider.embed``."""
+        return await self.embed_one(text, input_type="query")
+
+    async def embed_many(
+        self, texts: list[str], *, input_type: str = "passage"
+    ) -> list[list[float]]:
+        """Batch embedding — uses ``input_type="passage"`` by default."""
+        data = await self._post(texts, input_type=input_type)
+        rows = data.get("data") or []
+        return [list(r.get("embedding") or []) for r in rows]
+
+
 class ModelRouter:
     """
     Unified model access layer.
