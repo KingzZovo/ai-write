@@ -591,7 +591,7 @@ class PromptRegistry:
             endpoint_id=asset.endpoint_id,
             model=asset.model_name or "",
             temperature=asset.temperature if asset.temperature is not None else 0.7,
-            max_tokens=asset.max_tokens if asset.max_tokens is not None else 4096,
+            max_tokens=asset.max_tokens if asset.max_tokens is not None else 8192,
             system_prompt=asset.system_prompt,
             mode=asset.mode,
         )
