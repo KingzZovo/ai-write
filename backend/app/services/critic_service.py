@@ -12,7 +12,9 @@ don't need to change: ``{issues, hard_count, soft_count, info_count}``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +25,68 @@ from app.services.anti_ai_scanner import scan_anti_ai
 from app.services.prompt_registry import run_structured_prompt
 
 logger = logging.getLogger(__name__)
+
+
+def _critic_split_enabled() -> bool:
+    """v1.4 — env toggle for the critic_hard + critic_soft split (default on)."""
+    raw = os.getenv("CRITIC_SPLIT_ENABLED", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off", "")
+
+
+async def _run_llm_critic(
+    user_content: str,
+    db: AsyncSession,
+    *,
+    project_id: str,
+    chapter_id: str | None,
+) -> list[dict[str, Any]]:
+    """v1.4 — call the LLM critic layer, splitting critic_hard + critic_soft when enabled.
+
+    Returns a flat list of issue dicts (already stamped with ``source="llm"``).
+    Failures are logged and an empty list is returned; callers decide how to aggregate.
+    """
+
+    async def _single(task_type: str) -> list[dict[str, Any]]:
+        out = await run_structured_prompt(
+            task_type,
+            user_content,
+            db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+        )
+        items: list[dict[str, Any]] = []
+        if isinstance(out, dict) and isinstance(out.get("issues"), list):
+            for it in out["issues"]:
+                if isinstance(it, dict):
+                    it.setdefault("source", "llm")
+                    it.setdefault("critic_stream", task_type)
+                    items.append(it)
+        return items
+
+    if _critic_split_enabled():
+        results = await asyncio.gather(
+            _single("critic_hard"),
+            _single("critic_soft"),
+            return_exceptions=True,
+        )
+        merged: list[dict[str, Any]] = []
+        all_failed = True
+        for r in results:
+            if isinstance(r, Exception):
+                logger.warning("critic split stream failed: %s", r)
+                continue
+            all_failed = False
+            merged.extend(r)
+        if not all_failed:
+            return merged
+        logger.warning("critic split: both streams failed, falling back to single critic")
+
+    # Fallback: single critic (legacy path).
+    try:
+        return await _single("critic")
+    except Exception as exc:
+        logger.warning("critic LLM pass failed: %s", exc)
+        return []
 
 
 async def _rule_check(draft: str, project_id: str, db: AsyncSession) -> list[dict[str, Any]]:
@@ -129,18 +193,14 @@ async def run_critic(
             f"<draft>\n{draft}\n</draft>\n\n"
             "请按照输出 schema 给出 issues 列表。"
         )
-        out = await run_structured_prompt(
-            "critic",
-            user_content,
-            db,
-            project_id=project_id,
-            chapter_id=chapter_id,
+        issues.extend(
+            await _run_llm_critic(
+                user_content,
+                db,
+                project_id=project_id,
+                chapter_id=chapter_id,
+            )
         )
-        if isinstance(out, dict) and isinstance(out.get("issues"), list):
-            for it in out["issues"]:
-                if isinstance(it, dict):
-                    it.setdefault("source", "llm")
-                    issues.append(it)
     except Exception as exc:
         logger.warning("critic LLM pass failed: %s", exc)
 
