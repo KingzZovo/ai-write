@@ -237,6 +237,8 @@ app.include_router(pipeline.router)
 app.include_router(vector_store.router)
 app.include_router(call_logs.router)
 app.include_router(ask_user.router)
+from app.api import llm_routing  # noqa: E402  v1.4 tier routing matrix
+app.include_router(llm_routing.router)
 from app.api import decompile  # noqa: E402
 app.include_router(decompile.router)
 from app.api import generation_runs  # noqa: E402
