@@ -198,6 +198,10 @@ class ModelRouter:
         self.total_usage = TokenUsage()
         self._db_loaded = False
         self._endpoint_defaults: dict[str, str] = {}  # provider_key -> default_model
+        # v1.4 — endpoint tier registry (provider_key -> tier)
+        self._endpoint_tiers: dict[str, str] = {}
+        # v1.4 — endpoint display names (provider_key -> name)
+        self._endpoint_names: dict[str, str] = {}
 
     def register_provider(self, key: str, provider: BaseProvider) -> None:
         self.providers[key] = provider
@@ -227,6 +231,9 @@ class ModelRouter:
                 for ep in endpoints:
                     key = str(ep.id)
                     self._endpoint_defaults[key] = ep.default_model or ""
+                    # v1.4 — record tier + name per endpoint for tier-aware routing
+                    self._endpoint_tiers[key] = getattr(ep, "tier", "standard") or "standard"
+                    self._endpoint_names[key] = getattr(ep, "name", "") or ""
                     api_key = decrypt_api_key(ep.api_key or "")
                     if ep.provider_type == "anthropic":
                         self.register_provider(key, AnthropicProvider(api_key=api_key))
@@ -283,6 +290,39 @@ class ModelRouter:
                 f"No model configured for '{task_type}'. "
                 "Configure at Settings > Model Configuration.")
         return route
+
+    def _pick_endpoint_by_tier(self, tier: str) -> str | None:
+        """v1.4 — return the first registered provider_key whose endpoint tier matches.
+
+        Returns None if no endpoint for that tier is registered.
+        """
+        if not tier:
+            return None
+        for key, t in self._endpoint_tiers.items():
+            if t == tier and key in self.providers:
+                return key
+        return None
+
+    def list_routes_matrix(self) -> list[dict]:
+        """v1.4 — flat snapshot of task routing + endpoint tier for the matrix UI/API.
+
+        Each row: task_type, endpoint_id, endpoint_name, model, tier,
+        temperature, max_tokens.
+        """
+        rows: list[dict] = []
+        for task_type, route in self.task_routing.items():
+            key = route.provider_key
+            rows.append({
+                "task_type": task_type,
+                "endpoint_id": key,
+                "endpoint_name": self._endpoint_names.get(key, ""),
+                "model": self._resolve_model(route),
+                "tier": self._endpoint_tiers.get(key, "standard"),
+                "temperature": route.temperature,
+                "max_tokens": route.max_tokens,
+            })
+        rows.sort(key=lambda r: (r["tier"], r["task_type"]))
+        return rows
 
     def _get_provider(self, key: str) -> BaseProvider:
         if key in self.providers:
