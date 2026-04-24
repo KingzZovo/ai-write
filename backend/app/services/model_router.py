@@ -425,11 +425,28 @@ class ModelRouter:
                         None,
                     )
                     if emb_ep:
-                        self.embedding_provider = EmbeddingProvider(
-                            api_key=decrypt_api_key(emb_ep.api_key or ""),
-                            base_url=emb_ep.base_url or "",
-                            model=emb_prompt.model_name or emb_ep.default_model,
-                        )
+                        emb_api_key = decrypt_api_key(emb_ep.api_key or "")
+                        emb_model = emb_prompt.model_name or emb_ep.default_model
+                        if emb_ep.provider_type == "nvidia":
+                            # v1.4.2 fix: NVIDIA embeddings require a different
+                            # request schema (input=list, input_type, modality,
+                            # encoding_format, truncate) and are not speakable
+                            # via the OpenAI SDK. Using the generic OpenAI-style
+                            # EmbeddingProvider here would either leak to
+                            # api.openai.com (when base_url is empty) or be
+                            # rejected by NVIDIA with 400/401. Route NVIDIA
+                            # endpoints to the dedicated httpx-based provider.
+                            self.embedding_provider = NvidiaEmbeddingProvider(
+                                api_key=emb_api_key,
+                                base_url=emb_ep.base_url or "",
+                                model=emb_model,
+                            )
+                        else:
+                            self.embedding_provider = EmbeddingProvider(
+                                api_key=emb_api_key,
+                                base_url=emb_ep.base_url or "",
+                                model=emb_model,
+                            )
 
                 self._db_loaded = True
                 logger.info("Loaded %d endpoints, %d task routes from DB",
