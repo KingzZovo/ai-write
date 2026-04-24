@@ -41,6 +41,11 @@ class EndpointCreate(BaseModel):
     base_url: str = Field("", max_length=1000)
     api_key: str = Field("", max_length=500)
     default_model: str = Field(..., max_length=200)
+    # v1.4 — routing tier
+    tier: str = Field(
+        "standard",
+        pattern=r"^(flagship|standard|small|distill|embedding)$",
+    )
 
 
 class EndpointUpdate(BaseModel):
@@ -50,6 +55,11 @@ class EndpointUpdate(BaseModel):
     api_key: str | None = None
     default_model: str | None = None
     enabled: int | None = None
+    # v1.4 — routing tier (optional on update)
+    tier: str | None = Field(
+        None,
+        pattern=r"^(flagship|standard|small|distill|embedding)$",
+    )
 
 
 class EndpointResponse(BaseModel):
@@ -62,6 +72,8 @@ class EndpointResponse(BaseModel):
     api_key_masked: str
     default_model: str
     enabled: int
+    # v1.4 — routing tier
+    tier: str = "standard"
     last_test_ok: int
     last_test_latency: float | None
     created_at: Any
@@ -76,6 +88,7 @@ class EndpointResponse(BaseModel):
             api_key_masked=_mask_key(ep.api_key or ""),
             default_model=ep.default_model,
             enabled=ep.enabled,
+            tier=getattr(ep, "tier", "standard") or "standard",
             last_test_ok=getattr(ep, "last_test_ok", 0) or 0,
             last_test_latency=getattr(ep, "last_test_latency", None),
             created_at=ep.created_at,
@@ -138,6 +151,7 @@ async def create_endpoint(
         base_url=body.base_url,
         api_key=encrypt_api_key(body.api_key),
         default_model=body.default_model,
+        tier=body.tier,
     )
     db.add(endpoint)
     await db.flush()
