@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.prompt import PromptAsset
 from app.services.prompt_registry import PromptRegistry
+from app.services.prompt_recommendations import get_recommendation
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -47,6 +48,10 @@ class PromptResponse(BaseModel):
     avg_score: int
     created_at: Any
     updated_at: Any
+    # v1.4.1 — per-task-type endpoint recommendation (chat vs embedding,
+    # and when chat, a suggested tier). Populated by the list endpoint;
+    # harmless default for single-prompt reads.
+    recommendation: dict | None = None
 
 
 class PromptCreate(BaseModel):
@@ -109,7 +114,14 @@ async def list_prompts(
         await db.flush()
 
     assets = await registry.get_all()
-    return [PromptResponse.model_validate(a) for a in assets]
+    results: list[PromptResponse] = []
+    for a in assets:
+        resp = PromptResponse.model_validate(a)
+        # v1.4.1 — attach endpoint recommendation (kind/tier/reason) so the
+        # UI can hint which endpoint type to bind per prompt.
+        resp.recommendation = get_recommendation(a.task_type)
+        results.append(resp)
+    return results
 
 
 @router.post("", response_model=PromptResponse, status_code=201)
@@ -176,7 +188,9 @@ async def get_prompt(
     asset = await db.get(PromptAsset, str(prompt_id))
     if not asset:
         raise HTTPException(status_code=404, detail="Prompt 不存在")
-    return PromptResponse.model_validate(asset)
+    resp = PromptResponse.model_validate(asset)
+    resp.recommendation = get_recommendation(asset.task_type)
+    return resp
 
 
 @router.put("/{prompt_id}", response_model=PromptResponse)

@@ -38,6 +38,12 @@ interface PromptAsset {
   avg_score: number
   created_at: string
   updated_at: string
+  // v1.4.1 — per-task-type endpoint recommendation (chat vs embedding).
+  recommendation?: {
+    kind: 'chat' | 'embedding' | string
+    tier: string
+    reason: string
+  } | null
 }
 
 const MODE_LABELS: Record<string, string> = { text: '文本', structured: '结构化(JSON)' }
@@ -202,6 +208,37 @@ export default function PromptsPage() {
                                 title={p.model_tier ? `模型等级覆盖 = ${p.model_tier}` : `继承端点等级 = ${effTier}`}
                               >
                                 {effTier}{overridden ? '*' : ''}
+                              </span>
+                            )
+                          })()}
+                          {/* v1.4.1 — per-task-type endpoint recommendation badge.
+                              Tells the operator whether this prompt should be
+                              bound to a thinking (chat) endpoint or an embedding
+                              endpoint, and if chat, at what tier. */}
+                          {p.recommendation && (() => {
+                            const rec = p.recommendation!
+                            const isEmbedding = rec.kind === 'embedding'
+                            const label = isEmbedding
+                              ? '建议 embedding'
+                              : `建议 思考·${rec.tier}`
+                            const cls = isEmbedding
+                              ? 'border border-emerald-300 text-emerald-700 bg-white'
+                              : rec.tier === 'flagship'
+                              ? 'border border-purple-300 text-purple-700 bg-white'
+                              : rec.tier === 'standard'
+                              ? 'border border-blue-300 text-blue-700 bg-white'
+                              : rec.tier === 'distill'
+                              ? 'border border-amber-300 text-amber-700 bg-white'
+                              : 'border border-gray-300 text-gray-600 bg-white'
+                            return (
+                              <span
+                                data-testid="prompt-recommendation-badge"
+                                data-recommendation-kind={rec.kind}
+                                data-recommendation-tier={rec.tier}
+                                className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}
+                                title={rec.reason}
+                              >
+                                {label}
                               </span>
                             )
                           })()}
