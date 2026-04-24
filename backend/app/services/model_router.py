@@ -22,6 +22,48 @@ from typing import AsyncIterator
 logger = logging.getLogger(__name__)
 
 
+# =========================================================================
+# v1.4 — shared tier routing helpers
+# =========================================================================
+
+VALID_TIERS: frozenset[str] = frozenset(
+    {"flagship", "standard", "small", "distill", "embedding"}
+)
+"""Canonical set of supported LLM tiers (v1.4).
+
+Kept in sync with the DB CHECK constraints defined in alembic revision
+``a1001400`` (``ck_llm_endpoints_tier`` and ``ck_prompt_assets_model_tier``).
+"""
+
+
+def is_valid_tier(tier: str | None) -> bool:
+    """Return True iff ``tier`` is one of the five canonical v1.4 tiers.
+
+    Empty strings and ``None`` are treated as invalid. Comparison is
+    case-sensitive — ``"Flagship"`` is not accepted.
+    """
+    return bool(tier) and tier in VALID_TIERS
+
+
+def compute_effective_tier(
+    prompt_tier: str | None,
+    endpoint_tier: str | None,
+) -> str:
+    """Three-level tier fallback: prompt ≫ endpoint ≫ ``"standard"``.
+
+    The first valid tier wins. Invalid or empty inputs at either level
+    are skipped silently so the result is always a valid tier string
+    (never ``None``). This matches the contract documented in
+    RELEASE_NOTES_v1.4.md and is exercised by
+    ``tests/services/test_model_router_tier.py``.
+    """
+    if is_valid_tier(prompt_tier):
+        return prompt_tier  # type: ignore[return-value]
+    if is_valid_tier(endpoint_tier):
+        return endpoint_tier  # type: ignore[return-value]
+    return "standard"
+
+
 @dataclass
 class TaskRouteConfig:
     provider_key: str
