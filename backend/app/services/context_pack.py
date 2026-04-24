@@ -903,6 +903,8 @@ class ContextPackBuilder:
 
             # Create a combined query from entities
             query_text = " ".join(entities[:10])
+            # v1.4 — optional LLM query rewrite before embedding (gated, safe no-op).
+            query_text = await self._maybe_rewrite_query(query_text)
             embedding = await generate_embedding(query_text)
             if not embedding:
                 return
@@ -944,6 +946,40 @@ class ContextPackBuilder:
 
         except (ImportError, Exception) as e:
             logger.debug("Qdrant RAG retrieval skipped: %s", e)
+
+    async def _maybe_rewrite_query(self, query_text: str) -> str:
+        """v1.4 — optional LLM rewrite of the Qdrant query (task_type=rag_query_rewrite).
+
+        Gated on ``RAG_QUERY_REWRITE_ENABLED`` (default off). On any failure the
+        original ``query_text`` is returned unchanged. Accepts either a plain
+        string or a ``{"query": "..."}`` JSON object as the LLM output.
+        """
+        import os
+
+        raw = os.getenv("RAG_QUERY_REWRITE_ENABLED", "0").strip().lower()
+        if raw not in ("1", "true", "yes", "on"):
+            return query_text
+        if not query_text.strip():
+            return query_text
+        try:
+            from app.services.prompt_registry import run_structured_prompt
+
+            db = await self._get_db()
+            out = await run_structured_prompt(
+                "rag_query_rewrite",
+                f"<query>\n{query_text}\n</query>\n\n请返回用于向量检索的改写查询字符串。",
+                db,
+            )
+        except Exception as exc:
+            logger.debug("rag_query_rewrite skipped: %s", exc)
+            return query_text
+        if isinstance(out, dict):
+            rewrote = out.get("query") or out.get("rewrite") or out.get("text")
+            if isinstance(rewrote, str) and rewrote.strip():
+                return rewrote.strip()
+        if isinstance(out, str) and out.strip():
+            return out.strip()
+        return query_text
 
     async def _v2_three_way_recall(self, pack: ContextPack, embedding: list, client) -> None:
         """v0.6 ContextPack v2: pull style_profiles + beat_sheets + redacted samples
