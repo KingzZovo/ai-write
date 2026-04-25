@@ -716,7 +716,17 @@ async def run_structured_prompt(
         text = result.text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        return json.loads(text)
+        parsed = json.loads(text)
+        # v1.4.x fix: LLM may return a top-level JSON array under
+        # structured prompts. Normalize to a dict so all callers
+        # (beat_extractor, style_abstractor, settings_extractor, ...)
+        # can safely use .get() without crashing with
+        # "'list' object has no attribute 'get'".
+        if isinstance(parsed, list):
+            return {"items": parsed} if parsed else {}
+        if not isinstance(parsed, dict):
+            return {"raw_text": result.text, "parse_error": True}
+        return parsed
     except (json.JSONDecodeError, IndexError):
         return {"raw_text": result.text, "parse_error": True}
 
