@@ -69,101 +69,136 @@ async def _load_book_text(db: AsyncSession, book_id: str) -> str:
 
 async def _process_slice(
     *,
-    db: AsyncSession,
     store: QdrantStore,
     book_id: str,
     slc: semantic_chunker.Slice,
     semaphore: asyncio.Semaphore,
 ) -> dict:
+    """Process one slice in its own AsyncSession.
+
+    v1.4.2 hardening: under concurrency, sharing a single AsyncSession
+    across sibling _process_slice tasks causes asyncpg / SQLAlchemy
+    "Session is already flushing" errors and "Future attached to a
+    different loop" bugs. Each slice now owns its own session and commits
+    independently. Branches (style / beat / redact) run sequentially
+    within the slice so the per-slice session is never used concurrently.
+    """
     async with semaphore:
+        # 1. Persist slice in its own short-lived session to obtain a UUID,
+        #    then commit so branch sessions can reference it via FK.
         raw = slc.raw_text
-
-        # 1. Persist the slice first so we have a UUID for FK references.
-        slice_row = ReferenceBookSlice(
-            book_id=book_id,
-            slice_type=slc.slice_type,
-            chapter_idx=slc.chapter_idx,
-            sequence_id=slc.sequence_id,
-            start_offset=slc.start_offset,
-            end_offset=slc.end_offset,
-            raw_text=raw,
-            token_count=slc.token_count,
-        )
-        db.add(slice_row)
-        await db.flush()
-        slice_id = str(slice_row.id)
-
-        # 2. Launch the three branches concurrently.
-        async def _style_branch() -> dict:
-            profile = await abstract_style(raw, db)
-            if not profile:
-                return {"ok": False}
-            summary_text = (
-                f"{profile.get('pov', '')} | {profile.get('sentence_rhythm', '')} | "
-                f"{profile.get('emotional_register', '')} | "
-                f"{','.join(profile.get('vocab_tone', []) or [])}"
-            )
-            emb = await generate_embedding(summary_text)
-            point_id = await store.store_style_profile(book_id, slice_id, profile, emb)
-            db.add(StyleProfileCard(
+        async with async_session_factory() as db:
+            slice_row = ReferenceBookSlice(
                 book_id=book_id,
-                slice_id=slice_row.id,
-                profile_json=profile,
-                qdrant_point_id=str(point_id),
-            ))
-            return {"ok": True}
-
-        async def _beat_branch() -> dict:
-            beat = await extract_beat(raw, db)
-            if not beat:
-                return {"ok": False}
-            summary_text = (
-                f"{beat.get('scene_type', '')} | {beat.get('reusable_pattern', '')} | "
-                f"{beat.get('emotional_arc', '')}"
+                slice_type=slc.slice_type,
+                chapter_idx=slc.chapter_idx,
+                sequence_id=slc.sequence_id,
+                start_offset=slc.start_offset,
+                end_offset=slc.end_offset,
+                raw_text=raw,
+                token_count=slc.token_count,
             )
-            emb = await generate_embedding(summary_text)
-            point_id = await store.store_beat_sheet(book_id, slice_id, beat, emb)
-            db.add(BeatSheetCard(
-                book_id=book_id,
-                slice_id=slice_row.id,
-                beat_json=beat,
-                qdrant_point_id=str(point_id),
-            ))
-            return {"ok": True}
-
-        async def _redact_branch() -> dict:
-            if not _REDACTION_ENABLED:
-                return {"ok": False, "skipped": True}
-            redacted = await redact_text(raw, db)
-            # If redaction failed or returned an empty string, fall back to raw
-            # so we still have a usable passage for style reference search.
-            text_to_embed = redacted if (redacted and redacted.strip()) else raw
-            emb = await generate_embedding(text_to_embed)
-            await store.store_style_sample_redacted(
-                book_id=book_id,
-                slice_id=slice_id,
-                redacted_text=text_to_embed,
-                embedding=emb,
-            )
-            return {"ok": True}
-
-        results = await asyncio.gather(
-            _style_branch(),
-            _beat_branch(),
-            _redact_branch(),
-            return_exceptions=True,
-        )
-        await db.flush()
+            db.add(slice_row)
+            await db.flush()
+            slice_uuid = slice_row.id
+            slice_id = str(slice_uuid)
+            await db.commit()
 
         summary = {
             "slice_id": slice_id,
-            "style_ok": isinstance(results[0], dict) and results[0].get("ok"),
-            "beat_ok": isinstance(results[1], dict) and results[1].get("ok"),
-            "redact_ok": isinstance(results[2], dict) and results[2].get("ok"),
+            "style_ok": False,
+            "beat_ok": False,
+            "redact_ok": False,
         }
-        for r in results:
-            if isinstance(r, Exception):
-                logger.warning("slice %s branch failed: %s", slice_id, r)
+
+        # 2. Run the three branches in parallel. Each branch owns its own
+        #    AsyncSession so concurrent flushes never collide. Branches catch
+        #    their own exceptions and return a bool so one failure cannot
+        #    cancel its siblings.
+        async def _style_branch() -> bool:
+            async with async_session_factory() as bdb:
+                try:
+                    profile = await abstract_style(raw, bdb)
+                    if not profile:
+                        return False
+                    summary_text = (
+                        f"{profile.get('pov', '')} | "
+                        f"{profile.get('sentence_rhythm', '')} | "
+                        f"{profile.get('emotional_register', '')} | "
+                        f"{','.join(profile.get('vocab_tone', []) or [])}"
+                    )
+                    emb = await generate_embedding(summary_text)
+                    point_id = await store.store_style_profile(
+                        book_id, slice_id, profile, emb
+                    )
+                    bdb.add(StyleProfileCard(
+                        book_id=book_id,
+                        slice_id=slice_uuid,
+                        profile_json=profile,
+                        qdrant_point_id=str(point_id),
+                    ))
+                    await bdb.commit()
+                    return True
+                except Exception as exc:
+                    logger.warning("slice %s style branch failed: %s", slice_id, exc)
+                    await bdb.rollback()
+                    return False
+
+        async def _beat_branch() -> bool:
+            async with async_session_factory() as bdb:
+                try:
+                    beat = await extract_beat(raw, bdb)
+                    if not beat:
+                        return False
+                    summary_text = (
+                        f"{beat.get('scene_type', '')} | "
+                        f"{beat.get('reusable_pattern', '')} | "
+                        f"{beat.get('emotional_arc', '')}"
+                    )
+                    emb = await generate_embedding(summary_text)
+                    point_id = await store.store_beat_sheet(
+                        book_id, slice_id, beat, emb
+                    )
+                    bdb.add(BeatSheetCard(
+                        book_id=book_id,
+                        slice_id=slice_uuid,
+                        beat_json=beat,
+                        qdrant_point_id=str(point_id),
+                    ))
+                    await bdb.commit()
+                    return True
+                except Exception as exc:
+                    logger.warning("slice %s beat branch failed: %s", slice_id, exc)
+                    await bdb.rollback()
+                    return False
+
+        async def _redact_branch() -> bool:
+            if not _REDACTION_ENABLED:
+                return False
+            async with async_session_factory() as bdb:
+                try:
+                    redacted = await redact_text(raw, bdb)
+                    text_to_embed = redacted if (redacted and redacted.strip()) else raw
+                    emb = await generate_embedding(text_to_embed)
+                    await store.store_style_sample_redacted(
+                        book_id=book_id,
+                        slice_id=slice_id,
+                        redacted_text=text_to_embed,
+                        embedding=emb,
+                    )
+                    await bdb.commit()
+                    return True
+                except Exception as exc:
+                    logger.warning("slice %s redact branch failed: %s", slice_id, exc)
+                    await bdb.rollback()
+                    return False
+
+        style_ok, beat_ok, redact_ok = await asyncio.gather(
+            _style_branch(), _beat_branch(), _redact_branch()
+        )
+        summary["style_ok"] = bool(style_ok)
+        summary["beat_ok"] = bool(beat_ok)
+        summary["redact_ok"] = bool(redact_ok)
         return summary
 
 
@@ -219,7 +254,6 @@ async def reprocess_reference_book(
         results = await asyncio.gather(
             *[
                 _process_slice(
-                    db=db,
                     store=store,
                     book_id=book_id,
                     slc=s,
