@@ -135,15 +135,14 @@ async def _process_slice(
             if not _REDACTION_ENABLED:
                 return {"ok": False, "skipped": True}
             redacted = await redact_text(raw, db)
-            if not redacted or redacted == raw:
-                # Either redaction failed or there were no proper nouns.
-                # Still store the passage for style reference.
-                pass
-            emb = await generate_embedding(redacted)
+            # If redaction failed or returned an empty string, fall back to raw
+            # so we still have a usable passage for style reference search.
+            text_to_embed = redacted if (redacted and redacted.strip()) else raw
+            emb = await generate_embedding(text_to_embed)
             await store.store_style_sample_redacted(
                 book_id=book_id,
                 slice_id=slice_id,
-                redacted_text=redacted,
+                redacted_text=text_to_embed,
                 embedding=emb,
             )
             return {"ok": True}
