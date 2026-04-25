@@ -22,7 +22,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.prompt import PromptAsset
-from app.services.model_router import get_model_router, GenerationResult
+from app.services.model_router import get_model_router, get_model_router_async, GenerationResult
 
 logger = logging.getLogger(__name__)
 
@@ -662,7 +662,7 @@ async def run_text_prompt(
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
 
-    router = get_model_router()
+    router = await get_model_router_async()
     # Prometheus metric provider / model labels ("unknown" when route has no
     # explicit endpoint yet).
     _provider = getattr(route, "provider", None) or "unknown"
@@ -751,7 +751,7 @@ async def stream_text_prompt(
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
 
-    router = get_model_router()
+    router = await get_model_router_async()
     async with log_llm_call(
         db=db,
         task_type=task_type,
