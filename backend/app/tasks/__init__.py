@@ -204,8 +204,12 @@ def _run_async_safe(coro):
     import asyncio
 
     try:
-        import app.services.model_router as _mr
-        _mr._router = None
+        # v1.7: use reset_model_router() so it also clears _router_locks
+        # (which previously left module-level asyncio.Lock objects bound
+        # to dead event loops, producing 'Lock is bound to a different
+        # event loop' on every retry task after the first one).
+        from app.services.model_router import reset_model_router
+        reset_model_router()
     except Exception:
         pass
     try:

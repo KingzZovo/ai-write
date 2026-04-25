@@ -535,57 +535,153 @@ class ModelRouter:
 
     async def generate(self, task_type: str, messages: list[dict],
                        temperature: float | None = None,
-                       max_tokens: int | None = None, **kw) -> GenerationResult:
+                       max_tokens: int | None = None,
+                       _log_meta: dict | None = None, **kw) -> GenerationResult:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
         model = self._resolve_model(route)
-        result = await provider.generate(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            result = await provider.generate(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw)
+            self._track(result.usage)
+            return result
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", route.provider_key)
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                result = await provider.generate(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw)
+                ctx.add_chunk(result.text)
+                ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
+            await db.commit()
         self._track(result.usage)
         return result
 
     async def generate_stream(self, task_type: str, messages: list[dict],
                               temperature: float | None = None,
-                              max_tokens: int | None = None, **kw) -> AsyncIterator[str]:
+                              max_tokens: int | None = None,
+                              _log_meta: dict | None = None, **kw) -> AsyncIterator[str]:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
         model = self._resolve_model(route)
-        async for chunk in provider.generate_stream(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
-            yield chunk
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            async for chunk in provider.generate_stream(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw):
+                yield chunk
+            return
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", route.provider_key)
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                async for chunk in provider.generate_stream(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw):
+                    ctx.add_chunk(chunk)
+                    yield chunk
+            await db.commit()
 
     async def generate_by_route(self, route, messages: list[dict],
                                 temperature: float | None = None,
                                 max_tokens: int | None = None,
+                                _log_meta: dict | None = None,
                                 **kw) -> GenerationResult:
         """Generate using an explicit RouteSpec (v0.5 path)."""
         ep_key = str(route.endpoint_id)
         provider = self._get_provider(ep_key)
         model = route.model or self._endpoint_defaults.get(ep_key, "")
-        result = await provider.generate(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            result = await provider.generate(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw)
+            self._track(result.usage)
+            return result
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", ep_key)
+        task_type = meta.pop("task_type", "by_route")
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                result = await provider.generate(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw)
+                ctx.add_chunk(result.text)
+                ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
+            await db.commit()
         self._track(result.usage)
         return result
 
     async def stream_by_route(self, route, messages: list[dict],
                               temperature: float | None = None,
                               max_tokens: int | None = None,
+                              _log_meta: dict | None = None,
                               **kw) -> AsyncIterator[str]:
         """Stream using an explicit RouteSpec (v0.5 path)."""
         ep_key = str(route.endpoint_id)
         provider = self._get_provider(ep_key)
         model = route.model or self._endpoint_defaults.get(ep_key, "")
-        async for chunk in provider.generate_stream(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
-            yield chunk
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            async for chunk in provider.generate_stream(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw):
+                yield chunk
+            return
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", ep_key)
+        task_type = meta.pop("task_type", "by_route_stream")
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                async for chunk in provider.generate_stream(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw):
+                    ctx.add_chunk(chunk)
+                    yield chunk
+            await db.commit()
 
     async def generate_with_fallback(self, task_type: str, messages: list[dict],
                                      **kw) -> GenerationResult:
@@ -632,7 +728,28 @@ class ModelRouter:
 
 
 _router: ModelRouter | None = None
-_router_lock = asyncio.Lock()
+# v1.7 (Bug J residual): Avoid binding the lock to whatever event loop
+# happens to import this module first. Each running loop gets its own
+# Lock from this dict, keyed by id(loop). Stale entries are cleaned up
+# when ``reset_model_router`` is called between celery tasks (see
+# ``app.tasks._run_async_safe``).
+_router_locks: "dict[int, asyncio.Lock]" = {}
+
+
+def _get_router_lock() -> asyncio.Lock:
+    """Return an ``asyncio.Lock`` bound to the *currently running* event loop.
+
+    Lazily creates one per loop so that re-entry under a fresh celery loop
+    (after ``_run_async_safe`` resets the singletons) does not blow up with
+    ``Lock is bound to a different event loop``.
+    """
+    loop = asyncio.get_event_loop()
+    key = id(loop)
+    lock = _router_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _router_locks[key] = lock
+    return lock
 
 
 async def get_model_router_async() -> ModelRouter:
@@ -640,7 +757,7 @@ async def get_model_router_async() -> ModelRouter:
     # Fast path: already loaded
     if _router is not None and _router._db_loaded:
         return _router
-    async with _router_lock:
+    async with _get_router_lock():
         if _router is None:
             _router = ModelRouter()
         if not _router._db_loaded:
@@ -681,6 +798,9 @@ def reset_model_router() -> None:
     """Reset singleton (called when config changes via API)."""
     global _router
     _router = None
+    # v1.7: drop any per-loop locks so the next caller (potentially under a
+    # brand new event loop, as celery tasks do) starts from a clean slate.
+    _router_locks.clear()
 
 
 def _load_from_env(router: ModelRouter) -> None:
