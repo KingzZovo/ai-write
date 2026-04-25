@@ -122,4 +122,105 @@ def reprocess_reference_book(self, book_id: str):
 
     from app.services.reference_ingestor import reprocess_reference_book as _run
 
-    return asyncio.run(_run(book_id=book_id))
+    # v1.6 (Bug J): use _run_async_safe to dispose loop-bound caches first.
+    result = _run_async_safe(_run(book_id=book_id))
+
+    # v1.7: when the run finishes in ``partial`` state (some style/beat cards
+    # missing because of transient upstream LLM failures), schedule the first
+    # automatic retry wave. The retry task itself will reschedule further
+    # waves with backoff up to ``max_auto_retries``.
+    try:
+        if isinstance(result, dict) and result.get("status") == "partial":
+            from app.services.reference_ingestor import (
+                compute_retry_delay,
+                max_auto_retries,
+            )
+
+            if max_auto_retries() > 0:
+                delay = compute_retry_delay(1)
+                celery_app.send_task(
+                    "retry_reference_book_missing_branches",
+                    args=[book_id, 1],
+                    countdown=delay,
+                )
+    except Exception:  # pragma: no cover - scheduling must never break ingest
+        import logging
+        logging.getLogger(__name__).exception(
+            "failed to schedule auto-retry for book %s", book_id
+        )
+    return result
+
+
+# v1.7 — Retry only the missing style/beat branches for a partial decompile.
+@celery_app.task(
+    name="retry_reference_book_missing_branches",
+    bind=True,
+    max_retries=0,
+)
+def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
+    """Re-run style/beat branches for slices whose cards are still missing.
+
+    Reschedules itself with exponential backoff while the book is still in
+    ``partial`` state and ``attempt < max_auto_retries``. Idempotent and
+    safe to invoke manually from the frontend (see
+    ``POST /api/reference-books/{id}/retry-missing``).
+    """
+    from app.services.reference_ingestor import (
+        compute_retry_delay,
+        max_auto_retries,
+        retry_missing_branches as _retry,
+    )
+
+    result = _run_async_safe(_retry(book_id=book_id, attempt=attempt))
+
+    try:
+        status = result.get("status") if isinstance(result, dict) else None
+        if status == "partial" and int(attempt) < max_auto_retries():
+            next_attempt = int(attempt) + 1
+            delay = compute_retry_delay(next_attempt)
+            celery_app.send_task(
+                "retry_reference_book_missing_branches",
+                args=[book_id, next_attempt],
+                countdown=delay,
+            )
+    except Exception:  # pragma: no cover
+        import logging
+        logging.getLogger(__name__).exception(
+            "failed to schedule next retry wave for book %s", book_id
+        )
+    return result
+
+
+# v1.6 fix (Bug J): when celery worker reuses the cached AsyncEngine across
+# tasks, asyncpg pool ends up bound to the previous task's event loop and
+# raises ``RuntimeError: Future <...> attached to a different loop`` on the
+# very first ``db.get(...)`` of the next task. ``rebuild_rag_for_project``
+# and ``reprocess_reference_book`` above use a bare ``asyncio.run`` and hit
+# this when called more than once per worker process. Below helper drops
+# loop-bound singletons (ModelRouter HTTP client) and disposes the cached
+# AsyncEngine before starting a fresh loop.
+def _run_async_safe(coro):
+    """Run an async coroutine in a celery task with loop-bound caches reset."""
+    import asyncio
+
+    try:
+        import app.services.model_router as _mr
+        _mr._router = None
+    except Exception:
+        pass
+    try:
+        import app.db.session as _ses
+        _disposal_loop = asyncio.new_event_loop()
+        try:
+            _disposal_loop.run_until_complete(_ses.engine.dispose())
+        finally:
+            _disposal_loop.close()
+    except Exception:
+        pass
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()

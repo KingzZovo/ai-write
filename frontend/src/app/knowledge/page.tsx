@@ -615,7 +615,7 @@ function BooksTab() {
             const statusLabel: Record<string, string> = {
               pending: '等待处理', cleaning: '解析中', extracting: '评分中',
               crawling: '抓取中', ready: '已就绪', completed: '已完成',
-              error: '失败', low_quality: '质量低',
+              error: '失败', low_quality: '质量低', partial: '部分成功',
             }
             return (
               <div key={book.id} className="bg-white rounded-lg border border-gray-200 p-4">
@@ -676,6 +676,14 @@ function BooksTab() {
                       alert(`反编译已${data.status === 'queued' ? '排队' : '完成'}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '反编译失败') }
                   }} className="px-2.5 py-1 text-xs bg-teal-50 text-teal-600 rounded" title="v0.6: 风格剖面 + 情节骨架 + 脱敏样本">反编译</button>
+                  {book.status === 'partial' && (
+                    <button onClick={async () => {
+                      try {
+                        const data = await apiFetch<any>(`/api/reference-books/${book.id}/retry-missing`, { method: 'POST' })
+                        alert(`重试缺失片段已${data.status === 'queued' ? '排队' : '完成'}`)
+                      } catch (e) { alert(e instanceof Error ? e.message : '重试失败') }
+                    }} className="px-2.5 py-1 text-xs bg-amber-50 text-amber-600 rounded" title="仅对缺失 cards 的 slice 重跑 style/beat 分支">重试缺失</button>
+                  )}
                   <button onClick={() => deleteBook(book.id)}
                     className="px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded">删除</button>
                 </div>

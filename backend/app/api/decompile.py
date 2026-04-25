@@ -1,6 +1,8 @@
 """v0.6 reference-book decompile API.
 
 - POST /api/reference-books/{id}/reprocess: enqueue decompile pipeline
+- POST /api/reference-books/{id}/retry-missing: re-run style/beat branches
+    only for slices whose cards are still missing (partial-failure recovery).
 - GET  /api/reference-books/{id}/slices: list semantic slices
 - GET  /api/reference-books/{id}/style-profiles: list style profile cards
 - GET  /api/reference-books/{id}/beat-sheets: list beat sheet cards
@@ -62,6 +64,14 @@ class DecompileStatus(BaseModel):
     slice_count: int
     style_card_count: int
     beat_card_count: int
+    style_covered_slices: int = 0
+    beat_covered_slices: int = 0
+    missing_style: int = 0
+    missing_beat: int = 0
+    retry_attempt: int = 0
+    retry_max_attempts: int = 0
+    last_run_at: str | None = None
+    error_message: str | None = None
 
 
 @router.post("/{book_id}/reprocess", response_model=ReprocessResponse)
@@ -84,6 +94,43 @@ async def reprocess(book_id: UUID, db: AsyncSession = Depends(get_db)) -> Reproc
         from app.services.reference_ingestor import reprocess_reference_book
 
         summary = await reprocess_reference_book(book_id=str(book_id), db=db)
+        return ReprocessResponse(status=summary.get("status", "unknown"))
+
+
+@router.post("/{book_id}/retry-missing", response_model=ReprocessResponse)
+async def retry_missing(
+    book_id: UUID, db: AsyncSession = Depends(get_db)
+) -> ReprocessResponse:
+    """Manually re-run style/beat branches for slices whose cards are missing.
+
+    Designed to be called from the frontend when a book is in ``partial``
+    state. Does not wipe any existing slices or cards.
+    """
+    book = await db.get(ReferenceBook, str(book_id))
+    if book is None:
+        raise HTTPException(status_code=404, detail="reference book not found")
+
+    # The current attempt counter (if any) lives in metadata_json. Bump by 1
+    # so manual retries follow the same numbering scheme as automatic ones.
+    meta = book.metadata_json or {}
+    prev_attempt = int((meta.get("decompile_retry") or {}).get("attempt") or 0)
+    next_attempt = prev_attempt + 1
+
+    try:
+        from app.tasks import celery_app  # noqa: WPS433
+
+        async_result = celery_app.send_task(
+            "retry_reference_book_missing_branches",
+            args=[str(book_id), next_attempt],
+        )
+        return ReprocessResponse(status="queued", task_id=async_result.id)
+    except Exception as exc:
+        logger.warning("celery enqueue failed for retry, running inline: %s", exc)
+        from app.services.reference_ingestor import retry_missing_branches
+
+        summary = await retry_missing_branches(
+            book_id=str(book_id), attempt=next_attempt, db=db
+        )
         return ReprocessResponse(status=summary.get("status", "unknown"))
 
 
@@ -161,10 +208,33 @@ async def decompile_status(
             )
         )
     ) or 0
+    style_covered = (
+        await db.scalar(
+            select(func.count(func.distinct(StyleProfileCard.slice_id))).where(
+                StyleProfileCard.book_id == str(book_id)
+            )
+        )
+    ) or 0
+    beat_covered = (
+        await db.scalar(
+            select(func.count(func.distinct(BeatSheetCard.slice_id))).where(
+                BeatSheetCard.book_id == str(book_id)
+            )
+        )
+    ) or 0
+    retry_meta = (book.metadata_json or {}).get("decompile_retry") or {}
     return DecompileStatus(
         book_id=book_id,
         book_status=book.status or "unknown",
         slice_count=slice_count,
         style_card_count=style_count,
         beat_card_count=beat_count,
+        style_covered_slices=int(style_covered),
+        beat_covered_slices=int(beat_covered),
+        missing_style=max(int(slice_count) - int(style_covered), 0),
+        missing_beat=max(int(slice_count) - int(beat_covered), 0),
+        retry_attempt=int(retry_meta.get("attempt") or 0),
+        retry_max_attempts=int(retry_meta.get("max_attempts") or 0),
+        last_run_at=retry_meta.get("last_run_at"),
+        error_message=book.error_message,
     )
