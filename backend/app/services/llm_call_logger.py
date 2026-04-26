@@ -47,12 +47,19 @@ async def log_llm_call(
     rag_hits: list[dict] | None,
     model: str,
     endpoint_id: Any,
+    tier_used: str | None = None,
+    fallback_reason: str | None = None,
+    attempt_index: int = 0,
 ):
     """Yield a `CallContext`. On exit, insert an LLMCallLog row.
 
     Errors in the wrapped code bubble up, but the log row is still persisted
     with status='error'. DB write failures are warnings and never mask the
     original exception.
+
+    v1.5.0 B1: ``tier_used``, ``fallback_reason``, ``attempt_index`` capture
+    tier-aware fallback chain decisions. For non-fallback calls these stay
+    at their defaults (None, None, 0).
     """
     ctx = CallContext()
     start = time.monotonic()
@@ -83,6 +90,9 @@ async def log_llm_call(
                 endpoint_id=endpoint_id,
                 status=status,
                 error_message=error_message,
+                tier_used=tier_used,
+                fallback_reason=fallback_reason,
+                attempt_index=attempt_index,
             )
             db.add(log)
             await db.flush()

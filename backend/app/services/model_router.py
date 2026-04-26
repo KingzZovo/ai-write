@@ -727,6 +727,228 @@ class ModelRouter:
         }
 
 
+    # =====================================================================
+    # v1.5.0 B1 — tier-aware fallback chain (real fallback, with per-attempt logging)
+    # =====================================================================
+    def _build_tier_attempts(
+        self,
+        *,
+        route=None,
+        preferred_tier: str | None = None,
+        fallback_tiers: list[str] | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """Return ordered list of (tier_label, endpoint_key, model_name) attempts.
+
+        Order:
+          1. If ``route`` is given and its endpoint is registered, that
+             explicit endpoint is the first attempt (with its tier label).
+          2. Else if ``preferred_tier`` is given, the first endpoint whose
+             tier matches is the first attempt.
+          3. Then walk ``fallback_tiers`` (default flagship→standard→small)
+             skipping tiers already attempted and the ``embedding`` tier.
+        Always de-duplicates endpoints; an endpoint is only tried once.
+        """
+        attempts: list[tuple[str, str, str]] = []
+        seen_eps: set[str] = set()
+        if route is not None:
+            ep_key = str(route.endpoint_id)
+            if ep_key in self.providers:
+                tier = self._endpoint_tiers.get(ep_key, "standard")
+                model = (getattr(route, "model", None) or
+                         self._endpoint_defaults.get(ep_key, ""))
+                attempts.append((tier, ep_key, model))
+                seen_eps.add(ep_key)
+        elif preferred_tier and preferred_tier in VALID_TIERS                 and preferred_tier != "embedding":
+            ep_key = self._pick_endpoint_by_tier(preferred_tier)
+            if ep_key and ep_key not in seen_eps:
+                model = self._endpoint_defaults.get(ep_key, "")
+                attempts.append((preferred_tier, ep_key, model))
+                seen_eps.add(ep_key)
+        chain = fallback_tiers or ["flagship", "standard", "small"]
+        for t in chain:
+            if not t or t == "embedding" or t not in VALID_TIERS:
+                continue
+            ep_key = self._pick_endpoint_by_tier(t)
+            if not ep_key or ep_key in seen_eps:
+                continue
+            model = self._endpoint_defaults.get(ep_key, "")
+            attempts.append((t, ep_key, model))
+            seen_eps.add(ep_key)
+        return attempts
+
+    async def generate_with_tier_fallback(
+        self,
+        task_type: str,
+        messages: list[dict],
+        *,
+        route=None,
+        preferred_tier: str | None = None,
+        fallback_tiers: list[str] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        _log_meta: dict | None = None,
+        **kw,
+    ) -> GenerationResult:
+        """Generate with a tier-aware fallback chain. Logs every attempt.
+
+        On each attempt, an LLMCallLog row is inserted with ``tier_used``,
+        ``attempt_index``, and (for attempts > 0) ``fallback_reason``.
+        Raises only when *every* tier in the chain has been exhausted.
+        """
+        attempts = self._build_tier_attempts(
+            route=route, preferred_tier=preferred_tier,
+            fallback_tiers=fallback_tiers,
+        )
+        if not attempts:
+            raise RuntimeError(
+                f"No endpoints available for tier-aware fallback (task={task_type}). "
+                "Configure at least one chat-capable endpoint at Settings > Model Configuration."
+            )
+        if route is not None:
+            base_temp = getattr(route, "temperature", 0.7)
+            base_max = getattr(route, "max_tokens", 8192)
+        else:
+            try:
+                br = self._get_route(task_type)
+                base_temp, base_max = br.temperature, br.max_tokens
+            except Exception:
+                base_temp, base_max = 0.7, 8192
+        eff_temp = temperature if temperature is not None else base_temp
+        eff_max = max_tokens if max_tokens is not None else base_max
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta or {})
+        last_err: Exception | None = None
+        fallback_reason: str | None = None
+        for idx, (tier, ep_key, model) in enumerate(attempts):
+            provider = self.providers[ep_key]
+            try:
+                if _log_meta is None:
+                    result = await provider.generate(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, **kw)
+                    self._track(result.usage)
+                    return result
+                async with async_session_factory() as db:
+                    async with log_llm_call(
+                        db=db, task_type=task_type, model=model,
+                        endpoint_id=ep_key, messages=messages,
+                        prompt_id=meta.get("prompt_id"),
+                        project_id=meta.get("project_id"),
+                        chapter_id=meta.get("chapter_id"),
+                        rag_hits=meta.get("rag_hits"),
+                        tier_used=tier,
+                        fallback_reason=fallback_reason if idx > 0 else None,
+                        attempt_index=idx,
+                    ) as ctx:
+                        result = await provider.generate(
+                            messages=messages, model=model,
+                            temperature=eff_temp, max_tokens=eff_max, **kw)
+                        ctx.add_chunk(result.text)
+                        ctx.set_usage(result.usage.input_tokens,
+                                      result.usage.output_tokens)
+                    await db.commit()
+                self._track(result.usage)
+                return result
+            except Exception as e:
+                logger.warning(
+                    "tier-fallback attempt %d (tier=%s ep=%s) failed: %s",
+                    idx, tier, ep_key, e)
+                last_err = e
+                fallback_reason = f"{type(e).__name__}:{str(e)[:160]}"
+                continue
+        raise RuntimeError(
+            f"All tier-fallback attempts failed for task '{task_type}': "
+            f"{fallback_reason}"
+        ) from last_err
+
+    async def stream_with_tier_fallback(
+        self,
+        task_type: str,
+        messages: list[dict],
+        *,
+        route=None,
+        preferred_tier: str | None = None,
+        fallback_tiers: list[str] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        _log_meta: dict | None = None,
+        **kw,
+    ):
+        """Stream with tier-aware fallback. Only falls back BEFORE first chunk
+        is yielded; mid-stream errors propagate (cannot retry without
+        corrupting consumer's accumulated buffer).
+        """
+        attempts = self._build_tier_attempts(
+            route=route, preferred_tier=preferred_tier,
+            fallback_tiers=fallback_tiers,
+        )
+        if not attempts:
+            raise RuntimeError(
+                f"No endpoints available for tier-aware fallback stream (task={task_type})"
+            )
+        if route is not None:
+            base_temp = getattr(route, "temperature", 0.7)
+            base_max = getattr(route, "max_tokens", 8192)
+        else:
+            try:
+                br = self._get_route(task_type)
+                base_temp, base_max = br.temperature, br.max_tokens
+            except Exception:
+                base_temp, base_max = 0.7, 8192
+        eff_temp = temperature if temperature is not None else base_temp
+        eff_max = max_tokens if max_tokens is not None else base_max
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta or {})
+        last_err: Exception | None = None
+        fallback_reason: str | None = None
+        for idx, (tier, ep_key, model) in enumerate(attempts):
+            provider = self.providers[ep_key]
+            yielded_any = False
+            try:
+                if _log_meta is None:
+                    async for chunk in provider.generate_stream(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, **kw):
+                        yielded_any = True
+                        yield chunk
+                    return
+                async with async_session_factory() as db:
+                    async with log_llm_call(
+                        db=db, task_type=task_type, model=model,
+                        endpoint_id=ep_key, messages=messages,
+                        prompt_id=meta.get("prompt_id"),
+                        project_id=meta.get("project_id"),
+                        chapter_id=meta.get("chapter_id"),
+                        rag_hits=meta.get("rag_hits"),
+                        tier_used=tier,
+                        fallback_reason=fallback_reason if idx > 0 else None,
+                        attempt_index=idx,
+                    ) as ctx:
+                        async for chunk in provider.generate_stream(
+                            messages=messages, model=model,
+                            temperature=eff_temp, max_tokens=eff_max, **kw):
+                            yielded_any = True
+                            ctx.add_chunk(chunk)
+                            yield chunk
+                    await db.commit()
+                return
+            except Exception as e:
+                logger.warning(
+                    "stream tier-fallback attempt %d (tier=%s ep=%s yielded=%s) failed: %s",
+                    idx, tier, ep_key, yielded_any, e)
+                if yielded_any:
+                    raise
+                last_err = e
+                fallback_reason = f"{type(e).__name__}:{str(e)[:160]}"
+                continue
+        raise RuntimeError(
+            f"All stream tier-fallback attempts failed for task '{task_type}': "
+            f"{fallback_reason}"
+        ) from last_err
+
+
 _router: ModelRouter | None = None
 # v1.7 (Bug J residual): Avoid binding the lock to whatever event loop
 # happens to import this module first. Each running loop gets its own

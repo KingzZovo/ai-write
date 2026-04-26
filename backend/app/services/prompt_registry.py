@@ -673,28 +673,29 @@ async def run_text_prompt(
         messages.append({"role": "user", "content": user_content})
 
     router = await get_model_router_async()
-    # Prometheus metric provider / model labels ("unknown" when route has no
-    # explicit endpoint yet).
+    # v1.5.0 B1: resolve preferred tier from PromptAsset.model_tier; let the
+    # router walk the tier-aware fallback chain (route -> preferred_tier ->
+    # standard -> small) and persist one LLMCallLog row per attempt.
+    preferred_tier = await registry.resolve_tier(task_type)
     _provider = getattr(route, "provider", None) or "unknown"
     _model = route.model or "unknown"
     from app.observability.metrics import time_llm_call
-    async with log_llm_call(
-        db=db,
-        task_type=task_type,
-        prompt_id=route.prompt_id,
-        project_id=project_id,
-        chapter_id=chapter_id,
-        messages=messages,
-        rag_hits=rag_hits or [],
-        model=route.model or "",
-        endpoint_id=route.endpoint_id,
-    ) as ctx:
-        with time_llm_call(task_type, _provider, _model) as mbox:
-            result = await router.generate_by_route(route, messages, **kwargs)
-            ctx.add_chunk(result.text)
-            ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
-            mbox["input_tokens"] = result.usage.input_tokens
-            mbox["output_tokens"] = result.usage.output_tokens
+    with time_llm_call(task_type, _provider, _model) as mbox:
+        result = await router.generate_with_tier_fallback(
+            task_type,
+            messages,
+            route=route,
+            preferred_tier=preferred_tier,
+            _log_meta={
+                "prompt_id": route.prompt_id,
+                "project_id": project_id,
+                "chapter_id": chapter_id,
+                "rag_hits": rag_hits or [],
+            },
+            **kwargs,
+        )
+        mbox["input_tokens"] = result.usage.input_tokens
+        mbox["output_tokens"] = result.usage.output_tokens
 
     if route.prompt_id:
         await registry.track_result(route.prompt_id, success=bool(result.text))
@@ -849,17 +850,19 @@ async def stream_text_prompt(
         messages.append({"role": "user", "content": user_content})
 
     router = await get_model_router_async()
-    async with log_llm_call(
-        db=db,
-        task_type=task_type,
-        prompt_id=route.prompt_id,
-        project_id=project_id,
-        chapter_id=chapter_id,
-        messages=messages,
-        rag_hits=rag_hits or [],
-        model=route.model or "",
-        endpoint_id=route.endpoint_id,
-    ) as ctx:
-        async for chunk in router.stream_by_route(route, messages, **kwargs):
-            ctx.add_chunk(chunk)
-            yield chunk
+    # v1.5.0 B1: tier-aware streaming fallback (only falls back before first chunk).
+    preferred_tier = await registry.resolve_tier(task_type)
+    async for chunk in router.stream_with_tier_fallback(
+        task_type,
+        messages,
+        route=route,
+        preferred_tier=preferred_tier,
+        _log_meta={
+            "prompt_id": route.prompt_id,
+            "project_id": project_id,
+            "chapter_id": chapter_id,
+            "rag_hits": rag_hits or [],
+        },
+        **kwargs,
+    ):
+        yield chunk
