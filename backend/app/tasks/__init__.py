@@ -201,60 +201,40 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
     return result
 
 
-# v1.6 fix (Bug J): when celery worker reuses the cached AsyncEngine across
-# tasks, asyncpg pool ends up bound to the previous task's event loop and
-# raises ``RuntimeError: Future <...> attached to a different loop`` on the
-# very first ``db.get(...)`` of the next task. ``rebuild_rag_for_project``
-# and ``reprocess_reference_book`` above use a bare ``asyncio.run`` and hit
-# this when called more than once per worker process. Below helper drops
-# loop-bound singletons (ModelRouter HTTP client) and disposes the cached
-# AsyncEngine before starting a fresh loop.
+# v1.13 fix (cross-loop crash on the SECOND celery task in a worker):
+#
+# Bug J / v1.10 only rewrote ``_ses.engine`` and ``_ses.async_session_factory``
+# on the db.session module between tasks. But 21 call sites across the
+# codebase had already done ``from app.db.session import async_session_factory``
+# at import time, copying the original sessionmaker reference. Those callers
+# kept using the original sessionmaker → the original asyncpg pool → connections
+# bound to the previous task's (now-closed) event loop →
+# ``RuntimeError: Future <...> attached to a different loop`` on the very
+# first ``db.get(...)`` of every subsequent task.
+#
+# v1.13: db.session now exposes ``async_session_factory`` as a *function*
+# that always reads the current sessionmaker via a small mutable state
+# holder. We just call ``reset_engine()`` between tasks and dispose the
+# old pool on the right loop in the finally block; all 21 callers pick up
+# the fresh pool automatically without any import changes.
 def _run_async_safe(coro):
     """Run an async coroutine in a celery task with loop-bound caches reset."""
     import asyncio
 
+    # Clear loop-bound module singletons in model_router (asyncio.Lock
+    # objects under ``_router_locks``, etc.). Without this, every second
+    # task hit ``Lock is bound to a different event loop``.
     try:
-        # v1.7: use reset_model_router() so it also clears _router_locks
-        # (which previously left module-level asyncio.Lock objects bound
-        # to dead event loops, producing 'Lock is bound to a different
-        # event loop' on every retry task after the first one).
         from app.services.model_router import reset_model_router
         reset_model_router()
     except Exception:
         pass
 
-    # v1.10 fix (Event loop is closed noise): the previous implementation
-    # disposed the cached AsyncEngine on a brand-new ``_disposal_loop``,
-    # but the engine's asyncpg connections were bound to the *previous*
-    # task's event loop — disposing on a third unrelated loop produced
-    # hundreds of
-    #   RuntimeError: Event loop is closed
-    #   RuntimeError: Future <...> attached to a different loop
-    # warnings during connection close. We instead recreate the engine
-    # synchronously (cheap; SQLAlchemy lazily creates the pool on first
-    # use), and run a best-effort dispose inside the *business* loop's
-    # finally block so its asyncpg connections are closed on the same
-    # loop they were created on.
+    # Drop the cached AsyncEngine. Next call to async_session_factory()
+    # will lazily build a fresh engine bound to the new loop.
     try:
-        import app.db.session as _ses
-        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        # Drop the previous engine reference without awaiting dispose; its
-        # connections will be GC'd. This is safe because
-        # ``pool_pre_ping=True`` and short-lived requests mean idle
-        # connections in the old pool are not reused after this point.
-        from app.config import settings
-        new_engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=False,
-            pool_pre_ping=True,
-            pool_size=getattr(_ses.engine.pool, "size", lambda: 5)()
-            if hasattr(_ses.engine, "pool")
-            else 5,
-        )
-        _ses.engine = new_engine
-        _ses.async_session_factory = async_sessionmaker(
-            new_engine, expire_on_commit=False
-        )
+        from app.db.session import reset_engine
+        reset_engine()
     except Exception:
         pass
 
@@ -263,11 +243,12 @@ def _run_async_safe(coro):
     try:
         return loop.run_until_complete(coro)
     finally:
-        # Dispose the engine *inside the business loop* so asyncpg
-        # connections are closed on the same loop that created them.
+        # Dispose any engine that was lazily built during the task on
+        # this same loop, so asyncpg connections are closed by the loop
+        # that created them. Safe no-op if no engine was built.
         try:
-            import app.db.session as _ses
-            loop.run_until_complete(_ses.engine.dispose())
+            from app.db.session import dispose_current_engine_async
+            loop.run_until_complete(dispose_current_engine_async())
         except Exception:
             pass
         loop.close()
