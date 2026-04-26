@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, getToken } from '@/lib/api'
 
 interface Endpoint {
   id: string
@@ -63,6 +63,82 @@ const TIER_BADGE_CLASS: Record<string, string> = {
   small: 'bg-gray-100 text-gray-700',
   distill: 'bg-amber-50 text-amber-700',
   embedding: 'bg-emerald-50 text-emerald-700',
+}
+
+// v1.5.0 B2 — recommendation mismatch soft-guard payload (HTTP 409 detail).
+interface RecommendationMismatchPayload {
+  code?: 'recommendation_mismatch' | string
+  task_type?: string
+  recommended_kind?: string
+  recommended_tier?: string
+  recommendation_reason?: string
+  current_kind?: string
+  current_tier?: string
+  endpoint_name?: string
+  endpoint_tier?: string | null
+  prompt_model_tier?: string | null
+  kind_mismatch?: boolean
+  tier_mismatch?: boolean
+}
+
+/**
+ * v1.5.0 B2 — raw fetch wrapper for prompt POST/PUT that surfaces 409 mismatch
+ * payloads instead of swallowing them in a generic Error. Re-implements the
+ * minimal subset of `apiFetch` we need (auth header + JSON parsing). The
+ * standard `apiFetch` stringifies error.detail into a plain Error, which
+ * loses the structured fields we need to render the confirm dialog.
+ */
+async function savePromptWithGuard(
+  path: string,
+  method: 'POST' | 'PUT',
+  body: Record<string, unknown>,
+): Promise<{ ok: true } | { ok: false; mismatch: RecommendationMismatchPayload }> {
+  const trySave = async (confirmMismatch: boolean) => {
+    const url = confirmMismatch ? `${path}?confirm_mismatch=true` : path
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const token = getToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: JSON.stringify(body),
+    })
+    return res
+  }
+
+  let res = await trySave(false)
+  if (res.status === 409) {
+    const data = await res.json().catch(() => ({}))
+    const detail = (data?.detail ?? {}) as RecommendationMismatchPayload
+    if (detail?.code === 'recommendation_mismatch') {
+      const recDesc = detail.recommended_kind === 'embedding'
+        ? 'embedding 端点'
+        : `思考·${detail.recommended_tier ?? ''}`
+      const curDesc = detail.current_kind === 'embedding'
+        ? 'embedding 端点'
+        : `思考·${detail.current_tier ?? ''}`
+      const msg =
+        `警告：当前绑定的端点与推荐不一致。\n\n` +
+        `任务类型：${detail.task_type ?? '?'}\n` +
+        `推荐：${recDesc}\n` +
+        `当前：${curDesc}·${detail.endpoint_name ?? '?'}\n` +
+        (detail.recommendation_reason ? `原因：${detail.recommendation_reason}\n` : '') +
+        `\n仍要保存吗？`
+      if (!window.confirm(msg)) {
+        return { ok: false, mismatch: detail }
+      }
+      res = await trySave(true)
+    }
+  }
+  if (res.status === 401) {
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = typeof err.detail === 'string' ? err.detail : 'API Error'
+    throw new Error(msg)
+  }
+  return { ok: true }
 }
 
 export default function PromptsPage() {
@@ -372,26 +448,22 @@ function PromptForm({
     setSaving(true)
     try {
       if (isEdit) {
-        await apiFetch(`/api/prompts/${prompt.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            name, description, system_prompt: systemPrompt, user_template: userTemplate,
-            category, endpoint_id: endpointId || null, model_name: modelName,
-            model_tier: modelTier || null,
-            temperature, max_tokens: maxTokens,
-          }),
+        const r = await savePromptWithGuard(`/api/prompts/${prompt.id}`, 'PUT', {
+          name, description, system_prompt: systemPrompt, user_template: userTemplate,
+          category, endpoint_id: endpointId || null, model_name: modelName,
+          model_tier: modelTier || null,
+          temperature, max_tokens: maxTokens,
         })
+        if (!r.ok) { setSaving(false); return }
       } else {
-        await apiFetch('/api/prompts', {
-          method: 'POST',
-          body: JSON.stringify({
-            task_type: taskType, name, description, mode,
-            system_prompt: systemPrompt, user_template: userTemplate,
-            category, endpoint_id: endpointId || null, model_name: modelName,
-            model_tier: modelTier || null,
-            temperature, max_tokens: maxTokens,
-          }),
+        const r = await savePromptWithGuard('/api/prompts', 'POST', {
+          task_type: taskType, name, description, mode,
+          system_prompt: systemPrompt, user_template: userTemplate,
+          category, endpoint_id: endpointId || null, model_name: modelName,
+          model_tier: modelTier || null,
+          temperature, max_tokens: maxTokens,
         })
+        if (!r.ok) { setSaving(false); return }
       }
       onSaved()
     } catch (e) {
