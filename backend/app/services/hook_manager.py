@@ -26,7 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
 from app.models.project import Chapter, Foreshadow, Volume
 from app.services.foreshadow_manager import ForeshadowManager
-from app.services.model_router import get_model_router
+from app.services.model_router import get_model_router_async
+from app.services.entity_dispatch import dispatch_entity_extraction
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +253,13 @@ class HookManager:
 
         # Try to query Neo4j for character state
         try:
+            # B2' (v1.5.0): read via EntityTimelineService so we hit the
+            # canonical (Character)-[:HAS_STATE]->(CharacterState) schema
+            # written by extract_and_update. Reading flat c.status / c.location
+            # produced UnknownPropertyKey GqlStatus warnings every chapter
+            # because those flat fields were never written.
             from app.db.neo4j import get_neo4j
+            from app.services.entity_timeline import EntityTimelineService
 
             driver = None
             async for d in get_neo4j():
@@ -262,22 +269,27 @@ class HookManager:
             if driver is None:
                 return warnings
 
-            async with driver.session() as session:
-                for char_name in characters_in_outline:
-                    result = await session.run(
-                        "MATCH (c:Character {name: $name, project_id: $pid}) "
-                        "RETURN c.status AS status, c.location AS location",
-                        name=char_name,
-                        pid=str(project_id),
+            service = EntityTimelineService(driver)
+            # Look up state at the chapter just before generation. For ch 1
+            # we still query at_chapter=1 to surface user-seeded initial states.
+            at_chapter = max(int(chapter_idx) - 1, 1)
+            active = await service.get_active_characters_at(
+                str(project_id), at_chapter
+            )
+            by_name = {snap.name: snap for snap in active if snap.name}
+            for char_name in characters_in_outline:
+                snap = by_name.get(char_name)
+                if snap is None:
+                    continue
+                status_dict = snap.status if isinstance(snap.status, dict) else {}
+                if (
+                    status_dict.get("alive") is False
+                    or status_dict.get("status") == "dead"
+                ):
+                    warnings.append(
+                        f"Character '{char_name}' appears in outline "
+                        f"but is marked as dead in the knowledge graph"
                     )
-                    record = await result.single()
-                    if record:
-                        status = record.get("status", "alive")
-                        if status == "dead":
-                            warnings.append(
-                                f"Character '{char_name}' appears in outline "
-                                f"but is marked as dead in the knowledge graph"
-                            )
         except RuntimeError:
             # Neo4j not initialized -- skip check
             logger.debug("Neo4j not available, skipping character consistency check")
@@ -333,113 +345,25 @@ class HookManager:
         chapter_idx: int,
         chapter_text: str,
     ) -> None:
-        """Extract entities from chapter text and update Neo4j graph.
+        """Enqueue the entity-extraction Celery task for this chapter.
 
-        Uses LLM to identify characters, locations, items, and their
-        relationships, then upserts them into the knowledge graph.
+        B2' (v1.5.0): the actual LLM extraction + Neo4j writes are owned by
+        ``app.tasks.entity_tasks.extract_chapter_entities`` (idempotent,
+        loop-safe, tier-aware fallback, writes the canonical
+        Character-[:HAS_STATE]->CharacterState schema). This hook only
+        dispatches.
+
+        ``chapter_text`` is intentionally unused: the task re-loads the
+        canonical text from Postgres so the contract is the same whether
+        dispatch comes from batch_generator (with text) or from a save-
+        path hook (without text).
         """
-        router = get_model_router()
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Extract named entities from the given novel chapter text. "
-                    "Return a JSON object with:\n"
-                    '- "characters": list of {name, status, location, description}\n'
-                    '- "locations": list of {name, description}\n'
-                    '- "items": list of {name, owner, description}\n'
-                    '- "relationships": list of {from, to, type, description}\n\n'
-                    "Only include entities explicitly mentioned in the text."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Chapter text:\n{chapter_text[:4000]}",
-            },
-        ]
-
-        result = await router.generate(
-            task_type="extraction",
-            messages=messages,
-            temperature=0.2,
-            max_tokens=1024,
+        del chapter_text  # acknowledged but unused -- task reloads from DB
+        dispatch_entity_extraction(
+            project_id=project_id,
+            chapter_idx=chapter_idx,
+            caller="HookManager.run_post_hooks",
         )
-
-        try:
-            entities = json.loads(result.text.strip())
-        except json.JSONDecodeError:
-            # Try to find JSON in the response
-            import re
-            match = re.search(r"\{.*\}", result.text, re.DOTALL)
-            if match:
-                entities = json.loads(match.group())
-            else:
-                logger.warning("Could not parse entity extraction result")
-                return
-
-        # Upsert into Neo4j
-        try:
-            from app.db.neo4j import get_neo4j
-
-            driver = None
-            async for d in get_neo4j():
-                driver = d
-                break
-
-            if driver is None:
-                logger.debug("Neo4j not available, skipping entity update")
-                return
-
-            async with driver.session() as session:
-                # Upsert characters
-                for char in entities.get("characters", []):
-                    await session.run(
-                        "MERGE (c:Character {name: $name, project_id: $pid}) "
-                        "SET c.status = $status, c.location = $location, "
-                        "c.description = $desc, c.last_chapter = $chapter",
-                        name=char.get("name", ""),
-                        pid=str(project_id),
-                        status=char.get("status", "alive"),
-                        location=char.get("location", ""),
-                        desc=char.get("description", ""),
-                        chapter=chapter_idx,
-                    )
-
-                # Upsert locations
-                for loc in entities.get("locations", []):
-                    await session.run(
-                        "MERGE (l:Location {name: $name, project_id: $pid}) "
-                        "SET l.description = $desc, l.last_chapter = $chapter",
-                        name=loc.get("name", ""),
-                        pid=str(project_id),
-                        desc=loc.get("description", ""),
-                        chapter=chapter_idx,
-                    )
-
-                # Upsert relationships
-                for rel in entities.get("relationships", []):
-                    await session.run(
-                        "MATCH (a {name: $from_name, project_id: $pid}) "
-                        "MATCH (b {name: $to_name, project_id: $pid}) "
-                        "MERGE (a)-[r:RELATES_TO {type: $type}]->(b) "
-                        "SET r.description = $desc, r.last_chapter = $chapter",
-                        from_name=rel.get("from", ""),
-                        to_name=rel.get("to", ""),
-                        pid=str(project_id),
-                        type=rel.get("type", ""),
-                        desc=rel.get("description", ""),
-                        chapter=chapter_idx,
-                    )
-
-            logger.info(
-                "Updated entity graph for project=%s chapter=%d",
-                project_id, chapter_idx,
-            )
-        except RuntimeError:
-            logger.debug("Neo4j not available, skipping entity update")
-        except Exception:
-            logger.exception("Failed to update Neo4j entity graph")
 
     async def _generate_summary(
         self,
@@ -451,7 +375,10 @@ class HookManager:
 
         The summary is saved to the Chapter.summary field in PostgreSQL.
         """
-        router = get_model_router()
+        # B2' (v1.5.0): use async router + tier-aware fallback so this hook
+        # is celery-loop-safe and resilient to single-endpoint INTERNAL_ERROR
+        # (mirrors the B1' evaluator/checker pattern).
+        router = await get_model_router_async()
 
         messages = [
             {
@@ -468,11 +395,16 @@ class HookManager:
             },
         ]
 
-        result = await router.generate(
+        result = await router.generate_with_tier_fallback(
             task_type="summary",
             messages=messages,
             temperature=0.3,
             max_tokens=256,
+            _log_meta={
+                "caller": "HookManager._generate_summary",
+                "project_id": str(project_id),
+                "chapter_idx": int(chapter_idx),
+            },
         )
 
         summary_text = result.text.strip()
