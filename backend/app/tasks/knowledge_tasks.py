@@ -181,7 +181,53 @@ async def _run_async_generation_impl(task_id: str):
             generator = OutlineGenerator()
             collected = []
 
-            if task.task_type == "outline_book":
+            if task.task_type == "outline_from_reference":
+                # v1.5.0 D-2: async outline-from-reference. Wraps the
+                # service-layer single-shot LLM call as a single chunk so the
+                # downstream Markdown-strip / humanize / auto-save-outline
+                # logic still applies uniformly. Required params (in
+                # task.params_json): reference_book_id, intent, style_hint,
+                # target_volumes, target_chapters_per_volume.
+                from app.services.outline_from_reference import (
+                    build_outline_from_reference,
+                )
+
+                ref_id = params.get("reference_book_id")
+                if not ref_id:
+                    raise ValueError("reference_book_id missing in params_json")
+                wizard = {
+                    "intent": params.get("intent", ""),
+                    "style_hint": params.get("style_hint", ""),
+                    "target_volumes": params.get("target_volumes", 5),
+                    "target_chapters_per_volume": params.get(
+                        "target_chapters_per_volume", 30
+                    ),
+                }
+                fr = await build_outline_from_reference(
+                    reference_book_id=ref_id,
+                    wizard_params=wizard,
+                    db=db,
+                    project_id=project_id,
+                )
+                if fr.get("status") != "ok":
+                    raise RuntimeError(
+                        "build_outline_from_reference failed: "
+                        f"reason={fr.get('reason')} detail={fr.get('detail')}"
+                    )
+                ot = fr.get("outline_text") or ""
+                collected.append(ot)
+                # Persist sketch metadata so the polling endpoint can show
+                # progress context to the UI without re-running the query.
+                task.params_json = {
+                    **(task.params_json or {}),
+                    "sketch_line_count": fr.get("sketch_line_count"),
+                    "reference_book": fr.get("reference_book"),
+                }
+                task.progress_text = ot
+                task.char_count = len(ot)
+                await db.commit()
+
+            elif task.task_type == "outline_book":
                 async for chunk in await generator.generate_book_outline(
                     user_input=enhanced, stream=True
                 ):
