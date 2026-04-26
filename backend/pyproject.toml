@@ -38,6 +38,7 @@ dependencies = [
     "langgraph-checkpoint-postgres",
     "reportlab",
     "python-docx",
+    "json-repair",
 ]
 
 [build-system]
