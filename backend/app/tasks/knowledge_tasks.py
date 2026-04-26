@@ -380,13 +380,42 @@ async def _run_async_generation_impl(task_id: str):
 
             # Auto-save outline to outlines table
             if task.task_type.startswith("outline") and full_text and project_id:
-                level = task.task_type.replace("outline_", "")
-                outline = Outline(
-                    project_id=project_id,
-                    level=level,
-                    content_json={"raw_text": full_text},
-                )
-                db.add(outline)
+                # Explicit task_type -> outline level mapping. `outline_from_reference`
+                # is semantically a book-level outline (built from a reference book),
+                # NOT a separate "from_reference" level. The outline_volume branch is
+                # intentionally a no-op here: real volume outlines are written by
+                # /volumes/{id}/regenerate which sets parent_id and dedupes per
+                # volume_idx; auto-saving here would produce orphan rows that no query
+                # path can find (volumes.py requires parent_id == book_outline_id).
+                _outline_level_map = {
+                    "outline_from_reference": "book",
+                    "outline_book": "book",
+                }
+                outline_level = _outline_level_map.get(task.task_type)
+                if outline_level == "book":
+                    # Upsert: enforce one-book-per-project invariant. Migration
+                    # a1001500 adds a partial UNIQUE index on outlines(project_id)
+                    # WHERE level='book'; this DELETE+INSERT keeps the index happy
+                    # and replaces any prior book outline atomically within this txn.
+                    from sqlalchemy import delete as _sql_delete
+                    await db.execute(
+                        _sql_delete(Outline).where(
+                            Outline.project_id == project_id,
+                            Outline.level == "book",
+                        )
+                    )
+                    db.add(
+                        Outline(
+                            project_id=project_id,
+                            level="book",
+                            content_json={"raw_text": full_text},
+                        )
+                    )
+                else:
+                    logger.info(
+                        "Skipping auto-save for task_type=%s (handled by dedicated endpoint)",
+                        task.task_type,
+                    )
 
             await db.commit()
             logger.info("Async generation complete: %s, %d chars", task.task_type, len(full_text))
