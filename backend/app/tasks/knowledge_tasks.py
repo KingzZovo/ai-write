@@ -505,6 +505,22 @@ async def _run_pipeline_async(pipeline_id: str):
                 logger.warning("Pipeline chapter %d failed: %s", cs.chapter_idx, e)
 
             await db.commit()
+            # B2' (v1.5.0): kick entity-extraction task post-commit when the
+            # chapter actually got a new body. Failures never block the
+            # pipeline: they retry asynchronously on the celery queue.
+            if cs.state == "completed":
+                try:
+                    from app.services.entity_dispatch import dispatch_for_chapter
+                    await dispatch_for_chapter(
+                        chapter, db,
+                        caller="knowledge_tasks.run_pipeline_chapters",
+                        project_id_hint=str(pipeline.project_id),
+                    )
+                except Exception as dispatch_err:
+                    logger.warning(
+                        "Entity dispatch after pipeline chapter %d failed: %s",
+                        cs.chapter_idx, dispatch_err,
+                    )
             await aio.sleep(1)  # Rate limit
 
         # Advance pipeline state

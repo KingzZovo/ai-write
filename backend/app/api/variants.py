@@ -105,12 +105,22 @@ async def select_variant_endpoint(
         raise HTTPException(404, str(exc)) from exc
 
     apply = True if body is None else body.apply_to_chapter
+    promoted_chapter = None
     if apply:
         res = await db.execute(select(Chapter).where(Chapter.id == variant.chapter_id))
         chapter = res.scalar_one_or_none()
         if chapter is not None:
             chapter.content_text = variant.content_text
             chapter.word_count = variant.word_count or len(variant.content_text)
+            promoted_chapter = chapter
     await db.commit()
     await db.refresh(variant)
+    if promoted_chapter is not None:
+        # B2' (v1.5.0): re-extract entities for the chapter whose canonical
+        # body was just replaced by the promoted variant.
+        from app.services.entity_dispatch import dispatch_for_chapter
+        await dispatch_for_chapter(
+            promoted_chapter, db,
+            caller="api.variants.select_variant",
+        )
     return _to_out(variant)

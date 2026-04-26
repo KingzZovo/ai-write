@@ -194,6 +194,17 @@ async def generate_chapter(
                             await save_db.commit()
                             await save_db.refresh(target_chapter)
                             yield f"data: {json.dumps({'status': 'saved', 'chapter_id': str(target_chapter.id), 'word_count': target_chapter.word_count})}\n\n"
+                            # B2' (v1.5.0): kick entity-extraction task post-commit.
+                            try:
+                                from app.services.entity_dispatch import dispatch_for_chapter
+                                await dispatch_for_chapter(
+                                    target_chapter, save_db,
+                                    caller="api.generate.stream_generate",
+                                )
+                            except Exception as dispatch_err:
+                                logger.warning(
+                                    "Entity dispatch after auto-save failed: %s", dispatch_err
+                                )
                         else:
                             logger.warning(
                                 "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",

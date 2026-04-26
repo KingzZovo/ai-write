@@ -61,6 +61,7 @@ celery_app.conf.beat_schedule = {
 import app.tasks.knowledge_tasks  # noqa: F401, E402
 import app.tasks.style_tasks  # noqa: F401, E402
 import app.tasks.backup_tasks  # noqa: F401, E402
+import app.tasks.entity_tasks  # noqa: F401, E402  # B2' (v1.5.0): entity extraction
 
 
 # ---------------------------------------------------------------------------
