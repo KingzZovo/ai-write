@@ -29,6 +29,15 @@ class GenerateChapterRequest(BaseModel):
     user_instruction: str = ""
     max_tokens: int = 4096
     skip_polish: bool = False
+    # v1.5.0 C1: opt-in two-stage scene-by-scene writing.
+    # When true, the chapter is generated via scene_planner -> per-scene
+    # scene_writer streams (each 800-1200 chars), giving more coherent
+    # pacing and easier per-scene rewrite hooks downstream (C2).
+    use_scene_mode: bool = False
+    # Hint for scene_planner; clamped to 3..6 by SceneOrchestrator. None = auto.
+    n_scenes_hint: int | None = None
+    # Override the chapter target word count for scene-mode planning.
+    target_words: int | None = None
 
 
 class GenerateOutlineRequest(BaseModel):
@@ -157,15 +166,42 @@ async def generate_chapter(
                 yield "data: [DONE]\n\n"
                 return
 
-            generator = ChapterGenerator()
-            async for chunk in generator.generate_stream(
-                project_id=req.project_id,
-                volume_id=resolved_volume_id,
-                chapter_idx=resolved_chapter_idx,
-                db=db,
-                chapter_id=req.chapter_id,
-                user_instruction=effective_user_instruction,
-            ):
+            # v1.5.0 C1: opt-in scene-staged streaming. SceneOrchestrator
+            # plans 3-6 scene briefs (scene_planner) then streams each scene
+            # 800-1200 chars (scene_writer). Falls back to ChapterGenerator's
+            # single-shot "generation" prompt when use_scene_mode is False.
+            stream_iter: AsyncGenerator[str, None]
+            if req.use_scene_mode:
+                from app.services.scene_orchestrator import SceneOrchestrator
+
+                orchestrator = SceneOrchestrator()
+                effective_target_words = req.target_words or target_words
+
+                async def _on_scene_start(scene) -> None:  # type: ignore[no-untyped-def]
+                    pass  # placeholder; SSE "scene" events can be added later
+
+                stream_iter = orchestrator.orchestrate_chapter_stream(
+                    project_id=req.project_id,
+                    volume_id=resolved_volume_id,
+                    chapter_idx=resolved_chapter_idx,
+                    db=db,
+                    chapter_id=req.chapter_id,
+                    user_instruction=effective_user_instruction,
+                    target_words=effective_target_words,
+                    n_scenes_hint=req.n_scenes_hint,
+                    on_scene_start=_on_scene_start,
+                )
+            else:
+                generator = ChapterGenerator()
+                stream_iter = generator.generate_stream(
+                    project_id=req.project_id,
+                    volume_id=resolved_volume_id,
+                    chapter_idx=resolved_chapter_idx,
+                    db=db,
+                    chapter_id=req.chapter_id,
+                    user_instruction=effective_user_instruction,
+                )
+            async for chunk in stream_iter:
                 if chunk:
                     collected_text.append(chunk)
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
