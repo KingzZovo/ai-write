@@ -52,6 +52,11 @@ TASK_TYPE_RECOMMENDATIONS: dict[str, Recommendation] = {
         "tier": "flagship",
         "reason": "小说正文是质量核心，建议用旗舰模型",
     },
+    "scene_writer": {
+        "kind": "chat",
+        "tier": "flagship",
+        "reason": "逐场景流式写作是质量核心，建议旗舰",
+    },
 
     # ---------- Mid-weight text ops (standard) ----------
     "polishing": {
@@ -93,6 +98,11 @@ TASK_TYPE_RECOMMENDATIONS: dict[str, Recommendation] = {
         "kind": "chat",
         "tier": "standard",
         "reason": "编辑型 agent，standard 平衡",
+    },
+    "scene_planner": {
+        "kind": "chat",
+        "tier": "standard",
+        "reason": "场景拆分输出结构化 JSON，standard 足够",
     },
 
     # ---------- Deep reasoning / hard checks (flagship) ----------
