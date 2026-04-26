@@ -213,6 +213,19 @@ class CascadeRegenerator:
             chapter.status = "regenerated"
             await self.db.flush()
 
+            # B2' (v1.5.0): regenerated body invalidates the prior entity
+            # snapshot for this chapter; re-extract via celery.
+            try:
+                from app.services.entity_dispatch import dispatch_for_chapter
+                await dispatch_for_chapter(
+                    chapter, self.db,
+                    caller="cascade_regenerator.regenerate_chapter",
+                )
+            except Exception as dispatch_err:
+                logger.warning(
+                    "Entity dispatch after cascade regenerate failed: %s", dispatch_err
+                )
+
             logger.info(
                 "Regenerated chapter %s (idx=%d), %d chars",
                 chapter_id,
