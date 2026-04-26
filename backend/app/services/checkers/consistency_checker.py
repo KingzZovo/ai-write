@@ -178,9 +178,9 @@ class ConsistencyChecker(BaseChecker):
     ) -> None:
         """Use LLM to perform deep consistency analysis."""
         try:
-            from app.services.model_router import get_model_router
+            from app.services.model_router import get_model_router_async
 
-            router = get_model_router()
+            router = await get_model_router_async()
 
             rules_text = "\n".join(f"- {r}" for r in context.world_rules[:10])
             chars_text = "\n".join(
@@ -210,11 +210,12 @@ class ConsistencyChecker(BaseChecker):
                 },
             ]
 
-            gen_result = await router.generate(
+            gen_result = await router.generate_with_tier_fallback(
                 task_type="extraction",
                 messages=messages,
                 temperature=0.2,
                 max_tokens=1024,
+                _log_meta={"caller": "consistency_checker._llm_consistency_check"},
             )
 
             issues = _parse_json_array(gen_result.text)

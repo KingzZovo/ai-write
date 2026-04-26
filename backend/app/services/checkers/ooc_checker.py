@@ -331,9 +331,9 @@ class OOCChecker(BaseChecker):
     ) -> None:
         """Use LLM for deep OOC analysis on important characters."""
         try:
-            from app.services.model_router import get_model_router
+            from app.services.model_router import get_model_router_async
 
-            router = get_model_router()
+            router = await get_model_router_async()
 
             chars_desc = []
             for card in characters[:5]:
@@ -368,11 +368,12 @@ class OOCChecker(BaseChecker):
                 },
             ]
 
-            gen_result = await router.generate(
+            gen_result = await router.generate_with_tier_fallback(
                 task_type="extraction",
                 messages=messages,
                 temperature=0.2,
                 max_tokens=1024,
+                _log_meta={"caller": "ooc_checker._llm_ooc_check"},
             )
 
             issues = _parse_json_array(gen_result.text)

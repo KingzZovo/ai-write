@@ -492,6 +492,18 @@ class ModelRouter:
                 return key
         return None
 
+    def _pick_endpoints_by_tier(self, tier: str) -> list[str]:
+        """v1.5 — return ALL registered provider_keys whose endpoint tier matches.
+
+        Used by tier-aware fallback to enumerate every candidate within a tier
+        (e.g. two distinct standard endpoints), not just the first match.
+        Excludes the embedding tier (embeddings are not chat-capable).
+        """
+        if not tier or tier == "embedding":
+            return []
+        return [k for k, t in self._endpoint_tiers.items()
+                if t == tier and k in self.providers]
+
     def list_routes_matrix(self) -> list[dict]:
         """v1.4 — flat snapshot of task routing + endpoint tier for the matrix UI/API.
 
@@ -768,8 +780,19 @@ class ModelRouter:
         for t in chain:
             if not t or t == "embedding" or t not in VALID_TIERS:
                 continue
-            ep_key = self._pick_endpoint_by_tier(t)
-            if not ep_key or ep_key in seen_eps:
+            # v1.5 B1': enumerate ALL endpoints in this tier, not just first match.
+            for ep_key in self._pick_endpoints_by_tier(t):
+                if ep_key in seen_eps:
+                    continue
+                model = self._endpoint_defaults.get(ep_key, "")
+                attempts.append((t, ep_key, model))
+                seen_eps.add(ep_key)
+        # v1.5 B1' final safety net: any remaining chat-capable endpoint not yet
+        # tried, regardless of tier (embedding always excluded). Ensures upstream
+        # transient stream errors on a single endpoint never abort the whole call
+        # if any other configured endpoint can serve the same task.
+        for ep_key, t in self._endpoint_tiers.items():
+            if t == "embedding" or ep_key in seen_eps or ep_key not in self.providers:
                 continue
             model = self._endpoint_defaults.get(ep_key, "")
             attempts.append((t, ep_key, model))
