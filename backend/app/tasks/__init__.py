@@ -35,6 +35,16 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
+# v1.10 fix (broker visibility_timeout): default Redis broker visibility is
+# 1h, but reference-book retry tasks routinely run 60-90s and decompile tasks
+# can run for many minutes. When a task exceeds the visibility_timeout, the
+# broker re-delivers the same message to another (or the same) worker,
+# producing duplicate runs of the same retry attempt. Bump to 2h so single
+# tasks never get re-delivered while still allowing dead-worker reclaim.
+celery_app.conf.broker_transport_options = {
+    "visibility_timeout": 7200,  # 2 hours, in seconds
+}
+
 # Celery Beat periodic task schedule
 celery_app.conf.beat_schedule = {
     "style-clustering-hourly": {
@@ -212,13 +222,39 @@ def _run_async_safe(coro):
         reset_model_router()
     except Exception:
         pass
+
+    # v1.10 fix (Event loop is closed noise): the previous implementation
+    # disposed the cached AsyncEngine on a brand-new ``_disposal_loop``,
+    # but the engine's asyncpg connections were bound to the *previous*
+    # task's event loop — disposing on a third unrelated loop produced
+    # hundreds of
+    #   RuntimeError: Event loop is closed
+    #   RuntimeError: Future <...> attached to a different loop
+    # warnings during connection close. We instead recreate the engine
+    # synchronously (cheap; SQLAlchemy lazily creates the pool on first
+    # use), and run a best-effort dispose inside the *business* loop's
+    # finally block so its asyncpg connections are closed on the same
+    # loop they were created on.
     try:
         import app.db.session as _ses
-        _disposal_loop = asyncio.new_event_loop()
-        try:
-            _disposal_loop.run_until_complete(_ses.engine.dispose())
-        finally:
-            _disposal_loop.close()
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+        # Drop the previous engine reference without awaiting dispose; its
+        # connections will be GC'd. This is safe because
+        # ``pool_pre_ping=True`` and short-lived requests mean idle
+        # connections in the old pool are not reused after this point.
+        from app.config import settings
+        new_engine = create_async_engine(
+            settings.DATABASE_URL,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=getattr(_ses.engine.pool, "size", lambda: 5)()
+            if hasattr(_ses.engine, "pool")
+            else 5,
+        )
+        _ses.engine = new_engine
+        _ses.async_session_factory = async_sessionmaker(
+            new_engine, expire_on_commit=False
+        )
     except Exception:
         pass
 
@@ -227,4 +263,11 @@ def _run_async_safe(coro):
     try:
         return loop.run_until_complete(coro)
     finally:
+        # Dispose the engine *inside the business loop* so asyncpg
+        # connections are closed on the same loop that created them.
+        try:
+            import app.db.session as _ses
+            loop.run_until_complete(_ses.engine.dispose())
+        except Exception:
+            pass
         loop.close()
