@@ -18,7 +18,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 
-from app.services.model_router import get_model_router
+from app.services.model_router import get_model_router_async
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,10 @@ class ChapterEvaluator:
     """Evaluates chapter quality using an independent LLM judge."""
 
     def __init__(self) -> None:
-        self._router = get_model_router()
+        # Router is resolved lazily inside evaluate() via get_model_router_async
+        # so DB-loaded providers are guaranteed (sync get_model_router() inside
+        # an async handler returns an unloaded singleton -> 'No model configured').
+        pass
 
     async def evaluate(
         self,
@@ -232,11 +235,13 @@ class ChapterEvaluator:
         ]
 
         try:
-            result = await self._router.generate(
+            router = await get_model_router_async()
+            result = await router.generate_with_tier_fallback(
                 task_type="evaluation",
                 messages=messages,
                 temperature=0.3,
                 max_tokens=4096,
+                _log_meta={"caller": "chapter_evaluator.evaluate"},
             )
 
             evaluation = _parse_evaluation_response(result.text)
