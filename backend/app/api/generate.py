@@ -127,6 +127,7 @@ async def generate_chapter(
             logger.warning("Style resolve failed: %s", e)
 
     async def event_stream() -> AsyncGenerator[str, None]:
+        collected_text: list[str] = []
         try:
             yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
 
@@ -165,7 +166,41 @@ async def generate_chapter(
                 chapter_id=req.chapter_id,
                 user_instruction=effective_user_instruction,
             ):
+                if chunk:
+                    collected_text.append(chunk)
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
+
+            # Auto-save chapter content to DB (Bug K fix: parity with outline auto-save).
+            full_text = "".join(collected_text)
+            if full_text:
+                try:
+                    from app.db.session import async_session_factory
+                    async with async_session_factory() as save_db:
+                        target_chapter = None
+                        if req.chapter_id:
+                            target_chapter = await save_db.get(Chapter, req.chapter_id)
+                        if target_chapter is None and resolved_volume_id and resolved_chapter_idx is not None:
+                            lookup = await save_db.execute(
+                                select(Chapter).where(
+                                    Chapter.volume_id == resolved_volume_id,
+                                    Chapter.chapter_idx == resolved_chapter_idx,
+                                )
+                            )
+                            target_chapter = lookup.scalar_one_or_none()
+                        if target_chapter is not None:
+                            target_chapter.content_text = full_text
+                            target_chapter.word_count = len(full_text)
+                            target_chapter.status = "completed"
+                            await save_db.commit()
+                            await save_db.refresh(target_chapter)
+                            yield f"data: {json.dumps({'status': 'saved', 'chapter_id': str(target_chapter.id), 'word_count': target_chapter.word_count})}\n\n"
+                        else:
+                            logger.warning(
+                                "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",
+                                req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                            )
+                except Exception as save_err:
+                    logger.warning("Failed to auto-save chapter: %s", save_err)
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"
