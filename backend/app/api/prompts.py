@@ -5,17 +5,96 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.project import LLMEndpoint
 from app.models.prompt import PromptAsset
 from app.services.prompt_registry import PromptRegistry
-from app.services.prompt_recommendations import get_recommendation
+from app.services.prompt_recommendations import (
+    TASK_TYPE_RECOMMENDATIONS,
+    get_recommendation,
+)
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
+
+
+# ---------------------------------------------------------------------------
+# v1.5.0 B2 — recommendation mismatch soft-guard
+# ---------------------------------------------------------------------------
+# When a prompt is saved with an endpoint whose kind/tier disagrees with the
+# task_type's curated recommendation, return 409 + structured payload so the
+# frontend can render a confirm dialog. Caller can re-submit with
+# `?confirm_mismatch=true` to bypass. This is a soft warning — it never
+# blocks saves once the user has confirmed. Motivation: v1.4.x 401 incident
+# was caused by silently binding a generation prompt to an embedding
+# endpoint with no UI feedback.
+
+
+def _endpoint_kind_from_tier(tier: str | None) -> str:
+    """Map an llm_endpoints.tier value to a recommendation "kind"."""
+    return "embedding" if (tier or "").lower() == "embedding" else "chat"
+
+
+async def _check_recommendation_mismatch(
+    *,
+    db: AsyncSession,
+    task_type: str,
+    endpoint_id: UUID | None,
+    model_tier: str | None,
+) -> dict | None:
+    """Return mismatch payload, or None if the binding is fine / unknown.
+
+    A mismatch is reported when ALL of the following hold:
+    - task_type has an explicit entry in TASK_TYPE_RECOMMENDATIONS
+      (avoids warning on unknown task_types where the default is just a guess);
+    - endpoint_id is set (we can't compare against an unbound prompt);
+    - the endpoint's effective kind/tier disagrees with the recommendation.
+
+    Effective tier = explicit prompt model_tier override, else endpoint.tier.
+    Effective kind = embedding if effective tier == "embedding" else chat.
+    """
+    if endpoint_id is None:
+        return None
+    if task_type not in TASK_TYPE_RECOMMENDATIONS:
+        return None
+
+    endpoint = await db.get(LLMEndpoint, str(endpoint_id))
+    if endpoint is None:
+        return None
+
+    rec = get_recommendation(task_type)
+    rec_kind = rec["kind"]
+    rec_tier = rec["tier"]
+
+    ep_tier = (endpoint.tier or "").lower() or None
+    eff_tier = (model_tier or ep_tier or "standard").lower()
+    eff_kind = _endpoint_kind_from_tier(eff_tier)
+
+    kind_mismatch = rec_kind != eff_kind
+    tier_mismatch = rec_tier != eff_tier
+
+    if not kind_mismatch and not tier_mismatch:
+        return None
+
+    return {
+        "code": "recommendation_mismatch",
+        "task_type": task_type,
+        "recommended_kind": rec_kind,
+        "recommended_tier": rec_tier,
+        "recommendation_reason": rec["reason"],
+        "current_kind": eff_kind,
+        "current_tier": eff_tier,
+        "endpoint_id": str(endpoint.id),
+        "endpoint_name": endpoint.name,
+        "endpoint_tier": ep_tier,
+        "prompt_model_tier": model_tier,
+        "kind_mismatch": kind_mismatch,
+        "tier_mismatch": tier_mismatch,
+    }
 
 
 class PromptResponse(BaseModel):
@@ -128,8 +207,25 @@ async def list_prompts(
 async def create_prompt(
     body: PromptCreate,
     db: AsyncSession = Depends(get_db),
+    confirm_mismatch: bool = Query(
+        False,
+        description="v1.5.0 B2 — set true to bypass the recommendation mismatch soft-guard.",
+    ),
 ) -> PromptResponse:
     """Create a new prompt asset (new version for existing task_type)."""
+    # v1.5.0 B2 — soft-guard: warn (HTTP 409) when the bound endpoint's
+    # kind/tier disagrees with the task_type recommendation. UI re-submits
+    # with confirm_mismatch=true after operator confirmation.
+    if not confirm_mismatch:
+        mismatch = await _check_recommendation_mismatch(
+            db=db,
+            task_type=body.task_type,
+            endpoint_id=body.endpoint_id,
+            model_tier=body.model_tier,
+        )
+        if mismatch is not None:
+            raise HTTPException(status_code=409, detail=mismatch)
+
     # Check existing version for this task_type
     result = await db.execute(
         select(PromptAsset)
@@ -198,11 +294,37 @@ async def update_prompt(
     prompt_id: UUID,
     body: PromptUpdate,
     db: AsyncSession = Depends(get_db),
+    confirm_mismatch: bool = Query(
+        False,
+        description="v1.5.0 B2 — set true to bypass the recommendation mismatch soft-guard.",
+    ),
 ) -> PromptResponse:
     """Update a prompt asset (edits in place, use POST for new version)."""
     asset = await db.get(PromptAsset, str(prompt_id))
     if not asset:
         raise HTTPException(status_code=404, detail="Prompt 不存在")
+
+    # v1.5.0 B2 — soft-guard mismatch check using the post-edit endpoint /
+    # model_tier (so the operator is warned about the value they are about
+    # to write, not the stale value).
+    if not confirm_mismatch:
+        update_data = body.model_dump(exclude_unset=True)
+        next_endpoint_id = (
+            update_data["endpoint_id"] if "endpoint_id" in update_data
+            else asset.endpoint_id
+        )
+        next_model_tier = (
+            update_data["model_tier"] if "model_tier" in update_data
+            else asset.model_tier
+        )
+        mismatch = await _check_recommendation_mismatch(
+            db=db,
+            task_type=asset.task_type,
+            endpoint_id=next_endpoint_id,
+            model_tier=next_model_tier,
+        )
+        if mismatch is not None:
+            raise HTTPException(status_code=409, detail=mismatch)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(asset, field, value)
