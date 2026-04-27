@@ -474,6 +474,90 @@ async def generate_chapter(
                                     await eval_db2.commit()
                             except Exception:
                                 logger.warning("C2 auto-revise final eval persist failed", exc_info=True)
+
+                            # C4-4: cascade auto-regenerate trigger.
+                            # When auto-revise exhausts max_rounds without
+                            # meeting `threshold`, the chapter has structural
+                            # issues that no further chapter-local rewrite
+                            # will fix -- the upstream outline / character /
+                            # foreshadow entities are likely the root cause.
+                            # Planner + cascade celery queue handle that out
+                            # of band; SSE "cascade_triggered" notifies the
+                            # UI so it can poll cascade_tasks for status.
+                            #
+                            # Best-effort: any failure here is logged and the
+                            # SSE stream continues to the [DONE] terminator.
+                            try:
+                                from app.services.cascade_planner import (
+                                    plan_cascade,
+                                    should_trigger_cascade,
+                                )
+                                from app.tasks.cascade import (
+                                    enqueue_cascade_candidates,
+                                )
+                                # Look up the row we just persisted via the
+                                # natural ordering. We avoid ``refresh`` on
+                                # the original session because it has
+                                # already exited the ``async with`` scope.
+                                final_eval_row_id = None
+                                try:
+                                    async with async_session_factory() as cdb_lookup:
+                                        from sqlalchemy import select as _select
+                                        latest_id = (await cdb_lookup.execute(
+                                            _select(ChapterEvaluation.id)
+                                            .where(ChapterEvaluation.chapter_id == revise_chapter_id)
+                                            .order_by(ChapterEvaluation.created_at.desc())
+                                            .limit(1)
+                                        )).scalar_one_or_none()
+                                        final_eval_row_id = (
+                                            str(latest_id) if latest_id else None
+                                        )
+                                except Exception:
+                                    logger.warning(
+                                        "C4 cascade: failed to look up final evaluation id",
+                                        exc_info=True,
+                                    )
+
+                                if (
+                                    final_eval_row_id is not None
+                                    and should_trigger_cascade(
+                                        overall=final_eval.overall,
+                                        rounds_exhausted=True,
+                                        threshold=threshold,
+                                    )
+                                ):
+                                    async with async_session_factory() as cdb:
+                                        candidates = await plan_cascade(
+                                            db=cdb,
+                                            project_id=req.project_id,
+                                            source_chapter_id=revise_chapter_id,
+                                            source_evaluation_id=final_eval_row_id,
+                                            issues_json=final_eval.issues,
+                                        )
+                                        cascade_result = await enqueue_cascade_candidates(
+                                            cdb,
+                                            candidates,
+                                            caller="generate.auto_revise.exhausted",
+                                        )
+                                    cascade_payload = json.dumps({
+                                        "event": "cascade_triggered",
+                                        "chapter_id": revise_chapter_id,
+                                        "evaluation_id": final_eval_row_id,
+                                        "overall": final_eval.overall,
+                                        "threshold": threshold,
+                                        "candidates_planned": len(candidates),
+                                        "tasks_inserted": len(
+                                            cascade_result["inserted"]
+                                        ),
+                                        "duplicates": cascade_result["duplicates"],
+                                        "dispatched": cascade_result["dispatched"],
+                                        "task_ids": cascade_result["inserted"],
+                                    })
+                                    yield f"data: {cascade_payload}\n\n"
+                            except Exception:
+                                logger.warning(
+                                    "C4 cascade trigger failed", exc_info=True,
+                                )
                         except Exception:
                             logger.warning("C2 auto-revise final eval call failed", exc_info=True)
                 except Exception as revise_err:
