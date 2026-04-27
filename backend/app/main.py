@@ -257,6 +257,8 @@ from app.api import run_bus as run_bus_api  # noqa: E402
 app.include_router(run_bus_api.router)
 app.include_router(admin_usage.router)
 app.include_router(export_api.router)
+from app.api import evaluate as evaluate_api  # noqa: E402  C2 Step D (v1.5.0)
+app.include_router(evaluate_api.router)
 
 # Prometheus HTTP duration middleware
 # ---------------------------------------------------------------------------
