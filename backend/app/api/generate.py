@@ -2,6 +2,7 @@
 
 import json
 import logging
+import asyncio
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -280,6 +281,17 @@ async def generate_chapter(
                 and req.chapter_id
             ):
                 try:
+                    # C2 deadlock fix: the outer baseline-path session (`db`)
+                    # may still hold an open transaction with row-level locks
+                    # on prompt_assets / projects from earlier ContextPack and
+                    # PromptRegistry SELECTs. Without an explicit rollback,
+                    # the revise scene_writer's UPDATE prompt_assets SET
+                    # success_count=... blocks indefinitely on a transactionid
+                    # lock held by this idle outer session. Force-release.
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
                     from app.db.session import async_session_factory
                     from app.models.project import Chapter as _Chapter
                     from app.models.project import ChapterEvaluation
@@ -360,27 +372,50 @@ async def generate_chapter(
 
                         revise_orchestrator = SceneOrchestrator()
                         revised_chunks: list[str] = []
-                        async with async_session_factory() as revise_db:
-                            async for chunk in revise_orchestrator.orchestrate_chapter_stream(
-                                project_id=req.project_id,
-                                volume_id=resolved_volume_id,
-                                chapter_idx=resolved_chapter_idx,
-                                db=revise_db,
-                                chapter_id=revise_chapter_id,
-                                user_instruction=merged_instruction,
-                                target_words=effective_target_words,
-                                n_scenes_hint=req.n_scenes_hint,
-                                on_scene_start=_on_scene_start,
-                            ):
-                                if chunk:
-                                    revised_chunks.append(chunk)
-                                yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
-                        revised_text = "".join(revised_chunks)
-                        if not revised_text:
+                        revise_timed_out = False
+                        try:
+                            async with asyncio.timeout(900):  # 15min hard cap per round
+                                async with async_session_factory() as revise_db:
+                                    async for chunk in revise_orchestrator.orchestrate_chapter_stream(
+                                        project_id=req.project_id,
+                                        volume_id=resolved_volume_id,
+                                        chapter_idx=resolved_chapter_idx,
+                                        db=revise_db,
+                                        chapter_id=revise_chapter_id,
+                                        user_instruction=merged_instruction,
+                                        target_words=effective_target_words,
+                                        n_scenes_hint=req.n_scenes_hint,
+                                        on_scene_start=_on_scene_start,
+                                    ):
+                                        if chunk:
+                                            revised_chunks.append(chunk)
+                                        yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                        except asyncio.TimeoutError:
+                            revise_timed_out = True
                             logger.warning(
-                                "C2 auto-revise round %d produced empty text; aborting loop",
+                                "C2 auto-revise round %d timed out after 900s; aborting loop",
                                 round_idx,
                             )
+                            err_payload = json.dumps({
+                                "event": "revise_error",
+                                "round": round_idx,
+                                "reason": "timeout",
+                                "timeout_seconds": 900,
+                            })
+                            yield f"data: {err_payload}\n\n"
+                        revised_text = "".join(revised_chunks)
+                        if revise_timed_out or not revised_text:
+                            if not revise_timed_out:
+                                logger.warning(
+                                    "C2 auto-revise round %d produced empty text; aborting loop",
+                                    round_idx,
+                                )
+                                err_payload = json.dumps({
+                                    "event": "revise_error",
+                                    "round": round_idx,
+                                    "reason": "empty_briefs",
+                                })
+                                yield f"data: {err_payload}\n\n"
                             break
 
                         # 4) Overwrite chapter content with the revised version.
