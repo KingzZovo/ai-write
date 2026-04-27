@@ -251,7 +251,9 @@ class OpenAIProvider(BaseProvider):
                 ptd = getattr(u, 'prompt_tokens_details', None)
                 if ptd is not None:
                     cached_tokens = getattr(ptd, 'cached_tokens', 0) or 0
-        if cached_tokens:
+        # v1.6.0 Y4: always emit baseline cache_uncached when cache key was sent and we have token info,
+        # so Prometheus has visibility even if upstream proxy returns no cached_tokens field.
+        if _OPENAI_CACHE_ENABLED and usage.input_tokens:
             uncached = max(usage.input_tokens - cached_tokens, 0)
             _record_cache_tokens(task_type, self.name, model, read=cached_tokens, uncached=uncached)
         text = "".join(chunks)
