@@ -63,6 +63,7 @@ import app.tasks.style_tasks  # noqa: F401, E402
 import app.tasks.backup_tasks  # noqa: F401, E402
 import app.tasks.entity_tasks  # noqa: F401, E402  # B2' (v1.5.0): entity extraction
 import app.tasks.evaluation_tasks  # noqa: F401, E402  # C2 Step D (v1.5.0): async chapter eval
+import app.tasks.cascade  # noqa: F401, E402  # C4-3 (v1.5.0): cascade auto-regenerate
 
 
 # ---------------------------------------------------------------------------
