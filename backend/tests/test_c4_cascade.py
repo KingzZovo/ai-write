@@ -458,3 +458,172 @@ class TestCascadeTaskConstants:
     def test_lock_retry_countdown_positive_int(self):
         assert isinstance(cascade_task.LOCK_RETRY_COUNTDOWN, int)
         assert cascade_task.LOCK_RETRY_COUNTDOWN > 0
+
+
+# --- _handle_outline_target -------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestHandleOutlineTarget:
+    """C4-7: real outline cascade handler.
+
+    Validates the in-place revision write, idempotency, and defensive
+    error paths. No DB / Celery / LLM fixtures: db is a stub namespace
+    with async ``.get`` / ``.commit``.
+    """
+
+    def _outline_row(self, project_id="p", content=None, version=1, is_confirmed=1):
+        return SimpleNamespace(
+            id=uuid4(),
+            project_id=project_id,
+            content_json=content if content is not None else {},
+            version=version,
+            is_confirmed=is_confirmed,
+        )
+
+    async def _stub_db(self, outline_obj):
+        async def fake_get(_cls, _id):
+            return outline_obj
+
+        async def fake_commit():
+            return None
+
+        return SimpleNamespace(get=fake_get, commit=fake_commit)
+
+    async def test_outline_revision_recorded(self):
+        outline = self._outline_row()
+        db = await self._stub_db(outline)
+        out = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id=str(outline.id),
+            project_id="p",
+            issue_summary="[plot_coherence@ch3] arc broken\n[foreshadow_handling] missed payoff",
+            severity="high",
+            source_chapter_id="ch-1",
+        )
+        assert out["status"] == "done"
+        assert out["reason"] == "outline_revision_recorded"
+        cj = outline.content_json
+        assert isinstance(cj, dict)
+        revs = cj["cascade_revisions"]
+        assert len(revs) == 1
+        rev = revs[0]
+        assert rev["rev_key"] == "ch-1:high"
+        assert rev["source_chapter_id"] == "ch-1"
+        assert rev["severity"] == "high"
+        assert "applied_at" in rev
+        hints = cj["cascade_hints"]
+        assert "[plot_coherence@ch3] arc broken" in hints
+        assert "[foreshadow_handling] missed payoff" in hints
+        assert outline.version == 2
+        # is_confirmed must be preserved (see handler comment).
+        assert outline.is_confirmed == 1
+
+    async def test_outline_revision_idempotent(self):
+        existing_rev = {
+            "rev_key": "ch-1:high",
+            "source_chapter_id": "ch-1",
+            "severity": "high",
+            "issue_summary": "old",
+            "applied_at": "2026-01-01T00:00:00+00:00",
+        }
+        outline = self._outline_row(
+            content={
+                "cascade_revisions": [existing_rev],
+                "cascade_hints": ["old"],
+            }
+        )
+        db = await self._stub_db(outline)
+        out = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id=str(outline.id),
+            project_id="p",
+            issue_summary="new summary",
+            severity="high",
+            source_chapter_id="ch-1",
+        )
+        assert out["status"] == "skipped"
+        assert out["reason"] == "outline_revision_already_recorded"
+        # state unchanged
+        assert outline.version == 1
+        assert outline.is_confirmed == 1
+        assert outline.content_json["cascade_revisions"] == [existing_rev]
+        assert outline.content_json["cascade_hints"] == ["old"]
+
+    async def test_outline_target_not_found(self):
+        async def fake_get(_cls, _id):
+            return None
+
+        async def fake_commit():
+            return None
+
+        db = SimpleNamespace(get=fake_get, commit=fake_commit)
+        out = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id="missing-id",
+            project_id="p",
+            issue_summary="x",
+            severity="high",
+            source_chapter_id="ch-1",
+        )
+        assert out["status"] == "failed"
+        assert "not_found" in out["reason"]
+
+    async def test_outline_project_mismatch(self):
+        outline = self._outline_row(project_id="other-project")
+        db = await self._stub_db(outline)
+        out = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id=str(outline.id),
+            project_id="p",
+            issue_summary="x",
+            severity="high",
+            source_chapter_id="ch-1",
+        )
+        assert out["status"] == "failed"
+        assert out["reason"] == "outline_target_project_mismatch"
+
+    async def test_outline_severity_distinguishes_rev_key(self):
+        # Same chapter but different severity -> independent revision keys.
+        outline = self._outline_row()
+        db = await self._stub_db(outline)
+        out1 = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id=str(outline.id),
+            project_id="p",
+            issue_summary="a",
+            severity="high",
+            source_chapter_id="ch-1",
+        )
+        out2 = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id=str(outline.id),
+            project_id="p",
+            issue_summary="b",
+            severity="critical",
+            source_chapter_id="ch-1",
+        )
+        assert out1["status"] == "done"
+        assert out2["status"] == "done"
+        revs = outline.content_json["cascade_revisions"]
+        assert {r["rev_key"] for r in revs} == {"ch-1:high", "ch-1:critical"}
+        assert outline.version == 3
+
+    async def test_outline_missing_target_entity_id(self):
+        async def fake_get(_cls, _id):
+            return None
+
+        async def fake_commit():
+            return None
+
+        db = SimpleNamespace(get=fake_get, commit=fake_commit)
+        out = await cascade_task._handle_outline_target(
+            db=db,
+            target_entity_id="",
+            project_id="p",
+            issue_summary="x",
+            severity="high",
+            source_chapter_id="ch-1",
+        )
+        assert out["status"] == "failed"
+        assert out["reason"] == "outline_target_missing_id"

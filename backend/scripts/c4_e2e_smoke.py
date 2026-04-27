@@ -15,8 +15,8 @@ What it covers (single binary, no LLM cost):
       -> SSE emits a `cascade_triggered` event with
          inserted=1, duplicates=0, dispatched=1, candidates_planned=1
       -> Celery worker picks up the row within ~30s and writes
-         status='skipped', error_message='outline_handler_not_implemented'
-         (handler stub is intentional: see C4 follow-up).
+         status='done' with content_json cascade_revisions/cascade_hints
+         appended to the project's most-recent outline (no LLM call).
 
   Round 2 (idempotent):
     Same POST. plan_cascade still produces 1 candidate (planner is pure),
@@ -298,14 +298,12 @@ async def main() -> int:
     terminal = await _wait_for_terminal(initial_count=1)
     print(f"WORKER_TERMINAL={terminal}")
     assert terminal is not None, "round1: worker did not reach a terminal status in time"
-    assert terminal[0] == "skipped", (
-        f"round1: expected 'skipped' (handler stub), got {terminal}"
+    assert terminal[0] == "done", (
+        f"round1: expected 'done' (real outline handler), got {terminal}"
     )
-    # error_message column carries the stub reason; current value
-    # 'outline_handler_not_implemented' is informational and may evolve
-    # when the real outline regenerator lands.
-    assert terminal[2] and "outline" in terminal[2].lower(), (
-        f"round1: unexpected error_message {terminal!r}"
+    # error_message must be cleared on terminal=done.
+    assert terminal[2] is None, (
+        f"round1: expected error_message=None on done, got {terminal!r}"
     )
 
     # --- Round 2: idempotent dedup -------------------------------------
@@ -323,7 +321,7 @@ async def main() -> int:
         assert rows_after_r2[0][0] == rows_after_r1[0][0], (
             "round2: cascade_tasks row id changed -- ON CONFLICT DO NOTHING violated"
         )
-        assert rows_after_r2[0][3] == "skipped", (
+        assert rows_after_r2[0][3] == "done", (
             f"round2: row status mutated unexpectedly: {rows_after_r2[0]}"
         )
 
