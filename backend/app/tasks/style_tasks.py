@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def _run_async(coro):
-    """Run async function in sync Celery task context."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    """Run async function in sync Celery task context.
+
+    v1.7 X2: delegates to the unified _run_async_safe from app.tasks.
+    """
+    from app.tasks import _run_async_safe
+    return _run_async_safe(coro)
 
 
 @celery_app.task(name="tasks.run_style_clustering")
