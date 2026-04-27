@@ -288,10 +288,116 @@ async def _handle_target(
     )
 
 
-async def _handle_outline_target(**_kw: Any) -> dict[str, Any]:
-    # C4-3 scaffold. Real implementation will load the outline row and
-    # call OutlineGenerator with the issue_summary as edit guidance.
-    return {"status": "skipped", "reason": "outline_handler_not_implemented"}
+async def _handle_outline_target(
+    *,
+    db: Any,
+    target_entity_id: str,
+    project_id: str,
+    issue_summary: str | None,
+    severity: str,
+    source_chapter_id: str,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """C4-7: lightweight, idempotent in-place outline revision.
+
+    The handler does NOT call an LLM. It records the cascade trigger
+    durably onto the targeted outline row by:
+
+    * appending a structured entry to ``content_json['cascade_revisions']``
+      keyed on ``(source_chapter_id, severity)`` for idempotency,
+    * folding the issue_summary lines into ``content_json['cascade_hints']``
+      so a future ``OutlineGenerator`` regen has prompt-ready context,
+    * bumping ``version`` (``is_confirmed`` is preserved so
+      the planner's ordering remains stable across rounds).
+
+    Idempotent contract: if a revision with the same ``rev_key`` is
+    already present, return ``skipped`` without further writes. This
+    matches the C4-3 worker's "broker re-delivery becomes a no-op"
+    invariant for terminal-state rows that get re-handed to the worker
+    via Celery retry.
+    """
+    from app.models.project import Outline
+
+    if not target_entity_id:
+        return {
+            "status": "failed",
+            "reason": "outline_target_missing_id",
+        }
+
+    outline = await db.get(Outline, target_entity_id)
+    if outline is None:
+        return {
+            "status": "failed",
+            "reason": f"outline_target_not_found:{target_entity_id}",
+        }
+    if str(outline.project_id) != str(project_id):
+        return {
+            "status": "failed",
+            "reason": "outline_target_project_mismatch",
+        }
+
+    cj = outline.content_json
+    new_cj: dict[str, Any] = dict(cj) if isinstance(cj, dict) else {}
+
+    revisions_in = new_cj.get("cascade_revisions")
+    revisions: list[dict[str, Any]] = (
+        [r for r in revisions_in if isinstance(r, dict)]
+        if isinstance(revisions_in, list)
+        else []
+    )
+    hints_in = new_cj.get("cascade_hints")
+    hints: list[str] = (
+        [str(h) for h in hints_in if isinstance(h, str)]
+        if isinstance(hints_in, list)
+        else []
+    )
+
+    rev_key = f"{source_chapter_id}:{severity}"
+    if any(r.get("rev_key") == rev_key for r in revisions):
+        return {
+            "status": "skipped",
+            "reason": "outline_revision_already_recorded",
+        }
+
+    summary_text = (issue_summary or "").strip()
+    revisions.append(
+        {
+            "rev_key": rev_key,
+            "source_chapter_id": str(source_chapter_id),
+            "severity": str(severity),
+            "issue_summary": summary_text,
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    if summary_text:
+        for line in summary_text.splitlines():
+            line = line.strip()
+            if line and line not in hints:
+                hints.append(line)
+
+    new_cj["cascade_revisions"] = revisions
+    new_cj["cascade_hints"] = hints
+    outline.content_json = new_cj
+    outline.version = (outline.version or 0) + 1
+    # NOTE: do NOT touch outline.is_confirmed here. Planner orders
+    # candidate outlines by (is_confirmed DESC, created_at DESC);
+    # flipping it would change which outline is targeted on the
+    # next cascade round and break the UNIQUE-row idempotency
+    # contract on cascade_tasks (uq_cascade_tasks_idem).
+
+    await db.commit()
+
+    logger.info(
+        "_handle_outline_target: outline=%s rev_key=%s version=%d hints=%d",
+        target_entity_id,
+        rev_key,
+        outline.version,
+        len(hints),
+    )
+    return {
+        "status": "done",
+        "reason": "outline_revision_recorded",
+    }
 
 
 async def _handle_character_target(**_kw: Any) -> dict[str, Any]:
