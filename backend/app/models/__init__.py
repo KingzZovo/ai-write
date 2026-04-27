@@ -7,6 +7,7 @@ via a single import of this package.
 from app.db.session import Base
 from app.models.ask_user import AskUserPause
 from app.models.call_log import LLMCallLog
+from app.models.cascade_task import CascadeTask
 from app.models.decompile import BeatSheetCard, ReferenceBookSlice, StyleProfileCard
 from app.models.generation_run import CriticReport, GenerationRun  # noqa: F401
 from app.models.generation_task import GenerationTask
@@ -49,6 +50,7 @@ __all__ = [
     "BeatPattern",
     "BeatSheetCard",
     "BookSource",
+    "CascadeTask",
     "Chapter",
     "ChapterEvaluation",
     "ChapterVariant",
