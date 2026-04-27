@@ -82,6 +82,28 @@ GENERATION_RUN_PHASE = Counter(
     registry=REGISTRY,
 )
 
+# -------------------- v1.6.0 X4: scene_mode -------------------
+SCENE_PLAN_FALLBACK_TOTAL = Counter(
+    "scene_plan_fallback_total",
+    "scene_planner fallback invocations (heuristic briefs used)",
+    labelnames=("reason",),  # unparseable | too_few
+    registry=REGISTRY,
+)
+
+SCENE_COUNT_PER_CHAPTER = Histogram(
+    "scene_count_per_chapter",
+    "Number of scenes produced per chapter generation",
+    buckets=(1, 2, 3, 4, 5, 6, 7, 8, 10, 12),
+    registry=REGISTRY,
+)
+
+SCENE_REVISE_ROUND_TOTAL = Counter(
+    "scene_revise_round_total",
+    "Auto-revise round outcomes (per round_idx)",
+    labelnames=("outcome",),  # scored | skipped | revised | timeout | error
+    registry=REGISTRY,
+)
+
 # -------------------- Celery --------------------
 CELERY_TASK_TOTAL = Counter(
     "celery_task_total",

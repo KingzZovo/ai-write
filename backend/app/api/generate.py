@@ -17,6 +17,15 @@ from app.services.chapter_generator import ChapterGenerator
 from app.services.outline_generator import OutlineGenerator
 
 logger = logging.getLogger(__name__)
+def _x4_inc_revise(outcome: str) -> None:
+    """v1.6.0 X4: increment scene_revise_round_total. Best-effort."""
+    try:
+        from app.observability.metrics import SCENE_REVISE_ROUND_TOTAL
+        SCENE_REVISE_ROUND_TOTAL.labels(outcome=outcome).inc()
+    except Exception:
+        pass
+
+
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
 
@@ -317,6 +326,7 @@ async def generate_chapter(
                             chapter_text=current_text,
                             chapter_outline=revise_outline,
                         )
+                        _x4_inc_revise("scored")  # v1.6.0 X4 metric: revise round outcome
                         scored_payload = json.dumps({
                             "event": "scored",
                             "round": round_idx,
@@ -346,6 +356,7 @@ async def generate_chapter(
 
                         # 2) Threshold gate.
                         if not should_revise(eval_result, threshold=threshold):
+                            _x4_inc_revise("skipped")  # v1.6.0 X4 metric: revise round outcome
                             skipped_payload = json.dumps({
                                 "event": "revise_skipped",
                                 "reason": "score_above_threshold",
@@ -362,6 +373,7 @@ async def generate_chapter(
                         merged_instruction = merge_revise_into_user_instruction(
                             effective_user_instruction, revise_instr,
                         )
+                        _x4_inc_revise("revised")  # v1.6.0 X4 metric: revise round outcome
                         revising_payload = json.dumps({
                             "event": "revising",
                             "round": round_idx,
