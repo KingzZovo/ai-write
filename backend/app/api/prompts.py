@@ -200,6 +200,12 @@ async def list_prompts(
         # UI can hint which endpoint type to bind per prompt.
         resp.recommendation = get_recommendation(a.task_type)
         results.append(resp)
+    # v1.5.0 C3: list_prompts auto-seeds new built-in task_types on first
+    # call. If anything was seeded, drop the snapshot cache so the new rows
+    # are picked up immediately rather than after TTL.
+    if seeded:
+        from app.services.prompt_cache import invalidate as _pc_invalidate
+        _pc_invalidate()
     return results
 
 
@@ -272,6 +278,11 @@ async def create_prompt(
     await db.refresh(asset)
     from app.services.model_router import reset_model_router
     reset_model_router()
+    # v1.5.0 C3: drop snapshot for this task_type so subsequent runner calls
+    # re-fetch (and so the previously active version's stale row is not
+    # returned by the cache after the in-place is_active=0 update).
+    from app.services.prompt_cache import invalidate as _pc_invalidate
+    _pc_invalidate(body.task_type)
     return PromptResponse.model_validate(asset)
 
 
@@ -334,6 +345,11 @@ async def update_prompt(
     # v0.5: mutations to routing fields must re-seed ModelRouter cache
     from app.services.model_router import reset_model_router
     reset_model_router()
+    # v1.5.0 C3: drop snapshot for this task_type so the next runner call
+    # picks up the edit instead of serving stale system_prompt / endpoint /
+    # tier from the in-process cache.
+    from app.services.prompt_cache import invalidate as _pc_invalidate
+    _pc_invalidate(asset.task_type)
     return PromptResponse.model_validate(asset)
 
 
@@ -346,7 +362,11 @@ async def delete_prompt(
     asset = await db.get(PromptAsset, str(prompt_id))
     if not asset:
         raise HTTPException(status_code=404, detail="Prompt 不存在")
+    # v1.5.0 C3: capture task_type before delete so we can invalidate after.
+    deleted_task_type = asset.task_type
     await db.delete(asset)
+    from app.services.prompt_cache import invalidate as _pc_invalidate
+    _pc_invalidate(deleted_task_type)
 
 
 @router.get("/stats/summary")
