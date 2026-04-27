@@ -101,6 +101,29 @@ class BaseProvider(ABC):
                               **kw) -> AsyncIterator[str]: ...
 
 
+
+# ---- v1.6.0 X1/Y1/Y2: prompt cache helpers (env-gated) ----
+import os as _os_cache
+
+_ANTHROPIC_CACHE_ENABLED = _os_cache.getenv("ANTHROPIC_PROMPT_CACHE_ENABLED", "true").lower() in ("1", "true", "yes")
+_ANTHROPIC_CACHE_MIN_CHARS = int(_os_cache.getenv("ANTHROPIC_CACHE_MIN_CHARS", "4096"))  # ~1024 tokens
+_OPENAI_CACHE_ENABLED = _os_cache.getenv("OPENAI_PROMPT_CACHE_ENABLED", "true").lower() in ("1", "true", "yes")
+
+
+def _record_cache_tokens(task_type: str, provider: str, model: str, *, create: int = 0, read: int = 0, uncached: int = 0) -> None:
+    """Best-effort: record cache token splits to Prometheus. Safe if observability missing."""
+    try:
+        from app.observability.metrics import LLM_CACHE_TOKEN_TOTAL
+        if create:
+            LLM_CACHE_TOKEN_TOTAL.labels(task_type=task_type or "unknown", provider=provider, model=model, kind="cache_create").inc(create)
+        if read:
+            LLM_CACHE_TOKEN_TOTAL.labels(task_type=task_type or "unknown", provider=provider, model=model, kind="cache_read").inc(read)
+        if uncached:
+            LLM_CACHE_TOKEN_TOTAL.labels(task_type=task_type or "unknown", provider=provider, model=model, kind="cache_uncached").inc(uncached)
+    except Exception:
+        pass
+
+
 class AnthropicProvider(BaseProvider):
     name = "anthropic"
 
@@ -125,12 +148,26 @@ class AnthropicProvider(BaseProvider):
                 chat.append(m)
         params: dict = {"model": model, "max_tokens": max_tokens,
                         "temperature": temperature, "messages": chat}
+        # v1.6.0 Y1: prompt cache via cache_control on long system block
+        cache_used = False
         if system_msg:
-            params["system"] = system_msg
+            if _ANTHROPIC_CACHE_ENABLED and len(system_msg) >= _ANTHROPIC_CACHE_MIN_CHARS:
+                params["system"] = [{"type": "text", "text": system_msg, "cache_control": {"type": "ephemeral"}}]
+                cache_used = True
+            else:
+                params["system"] = system_msg
         resp = await self.client.messages.create(**params)
         text = resp.content[0].text if resp.content else ""
-        usage = TokenUsage(resp.usage.input_tokens, resp.usage.output_tokens,
-                           resp.usage.input_tokens + resp.usage.output_tokens)
+        u = resp.usage
+        in_tok = getattr(u, "input_tokens", 0) or 0
+        out_tok = getattr(u, "output_tokens", 0) or 0
+        cache_create = getattr(u, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(u, "cache_read_input_tokens", 0) or 0
+        usage = TokenUsage(in_tok + cache_create + cache_read, out_tok,
+                           in_tok + cache_create + cache_read + out_tok)
+        if cache_used or cache_create or cache_read:
+            _record_cache_tokens(kw.get("task_type", "unknown"), self.name, model,
+                                  create=cache_create, read=cache_read, uncached=in_tok)
         return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
     async def generate_stream(self, messages, model="claude-sonnet-4-20250514",
@@ -143,11 +180,28 @@ class AnthropicProvider(BaseProvider):
                 chat.append(m)
         params: dict = {"model": model, "max_tokens": max_tokens,
                         "temperature": temperature, "messages": chat}
+        # v1.6.0 Y1: cache_control on system for stream too
         if system_msg:
-            params["system"] = system_msg
+            if _ANTHROPIC_CACHE_ENABLED and len(system_msg) >= _ANTHROPIC_CACHE_MIN_CHARS:
+                params["system"] = [{"type": "text", "text": system_msg, "cache_control": {"type": "ephemeral"}}]
+            else:
+                params["system"] = system_msg
         async with self.client.messages.stream(**params) as stream:
             async for text in stream.text_stream:
                 yield text
+            # Best-effort: capture final usage for cache token metrics
+            try:
+                final = await stream.get_final_message()
+                fu = getattr(final, "usage", None)
+                if fu is not None:
+                    _record_cache_tokens(
+                        kw.get("task_type", "unknown"), self.name, model,
+                        create=getattr(fu, "cache_creation_input_tokens", 0) or 0,
+                        read=getattr(fu, "cache_read_input_tokens", 0) or 0,
+                        uncached=getattr(fu, "input_tokens", 0) or 0,
+                    )
+            except Exception:
+                pass
 
 
 class OpenAIProvider(BaseProvider):
@@ -173,11 +227,18 @@ class OpenAIProvider(BaseProvider):
         # Some API proxies only return content via streaming.
         # Use stream mode and collect chunks for reliability.
         chunks: list[str] = []
+        # v1.6.0 Y2: prompt_cache_key boosts hit-rate on long stable prefixes
+        extra_body = {}
+        task_type = kw.get("task_type", "unknown")
+        if _OPENAI_CACHE_ENABLED:
+            extra_body["prompt_cache_key"] = f"{task_type}:{model}"
         stream = await self.client.chat.completions.create(
             model=model, messages=messages,
             temperature=temperature, max_tokens=max_tokens,
-            stream=True, stream_options={"include_usage": True})
+            stream=True, stream_options={"include_usage": True},
+            extra_body=extra_body or None)
         usage = TokenUsage()
+        cached_tokens = 0
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 chunks.append(chunk.choices[0].delta.content)
@@ -187,14 +248,25 @@ class OpenAIProvider(BaseProvider):
                     getattr(u, 'prompt_tokens', 0) or 0,
                     getattr(u, 'completion_tokens', 0) or 0,
                     getattr(u, 'total_tokens', 0) or 0)
+                ptd = getattr(u, 'prompt_tokens_details', None)
+                if ptd is not None:
+                    cached_tokens = getattr(ptd, 'cached_tokens', 0) or 0
+        if cached_tokens:
+            uncached = max(usage.input_tokens - cached_tokens, 0)
+            _record_cache_tokens(task_type, self.name, model, read=cached_tokens, uncached=uncached)
         text = "".join(chunks)
         return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
     async def generate_stream(self, messages, model="gpt-4o",
                               temperature=0.7, max_tokens=8192, **kw):
+        # v1.6.0 Y2: prompt_cache_key on stream too
+        extra_body = {}
+        if _OPENAI_CACHE_ENABLED:
+            extra_body["prompt_cache_key"] = f"{kw.get('task_type','unknown')}:{model}"
         stream = await self.client.chat.completions.create(
             model=model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens, stream=True)
+            temperature=temperature, max_tokens=max_tokens, stream=True,
+            extra_body=extra_body or None)
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
