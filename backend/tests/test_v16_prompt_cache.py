@@ -169,3 +169,42 @@ async def test_openai_records_cached_tokens_metric():
     )
     after = _read_count("scene_writer", "openai", "gpt-4o-test", "cache_read")
     assert after - before >= 120, f"cache_read should grow by >=120, got {after - before}"
+
+
+@pytest.mark.asyncio
+async def test_openai_baseline_emits_cache_uncached_when_no_cache_field():
+    """v1.6.0 Y4: when upstream returns prompt_tokens but NO cached_tokens (proxy without
+    cache support), provider must still emit cache_uncached so /metrics has baseline data."""
+    from app.observability.metrics import LLM_CACHE_TOKEN_TOTAL
+
+    def _read_count(task_type, provider, model, kind):
+        try:
+            return float(LLM_CACHE_TOKEN_TOTAL.labels(
+                task_type=task_type, provider=provider, model=model, kind=kind,
+            )._value.get())
+        except Exception:
+            return 0.0
+
+    before_unc = _read_count("scene_planner", "openai", "gpt-y4-noCache", "cache_uncached")
+    before_read = _read_count("scene_planner", "openai", "gpt-y4-noCache", "cache_read")
+    captured: dict = {}
+    chunks = [
+        _FakeOAIChunk(content="plan"),
+        _FakeOAIChunk(usage=_FakeUsage(
+            prompt_tokens=1500, completion_tokens=300, total_tokens=1800,
+            prompt_tokens_details=None,  # upstream proxy returns no details
+        )),
+    ]
+    p = OpenAIProvider(api_key="sk-test")
+    p._client = _FakeOAIClient(captured, chunks)
+    await p.generate(
+        messages=[{"role": "user", "content": "hi"}],
+        model="gpt-y4-noCache",
+        task_type="scene_planner",
+    )
+    after_unc = _read_count("scene_planner", "openai", "gpt-y4-noCache", "cache_uncached")
+    after_read = _read_count("scene_planner", "openai", "gpt-y4-noCache", "cache_read")
+    assert after_unc - before_unc >= 1500, (
+        f"cache_uncached should rise by >=1500 baseline, got {after_unc - before_unc}"
+    )
+    assert after_read - before_read == 0, "cache_read must NOT increment when no cached_tokens reported"
