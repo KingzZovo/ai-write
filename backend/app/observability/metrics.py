@@ -60,6 +60,13 @@ LLM_CALL_DURATION = Histogram(
     registry=REGISTRY,
 )
 
+LLM_CACHE_TOKEN_TOTAL = Counter(
+    "llm_cache_token_total",
+    "Cache-related input tokens by kind (cache_create / cache_read / cache_uncached)",
+    labelnames=("task_type", "provider", "model", "kind"),
+    registry=REGISTRY,
+)
+
 LLM_TOKEN_TOTAL = Counter(
     "llm_token_total",
     "Total tokens consumed by direction (input/output)",
