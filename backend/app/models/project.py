@@ -173,6 +173,9 @@ class WorldRule(Base):
     )
     category = Column(String(100), nullable=False)
     rule_text = Column(Text, nullable=False)
+    # JSON sidecar used by the C4 cascade pipeline to record idempotent
+    # cascade revisions (see app/tasks/cascade.py:_handle_world_rule_target).
+    metadata_json = Column(JSON, default=dict, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="world_rules")

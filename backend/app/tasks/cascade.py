@@ -400,12 +400,187 @@ async def _handle_outline_target(
     }
 
 
-async def _handle_character_target(**_kw: Any) -> dict[str, Any]:
-    return {"status": "skipped", "reason": "character_handler_not_implemented"}
+async def _record_inline_cascade_revision(
+    *,
+    entity: Any,
+    json_attr: str,
+    target_entity_id: str,
+    project_id: str,
+    issue_summary: str | None,
+    severity: str,
+    source_chapter_id: str,
+    log_label: str,
+) -> dict[str, Any]:
+    """Shared idempotent revision writer for character + world_rule handlers.
+
+    The shape mirrors C4-7 outline:
+      * append a record to ``<json_attr>['cascade_revisions']`` keyed on
+        ``(source_chapter_id, severity)``;
+      * fold ``issue_summary`` lines into ``<json_attr>['cascade_hints']``;
+      * if a record with the same rev_key already exists, return
+        ``status=skipped`` so a redelivered Celery task is a no-op.
+
+    The handler does NOT mutate any field used by ``cascade_planner`` for
+    candidate ordering -- that constraint is what keeps
+    ``uq_cascade_tasks_idem`` UNIQUE coverage stable across cascade rounds.
+    """
+    if str(entity.project_id) != str(project_id):
+        return {
+            "status": "failed",
+            "reason": f"{log_label}_target_project_mismatch",
+        }
+
+    raw = getattr(entity, json_attr)
+    new_jsn: dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
+
+    revisions_in = new_jsn.get("cascade_revisions")
+    revisions: list[dict[str, Any]] = (
+        [r for r in revisions_in if isinstance(r, dict)]
+        if isinstance(revisions_in, list)
+        else []
+    )
+    hints_in = new_jsn.get("cascade_hints")
+    hints: list[str] = (
+        [str(h) for h in hints_in if isinstance(h, str)]
+        if isinstance(hints_in, list)
+        else []
+    )
+
+    rev_key = f"{source_chapter_id}:{severity}"
+    if any(r.get("rev_key") == rev_key for r in revisions):
+        return {
+            "status": "skipped",
+            "reason": f"{log_label}_revision_already_recorded",
+        }
+
+    summary_text = (issue_summary or "").strip()
+    revisions.append(
+        {
+            "rev_key": rev_key,
+            "source_chapter_id": str(source_chapter_id),
+            "severity": str(severity),
+            "issue_summary": summary_text,
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    if summary_text:
+        for line in summary_text.splitlines():
+            line = line.strip()
+            if line and line not in hints:
+                hints.append(line)
+
+    new_jsn["cascade_revisions"] = revisions
+    new_jsn["cascade_hints"] = hints
+    setattr(entity, json_attr, new_jsn)
+
+    await db_commit_or_noop(entity)
+
+    logger.info(
+        "_handle_%s_target: target=%s rev_key=%s hints=%d",
+        log_label,
+        target_entity_id,
+        rev_key,
+        len(hints),
+    )
+    return {
+        "status": "done",
+        "reason": f"{log_label}_revision_recorded",
+    }
 
 
-async def _handle_world_rule_target(**_kw: Any) -> dict[str, Any]:
-    return {"status": "skipped", "reason": "world_rule_handler_not_implemented"}
+async def db_commit_or_noop(_entity: Any) -> None:  # pragma: no cover
+    """Sentinel: actual db.commit() is invoked by the per-handler wrapper."""
+    return None
+
+
+async def _handle_character_target(
+    *,
+    db: Any,
+    target_entity_id: str,
+    project_id: str,
+    issue_summary: str | None,
+    severity: str,
+    source_chapter_id: str,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """C4-8: in-place idempotent revision write for a character target.
+
+    Mirrors the C4-7 outline handler against ``Character.profile_json``.
+    Character has no version / is_confirmed / ordering field used by the
+    planner, so we simply append revision metadata.
+    """
+    from app.models.project import Character
+
+    if not target_entity_id:
+        return {
+            "status": "failed",
+            "reason": "character_target_missing_id",
+        }
+    character = await db.get(Character, target_entity_id)
+    if character is None:
+        return {
+            "status": "failed",
+            "reason": f"character_target_not_found:{target_entity_id}",
+        }
+
+    result = await _record_inline_cascade_revision(
+        entity=character,
+        json_attr="profile_json",
+        target_entity_id=target_entity_id,
+        project_id=project_id,
+        issue_summary=issue_summary,
+        severity=severity,
+        source_chapter_id=source_chapter_id,
+        log_label="character",
+    )
+    if result["status"] == "done":
+        await db.commit()
+    return result
+
+
+async def _handle_world_rule_target(
+    *,
+    db: Any,
+    target_entity_id: str,
+    project_id: str,
+    issue_summary: str | None,
+    severity: str,
+    source_chapter_id: str,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """C4-8: in-place idempotent revision write for a world_rule target.
+
+    Mirrors the C4-7 outline handler against ``WorldRule.metadata_json``
+    (added in alembic ``a1001900``). The actual ``rule_text`` content is
+    intentionally not touched -- LLM-driven rewrites are a future step.
+    """
+    from app.models.project import WorldRule
+
+    if not target_entity_id:
+        return {
+            "status": "failed",
+            "reason": "world_rule_target_missing_id",
+        }
+    world_rule = await db.get(WorldRule, target_entity_id)
+    if world_rule is None:
+        return {
+            "status": "failed",
+            "reason": f"world_rule_target_not_found:{target_entity_id}",
+        }
+
+    result = await _record_inline_cascade_revision(
+        entity=world_rule,
+        json_attr="metadata_json",
+        target_entity_id=target_entity_id,
+        project_id=project_id,
+        issue_summary=issue_summary,
+        severity=severity,
+        source_chapter_id=source_chapter_id,
+        log_label="world_rule",
+    )
+    if result["status"] == "done":
+        await db.commit()
+    return result
 
 
 async def _handle_chapter_target(**_kw: Any) -> dict[str, Any]:
