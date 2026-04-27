@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.7.0] - 2026-04-28
+
+v1.7.0 是 v1.5.x → v1.6.0 遗留项的 carry-forward 收尾，详见 `RELEASE_NOTES_v1.7.0.md`。
+
+### 新增 / 改进
+
+- **X2 `_run_async` 路径统一**：`app/tasks/knowledge_tasks.py` (8 call sites) + `app/tasks/style_tasks.py` (1 call site) 的本地 `_run_async()` 改为 thin delegator → `app/tasks/__init__.py:_run_async_safe`（`reset_engine` + `reset_model_router` 前置，`dispose_current_engine_async` finally）。行为零变更、hardening 限定。
+- **X3 Qdrant 孤立 slice cleanup**：新 `scripts/cleanup_orphan_qdrant_slices.py`（PG-as-truth、`--dry-run` 默认、`--apply` 批量 200）。一次性回收 `style_samples_redacted` 8280 条孤立点（12393→4113、与 PG=4115 对齐）；beat_sheets/style_profiles 都是 4115/4115 干净。
+- **X5 cascade_tasks UI**：新 `GET /api/projects/{pid}/cascade-tasks`（list + `chapter_id`/`status` 过滤 + `limit ∈ [1,500]`）+ `/summary`（status 直方图）+ `/{tid}` 详情；前端新 `CascadeTasksPanel.tsx` + 独立 `/cascade-tasks?project_id=...` 路由，活跃行存在时 15 s 轮询。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **245 passed**（230 + 4 X2 + 5 X3 + 6 X5）。
+- frontend `tsc --noEmit` 干净。
+- worker 24 h "attached to a different loop" 警告 = 0。
+- 真数据 smoke：project `f14712d6` 上 `/cascade-tasks` 返回 v1.5.0 烟测那条 critical/done/outline 行，summary `{done: 1, total: 1}`。
+
+### Breaking / 注意
+
+- 无破坏性变更。
+- X5 endpoint 是 read-only；cascade 写入路径仍走 `app/tasks/cascade.py` planner。
+- `task_type="unknown"` Prom label 仍未补 → v1.8 候选。
+- L3（Notion 同步审计）按 King 指示推迟。
+
 ## [1.6.0] - 2026-04-27
 
 v1.6.0 专注于 prompt cache plumbing + scene mode observability，详见 `RELEASE_NOTES_v1.6.0.md`。
