@@ -433,6 +433,41 @@ class FilterWord(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
+class EvaluateTask(Base):
+    """v1.5.0 C2 Step D: async evaluation task tracker.
+
+    Decouples the 30-90s evaluator LLM call from the request thread.
+    POST /api/evaluate/start inserts a row in 'pending' status and
+    enqueues a Celery task; GET /api/evaluate/tasks/{id} returns the
+    current status + result_json so the UI can poll without blocking.
+    """
+
+    __tablename__ = "evaluate_tasks"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 'pending' -> 'running' -> 'completed' | 'failed'
+    status = Column(String(20), nullable=False, default="pending")
+    # 0 = baseline eval; >=1 = post auto-revise round eval (C2 telemetry).
+    round_idx = Column(Integer, nullable=False, default=0)
+    caller = Column(String(100), nullable=False, default="")
+    # EvaluationResult.to_dict() snapshot once completed.
+    result_json = Column(JSON, nullable=True)
+    error_text = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
 class Relationship(Base):
     __tablename__ = "relationships"
 
