@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.5.0] - 2026-04-27
+
+v1.5.0 在 v1.4 tier routing 上新增 **scene-staged writing + auto-revise loop + prompt cache (双层防死锁) + cascade auto-regenerate** 四大主线，详见 `RELEASE_NOTES_v1.5.0.md` 与 `docs/v1.5.0-acceptance-report.md`。
+
+### Schema (alembic)
+
+- `a1001500` — `outlines` partial UNIQUE on `(project_id) WHERE level='book'` + 修复 from_reference 误用
+- `a1001501` — `llm_call_logs` 加 `tier_used / fallback_reason / attempt_index`
+- `a1001600` — `prompt_assets` 种入 `scene_planner` (standard/4096) + `scene_writer` (flagship/8192)
+- `a1001601` — 为上述两个 prompt 回填 `endpoint_id`
+- `a1001700` — 新表 `evaluate_tasks`（异步 evaluator API 载体）
+- `a1001800` — 新表 `cascade_tasks` + UNIQUE `(source_chapter_id, target_entity_type, target_entity_id, severity)`
+- `a1001900` — `world_rules` 加 `metadata_json JSON NOT NULL DEFAULT '{}'`
+
+### 新增 / 改进
+
+- **C1 Scene-staged writing**：`POST /api/generate/chapter` 支持 `use_scene_mode=true` + `target_scenes`，`scene_planner` (standard) → `scene_writer` (flagship) 流水线落入 `app/services/scene_orchestrator.py`，22 个回归用例（`tests/test_c1_scene_orchestrator.py`）。
+- **C2 Auto-revise closed loop**：写完 → evaluator 评分 → < `revise_threshold`（默认 7.0）时把 issues 回灌 SceneOrchestrator 重写（默认 N=2 轮），每轮 `asyncio.timeout(900)`；24 个用例（`tests/test_c2_auto_revise.py`）。
+- **C3 Prompt cache deadlock 双层防线**：Layer 1 = revise 前 `await db.rollback()`；Layer 2 = `app/services/prompt_cache.py` (`get_snapshot` TTL=300s + `buffer_track_result` 30s 后台 flusher)，hot path **必须**走 prompt_cache（AGENTS.md 仓库级契约）。
+- **C4 Cascade auto-regenerate**：critical issue → `cascade_planner` → `cascade_tasks` → Celery `cascade.run_cascade_task` → 章/纲/角/世界规则四类 in-place handler（rev_key 跨轮幂等），56 个用例（`tests/test_c4_cascade.py`）+ `scripts/c4_e2e_smoke.py --rounds 2` double-round 烟测。
+- **B1′ evaluator/checker tier-aware fallback**：修复自上线以来 evaluator zero LLM call P0；`generate_with_tier_fallback` + `_pick_endpoints_by_tier` 安全网。
+- **B2′ Character/HAS_STATE 统一 writer**：`EntityTimelineService` 为唯一入口，新增 `entities.extract_chapter` celery task + Neo4j `ExtractionMarker` 幂等；49 个 GqlStatus warning 归零。
+- **B2 prompt save 软警卫**：`POST/PUT /api/prompts` 增 `confirm_mismatch` query 参数；mismatch 返 409 + 结构化 detail；前端 `savePromptWithGuard` 拦截弹 `window.confirm`。
+- **Bug K chapter SSE auto-save**：镜像 outline auto-save pattern 为 chapter SSE 补 `collected_text` + 独立 session UPDATE + `status:saved` 事件。
+- **D-pre 测试基础设施收尾**：`backend/pyproject.toml` 首次加 `[tool.pytest.ini_options]`：`asyncio_mode="strict"` + session-scoped loop/fixture，消灭 4× `Future attached to a different loop` flake；`tests/test_v10_observability.py` 修 `http_request_total`→`http_requests_total`；pytest 222 passed in 4.13s（3 轮稳定）。
+
+### Breaking / 注意
+
+- **Hot path contract**：`run_text_prompt` / `stream_text_prompt` / SceneOrchestrator / 任何 SSE 路径必须走 `prompt_cache.get_snapshot` + `prompt_cache.buffer_track_result`，不再走 `PromptRegistry.{get,resolve_route,resolve_tier,track_result}`（保留为 admin CRUD）。
+- **pytest-asyncio**：升级后强制 `asyncio_mode="strict"`；async test class 必须 class 级 `@pytest.mark.asyncio`。
+- **Cascade UNIQUE invariant**：handler 严禁修改 `cascade_planner` ordering 字段（`outline.is_confirmed` / `name` / `rule_text` / `category`），否则 `cascade_tasks` 跨轮 UNIQUE 会被击穿。
+
+### Carry-forward / 已知限制
+
+- 上游 LLM provider prompt cache（Anthropic `cache_control: ephemeral` / OpenAI `prompt_cache_key`）留 v1.6。
+- Bug H reprocess worker event-loop 复用警告 / Qdrant `style_samples_redacted` 3× 冗余点 / scene_mode 观测面板 / cascade_tasks UI → v1.6 候选。
+- 真 LLM scene_mode + auto-revise e2e 烟测可作为 v1.6 运营阶段补烟。
+
+
 本项目遵循语义化版本号（SemVer）。
 
 ## [1.4.1] - 2026-04-24
