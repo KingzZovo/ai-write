@@ -201,6 +201,7 @@ class SceneOrchestrator:
         chapter_id: Optional[str | UUID],
         target_words: int,
         n_scenes_hint: Optional[int] = None,
+        user_instruction: str = "",
     ) -> list[SceneBrief]:
         """Run scene_planner LLM call and return SceneBrief list (>=3, <=6)."""
         # Re-use ContextPack's system prompt as planner background, then
@@ -212,7 +213,13 @@ class SceneOrchestrator:
             if isinstance(n_scenes_hint, int) and 3 <= n_scenes_hint <= 6
             else ""
         )
+        instr_block = (
+            f"【额外用户指令（改写要求）】\n{user_instruction.strip()}\n\n"
+            if user_instruction and user_instruction.strip()
+            else ""
+        )
         user_content = (
+            f"{instr_block}"
             f"本章目标字数：约 {target_words} 字\n"
             f"{hint_line}"
             f"请按系统提示输出严格 JSON。"
@@ -275,6 +282,7 @@ class SceneOrchestrator:
         db: AsyncSession,
         project_id: str | UUID,
         chapter_id: Optional[str | UUID],
+        user_instruction: str = "",
     ) -> AsyncIterator[str]:
         """Stream prose for a single scene through scene_writer."""
         background = pack.to_system_prompt()
@@ -284,7 +292,12 @@ class SceneOrchestrator:
             if prior_scenes_summary
             else "\n\n【已写场景】本场为本章首场，请从本章开场起手。"
         )
-        user_content = ctx_block + prior_block + "\n\n请开始写本场景。"
+        instr_block = (
+            f"\n\n【额外用户指令（改写要求）】\n{user_instruction.strip()}"
+            if user_instruction and user_instruction.strip()
+            else ""
+        )
+        user_content = ctx_block + prior_block + instr_block + "\n\n请开始写本场景。"
         async for chunk in stream_text_prompt(
             task_type="scene_writer",
             user_content=user_content,
@@ -329,6 +342,7 @@ class SceneOrchestrator:
             chapter_id=chapter_id,
             target_words=twords,
             n_scenes_hint=n_scenes_hint,
+            user_instruction=user_instruction,
         )
         prior_summary_parts: list[str] = []
         for i, scene in enumerate(briefs):
@@ -348,6 +362,7 @@ class SceneOrchestrator:
                 db=db,
                 project_id=project_id,
                 chapter_id=chapter_id,
+                user_instruction=user_instruction,
             ):
                 if chunk:
                     scene_text_parts.append(chunk)
