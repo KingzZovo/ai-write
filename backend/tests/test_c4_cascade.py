@@ -627,3 +627,317 @@ class TestHandleOutlineTarget:
         )
         assert out["status"] == "failed"
         assert out["reason"] == "outline_target_missing_id"
+
+
+
+@pytest.mark.asyncio
+class TestHandleCharacterTarget:
+    """C4-8 — _handle_character_target idempotent in-place revision writer.
+
+    Same contract as TestHandleOutlineTarget but against
+    ``Character.profile_json``. Character has no version / is_confirmed
+    fields, so there is no ordering field to preserve.
+    """
+
+    def _character_row(self, project_id="p", profile=None):
+        return SimpleNamespace(
+            id=uuid4(),
+            project_id=project_id,
+            profile_json=profile if profile is not None else {},
+        )
+
+    async def _stub_db(self, character_obj):
+        async def fake_get(_cls, _id):
+            return character_obj
+
+        async def fake_commit():
+            return None
+
+        return SimpleNamespace(get=fake_get, commit=fake_commit)
+
+    async def test_character_revision_recorded(self):
+        ch = self._character_row()
+        db = await self._stub_db(ch)
+        out = await cascade_task._handle_character_target(
+            db=db,
+            target_entity_id=str(ch.id),
+            project_id="p",
+            issue_summary="[character_consistency@ch3] OOC behavior",
+            severity="high",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "done"
+        assert out["reason"] == "character_revision_recorded"
+        revs = ch.profile_json["cascade_revisions"]
+        assert len(revs) == 1
+        assert revs[0]["rev_key"] == "ch-3:high"
+        assert revs[0]["severity"] == "high"
+        assert "applied_at" in revs[0]
+        assert "[character_consistency@ch3] OOC behavior" in ch.profile_json["cascade_hints"]
+
+    async def test_character_revision_idempotent(self):
+        existing_rev = {
+            "rev_key": "ch-3:high",
+            "source_chapter_id": "ch-3",
+            "severity": "high",
+            "issue_summary": "old",
+            "applied_at": "2026-01-01T00:00:00+00:00",
+        }
+        ch = self._character_row(
+            profile={
+                "name_alias": "Alice",  # arbitrary pre-existing key preserved
+                "cascade_revisions": [existing_rev],
+                "cascade_hints": ["old"],
+            }
+        )
+        db = await self._stub_db(ch)
+        out = await cascade_task._handle_character_target(
+            db=db,
+            target_entity_id=str(ch.id),
+            project_id="p",
+            issue_summary="new",
+            severity="high",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "skipped"
+        assert out["reason"] == "character_revision_already_recorded"
+        # state untouched
+        assert ch.profile_json["cascade_revisions"] == [existing_rev]
+        assert ch.profile_json["cascade_hints"] == ["old"]
+        assert ch.profile_json["name_alias"] == "Alice"
+
+    async def test_character_target_not_found(self):
+        async def fake_get(_cls, _id):
+            return None
+
+        async def fake_commit():
+            return None
+
+        db = SimpleNamespace(get=fake_get, commit=fake_commit)
+        out = await cascade_task._handle_character_target(
+            db=db,
+            target_entity_id="missing-id",
+            project_id="p",
+            issue_summary="x",
+            severity="high",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "failed"
+        assert "not_found" in out["reason"]
+
+    async def test_character_project_mismatch(self):
+        ch = self._character_row(project_id="other-project")
+        db = await self._stub_db(ch)
+        out = await cascade_task._handle_character_target(
+            db=db,
+            target_entity_id=str(ch.id),
+            project_id="p",
+            issue_summary="x",
+            severity="high",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "failed"
+        assert out["reason"] == "character_target_project_mismatch"
+
+    async def test_character_severity_distinguishes_rev_key(self):
+        ch = self._character_row()
+        db = await self._stub_db(ch)
+        out1 = await cascade_task._handle_character_target(
+            db=db, target_entity_id=str(ch.id), project_id="p",
+            issue_summary="a", severity="high", source_chapter_id="ch-3",
+        )
+        out2 = await cascade_task._handle_character_target(
+            db=db, target_entity_id=str(ch.id), project_id="p",
+            issue_summary="b", severity="critical", source_chapter_id="ch-3",
+        )
+        assert out1["status"] == "done"
+        assert out2["status"] == "done"
+        revs = ch.profile_json["cascade_revisions"]
+        assert sorted(r["rev_key"] for r in revs) == ["ch-3:critical", "ch-3:high"]
+
+    async def test_character_missing_id_fails(self):
+        async def fake_commit():
+            return None
+
+        db = SimpleNamespace(get=lambda *_a, **_k: None, commit=fake_commit)
+        out = await cascade_task._handle_character_target(
+            db=db,
+            target_entity_id="",
+            project_id="p",
+            issue_summary="x",
+            severity="high",
+            source_chapter_id="ch-3",
+        )
+        assert out == {
+            "status": "failed",
+            "reason": "character_target_missing_id",
+        }
+
+
+@pytest.mark.asyncio
+class TestHandleWorldRuleTarget:
+    """C4-8 — _handle_world_rule_target idempotent in-place revision writer.
+
+    Same contract as TestHandleOutlineTarget but against
+    ``WorldRule.metadata_json`` (added in alembic ``a1001900``).
+    The handler does NOT touch ``rule_text``.
+    """
+
+    def _world_rule_row(self, project_id="p", metadata=None, rule_text="魔法不可逆"):
+        return SimpleNamespace(
+            id=uuid4(),
+            project_id=project_id,
+            category="magic",
+            rule_text=rule_text,
+            metadata_json=metadata if metadata is not None else {},
+        )
+
+    async def _stub_db(self, wr_obj):
+        async def fake_get(_cls, _id):
+            return wr_obj
+
+        async def fake_commit():
+            return None
+
+        return SimpleNamespace(get=fake_get, commit=fake_commit)
+
+    async def test_world_rule_revision_recorded(self):
+        wr = self._world_rule_row()
+        db = await self._stub_db(wr)
+        out = await cascade_task._handle_world_rule_target(
+            db=db,
+            target_entity_id=str(wr.id),
+            project_id="p",
+            issue_summary="[world_rule@ch3] magic system contradiction",
+            severity="critical",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "done"
+        assert out["reason"] == "world_rule_revision_recorded"
+        # rule_text untouched
+        assert wr.rule_text == "魔法不可逆"
+        revs = wr.metadata_json["cascade_revisions"]
+        assert len(revs) == 1
+        assert revs[0]["rev_key"] == "ch-3:critical"
+        assert "[world_rule@ch3] magic system contradiction" in wr.metadata_json["cascade_hints"]
+
+    async def test_world_rule_revision_idempotent(self):
+        existing_rev = {
+            "rev_key": "ch-3:critical",
+            "source_chapter_id": "ch-3",
+            "severity": "critical",
+            "issue_summary": "old",
+            "applied_at": "2026-01-01T00:00:00+00:00",
+        }
+        wr = self._world_rule_row(
+            metadata={
+                "cascade_revisions": [existing_rev],
+                "cascade_hints": ["old"],
+            }
+        )
+        db = await self._stub_db(wr)
+        out = await cascade_task._handle_world_rule_target(
+            db=db,
+            target_entity_id=str(wr.id),
+            project_id="p",
+            issue_summary="new",
+            severity="critical",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "skipped"
+        assert out["reason"] == "world_rule_revision_already_recorded"
+        assert wr.metadata_json["cascade_revisions"] == [existing_rev]
+        assert wr.metadata_json["cascade_hints"] == ["old"]
+
+    async def test_world_rule_target_not_found(self):
+        async def fake_get(_cls, _id):
+            return None
+
+        async def fake_commit():
+            return None
+
+        db = SimpleNamespace(get=fake_get, commit=fake_commit)
+        out = await cascade_task._handle_world_rule_target(
+            db=db,
+            target_entity_id="missing-id",
+            project_id="p",
+            issue_summary="x",
+            severity="critical",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "failed"
+        assert "not_found" in out["reason"]
+
+    async def test_world_rule_project_mismatch(self):
+        wr = self._world_rule_row(project_id="other-project")
+        db = await self._stub_db(wr)
+        out = await cascade_task._handle_world_rule_target(
+            db=db,
+            target_entity_id=str(wr.id),
+            project_id="p",
+            issue_summary="x",
+            severity="critical",
+            source_chapter_id="ch-3",
+        )
+        assert out["status"] == "failed"
+        assert out["reason"] == "world_rule_target_project_mismatch"
+
+    async def test_world_rule_does_not_touch_rule_text(self):
+        wr = self._world_rule_row(rule_text="龙血具有神性，不可被凡人摄取。")
+        db = await self._stub_db(wr)
+        out = await cascade_task._handle_world_rule_target(
+            db=db,
+            target_entity_id=str(wr.id),
+            project_id="p",
+            issue_summary="contradiction in chapter 5",
+            severity="high",
+            source_chapter_id="ch-5",
+        )
+        assert out["status"] == "done"
+        # rule_text MUST be preserved verbatim
+        assert wr.rule_text == "龙血具有神性，不可被凡人摄取。"
+
+    async def test_world_rule_dispatch_via_handle_target(self):
+        """_handle_target dispatches world_rule entity_type to the new handler."""
+        wr = self._world_rule_row()
+        db = await self._stub_db(wr)
+        out = await cascade_task._handle_target(
+            db,
+            target_entity_type="world_rule",
+            target_entity_id=str(wr.id),
+            project_id="p",
+            issue_summary="dispatch smoke",
+            severity="high",
+            source_chapter_id="ch-9",
+        )
+        assert out["status"] == "done"
+        assert out["reason"] == "world_rule_revision_recorded"
+
+    async def test_character_dispatch_via_handle_target(self):
+        """_handle_target dispatches character entity_type to the new handler."""
+        ch = SimpleNamespace(
+            id=uuid4(), project_id="p", profile_json={}
+        )
+        db = SimpleNamespace(
+            get=lambda *_a, **_k: ch,
+            commit=lambda: None,
+        )
+        # wrap get into a coroutine
+        async def fake_get(_cls, _id):
+            return ch
+        async def fake_commit():
+            return None
+        db.get = fake_get
+        db.commit = fake_commit
+
+        out = await cascade_task._handle_target(
+            db,
+            target_entity_type="character",
+            target_entity_id=str(ch.id),
+            project_id="p",
+            issue_summary="dispatch smoke",
+            severity="high",
+            source_chapter_id="ch-9",
+        )
+        assert out["status"] == "done"
+        assert out["reason"] == "character_revision_recorded"
