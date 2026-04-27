@@ -642,6 +642,60 @@ class PromptRegistry:
 # Unified runners
 # =========================================================================
 
+# v1.5.0 C3: collapse the per-LLM-call DB cost.
+#
+# Pre-C3, every runner call did three statements against ``prompt_assets``:
+#   1. registry.resolve_route(task_type)  -> SELECT (1 row)
+#   2. registry.resolve_tier(task_type)   -> SELECT (same 1 row, redundantly)
+#   3. registry.track_result(...)         -> UPDATE success_count+1 / fail_count+1
+#
+# After C3:
+#   - Steps 1 + 2 collapse into a single read-through cache lookup
+#     (``prompt_cache.get_snapshot``); 0 DB hits on warm cache.
+#   - Step 3 becomes an in-memory ``buffer_track_result`` tick that is
+#     flushed by a background task on a fresh session, eliminating the
+#     C2-class deadlock where the per-call UPDATE blocked behind the outer
+#     request session's idle-in-transaction row lock.
+async def _resolve_route_and_tier_cached(
+    task_type: str,
+    db: AsyncSession,
+) -> tuple[RouteSpec, str | None]:
+    """Cached resolver used by ``run_text_prompt`` / ``stream_text_prompt``.
+
+    Mirrors ``PromptRegistry.resolve_route`` semantics exactly (including the
+    ``_TASK_TYPE_FALLBACK`` lookup and the "no endpoint" / "no prompt" error
+    messages) but builds the RouteSpec from a detached snapshot, then returns
+    the snapshot's ``model_tier`` alongside it so callers don't need a second
+    DB hit.
+    """
+    from app.services import prompt_cache
+
+    snap = await prompt_cache.get_snapshot(task_type, db)
+    if snap is None:
+        fallback = _TASK_TYPE_FALLBACK.get(task_type)
+        if fallback:
+            snap = await prompt_cache.get_snapshot(fallback, db)
+    if snap is None:
+        raise ValueError(
+            f"No active prompt registered for task '{task_type}'. Create one at /prompts."
+        )
+    if snap.endpoint_id is None:
+        raise ValueError(
+            f"Prompt '{snap.name}' (task {task_type}) has no endpoint configured. "
+            "Assign one at /prompts."
+        )
+    route = RouteSpec(
+        prompt_id=snap.id,
+        endpoint_id=snap.endpoint_id,
+        model=snap.model_name or "",
+        temperature=snap.temperature,
+        max_tokens=snap.max_tokens,
+        system_prompt=snap.system_prompt,
+        mode=snap.mode,
+    )
+    return route, snap.model_tier
+
+
 async def run_text_prompt(
     task_type: str,
     user_content: str,
@@ -659,9 +713,11 @@ async def run_text_prompt(
     Otherwise build `[system, user_content]` from the prompt's system + extra_system.
     """
     from app.services.llm_call_logger import log_llm_call
+    from app.services import prompt_cache
 
-    registry = PromptRegistry(db)
-    route = await registry.resolve_route(task_type)
+    # v1.5.0 C3: one cached lookup yields both the RouteSpec and the
+    # preferred model tier, replacing the two redundant SELECTs.
+    route, preferred_tier = await _resolve_route_and_tier_cached(task_type, db)
 
     if messages is None:
         system = route.system_prompt
@@ -673,10 +729,7 @@ async def run_text_prompt(
         messages.append({"role": "user", "content": user_content})
 
     router = await get_model_router_async()
-    # v1.5.0 B1: resolve preferred tier from PromptAsset.model_tier; let the
-    # router walk the tier-aware fallback chain (route -> preferred_tier ->
-    # standard -> small) and persist one LLMCallLog row per attempt.
-    preferred_tier = await registry.resolve_tier(task_type)
+    # preferred_tier already resolved above (C3 collapses the second SELECT).
     _provider = getattr(route, "provider", None) or "unknown"
     _model = route.model or "unknown"
     from app.observability.metrics import time_llm_call
@@ -697,8 +750,14 @@ async def run_text_prompt(
         mbox["input_tokens"] = result.usage.input_tokens
         mbox["output_tokens"] = result.usage.output_tokens
 
+    # v1.5.0 C3: buffered counter — hot path NEVER touches the request
+    # session, so the C2-class "UPDATE prompt_assets blocked behind outer tx
+    # row lock" deadlock cannot recur. The flusher (started by lifespan)
+    # commits these increments on a fresh session every FLUSH_INTERVAL.
     if route.prompt_id:
-        await registry.track_result(route.prompt_id, success=bool(result.text))
+        await prompt_cache.buffer_track_result(
+            route.prompt_id, success=bool(result.text)
+        )
 
     return result
 
@@ -837,8 +896,8 @@ async def stream_text_prompt(
     """
     from app.services.llm_call_logger import log_llm_call
 
-    registry = PromptRegistry(db)
-    route = await registry.resolve_route(task_type)
+    # v1.5.0 C3: cached resolver (collapses the two SELECT prompt_assets).
+    route, preferred_tier = await _resolve_route_and_tier_cached(task_type, db)
 
     if messages is None:
         system = route.system_prompt
@@ -850,8 +909,7 @@ async def stream_text_prompt(
         messages.append({"role": "user", "content": user_content})
 
     router = await get_model_router_async()
-    # v1.5.0 B1: tier-aware streaming fallback (only falls back before first chunk).
-    preferred_tier = await registry.resolve_tier(task_type)
+    # preferred_tier already resolved above (C3 collapses the second SELECT).
     async for chunk in router.stream_with_tier_fallback(
         task_type,
         messages,
