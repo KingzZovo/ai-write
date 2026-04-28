@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.7.1] - 2026-04-28
+
+v1.7.1 是 v1.7.0 之后的轻量点状补征。详见 `RELEASE_NOTES_v1.7.1.md`。
+
+### 修复 / 增强
+
+- **Z1 task_type Prom 贯穿**：`app/services/model_router.py` 中 `generate_by_route` 加 `task_type: str = "by_route"` 默认参数；generate / generate_stream / generate_by_route / generate_with_tier_fallback 共 12 个 provider 调用点提升 `task_type=task_type` 作为独立 kwarg，充付下游 `_record_cache_tokens`，从根上消除 `LLM_CACHE_TOKEN_TOTAL{task_type="unknown"}` 退化。
+- **Z2 Cascade 面板内嵌到 /workspace + 详情 modal**：`DesktopWorkspace.tsx` 加载 `CascadeTasksPanel`，以 `<CollapsibleSection title="Cascade 任务">` 呈现在“版本历史”下方，门控 currentProject，并在选中章节时 scope 到该章节；`CascadeTasksPanel.tsx` 表格行可点击开详情 modal，modal 反查 `/api/projects/{pid}/cascade-tasks/{tid}` 拿最新 `issue_summary` / `error_message` / `started_at` / `completed_at` / `duration` / `parent_task_id` 等字段。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **248 passed**（v1.7.0 245 + Z1 3）。
+- frontend `tsc --noEmit` 干净。
+- worker 24 h “attached to a different loop” 警告 = 0。
+
+### Breaking / 注意
+
+- 无破坏性变更。Provider `generate(...)` 现多一个 `task_type=` kwarg、原本就接收 `**kwargs`，二进制兼容。
+- Z3（`time_llm_call` 覆盖补齐到 `ModelRouter.generate*` 路径）仍为 v1.8 候选。
+- L3（Notion 同步审计）按 King 指示推迟。
+
 ## [1.7.0] - 2026-04-28
 
 v1.7.0 是 v1.5.x → v1.6.0 遗留项的 carry-forward 收尾，详见 `RELEASE_NOTES_v1.7.0.md`。
