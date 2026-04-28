@@ -730,25 +730,23 @@ async def run_text_prompt(
 
     router = await get_model_router_async()
     # preferred_tier already resolved above (C3 collapses the second SELECT).
-    _provider = getattr(route, "provider", None) or "unknown"
-    _model = route.model or "unknown"
-    from app.observability.metrics import time_llm_call
-    with time_llm_call(task_type, _provider, _model) as mbox:
-        result = await router.generate_with_tier_fallback(
-            task_type,
-            messages,
-            route=route,
-            preferred_tier=preferred_tier,
-            _log_meta={
-                "prompt_id": route.prompt_id,
-                "project_id": project_id,
-                "chapter_id": chapter_id,
-                "rag_hits": rag_hits or [],
-            },
-            **kwargs,
-        )
-        mbox["input_tokens"] = result.usage.input_tokens
-        mbox["output_tokens"] = result.usage.output_tokens
+    # v1.7.2 Z3: time_llm_call wrap moved into ModelRouter
+    # `generate_with_tier_fallback`; the metric box (status/duration/
+    # tokens) is filled there from result.usage. Keeping the wrap here
+    # would double-count.
+    result = await router.generate_with_tier_fallback(
+        task_type,
+        messages,
+        route=route,
+        preferred_tier=preferred_tier,
+        _log_meta={
+            "prompt_id": route.prompt_id,
+            "project_id": project_id,
+            "chapter_id": chapter_id,
+            "rag_hits": rag_hits or [],
+        },
+        **kwargs,
+    )
 
     # v1.5.0 C3: buffered counter — hot path NEVER touches the request
     # session, so the C2-class "UPDATE prompt_assets blocked behind outer tx

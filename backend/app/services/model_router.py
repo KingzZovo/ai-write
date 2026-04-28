@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+from app.observability.metrics import time_llm_call
+
 logger = logging.getLogger(__name__)
 
 
@@ -629,9 +631,12 @@ class ModelRouter:
         eff_temp = temperature if temperature is not None else route.temperature
         eff_max = max_tokens if max_tokens is not None else route.max_tokens
         if _log_meta is None:
-            result = await provider.generate(
-                messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+            with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                result = await provider.generate(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                _mbox["input_tokens"] = result.usage.input_tokens
+                _mbox["output_tokens"] = result.usage.output_tokens
             self._track(result.usage)
             return result
         from app.db.session import async_session_factory
@@ -647,9 +652,12 @@ class ModelRouter:
                 chapter_id=meta.pop("chapter_id", None),
                 rag_hits=meta.pop("rag_hits", None),
             ) as ctx:
-                result = await provider.generate(
-                    messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                    result = await provider.generate(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                    _mbox["input_tokens"] = result.usage.input_tokens
+                    _mbox["output_tokens"] = result.usage.output_tokens
                 ctx.add_chunk(result.text)
                 ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
             await db.commit()
@@ -666,10 +674,11 @@ class ModelRouter:
         eff_temp = temperature if temperature is not None else route.temperature
         eff_max = max_tokens if max_tokens is not None else route.max_tokens
         if _log_meta is None:
-            async for chunk in provider.generate_stream(
-                messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
-                yield chunk
+            with time_llm_call(task_type, provider.__class__.__name__, model):
+                async for chunk in provider.generate_stream(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
+                    yield chunk
             return
         from app.db.session import async_session_factory
         from app.services.llm_call_logger import log_llm_call
@@ -684,11 +693,12 @@ class ModelRouter:
                 chapter_id=meta.pop("chapter_id", None),
                 rag_hits=meta.pop("rag_hits", None),
             ) as ctx:
-                async for chunk in provider.generate_stream(
-                    messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
-                    ctx.add_chunk(chunk)
-                    yield chunk
+                with time_llm_call(task_type, provider.__class__.__name__, model):
+                    async for chunk in provider.generate_stream(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
+                        ctx.add_chunk(chunk)
+                        yield chunk
             await db.commit()
 
     async def generate_by_route(self, route, messages: list[dict],
@@ -704,9 +714,12 @@ class ModelRouter:
         eff_temp = temperature if temperature is not None else route.temperature
         eff_max = max_tokens if max_tokens is not None else route.max_tokens
         if _log_meta is None:
-            result = await provider.generate(
-                messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+            with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                result = await provider.generate(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                _mbox["input_tokens"] = result.usage.input_tokens
+                _mbox["output_tokens"] = result.usage.output_tokens
             self._track(result.usage)
             return result
         from app.db.session import async_session_factory
@@ -723,9 +736,12 @@ class ModelRouter:
                 chapter_id=meta.pop("chapter_id", None),
                 rag_hits=meta.pop("rag_hits", None),
             ) as ctx:
-                result = await provider.generate(
-                    messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                    result = await provider.generate(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                    _mbox["input_tokens"] = result.usage.input_tokens
+                    _mbox["output_tokens"] = result.usage.output_tokens
                 ctx.add_chunk(result.text)
                 ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
             await db.commit()
@@ -922,9 +938,12 @@ class ModelRouter:
             provider = self.providers[ep_key]
             try:
                 if _log_meta is None:
-                    result = await provider.generate(
-                        messages=messages, model=model,
-                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                    with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                        result = await provider.generate(
+                            messages=messages, model=model,
+                            temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                        _mbox["input_tokens"] = result.usage.input_tokens
+                        _mbox["output_tokens"] = result.usage.output_tokens
                     self._track(result.usage)
                     return result
                 async with async_session_factory() as db:
@@ -939,9 +958,12 @@ class ModelRouter:
                         fallback_reason=fallback_reason if idx > 0 else None,
                         attempt_index=idx,
                     ) as ctx:
-                        result = await provider.generate(
-                            messages=messages, model=model,
-                            temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                        with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                            result = await provider.generate(
+                                messages=messages, model=model,
+                                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
+                            _mbox["input_tokens"] = result.usage.input_tokens
+                            _mbox["output_tokens"] = result.usage.output_tokens
                         ctx.add_chunk(result.text)
                         ctx.set_usage(result.usage.input_tokens,
                                       result.usage.output_tokens)
