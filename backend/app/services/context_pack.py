@@ -200,6 +200,9 @@ class ContextPack:
     current_content: str = ""
     current_outline: dict = field(default_factory=dict)
     future_outlines: list[str] = field(default_factory=list)  # next 10 chapters
+    # v1.7.4 P0-1: book/volume outline injection (was previously missing)
+    book_outline_excerpt: str = ""
+    volume_outline: dict = field(default_factory=dict)
 
     # Layer 2: Facts (~33%)
     world_rules: list[str] = field(default_factory=list)
@@ -230,6 +233,60 @@ class ContextPack:
             return text
         return "...(前文已截断)...\n" + text[-char_limit:]
 
+    def _render_volume_outline_block(self) -> str:
+        """Render volume_outline dict into a readable block for the prompt.
+
+        Volume outline schema (from outline_generator):
+          title, volume_idx, core_conflict, emotional_arc,
+          new_characters[{name,role,identity}], turning_points[str],
+          foreshadows{planted:[{description,resolve_conditions}], resolved:[str]},
+          chapter_summaries[{title,summary,key_events,chapter_idx}],
+          transition_to_next, departing_characters
+        """
+        vo = self.volume_outline or {}
+        if not vo:
+            return ""
+        parts: list[str] = []
+        title = vo.get("title") or ""
+        vidx = vo.get("volume_idx")
+        if title or vidx:
+            parts.append(f"《第{vidx}卷 {title}》".strip())
+        if vo.get("core_conflict"):
+            parts.append(f"核心冲突：{vo['core_conflict']}")
+        if vo.get("emotional_arc"):
+            parts.append(f"情感弧线：{vo['emotional_arc']}")
+        new_chars = vo.get("new_characters") or []
+        if isinstance(new_chars, list) and new_chars:
+            cs = []
+            for c in new_chars[:8]:
+                if isinstance(c, dict):
+                    nm = c.get("name", "")
+                    idn = c.get("identity", "")
+                    rl = c.get("role", "")
+                    line = f"- {nm}（{idn}）：{rl}" if (idn or rl) else f"- {nm}"
+                    cs.append(line)
+            if cs:
+                parts.append("新登场角色：\n" + "\n".join(cs))
+        tps = vo.get("turning_points") or []
+        if isinstance(tps, list) and tps:
+            parts.append("转折点：\n" + "\n".join(f"- {t}" for t in tps[:6]))
+        fs = vo.get("foreshadows") or {}
+        if isinstance(fs, dict):
+            planted = fs.get("planted") or []
+            if isinstance(planted, list) and planted:
+                fs_lines = []
+                for f in planted[:8]:
+                    if isinstance(f, dict):
+                        desc = f.get("description", "")
+                        conds = f.get("resolve_conditions") or []
+                        cond_text = ("→ " + "；".join(conds[:2])) if isinstance(conds, list) and conds else ""
+                        fs_lines.append(f"- {desc} {cond_text}".rstrip())
+                if fs_lines:
+                    parts.append("已埋伏笔：\n" + "\n".join(fs_lines))
+        if vo.get("transition_to_next"):
+            parts.append(f"卷末过渡：{vo['transition_to_next']}")
+        return "\n\n".join(parts)
+
     def to_system_prompt(self, token_budget: int = 8000) -> str:
         """Build the system prompt from all layers with budget allocation.
 
@@ -248,6 +305,16 @@ class ContextPack:
 
         # ---- Layer 1: Proximity ----
         l1_parts: list[str] = []
+
+        # v1.7.4 P0-1: inject book/volume outline at the TOP of L1 so the
+        # generator sees the global picture, not just the current-chapter beat.
+        if self.book_outline_excerpt:
+            l1_parts.append(f"【全书大纲(节选)】\n{self.book_outline_excerpt}")
+
+        if self.volume_outline:
+            vo_text = self._render_volume_outline_block()
+            if vo_text:
+                l1_parts.append(f"【本卷大纲】\n{vo_text}")
 
         if self.recent_summaries:
             summaries_text = "\n".join(
@@ -547,6 +614,66 @@ class ContextPackBuilder:
                         outline_summary = oj
                 direction = f"第{row.chapter_idx}章《{row.title or ''}》: {outline_summary}"
                 pack.future_outlines.append(direction)
+
+            # v1.7.4 P0-1: load book + volume outline so chapter generation
+            # sees the global picture (was missing in v1.7.3 and earlier).
+            try:
+                book_outline_q = await db.execute(
+                    select(Outline.content_json)
+                    .where(Outline.project_id == pid, Outline.level == "book")
+                    .order_by(Outline.version.desc())
+                    .limit(1)
+                )
+                bo = book_outline_q.scalar_one_or_none()
+                if isinstance(bo, dict):
+                    raw = bo.get("raw_text") or bo.get("summary") or ""
+                    if isinstance(raw, str) and raw.strip():
+                        # keep head 1500 + tail 500 chars to give both setup and
+                        # endgame anchors without blowing budget.
+                        if len(raw) > 2200:
+                            pack.book_outline_excerpt = (
+                                raw[:1500].rstrip()
+                                + "\n\n…(中部省略)…\n\n"
+                                + raw[-500:].lstrip()
+                            )
+                        else:
+                            pack.book_outline_excerpt = raw
+            except Exception as e:
+                logger.warning("Failed to load book outline: %s", e)
+
+            try:
+                vol_outline_q = await db.execute(
+                    select(Outline.content_json)
+                    .where(
+                        Outline.project_id == pid,
+                        Outline.level == "volume",
+                    )
+                    .order_by(Outline.version.desc())
+                )
+                for vo_row in vol_outline_q.scalars().all():
+                    if isinstance(vo_row, dict) and (
+                        vo_row.get("volume_idx") is None
+                        or str(vo_row.get("volume_id", vid)) == vid
+                    ):
+                        # match by volume_id when present, otherwise take first
+                        pack.volume_outline = vo_row
+                        break
+                if not pack.volume_outline:
+                    # fallback: take the most recent volume outline
+                    fallback = await db.execute(
+                        select(Outline.content_json)
+                        .where(
+                            Outline.project_id == pid,
+                            Outline.level == "volume",
+                        )
+                        .order_by(Outline.version.desc())
+                        .limit(1)
+                    )
+                    fb = fallback.scalar_one_or_none()
+                    if isinstance(fb, dict):
+                        pack.volume_outline = fb
+            except Exception as e:
+                logger.warning("Failed to load volume outline: %s", e)
 
             # Also try to get summaries from previous volumes if we're at
             # the start of a volume
