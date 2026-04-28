@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.2] - 2026-04-28
+
+v1.7.2 是 v1.7.x 观测线的收尾点状补丁，详见 `RELEASE_NOTES_v1.7.2.md`。
+
+### 修复 / 增强
+
+- **Z3 ModelRouter `time_llm_call` 全路径覆盖**：在 `app/services/model_router.py` 的 `generate / generate_stream / generate_by_route / generate_with_tier_fallback` 4 个方法、合计 8 个 provider 调用点（每个方法的 `_log_meta is None` 直分支与 `as ctx:` 日志分支各一次）都加 `with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:` 包裹，`GenerationResult` 返回后填 `_mbox["input_tokens"]/["output_tokens"]`；`generate_with_tier_fallback` 的 wrap 在 `for ... attempts` 循环内，每次 attempt 独立观测一次，失败 attempt 自然记 `status="error"`。`prompt_registry.run_prompt` 的外层 wrap 同步移除避免双计。之后 `entity_timeline / chapter_evaluator / hook_manager / consistency_checker / ooc_checker / outline_generator / settings_extractor / cascade_regenerator / knowledge_tasks` 等调用路径上的所有 LLM 调用都会发 `llm_call_total{status=ok|error}` / `llm_call_duration_seconds` / `llm_token_total{direction=input|output}`。provider 标签从 `route.provider_key`（高基数 endpoint UUID）改为 `provider.__class__.__name__`（如 `OpenAICompatProxy`）。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **252 passed**（v1.7.1 248 + Z3 4）。
+- `/api/health=200`。
+- frontend 未变动，`tsc --noEmit` 仍干净。
+
+### Breaking / 注意
+
+- API / Schema 零变动。
+- **Prom 标签变动**：`llm_call_*{provider}` 从 `"openai_compat_proxy"` 这种字符串改为 `"OpenAICompatProxy"` 之类的类名。如果用于告警 / 面板，需调整匹配正则（如 `provider=~".*Proxy|.*Provider"`）。
+- L3（Notion 同步审计）仍延后。
+
 ## [1.7.1] - 2026-04-28
 
 v1.7.1 是 v1.7.0 之后的轻量点状补征。详见 `RELEASE_NOTES_v1.7.1.md`。
