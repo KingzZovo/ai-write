@@ -262,6 +262,22 @@ async def generate_chapter(
                                 logger.warning(
                                     "Entity dispatch after auto-save failed: %s", dispatch_err
                                 )
+                            # v1.7.4 P0-2: write chapter.summary so the next
+                            # chapter's ContextPack.recent_summaries is non-empty.
+                            try:
+                                from app.services.chapter_summarizer import summarize_and_save_chapter
+                                ok_sum, _sum_text = await summarize_and_save_chapter(
+                                    chapter_id=target_chapter.id, db=save_db,
+                                )
+                                if ok_sum:
+                                    logger.info(
+                                        "Chapter summary written (chapter_id=%s len=%d)",
+                                        target_chapter.id, len(_sum_text),
+                                    )
+                            except Exception as sum_err:
+                                logger.warning(
+                                    "Chapter summarize after auto-save failed: %s", sum_err
+                                )
                         else:
                             logger.warning(
                                 "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",
