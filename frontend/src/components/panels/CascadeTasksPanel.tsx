@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * v1.7 X5: cascade_tasks status panel.
+ * v1.7 X5 / v1.7.1 Z2: cascade_tasks status panel.
  *
  * Reads the read-only API surface added in v1.7 X5
  * (`/api/projects/{pid}/cascade-tasks` + `/summary` + `/{tid}`).
@@ -16,6 +16,8 @@
  *   - created_at relative time
  *   - manual refresh button + auto-refresh every 15s while any row is
  *     pending or running
+ *   - clickable rows open a detail modal showing the full task record
+ *     (issue_summary, error_message, started_at/completed_at, parent task)
  *
  * NOT to be confused with the legacy `CascadePanel.tsx` which surfaces
  * a chapter-edit downstream-impact analysis & re-generate flow.
@@ -70,7 +72,7 @@ const SEVERITY_STYLES: Record<CascadeTaskRow['severity'], string> = {
   critical: 'bg-red-50 text-red-700 border-red-200',
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string | null): string {
   if (!iso) return ''
   const t = new Date(iso).getTime()
   if (Number.isNaN(t)) return ''
@@ -86,6 +88,182 @@ function truncate(s: string | null, n: number): string {
   return s.length <= n ? s : s.slice(0, n) + '…'
 }
 
+function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt) return '—'
+  const startMs = new Date(startedAt).getTime()
+  if (Number.isNaN(startMs)) return '—'
+  const endMs = completedAt ? new Date(completedAt).getTime() : Date.now()
+  if (Number.isNaN(endMs)) return '—'
+  const sec = Math.max(0, Math.round((endMs - startMs) / 1000))
+  if (sec < 60) return `${sec}s`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
+}
+
+// ----------------------------------------------------------------
+// Detail modal
+// ----------------------------------------------------------------
+
+function CascadeTaskDetailModal({
+  projectId,
+  task,
+  onClose,
+}: {
+  projectId: string
+  task: CascadeTaskRow
+  onClose: () => void
+}) {
+  const [full, setFull] = useState<CascadeTaskRow>(task)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Re-fetch the row from /{task_id} for freshest data (covers running rows).
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    apiFetch<CascadeTaskRow>(
+      `/api/projects/${projectId}/cascade-tasks/${task.id}`,
+    )
+      .then((row) => {
+        if (!cancelled) setFull(row)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load task detail')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, task.id])
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Cascade task detail"
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 sticky top-0 bg-white">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-medium ${STATUS_STYLES[full.status]}`}
+            >
+              {full.status}
+            </span>
+            <span
+              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-medium ${SEVERITY_STYLES[full.severity]}`}
+            >
+              {full.severity}
+            </span>
+            <h3 className="text-sm font-semibold text-gray-900 truncate" title={full.id}>
+              Cascade task · {full.id.slice(0, 8)}
+            </h3>
+            {loading && <span className="text-[11px] text-gray-400">refreshing…</span>}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-lg leading-none p-1"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-4">
+          {error && (
+            <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+              {error}
+            </div>
+          )}
+
+          {/* Field grid */}
+          <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-xs">
+            <dt className="text-gray-500">Target entity</dt>
+            <dd className="col-span-2 text-gray-800 font-mono">
+              {full.target_entity_type} · {full.target_entity_id}
+            </dd>
+
+            <dt className="text-gray-500">Source chapter</dt>
+            <dd className="col-span-2 text-gray-800 font-mono">{full.source_chapter_id}</dd>
+
+            <dt className="text-gray-500">Source evaluation</dt>
+            <dd className="col-span-2 text-gray-800 font-mono">{full.source_evaluation_id}</dd>
+
+            <dt className="text-gray-500">Parent task</dt>
+            <dd className="col-span-2 text-gray-800 font-mono">
+              {full.parent_task_id || <span className="text-gray-400">—</span>}
+            </dd>
+
+            <dt className="text-gray-500">Attempts</dt>
+            <dd className="col-span-2 text-gray-800">{full.attempt_count}</dd>
+
+            <dt className="text-gray-500">Created</dt>
+            <dd className="col-span-2 text-gray-800">
+              {full.created_at} <span className="text-gray-400">({relativeTime(full.created_at)})</span>
+            </dd>
+
+            <dt className="text-gray-500">Started</dt>
+            <dd className="col-span-2 text-gray-800">
+              {full.started_at || <span className="text-gray-400">not started</span>}
+            </dd>
+
+            <dt className="text-gray-500">Completed</dt>
+            <dd className="col-span-2 text-gray-800">
+              {full.completed_at || <span className="text-gray-400">not completed</span>}
+            </dd>
+
+            <dt className="text-gray-500">Duration</dt>
+            <dd className="col-span-2 text-gray-800">
+              {formatDuration(full.started_at, full.completed_at)}
+            </dd>
+          </dl>
+
+          {/* Issue summary */}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Issue summary</div>
+            <div className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded p-2 whitespace-pre-wrap">
+              {full.issue_summary || <span className="text-gray-400">—</span>}
+            </div>
+          </div>
+
+          {/* Error message */}
+          {full.error_message && (
+            <div>
+              <div className="text-xs text-red-600 mb-1">Error</div>
+              <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
+                {full.error_message}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ----------------------------------------------------------------
+// Main panel
+// ----------------------------------------------------------------
+
 export function CascadeTasksPanel({
   projectId,
   chapterId,
@@ -96,6 +274,7 @@ export function CascadeTasksPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [openTask, setOpenTask] = useState<CascadeTaskRow | null>(null)
 
   const baseQuery = useMemo(() => {
     const params = new URLSearchParams()
@@ -235,8 +414,9 @@ export function CascadeTasksPanel({
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-b border-gray-100 hover:bg-gray-50/50 align-top"
-                  title={r.id}
+                  className="border-b border-gray-100 hover:bg-blue-50/40 align-top cursor-pointer"
+                  title={`Click for detail · id=${r.id}`}
+                  onClick={() => setOpenTask(r)}
                 >
                   <td className="px-2 py-1.5">
                     <span
@@ -278,6 +458,14 @@ export function CascadeTasksPanel({
             </tbody>
           </table>
         </div>
+      )}
+
+      {openTask && (
+        <CascadeTaskDetailModal
+          projectId={projectId}
+          task={openTask}
+          onClose={() => setOpenTask(null)}
+        />
       )}
     </div>
   )

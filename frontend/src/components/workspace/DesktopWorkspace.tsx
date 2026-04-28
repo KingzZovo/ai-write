@@ -19,6 +19,7 @@ const AntiAIPanel = dynamic(() => import('@/components/panels/AntiAIPanel').then
 const VersionPanel = dynamic(() => import('@/components/panels/VersionPanel').then(m => ({ default: m.VersionPanel })), { ssr: false })
 const TokenDashboard = dynamic(() => import('@/components/panels/TokenDashboard').then(m => ({ default: m.TokenDashboard })), { ssr: false })
 const RelationshipGraph = dynamic(() => import('@/components/panels/RelationshipGraph').then(m => ({ default: m.RelationshipGraph })), { ssr: false })
+const CascadeTasksPanel = dynamic(() => import('@/components/panels/CascadeTasksPanel').then(m => ({ default: m.CascadeTasksPanel })), { ssr: false })
 import {
   useProjectStore,
   normalizeVolume,
@@ -1242,6 +1243,17 @@ export default function DesktopWorkspace() {
               <CollapsibleSection title="版本历史">
                 <div className="px-4">
                   <VersionPanel chapterId={selectedChapterId} />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {currentProject && (
+              <CollapsibleSection title="Cascade 任务">
+                <div className="px-4">
+                  <CascadeTasksPanel
+                    projectId={currentProject.id}
+                    chapterId={selectedChapterId || undefined}
+                  />
                 </div>
               </CollapsibleSection>
             )}
