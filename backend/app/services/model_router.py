@@ -752,6 +752,7 @@ class ModelRouter:
                               temperature: float | None = None,
                               max_tokens: int | None = None,
                               _log_meta: dict | None = None,
+                              task_type: str = "by_route_stream",
                               **kw) -> AsyncIterator[str]:
         """Stream using an explicit RouteSpec (v0.5 path)."""
         ep_key = str(route.endpoint_id)
@@ -769,7 +770,7 @@ class ModelRouter:
         from app.services.llm_call_logger import log_llm_call
         meta = dict(_log_meta)
         endpoint_id = meta.pop("endpoint_id", ep_key)
-        task_type = meta.pop("task_type", "by_route_stream")
+        task_type = meta.pop("task_type", task_type)
         async with async_session_factory() as db:
             async with log_llm_call(
                 db=db, task_type=task_type, model=model,

@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.7.3] - 2026-04-28
+
+v1.7.3 是 v1.7.x 线上 `stream_by_route` `NameError` 热修复，详见 `RELEASE_NOTES_v1.7.3.md`。
+
+### 修复
+
+- **P0 hotfix `ModelRouter.stream_by_route` `NameError`**：v1.7.1 Z1 重构时给 `generate_by_route` 加了 `task_type: str = "by_route"` 入参但漏加了对称的 `stream_by_route`，导致在 `_log_meta is None` 分支里 `meta.pop("task_type", task_type)` 引用了未定义名。任何不传 `_log_meta` 的流式调用一起手即抛 `NameError: name 'task_type' is not defined`。修复：给 `stream_by_route` 加 `task_type: str = "by_route_stream"` 入参。仅 2 行变动，有重收画面/告警需求的请检查 `llm_call_total{task_type="by_route_stream"}` 是否重现。
+
+### 文档
+
+- 新增 `docs/AUDIT_BASELINE_v1.7.2.md`：v1.7.2 润色调研基线资产 (ruff 72 / mypy 550@56 / pytest 252 passed @ overall 34% / pip-audit 4 / npm audit 4)，P0–P3 优先级清单 + roadmap。**本 hotfix 是该基线扫描 P0 项目中发现的第一个真 bug**。
+- `RELEASE_NOTES_v1.7.3.md`。
+
+### 测试
+
+- pytest **254 passed**（252 + 2 hotfix regression）。5.30 s，无 regression。
+- `ruff check backend/app/services/model_router.py --select F821` → all clean。
+- `/api/health=200` （`docker cp` → backend-1 + celery-worker-1 → `docker restart` 两者）。
+- frontend 未变动。
+
+### Breaking / 注意
+
+- API / Schema 零变动。
+- Prom 标签未变。之前任何不传 `_log_meta` 的流式 `stream_by_route` 调用都是报 NameError 后被上层 `try/except` 吃掉或直接起頋，所以 `llm_call_total{task_type="by_route_stream"}` 可能在此前是一直为 0，本补丁后会开始出样本。
+- L3（Notion 同步审计）仍延后。
+
 ## [1.7.2] - 2026-04-28
 
 v1.7.2 是 v1.7.x 观测线的收尾点状补丁，详见 `RELEASE_NOTES_v1.7.2.md`。
