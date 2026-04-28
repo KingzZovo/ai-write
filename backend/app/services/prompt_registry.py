@@ -727,6 +727,17 @@ async def run_text_prompt(
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
+    else:
+        # v1.7.4 P1-fix: ContextPack path used to bypass route.system_prompt
+        # entirely (the v3 anti-AI prompt never reached the LLM). Prepend it as
+        # its own system message so the registered task prompt is always sent.
+        if route.system_prompt:
+            sys_msg = {"role": "system", "content": route.system_prompt}
+            if extra_system:
+                sys_msg["content"] = f"{sys_msg['content']}\n\n{extra_system}"
+            messages = [sys_msg, *messages]
+        elif extra_system:
+            messages = [{"role": "system", "content": extra_system}, *messages]
 
     router = await get_model_router_async()
     # preferred_tier already resolved above (C3 collapses the second SELECT).
@@ -905,6 +916,15 @@ async def stream_text_prompt(
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
+    else:
+        # v1.7.4 P1-fix: see run_text_prompt for rationale.
+        if route.system_prompt:
+            sys_msg = {"role": "system", "content": route.system_prompt}
+            if extra_system:
+                sys_msg["content"] = f"{sys_msg['content']}\n\n{extra_system}"
+            messages = [sys_msg, *messages]
+        elif extra_system:
+            messages = [{"role": "system", "content": extra_system}, *messages]
 
     router = await get_model_router_async()
     # preferred_tier already resolved above (C3 collapses the second SELECT).
