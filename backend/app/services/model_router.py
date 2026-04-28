@@ -631,7 +631,7 @@ class ModelRouter:
         if _log_meta is None:
             result = await provider.generate(
                 messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, **kw)
+                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
             self._track(result.usage)
             return result
         from app.db.session import async_session_factory
@@ -649,7 +649,7 @@ class ModelRouter:
             ) as ctx:
                 result = await provider.generate(
                     messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, **kw)
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
                 ctx.add_chunk(result.text)
                 ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
             await db.commit()
@@ -668,7 +668,7 @@ class ModelRouter:
         if _log_meta is None:
             async for chunk in provider.generate_stream(
                 messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, **kw):
+                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                 yield chunk
             return
         from app.db.session import async_session_factory
@@ -686,7 +686,7 @@ class ModelRouter:
             ) as ctx:
                 async for chunk in provider.generate_stream(
                     messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, **kw):
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                     ctx.add_chunk(chunk)
                     yield chunk
             await db.commit()
@@ -695,6 +695,7 @@ class ModelRouter:
                                 temperature: float | None = None,
                                 max_tokens: int | None = None,
                                 _log_meta: dict | None = None,
+                                task_type: str = "by_route",
                                 **kw) -> GenerationResult:
         """Generate using an explicit RouteSpec (v0.5 path)."""
         ep_key = str(route.endpoint_id)
@@ -705,7 +706,7 @@ class ModelRouter:
         if _log_meta is None:
             result = await provider.generate(
                 messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, **kw)
+                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
             self._track(result.usage)
             return result
         from app.db.session import async_session_factory
@@ -724,7 +725,7 @@ class ModelRouter:
             ) as ctx:
                 result = await provider.generate(
                     messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, **kw)
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
                 ctx.add_chunk(result.text)
                 ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
             await db.commit()
@@ -745,7 +746,7 @@ class ModelRouter:
         if _log_meta is None:
             async for chunk in provider.generate_stream(
                 messages=messages, model=model,
-                temperature=eff_temp, max_tokens=eff_max, **kw):
+                temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                 yield chunk
             return
         from app.db.session import async_session_factory
@@ -764,7 +765,7 @@ class ModelRouter:
             ) as ctx:
                 async for chunk in provider.generate_stream(
                     messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, **kw):
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                     ctx.add_chunk(chunk)
                     yield chunk
             await db.commit()
@@ -923,7 +924,7 @@ class ModelRouter:
                 if _log_meta is None:
                     result = await provider.generate(
                         messages=messages, model=model,
-                        temperature=eff_temp, max_tokens=eff_max, **kw)
+                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
                     self._track(result.usage)
                     return result
                 async with async_session_factory() as db:
@@ -940,7 +941,7 @@ class ModelRouter:
                     ) as ctx:
                         result = await provider.generate(
                             messages=messages, model=model,
-                            temperature=eff_temp, max_tokens=eff_max, **kw)
+                            temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw)
                         ctx.add_chunk(result.text)
                         ctx.set_usage(result.usage.input_tokens,
                                       result.usage.output_tokens)
@@ -1007,7 +1008,7 @@ class ModelRouter:
                 if _log_meta is None:
                     async for chunk in provider.generate_stream(
                         messages=messages, model=model,
-                        temperature=eff_temp, max_tokens=eff_max, **kw):
+                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                         yielded_any = True
                         yield chunk
                     return
@@ -1025,7 +1026,7 @@ class ModelRouter:
                     ) as ctx:
                         async for chunk in provider.generate_stream(
                             messages=messages, model=model,
-                            temperature=eff_temp, max_tokens=eff_max, **kw):
+                            temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                             yielded_any = True
                             ctx.add_chunk(chunk)
                             yield chunk
