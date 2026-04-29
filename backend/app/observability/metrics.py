@@ -104,6 +104,20 @@ SCENE_REVISE_ROUND_TOTAL = Counter(
     registry=REGISTRY,
 )
 
+# -------------------- v1.8.1: SSE auto-save persistence -----
+# Tracks whether the post-stream `target_chapter.content_text =` /
+# `outline = Outline(...)` write actually committed. Before v1.8.1, save
+# failures were swallowed by a `logger.warning("Failed to auto-save ...")`
+# inside `api/generate.py`, leaving `chapters.content_text` / `outlines` 0
+# while SSE clients showed streamed text. This counter makes that gap
+# observable; alert on `failure` rate > 0.
+CHAPTER_AUTO_SAVE_TOTAL = Counter(
+    "chapter_auto_save_total",
+    "Outcomes of post-SSE auto-save into chapters/outlines (success|failure)",
+    labelnames=("kind", "outcome", "reason"),  # kind=chapter|outline; outcome=success|failure; reason=ok|<ExceptionClass>
+    registry=REGISTRY,
+)
+
 # -------------------- Celery --------------------
 CELERY_TASK_TOTAL = Counter(
     "celery_task_total",
