@@ -118,7 +118,7 @@ docker exec ai-write-backend-1 alembic current
 docker exec ai-write-backend-1 alembic history --verbose | head -60
 ```
 
-当前 head：`a1001900`。
+当前 head：`a1001901`。
 
 ### 4.2 生成 / 应用迁移
 
