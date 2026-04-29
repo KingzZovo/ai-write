@@ -179,3 +179,91 @@ ORDER BY created_at DESC LIMIT 5;
 
 本文件随每个 chunk 完成同步更新，**不要**留过期信息。
 
+
+---
+
+## 🎨 dosage-driven anti-AI 风格架构（v1.8.0）
+
+**核心原则：剂量学，不是禁令学。** 风格不靠规则禁止，靠参考书量化学习。
+
+v1.7.x 的弯路：在 prompt 里写「禁止比喻」「心理戏 ≤2 次」「对话占比 ≤40%」等单向上限，模型会**把上限当目标**全部往 0 压。结果朱雀 AI 段降到 17%，但句长、段长、比喻全部碎成渣，文学密度坍塌。
+
+v1.8.0 修复方向：
+
+### 数据底座 — `style_profiles.config_json.dosage_profile`
+
+从参考书全文提取 16 维剂量基线（per-kchar 归一化）：
+
+- paragraph / sentence count + length 分布（mean, std）
+- dialogue ratio + turn count + per-kchar + turn_chars_mean
+- metaphor total + sentence-end metaphor + 5 specific patterns（像一/像被/像有人/像某种/像随时）
+- psychology canned phrases（13 类套语，per-kchar）
+- psychology neutral words（4 类中性词，「正常心理描写」非黑名单）
+- parallelism (XYX, ABAB)
+- colloquial particles + onomatopoeia
+- AI metawords（11 类，期望 0）
+
+抽取脚本范式：`/tmp/extract_dosage.py`（输出 `/tmp/<book>_dosage.json`）
+
+### DB 注入
+
+`style_profiles` 表 INSERT，关键字段：
+
+```sql
+INSERT INTO style_profiles (id, name, source_book, config_json, ...)
+VALUES (
+  '<uuid>',
+  '<参考书剂量画像>',
+  '<reference_books.id>',
+  jsonb_build_object('dosage_profile', '<json from /tmp/extract_dosage.py>'::jsonb),
+  ...
+);
+```
+
+**陷阱**：`source` 字段不要写文件名（如 `longzu_full`），写参考书人类可读名（如 `龙族`），否则渲染输出会带尴尬文件名。
+
+### 渲染
+
+`backend/app/services/context_pack.py` `_render_style_profile()`：当 `style_profile.config_json` 含 `dosage_profile` 时，按一章 7000 字换算渲染 9 行剂量段，写入 system prompt。
+
+### 🚨 `style_samples[:3]` 截断陷阱（关键）
+
+`backend/app/services/context_pack.py:401`：
+```python
+ss_text = "\n---\n".join(self.style_samples[:3])
+```
+
+to_system_prompt() 4 层 token 分配（token_budget=8000）下，`style_samples` 槽位**硬截断为前 3 个 element**。任何向 `style_samples` extend 多 element 的渲染函数都会被静默截断。
+
+**铁律**：所有 `_render_*` 风格渲染器**必须** `"\n".join(lines)` 拼成 1 个字符串再 `parts.append`，**不要** `parts.extend(lines)` 当成多 element 加。
+
+症状：渲染脚本独立验证 9 行全部输出 → system prompt 里只剩标题 + 8 行数字行神秘消失。这是 [:3] 截断 + extend 多 element 的组合 bug。
+
+### 双向区间 prompt（v1.8.1 阶段 B 在做）
+
+**单向上限**会被模型当剂量目标向 0 压（已工程证实）。所有剂量数字必须写**双向区间 + 显式下限**：
+
+- ❌ 「对话占比 ≤40%」 → ✅ 「对话占比 28-40%（低于 25% 单调）」
+- ❌ 「心理戏套语 ≤2 次」 → ✅ 「心理戏套语 0-2 次（保留现状）」
+- ❌ 「心理中性词 ≈ 30 次」 → ✅ 「心理中性词 20-40 次（**低于 15 次失去人物深度**）」
+- ❌ 「句长均 29 字」 → ✅ 「句长均 24-34 字（**低于 20 字过碎，高于 40 字粘稠**）」
+
+### 验证管线（每章生成后必跑）
+
+1. `/tmp/diag_<chN>.py`（8 维生成质量诊断器，对照 reference book 基线）
+2. 对话比 / 句长 / 段长 / 比喻总量 / 句尾比喻 / 心理戏 / 心理中性词 / AI 元词 8 维
+3. 朱雀 AI 检测（用户 PDF），验证三栏 Human / Suspected / AI
+
+### 验收基线（v1.8.0）
+
+- **朱雀 AI 检测（ch10「黑市拍卖会」9063 中文字）**：Human 49.17% / Suspected 50.83% / **AI 0%**（首次 AI 段清零）
+- 8 维诊断：3 个 PASS（AI 元词 0 / 心理套语 0 / prompt 自指 0），7 个偏差（句长/段长/比喻/心理中性词被压低，待 v1.8.1 双向区间修复）
+- 327 passed pytest baseline 不变
+
+### 后端容器调试小坑
+
+- `ai-write-backend-1` **没装 `ps`**：进程检查改用 `ls /proc/$PID` 或 `cat /proc/$PID/status`
+- 容器内长跑后台任务必须 `setsid nohup ... < /dev/null &`（`docker exec -d` 会被杀）
+- 容器内 e2e 脚本必须 `docker exec -e PYTHONPATH=/app -w /app` 才能 `import app`
+- shell 引号嵌套（`python3 -c "...\\n..."`）容易把 `\n` 字面注入 .py 文件造成 SyntaxError —— 改用 `write_file` 单独写脚本再 `run_command` 跑
+
