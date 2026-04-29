@@ -43,6 +43,141 @@ from app.tasks import celery_app
 logger = logging.getLogger(__name__)
 
 
+async def _materialize_entities_to_postgres(
+    *,
+    project_id: str,
+    chapter_idx: int,
+    caller: str,
+) -> dict[str, int]:
+    """Materialize Neo4j entity snapshot into Postgres.
+
+    Minimal v1.9 scope:
+    - Upsert `characters` by (project_id, name)
+    - Insert `relationships` by (project_id, source_id, target_id, rel_type)
+
+    Best-effort: failures must never break the extraction task.
+    """
+    from sqlalchemy import select
+
+    from app.db.neo4j import init_neo4j
+    from app.db.session import async_session_factory
+    from app.models.project import Character, Relationship
+    from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
+    from app.services.entity_timeline import EntityTimelineService
+
+    await init_neo4j()
+    from app.db import neo4j as _neo4j_mod
+
+    driver = _neo4j_mod._driver
+    if driver is None:
+        return {"chars_created": 0, "chars_seen": 0, "rels_created": 0, "rels_seen": 0}
+
+    try:
+        svc = EntityTimelineService(driver)
+        snap = await svc.get_world_snapshot(project_id, chapter_idx)
+
+        char_names = sorted({c.name for c in (snap.characters or []) if c.name})
+        rels = snap.relationships or []
+
+        created_chars = 0
+        created_rels = 0
+
+        async with async_session_factory() as db:
+            if char_names:
+                existing_rows = await db.execute(
+                    select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name.in_(char_names),
+                    )
+                )
+                existing = {c.name: c for c in existing_rows.scalars().all()}
+            else:
+                existing = {}
+
+            for name in char_names:
+                if name in existing:
+                    continue
+                db.add(
+                    Character(
+                        project_id=project_id,
+                        name=name,
+                        profile_json={},
+                    )
+                )
+                created_chars += 1
+
+            await db.flush()
+
+            if char_names:
+                all_rows = await db.execute(
+                    select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name.in_(char_names),
+                    )
+                )
+                by_name = {c.name: c for c in all_rows.scalars().all()}
+            else:
+                by_name = {}
+
+            for r in rels:
+                src = by_name.get(r.source)
+                tgt = by_name.get(r.target)
+                if not src or not tgt:
+                    continue
+
+                exists_rel = await db.execute(
+                    select(Relationship.id).where(
+                        Relationship.project_id == project_id,
+                        Relationship.source_id == src.id,
+                        Relationship.target_id == tgt.id,
+                        Relationship.rel_type == r.rel_type,
+                    )
+                )
+                if exists_rel.first():
+                    continue
+
+                db.add(
+                    Relationship(
+                        project_id=project_id,
+                        source_id=src.id,
+                        target_id=tgt.id,
+                        rel_type=r.rel_type,
+                    )
+                )
+                created_rels += 1
+
+            await db.commit()
+
+        ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
+        logger.info(
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d)",
+            project_id,
+            chapter_idx,
+            caller,
+            created_chars,
+            len(char_names),
+            created_rels,
+            len(rels),
+        )
+        return {
+            "chars_created": created_chars,
+            "chars_seen": len(char_names),
+            "rels_created": created_rels,
+            "rels_seen": len(rels),
+        }
+    except Exception as e:
+        ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
+        logger.error(
+            "entity_pg_materialize failed (project=%s ch=%d caller=%s): %s",
+            project_id,
+            chapter_idx,
+            caller,
+            e,
+            exc_info=True,
+        )
+        return {"chars_created": 0, "chars_seen": 0, "rels_created": 0, "rels_seen": 0}
+
+
 # ---------------------------------------------------------------------------
 # Async core
 # ---------------------------------------------------------------------------
@@ -190,6 +325,13 @@ async def _extract_chapter_async(
         # what the 49 GqlStatus warnings complained about not existing.
         await service.initialize_graph(project_id)
         await service.extract_and_update(project_id, chapter_idx, chapter_text)
+
+        # v1.9: materialize Neo4j entity snapshot into Postgres read models.
+        await _materialize_entities_to_postgres(
+            project_id=project_id,
+            chapter_idx=chapter_idx,
+            caller=caller,
+        )
     except Exception as e:
         await _mark_failed(driver, project_id, chapter_idx, repr(e)[:500])
         raise
