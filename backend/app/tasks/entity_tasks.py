@@ -63,7 +63,6 @@ async def _materialize_entities_to_postgres(
     from app.db.session import async_session_factory
     from app.models.project import Character, Relationship
     from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
-    from app.services.entity_timeline import EntityTimelineService
 
     await init_neo4j()
     from app.db import neo4j as _neo4j_mod
@@ -73,11 +72,39 @@ async def _materialize_entities_to_postgres(
         return {"chars_created": 0, "chars_seen": 0, "rels_created": 0, "rels_seen": 0}
 
     try:
-        svc = EntityTimelineService(driver)
-        snap = await svc.get_world_snapshot(project_id, chapter_idx)
+        # IMPORTANT: do NOT use EntityTimelineService.get_world_snapshot() here.
+        # That method returns characters only when they have an active HAS_STATE
+        # at `chapter_idx`. In real data, new characters can exist as (:Character)
+        # nodes without any state edges yet, which would make PG materialization
+        # a silent no-op.
 
-        char_names = sorted({c.name for c in (snap.characters or []) if c.name})
-        rels = snap.relationships or []
+        async with driver.session() as session:
+            # Characters: materialize all Character node names.
+            result = await session.run(
+                "MATCH (c:Character {project_id: $pid}) RETURN DISTINCT c.name AS name",
+                pid=project_id,
+            )
+            names: list[str] = []
+            async for rec in result:
+                n = rec.get("name") if rec else None
+                if isinstance(n, str) and n.strip():
+                    names.append(n)
+            char_names = sorted(set(names))
+
+            # Relationships: materialize all RELATES_TO edges.
+            rel_result = await session.run(
+                "MATCH (a:Character {project_id: $pid})-[r:RELATES_TO]->(b:Character {project_id: $pid}) "
+                "RETURN a.name AS source, b.name AS target, r.type AS rtype",
+                pid=project_id,
+            )
+            rels: list[tuple[str, str, str]] = []
+            async for rec in rel_result:
+                src = rec.get("source") if rec else None
+                tgt = rec.get("target") if rec else None
+                rtype = rec.get("rtype") if rec else None
+                if isinstance(src, str) and isinstance(tgt, str) and isinstance(rtype, str):
+                    if src.strip() and tgt.strip() and rtype.strip():
+                        rels.append((src, tgt, rtype))
 
         created_chars = 0
         created_rels = 0
@@ -119,9 +146,9 @@ async def _materialize_entities_to_postgres(
             else:
                 by_name = {}
 
-            for r in rels:
-                src = by_name.get(r.source)
-                tgt = by_name.get(r.target)
+            for (src_name, tgt_name, rel_type) in rels:
+                src = by_name.get(src_name)
+                tgt = by_name.get(tgt_name)
                 if not src or not tgt:
                     continue
 
@@ -130,7 +157,7 @@ async def _materialize_entities_to_postgres(
                         Relationship.project_id == project_id,
                         Relationship.source_id == src.id,
                         Relationship.target_id == tgt.id,
-                        Relationship.rel_type == r.rel_type,
+                        Relationship.rel_type == rel_type,
                     )
                 )
                 if exists_rel.first():
@@ -141,7 +168,7 @@ async def _materialize_entities_to_postgres(
                         project_id=project_id,
                         source_id=src.id,
                         target_id=tgt.id,
-                        rel_type=r.rel_type,
+                        rel_type=rel_type,
                     )
                 )
                 created_rels += 1
@@ -292,6 +319,15 @@ async def _extract_chapter_async(
         logger.info(
             "entity_extraction skip: already completed (project=%s ch=%d caller=%s)",
             project_id, chapter_idx, caller,
+        )
+
+        # v1.9: even when extraction is already completed, we still want the
+        # Postgres read models to converge. This makes materialization safe to
+        # backfill by re-dispatching the extraction task.
+        await _materialize_entities_to_postgres(
+            project_id=project_id,
+            chapter_idx=chapter_idx,
+            caller=caller,
         )
         return {
             "status": "skipped",
