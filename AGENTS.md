@@ -15,7 +15,7 @@
 三件套 + 关键代码入口。任何 schema、目录、调用链或版本变化必须同步刷新三件套，不允许只改其中一份。
 
 - `PROJECT_STRUCTURE.md` — 项目概览（系统目标 500 万字+） / 服务拓扑 mermaid / 仓库目录树 / 后端模块职责矩阵 / 关键类与函数索引（路径:行号） / DB schema 5 类总览（含「已建未启用」标注） / ContextPack 数据流 mermaid / 章节生成端到端 + 章末写回缺口 / 外部服务清单 / Frontend 概览。
-- `PLAN.md` — 已完成里程碑 v1.0.0–v1.8.0 / 当前活动版本 v1.8.1（凌祝 bug 单点修 + ch11 验收候选） / 近期 backlog v1.9–v2.0（章末实体写回管线、`chapter_versions`、`chapter_variants`、`chapter_text_chunks`、Neo4j 状态机扩展、章末抽取 LLM pass，每条标 S/M/L/XL） / 长期路线（Qdrant 切分 / PG 分区 / 上下文窗口压缩 / `recent_summaries` 链断裂 / 多 LLM 路由 + tier 降级） / 冻结 backlog（v7 commit、`entity_records`、pgvector） / 维护规则。
+- `PLAN.md` — 已完成里程碑 v1.0.0–v1.8.0 / 当前活动版本 v1.8.1（章节回写主库链路修复 + ch11 验收候选；附「凌祝 bug 是误读」事故复盘） / 近期 backlog v1.9–v2.0（章末实体写回管线、`chapter_versions`、`chapter_variants`、`chapter_text_chunks`、Neo4j 状态机扩展、章末抽取 LLM pass，每条标 S/M/L/XL） / 长期路线（Qdrant 切分 / PG 分区 / 上下文窗口压缩 / `recent_summaries` 链断裂 / 多 LLM 路由 + tier 降级） / 冻结 backlog（v7 commit、`entity_records`、pgvector） / 维护规则。
 - `AGENTS.md` — 本文件，仓库级运行时与 DB 约束、踩坑清单、v1.8.0 dosage 章节、跨章节防线。
 - 关键代码入口：`backend/app/services/context_pack.py`（`ContextPack` L191 / `ContextPackBuilder` L458 / `to_system_prompt` L290 / dosage 渲染 L1223–1310 / Neo4j 接入 L761/828/849）、`backend/app/services/prompt_registry.py`（`run_text_prompt` L699 / messages L711–740）、`backend/app/services/chapter_generator.py`（98 行薄层）、`backend/alembic/versions/`（最新 head `a1001900`）。
 

@@ -569,7 +569,7 @@ Meta 层是最轻的一层，但它直接影响生成语气和风险提醒。当
   - **没有**主路径自动启用 `chapter_versions`
   - **没有**主路径自动产生 `chapter_variants`
 
-这正是“凌祝 bug”会长期复发的结构性原因：系统能把新章节写进 `chapters.content_text`，也能把状态写进 Neo4j，但 Postgres 的人物档案主表、关系演进和伏笔表并不会被主链路稳定回写，导致下游依赖 Postgres 的 ContextPack 与人工校对看到的是不完整事实。
+这正是「正文与档案双断」会长期复发的结构性原因：在 ch9–ch12 实测里，`chapters.content_text` 本身也未被主链路稳定写回（验收测试-玄幻全本200万 项目 ch9–ch12 全部 0 字，而 `generation_runs` 曾经跑出 ch10 v8 9063 字版本），更不用说人物档案主表、关系演进和伏笔表——下游依赖 Postgres 的 ContextPack 与人工校对看到的是「正文不在、角色不在」的双断事实。这条断裂早期被误传为「凌祝 bug」，但全仓库 `grep -rn '凌祝'` 只命中一条单元测试 fixture 字符串和本文档自身的引用；ch10 `outline_json` 中真正登记、`characters` 表里真正缺档的角色候选是「纪砥（D-2）」。任何「角色档案撕裂」类修复必须以 `chapters.content_text` 与 `outline_json` 中真实存在的名字为准，不许把测试 fixture 当成真实事实。
 
 ## 外部服务清单
 
