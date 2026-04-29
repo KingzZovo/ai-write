@@ -83,7 +83,228 @@ await db.execute(text("INSERT INTO world_rules ..."))
 
 ## 4. 验收命令（复制即用）
 
-### 4.1 本地状态干净（P0）
+Python 包不装在宿主上。要打 patch 、跳试都从容器里跳：
+
+```bash
+docker exec -e PYTHONPATH=/app ai-write-backend-1 \
+  bash -c 'cd /app && python -m pytest tests/ -q --ignore=tests/integration'
+```
+
+## 3. 热补丁（代码修改的完整路径）
+
+**重要**：backend 与 celery-worker 是同一个镜像但是不同容器。你 host 上修改 `app/...` 后要 `cp` 两份、重启两份。
+
+```bash
+# 1) 宿主修改
+vim /root/ai-write/backend/app/services/<file>.py
+
+# 2) 拷到两个容器
+docker cp /root/ai-write/backend/app/services/<file>.py \
+  ai-write-backend-1:/app/app/services/<file>.py
+docker cp /root/ai-write/backend/app/services/<file>.py \
+  ai-write-celery-worker-1:/app/app/services/<file>.py
+
+# 3) 重启两个容器
+docker restart ai-write-backend-1 ai-write-celery-worker-1
+sleep 8
+
+# 4) 验证
+curl -fsS http://127.0.0.1:8000/api/health
+docker exec -e PYTHONPATH=/app ai-write-backend-1 \
+  bash -c 'cd /app && python -m pytest tests/test_<变动面>.py -q'
+```
+
+反例：**切勿** 只修改宿主不 cp 进容器——那会造成 backend 看不到、但 pytest 里看到的“幽灵修复”。
+
+## 4. 数据库 / 迁移
+
+### 4.1 查看状态
+
+```bash
+docker exec ai-write-backend-1 alembic current
+docker exec ai-write-backend-1 alembic history --verbose | head -60
+```
+
+当前 head：`a1001901`。
+
+### 4.2 生成 / 应用迁移
+
+```bash
+# 生成新迁移（记得起名要能看出意图）
+docker exec ai-write-backend-1 alembic revision --autogenerate -m 'v18_xxx'
+
+# 人工调整 backend/alembic/versions/<new>.py 到满意
+# 拷进两个容器
+docker cp backend/alembic/versions/<new>.py ai-write-backend-1:/app/alembic/versions/
+docker cp backend/alembic/versions/<new>.py ai-write-celery-worker-1:/app/alembic/versions/
+
+# 应用
+docker exec ai-write-backend-1 alembic upgrade head
+```
+
+回退：`alembic downgrade -1` 。产环境谨慎，先做备份。
+
+### 4.3 备份 / 恢复
+
+仓库提供了 `scripts/backup.sh`，输出到 `backups/`：
+
+```bash
+cd /root/ai-write && bash scripts/backup.sh
+ls -la backups/                       # 看拿了哪些表 + qdrant snapshot
+```
+
+手动 PG 备份 / 恢复：
+
+```bash
+# 备份全库
+docker exec ai-write-postgres-1 \
+  pg_dump -U postgres -d aiwrite -Fc -f /tmp/aiwrite-$(date +%F).dump
+docker cp ai-write-postgres-1:/tmp/aiwrite-$(date +%F).dump backups/
+
+# 恢复
+docker cp backups/aiwrite-2026-04-28.dump ai-write-postgres-1:/tmp/x.dump
+docker exec ai-write-postgres-1 \
+  pg_restore -U postgres -d aiwrite --clean --if-exists /tmp/x.dump
+```
+
+Qdrant 备份（snapshot REST）：
+
+```bash
+curl -fsS -X POST http://127.0.0.1:6333/collections/text_chunks/snapshots
+ls /var/lib/docker/volumes/ai-write_qdrant_data/_data/snapshots/text_chunks/
+```
+
+## 5. 常用查询模板
+
+### 5.1 PG 业务状态
+
+```sql
+-- 项目详情
+SELECT id, name, status, created_at
+FROM projects
+ORDER BY created_at DESC LIMIT 10;
+
+-- 某项目下的卷与章节（注意列名别名避免歧义）
+SELECT v.idx AS volume_idx, v.title AS volume_title,
+       c.chapter_idx, c.title AS chapter_title,
+       c.word_count, c.status
+FROM chapters c
+JOIN volumes v ON v.id = c.volume_id
+WHERE v.project_id = '<project_id>'
+ORDER BY v.idx, c.chapter_idx;
+
+-- 大纲分层（正确列是 level 不是 scope/outline_type）
+SELECT level, COUNT(*) FROM outlines
+WHERE project_id = '<project_id>' GROUP BY level;
+
+-- 评分详情
+SELECT chapter_id, plot_coherence, character_consistency, style_adherence,
+       narrative_pacing, foreshadow_handling, overall,
+       json_array_length(issues_json) AS n_issues
+FROM chapter_evaluations
+ORDER BY created_at DESC LIMIT 20;
+
+-- cascade 任务分布
+SELECT status, severity, COUNT(*) FROM cascade_tasks
+GROUP BY status, severity ORDER BY status, severity;
+```
+
+### 5.2 LLM 调用日志
+
+```sql
+-- 依据会必须走 task_type / model_name，**llm_call_logs 表无 provider 列**
+SELECT task_type, model_name, COUNT(*) AS n,
+       AVG(duration_ms) AS avg_ms
+FROM llm_call_logs
+WHERE created_at > now() - interval '1 day'
+GROUP BY task_type, model_name ORDER BY n DESC;
+
+-- 错误率
+SELECT model_name,
+       SUM(CASE WHEN status='error' THEN 1 ELSE 0 END)::float / COUNT(*) AS err_rate,
+       COUNT(*) AS n
+FROM llm_call_logs
+WHERE created_at > now() - interval '1 day'
+GROUP BY model_name;
+```
+
+### 5.3 Prometheus PromQL
+
+```promql
+# 其他业务调用量 TPS
+rate(llm_call_total[5m])
+
+# 错误率（按 task_type）
+sum by (task_type)(rate(llm_call_total{status="error"}[5m]))
+  /
+sum by (task_type)(rate(llm_call_total[5m]))
+
+# v1.7.2 后 provider 变为类名，指名中包含 Provider/Proxy
+sum by (provider)(
+  rate(llm_call_total{provider=~".*Proxy|.*Provider"}[5m])
+)
+
+# token 使用量
+sum by (direction)(rate(llm_token_total[5m]))
+
+# 生成调用 P95 耗时
+histogram_quantile(0.95,
+  sum by (le)(rate(llm_call_duration_seconds_bucket{task_type="generation"}[5m]))
+)
+
+# scene plan fallback
+sum by (reason)(increase(scene_plan_fallback_total[1h]))
+```
+
+## 6. 故障诊断（按现象倒查）
+
+### 6.1 `/api/health` 不返 200
+
+1. `docker logs --tail 200 ai-write-backend-1` 看启动 traceback。
+2. 最常见原因：alembic 未升、`DATABASE_URL` 接不上、运行时导入失败。
+3. 跳进容器手走一遍 `python -c 'from app.main import app'` 能马上看出哪个模块出事。
+
+### 6.2 celery-worker 刷 `loop` warning / 任务不动
+
+1. `docker logs --tail 200 ai-write-celery-worker-1`。
+2. 不同名字任务不互部，看是否某个 `tasks.<name>` 未被 register（`celery -A app.celery_app inspect registered`）。
+3. Redis 是否还在：`docker exec ai-write-redis-1 redis-cli ping` 期望 `PONG`。
+4. 用 `celery inspect active / inspect reserved` 看队列。
+
+### 6.3 cascade 任务卡在 `pending`
+
+1. 检查同一 `(source_chapter_id, target_entity_type, target_entity_id, severity)` 老任务 —— UNIQUE 索引会拒受重复跟进。
+2. 看对应评分 `chapter_evaluations.issues_json` 中 high/critical 个数是否 ≥ 3 且存在 `IN_SCOPE_DIMENSIONS`。
+3. `LOCK_RETRY_COUNTDOWN=30` 仅处理锁失败；如果调度未起，看 worker 是否被 `worker_concurrency` 占满。
+
+### 6.4 LLM 调用全部 `error`
+
+1. `curl -fsS http://141.148.185.96:8317/v1/models` 测上游是否还活。
+2. 看 `llm_call_logs` 最近几条的 `error_text`，401 = token 过期；502/timeout = 上游；validation = task_routing 打错了。
+3. v1.7.1 Z1 后，所有 task_type 都能在 `llm_call_total` 上看到；发现 “unknown” task_type 突增 → 某个入口忘了传。
+
+### 6.5 PG 查询报 `column ... ambiguous`
+
+- chapters 与 volumes 都有 `title`，JOIN 要 `c.title AS chapter_title` / `v.title AS volume_title`。
+- outlines 上是 `level` 不是 `scope`/`outline_type`。
+- 仓库里不存在 `task_routing` 表，路由配置从 `prompt_assets` + 代码常量拼出。如需调路由，去 `app/services/model_router.py`。
+
+### 6.6 Qdrant 丢 collection / 数量对不上
+
+```bash
+curl -s http://127.0.0.1:6333/collections | jq
+curl -s http://127.0.0.1:6333/collections/text_chunks | jq
+```
+
+期望：`text_chunks=2159, style_samples_redacted=4113, beat_sheets=4115, style_profiles=4115`。如果丢了，走 `tasks.vectorize_book` 重跑，但要先看 `reference_book_slices` 在不在。孤儿片清理 → `scripts/cleanup_orphan_qdrant_slices.py`。
+
+### 6.7 frontend 接不上后端
+
+1. 在浏览器 devtool 看请求是去了 `:8080`/`:3100` 还是裸 8000。
+2. nginx 配置：`nginx/`。`docker logs ai-write-nginx-1`。
+3. tsc 原地体检：`cd /root/ai-write/frontend && npx --no-install tsc --noEmit`。空输出 = OK。
+
+## 7. 发布流程（入主干 + tag）
 
 ```bash
 cd /root/ai-write
