@@ -569,7 +569,11 @@ Meta 层是最轻的一层，但它直接影响生成语气和风险提醒。当
   - **没有**主路径自动启用 `chapter_versions`
   - **没有**主路径自动产生 `chapter_variants`
 
-这正是「正文与档案双断」会长期复发的结构性原因：在 ch9–ch12 实测里，`chapters.content_text` 本身也未被主链路稳定写回（验收测试-玄幻全本200万 项目 ch9–ch12 全部 0 字，而 `generation_runs` 曾经跑出 ch10 v8 9063 字版本），更不用说人物档案主表、关系演进和伏笔表——下游依赖 Postgres 的 ContextPack 与人工校对看到的是「正文不在、角色不在」的双断事实。这条断裂早期被误传为「凌祝 bug」，但全仓库 `grep -rn '凌祝'` 只命中一条单元测试 fixture 字符串和本文档自身的引用；ch10 `outline_json` 中真正登记、`characters` 表里真正缺档的角色候选是「纪砥（D-2）」。任何「角色档案撕裂」类修复必须以 `chapters.content_text` 与 `outline_json` 中真实存在的名字为准，不许把测试 fixture 当成真实事实。
+这正是「正文与档案双断」会长期复发的结构性原因：在 ch9–ch12 实测里，`chapters.content_text` 本身未被主链路稳定写回（验收测试-玄幻全本200万 项目 ch9–ch12 全部 0 字），但 `llm_call_logs.response_text` 已经落了 12 条 4200–13175 字符的成功 generation（前窗口看到的「ch10 v8 9063 中字」即此层流式输出，不是 `generation_runs` —— 该表全库 0 行）；更不用说人物档案主表、关系演进和伏笔表——下游依赖 Postgres 的 ContextPack 与人工校对看到的是「正文不在、角色不在」的双断事实。
+
+这条断裂的具体形态（实测）：`POST /api/generate/chapter` 的 SSE 流跑通、LLM 输出成功落 `llm_call_logs`，但 `api/generate.py` 自动落库段（v1.5.0 Bug K 引入）的 `target_chapter.content_text = full_text + save_db.commit()` 在外层 `try/except` 里被一条 `logger.warning("Failed to auto-save chapter: %s", save_err)` 静默吞掉；容器日志（720h 内）抓到决定性证据 `scene_planner LLM call failed: connection was closed in the middle of operation` 紧跟 `Unhandled exception on POST /api/generate/chapter: cannot call Transaction.commit(): the underlying connection is closed`（asyncpg `ConnectionDoesNotExistError`）。换句话说：SSE 客户端拿到流式文本，但后端 commit 因 asyncpg 连接被关而失败，且失败被静默压成 warning。
+
+这条断裂早期被误传为「凌祝 bug 是误读」，但 DB 实测推翻该判断：「凌祝」在 `llm_call_logs.response_text` 项目 `f14712d6` 出现 50 次（12 条 generation 中 10 条命中），在 `outlines.content_json` 出现 1 次，是 ch9–ch11 真实出场角色，不是 fixture 误读。同样在 `characters` 表里真正缺档的真实角色还包括「**纪砚（D-2）**」（木字旁，正确字型；早期文档/fixture 写的「纪砥」是错字，12 条 generation `response_text` 里「纪砚」12/12 命中、「纪砥」0/12）以及「**苏未**」。任何「角色档案撕裂」类修复必须以 `chapters.content_text` / `chapters.summary` / `outlines.content_json` / `llm_call_logs.response_text` / `chapter_versions.content_text` / `chapter_variants.content_text` 中真实存在的名字与字型为准，不许把测试 fixture 当成真实事实，也不许只 `grep` `*.py` 不查 DB 文本字段就下结论。
 
 ## 外部服务清单
 
