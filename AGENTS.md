@@ -3,6 +3,22 @@
 面向在本仓库内动手的 AI 代理 / 工程师。范围：runtime / backend / DB 约束、踩过的坑、跨章节生成链路的死锁防线。
 不重复 Notion 全局规则页里已有的本地代理通用守则（MCP timeout、shell escape、conventional commit 等）。
 
+## 🎯 系统目标 — 500 万字+
+
+- ai-write 的系统设计下限是**单部作品 500 万字+**。所有容量决策（Qdrant collection 切分、PostgreSQL `chapters` 与未来 `chapter_text_chunks` 分区、ContextPack 4 层窗口压缩、`recent_summaries` 链路保护、tier routing 与 embeddings 重建）必须按这个体量推，不是按当前测试样本。
+- DB 中 `验收测试-玄幻全本200万`（`projects.target_word_count = 2_000_000`）只是测试样本，不是系统上限。任何「先按 200 万写」「50 章够用」「先用简单方案」的提议一律按反规则处理，不进 backlog。
+- 章末写回（`characters` / `relationships.evolution_json` / `foreshadows.status`）、`chapter_versions`、`chapter_variants`、章节 chunk 向量化都不能停留在「已建未启用」，必须按主线版本逐步启用，详见 `PLAN.md` 近期 backlog 与长期路线。
+- 永远先查 schema 再提方案。当前 public schema 实测 **42** 张表（含 `alembic_version`，alembic head `a1001900`）；事实主表是 `characters` / `relationships` / `foreshadows`，不再新建 `entity_records`；向量底座是 Qdrant，不要回退 pgvector。
+
+## 🗂️ 路径索引
+
+三件套 + 关键代码入口。任何 schema、目录、调用链或版本变化必须同步刷新三件套，不允许只改其中一份。
+
+- `PROJECT_STRUCTURE.md` — 项目概览（系统目标 500 万字+） / 服务拓扑 mermaid / 仓库目录树 / 后端模块职责矩阵 / 关键类与函数索引（路径:行号） / DB schema 5 类总览（含「已建未启用」标注） / ContextPack 数据流 mermaid / 章节生成端到端 + 章末写回缺口 / 外部服务清单 / Frontend 概览。
+- `PLAN.md` — 已完成里程碑 v1.0.0–v1.8.0 / 当前活动版本 v1.8.1（凌祝 bug 单点修 + ch11 验收候选） / 近期 backlog v1.9–v2.0（章末实体写回管线、`chapter_versions`、`chapter_variants`、`chapter_text_chunks`、Neo4j 状态机扩展、章末抽取 LLM pass，每条标 S/M/L/XL） / 长期路线（Qdrant 切分 / PG 分区 / 上下文窗口压缩 / `recent_summaries` 链断裂 / 多 LLM 路由 + tier 降级） / 冻结 backlog（v7 commit、`entity_records`、pgvector） / 维护规则。
+- `AGENTS.md` — 本文件，仓库级运行时与 DB 约束、踩坑清单、v1.8.0 dosage 章节、跨章节防线。
+- 关键代码入口：`backend/app/services/context_pack.py`（`ContextPack` L191 / `ContextPackBuilder` L458 / `to_system_prompt` L290 / dosage 渲染 L1223–1310 / Neo4j 接入 L761/828/849）、`backend/app/services/prompt_registry.py`（`run_text_prompt` L699 / messages L711–740）、`backend/app/services/chapter_generator.py`（98 行薄层）、`backend/alembic/versions/`（最新 head `a1001900`）。
+
 ---
 
 ## 🛡️ prompt_registry 死锁双层防线（v1.5.0 / C2 + C3）
