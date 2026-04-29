@@ -176,6 +176,43 @@ ls /var/lib/docker/volumes/ai-write_qdrant_data/_data/snapshots/text_chunks/
 
 ## 5. 常用查询模板
 
+## 6. 实体写回（Neo4j → Postgres）/ 观测与手动触发（v1.9+）
+
+### 6.1 目的
+
+- 生产链路里，实体抽取与写回发生在 Celery worker 进程；而 `/metrics` 是 FastAPI backend 进程提供。
+- 因此，要在 `/metrics` 上看到 `entity_pg_materialize_total{...}` 的样本行，需要在 backend 进程内执行一次 materialize。
+
+### 6.2 Admin 触发接口（backend 进程内执行）
+
+接口：`POST /api/admin/entities/materialize`
+
+鉴权：
+
+- Header：`Authorization: Bearer <JWT>`
+- 额外 gate：JWT 的 `sub` 必须在环境变量 `ADMIN_USERNAMES` 里（默认已设置为 `king`）
+
+示例：
+
+```bash
+TOK=$(cat /tmp/king_tok)
+curl -sS -X POST http://127.0.0.1:8000/api/admin/entities/materialize \
+	-H "Content-Type: application/json" \
+	-H "Authorization: Bearer $TOK" \
+	-d '{"project_id":"<project_id>","chapter_idx":11,"caller":"runbook.manual"}'
+
+# 预期：返回 status=ok + chars_seen/rels_seen 等
+```
+
+### 6.3 观测验证
+
+```bash
+curl -s http://127.0.0.1:8000/metrics | grep -E '^entity_pg_materialize_total\{' || true
+
+# 预期至少出现 1 行类似：
+# entity_pg_materialize_total{outcome="success",reason="ok"} 1
+```
+
 ### 5.1 PG 业务状态
 
 ```sql
