@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -282,9 +283,14 @@ async def extract_settings(
             note=note,
             sentiment=sentiment,
         ))
-        rels_created += 1
+        try:
+            await db.flush()
+            rels_created += 1
+        except IntegrityError:
+            # DB has uq_relationships_rel_key; treat as already-created.
+            await db.rollback()
+            continue
 
-    await db.flush()
     return ExtractResponse(
         characters_created=chars_created,
         world_rules_created=rules_created,
