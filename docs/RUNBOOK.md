@@ -334,6 +334,20 @@ PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
 
 该脚本会验证：materialize 幂等、以及 `relationships/world_rules/locations/character_locations` 无重复组。
 
+同时会检查以下 Postgres 唯一约束是否存在（避免环境漏建约束导致 silently duplicated）：
+
+- `uq_relationships_rel_key`
+- `uq_world_rules_key`
+- `uq_locations_project_name`
+- `uq_character_locations_key`
+
+脚本也会做一组粗粒度对账（Neo4j vs Postgres 计数）：
+
+- Neo4j：Character / RELATES_TO / WorldRule / Location / AT_LOCATION
+- Postgres：characters / relationships / world_rules / locations / character_locations
+
+预期口径：在 materialize 之后，这些计数应当一致；如果不一致，优先重跑 materialize，并确认查询过滤条件都按同一个 `project_id`。
+
 #### Alembic 本地升级（v1.9+）
 
 说明：`backend/alembic/env.py` 默认从应用配置读取 DB URL；本地/CI 可以用 `DATABASE_URL` 覆盖。

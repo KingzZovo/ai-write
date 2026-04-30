@@ -27,6 +27,97 @@ fi
 
 TOK="$(cat "$TOKEN_FILE")"
 
+require_pg_constraints() {
+	local missing=0
+	for cname in \
+		uq_relationships_rel_key \
+		uq_world_rules_key \
+		uq_locations_project_name \
+		uq_character_locations_key
+	do
+		if ! docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -Atqc \
+			"SELECT 1 FROM pg_constraint WHERE conname='${cname}' LIMIT 1;" \
+			| grep -q '^1$'; then
+			echo "ERROR: missing Postgres constraint: ${cname}" >&2
+			missing=1
+		fi
+	done
+
+	if [[ "$missing" -ne 0 ]]; then
+		echo "HINT: run alembic upgrade head and verify migrations a1001902..a1001905 were applied." >&2
+		exit 1
+	fi
+}
+
+echo "[0/6] verify required Postgres uniqueness constraints exist"
+require_pg_constraints
+
+neo4j_count() {
+	local cypher="$1"
+	# Use container's configured auth (see NEO4J_AUTH).
+	local neo4j_pass
+	neo4j_pass="$(docker exec ai-write-neo4j-1 bash -lc 'echo "${NEO4J_AUTH:-neo4j/neo4j}" | cut -d/ -f2')"
+	# Execute cypher as a positional arg to avoid here-string quoting issues.
+	docker exec ai-write-neo4j-1 bash -lc \
+		"/var/lib/neo4j/bin/cypher-shell --non-interactive --format plain -a bolt://127.0.0.1:7687 -u neo4j -p \"${neo4j_pass}\" \"${cypher}\"" \
+		| tail -n 1 \
+		| tr -d '\r' \
+		| tr -d ' '
+}
+
+pg_count() {
+	local sql="$1"
+	docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -Atqc "$sql" \
+		| head -n 1 \
+		| tr -d '\r' \
+		| tr -d ' '
+}
+
+reconcile_counts() {
+	local pid="$1"
+
+	echo "[0.5/6] reconcile Neo4j vs Postgres counts (project_id=$pid)"
+
+	local n_chars n_rels n_rules n_locs n_atlocs
+	local p_chars p_rels p_rules p_locs p_atlocs
+
+	n_chars="$(neo4j_count "MATCH (c:Character {project_id: '$pid'}) RETURN count(c)")"
+	n_rels="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:RELATES_TO]->(:Character {project_id: '$pid'}) RETURN count(r)")"
+	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(w)")"
+	n_locs="$(neo4j_count "MATCH (l:Location {project_id: '$pid'}) RETURN count(l)")"
+	n_atlocs="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:AT_LOCATION]->(:Location {project_id: '$pid'}) RETURN count(r)")"
+
+	p_chars="$(pg_count "SELECT count(*) FROM characters WHERE project_id='$pid';")"
+	p_rels="$(pg_count "SELECT count(*) FROM relationships WHERE project_id='$pid';")"
+	p_rules="$(pg_count "SELECT count(*) FROM world_rules WHERE project_id='$pid';")"
+	p_locs="$(pg_count "SELECT count(*) FROM locations WHERE project_id='$pid';")"
+	p_atlocs="$(pg_count "SELECT count(*) FROM character_locations WHERE project_id='$pid';")"
+
+	echo "Neo4j counts: characters=$n_chars relationships=$n_rels world_rules=$n_rules locations=$n_locs at_locations=$n_atlocs"
+	echo "Postgres counts: characters=$p_chars relationships=$p_rels world_rules=$p_rules locations=$p_locs character_locations=$p_atlocs"
+
+	# This is a coarse reconciliation signal. We expect PG to eventually match Neo4j
+	# after materialize. Any mismatch may indicate partial materialize or schema drift.
+	local bad=0
+	for pair in \
+		"characters:$n_chars:$p_chars" \
+		"relationships:$n_rels:$p_rels" \
+		"world_rules:$n_rules:$p_rules" \
+		"locations:$n_locs:$p_locs" \
+		"at_location_edges:$n_atlocs:$p_atlocs"
+	do
+		IFS=':' read -r label n p <<<"$pair"
+		if [[ "$n" != "$p" ]]; then
+			echo "WARN: count mismatch: $label neo4j=$n pg=$p" >&2
+			bad=1
+		fi
+	done
+
+	if [[ "$bad" -ne 0 ]]; then
+		echo "HINT: rerun materialize; if still mismatched, check Neo4j queries vs PG filters and whether PG has soft-deletes or dedupe behavior." >&2
+	fi
+}
+
 call_materialize() {
 	curl -sS -X POST "$BASE_URL/api/admin/entities/materialize" \
 		-H 'Content-Type: application/json' \
@@ -38,6 +129,8 @@ call_materialize() {
 echo "[1/3] materialize (1st run)"
 OUT1="$(call_materialize)"
 echo "$OUT1"
+
+reconcile_counts "$PROJECT_ID"
 
 echo "[2/3] materialize (2nd run; must be idempotent: created=0)"
 OUT2="$(call_materialize)"
