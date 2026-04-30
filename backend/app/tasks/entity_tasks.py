@@ -201,7 +201,12 @@ async def _materialize_entities_to_postgres(
                 )
                 created_rels += 1
 
-            await db.commit()
+            try:
+                await db.commit()
+            except Exception:
+                # DB-level dedupe (uq_relationships_rel_key) may race with concurrent writers.
+                # Best-effort: rollback and continue without failing the extraction task.
+                await db.rollback()
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
