@@ -270,6 +270,16 @@ SELECT COUNT(*) AS relationships_n FROM relationships WHERE project_id='<project
 PROJECT_ID=<project_id> bash scripts/normalize_relationship_rel_type_pg.sh
 ```
 
+### 6.7 rel_type 规范化（canonical 词表）
+
+目标：让 `relationships.rel_type` 保持短、稳定、可枚举，以便：筛选统计、关系图展示、以及 OOC checker 关键字匹配。
+
+当前 v1.9 的规范化策略：
+
+- 写入 PG 的 outlines/extract 路径：按关键字归一到 canonical token（例如 敌对/对立/监管/审讯/师生/上下级/同舍/同伴/失联）。
+- Neo4j → PG materialize 路径：同样按关键字归一。
+- 存量 PG 数据：使用 `scripts/normalize_relationship_rel_type_pg.sh`，当 `rel_type` 过长时会把原值保存在 `label`（若 label 为空），并把 `rel_type` 归一化。
+
 ### 5.1 PG 业务状态
 
 ```sql
