@@ -331,6 +331,15 @@ PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
 	bash scripts/verify_entity_writeback_v19.sh
 ```
 
+#### Alembic 本地升级（v1.9+）
+
+说明：`backend/alembic/env.py` 默认从应用配置读取 DB URL；本地/CI 可以用 `DATABASE_URL` 覆盖。
+
+```bash
+DATABASE_URL='postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/aiwrite' \
+	PYTHONPATH=backend backend/.venv/bin/alembic -c backend/alembic.ini upgrade head
+```
+
 ### 5.1 PG 业务状态
 
 ```sql

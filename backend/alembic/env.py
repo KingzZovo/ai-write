@@ -11,13 +11,19 @@ from alembic import context
 
 # Import all models so metadata is fully populated
 from app.models import Base  # noqa: F401 – registers all tables
+import os
+
 from app.config import settings
 
 # Alembic Config object
 config = context.config
 
-# Set the database URL from application settings (overrides alembic.ini)
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Set the database URL from application settings, but allow override for
+# local tooling/CI via DATABASE_URL.
+config.set_main_option(
+    "sqlalchemy.url",
+    os.getenv("DATABASE_URL") or settings.DATABASE_URL,
+)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

@@ -5,7 +5,6 @@ locations into Postgres for fast reads.
 """
 
 from alembic import op
-import sqlalchemy as sa
 
 
 revision = "a1001904"
@@ -15,17 +14,31 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "locations",
-        sa.Column("id", sa.Uuid(), primary_key=True, nullable=False),
-        sa.Column("project_id", sa.Uuid(), sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("name", sa.String(length=200), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+    # Idempotent: local dev environments may already have the table/constraint.
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS locations (
+          id uuid PRIMARY KEY,
+          project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          name varchar(200) NOT NULL,
+          created_at timestamptz
+        );
+        """
     )
-    op.create_unique_constraint(
-        "uq_locations_project_name",
-        "locations",
-        ["project_id", "name"],
+    op.execute(
+        """
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'uq_locations_project_name'
+          ) THEN
+            ALTER TABLE locations
+              ADD CONSTRAINT uq_locations_project_name
+              UNIQUE (project_id, name);
+          END IF;
+        END
+        $$;
+        """
     )
 
 
