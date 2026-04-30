@@ -54,6 +54,9 @@ async def _materialize_entities_to_postgres(
     Minimal v1.9 scope:
     - Upsert `characters` by (project_id, name)
     - Insert `relationships` by (project_id, source_id, target_id, rel_type)
+    - Insert `world_rules` by (project_id, category, rule_text)
+    - Insert `locations` by (project_id, name)
+    - Insert `character_locations` by (project_id, character_id, location_id, chapter_start)
 
     Best-effort: failures must never break the extraction task.
     """
@@ -147,10 +150,36 @@ async def _materialize_entities_to_postgres(
                     loc_names.append(n.strip())
             locations = sorted(set(loc_names))
 
+            # AT_LOCATION: materialize all Character-AT_LOCATION->Location edges.
+            # Neo4j schema (EntityTimelineService):
+            #   (c:Character)-[:AT_LOCATION {chapter_start, chapter_end}]->(l:Location)
+            atloc_result = await session.run(
+                "MATCH (c:Character {project_id: $pid})-[r:AT_LOCATION]->(l:Location {project_id: $pid}) "
+                "RETURN c.name AS cname, l.name AS lname, r.chapter_start AS cs, r.chapter_end AS ce",
+                pid=project_id,
+            )
+            at_locs: list[tuple[str, str, int, int | None]] = []
+            async for rec in atloc_result:
+                cname = rec.get("cname") if rec else None
+                lname = rec.get("lname") if rec else None
+                cs = rec.get("cs") if rec else None
+                ce = rec.get("ce") if rec else None
+                if not isinstance(cname, str) or not cname.strip():
+                    continue
+                if not isinstance(lname, str) or not lname.strip():
+                    continue
+                if not isinstance(cs, int):
+                    continue
+                at_locs.append((cname.strip(), lname.strip(), int(cs), int(ce) if isinstance(ce, int) else None))
+
+            # Deduplicate by key.
+            at_locs = sorted(set(at_locs))
+
         created_chars = 0
         created_rels = 0
         created_rules = 0
         created_locs = 0
+        created_atlocs = 0
 
         async with async_session_factory() as db:
             if char_names:
@@ -232,6 +261,45 @@ async def _materialize_entities_to_postgres(
                 result = await db.execute(stmt)
                 created_locs += int(getattr(result, "rowcount", 0) or 0)
 
+            # AT_LOCATION: bulk insert projection rows.
+            if at_locs:
+                # Refresh lookup maps (characters + locations).
+                char_rows = await db.execute(
+                    select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name.in_([c for (c, _, _, _) in at_locs]),
+                    )
+                )
+                char_by_name = {c.name: c for c in char_rows.scalars().all()}
+                loc_rows_db = await db.execute(
+                    select(Location).where(
+                        Location.project_id == project_id,
+                        Location.name.in_([l for (_, l, _, _) in at_locs]),
+                    )
+                )
+                loc_by_name = {l.name: l for l in loc_rows_db.scalars().all()}
+
+                atloc_rows = []
+                for (cname, lname, cs, ce) in at_locs:
+                    c = char_by_name.get(cname)
+                    l = loc_by_name.get(lname)
+                    if not c or not l:
+                        continue
+                    atloc_rows.append(
+                        {
+                            "project_id": project_id,
+                            "character_id": str(c.id),
+                            "location_id": str(l.id),
+                            "chapter_start": int(cs),
+                            "chapter_end": int(ce) if ce is not None else None,
+                        }
+                    )
+                if atloc_rows:
+                    stmt = insert(CharacterLocation).values(atloc_rows)
+                    stmt = stmt.on_conflict_do_nothing(constraint="uq_character_locations_key")
+                    result = await db.execute(stmt)
+                    created_atlocs += int(getattr(result, "rowcount", 0) or 0)
+
             try:
                 await db.commit()
             except Exception:
@@ -239,7 +307,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d atlocs=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -251,6 +319,8 @@ async def _materialize_entities_to_postgres(
             len(world_rules),
             created_locs,
             len(locations),
+            created_atlocs,
+            len(at_locs),
         )
         return {
             "chars_created": created_chars,
@@ -261,6 +331,8 @@ async def _materialize_entities_to_postgres(
             "rules_seen": len(world_rules),
             "locs_created": created_locs,
             "locs_seen": len(locations),
+            "atlocs_created": created_atlocs,
+            "atlocs_seen": len(at_locs),
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
@@ -272,7 +344,18 @@ async def _materialize_entities_to_postgres(
             e,
             exc_info=True,
         )
-        return {"chars_created": 0, "chars_seen": 0, "rels_created": 0, "rels_seen": 0}
+        return {
+            "chars_created": 0,
+            "chars_seen": 0,
+            "rels_created": 0,
+            "rels_seen": 0,
+            "rules_created": 0,
+            "rules_seen": 0,
+            "locs_created": 0,
+            "locs_seen": 0,
+            "atlocs_created": 0,
+            "atlocs_seen": 0,
+        }
 
 
 # ---------------------------------------------------------------------------
