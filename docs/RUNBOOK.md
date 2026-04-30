@@ -313,6 +313,16 @@ v1.9 处理策略：
 
 - 写入侧使用 DB SAVEPOINT（事务嵌套），让单条关系写入冲突不会中断整批写入。
 
+### 6.11 Neo4j 为真相源：实体 materialize 覆盖范围
+
+约定：Neo4j 是结构化实体的真相源；Postgres 是读优化投影。
+
+v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
+
+- characters（按 `(project_id, name)` 幂等）
+- relationships（按 `(project_id, source_id, target_id, rel_type)` 幂等，DB 约束：`uq_relationships_rel_key`）
+- world_rules（按 `(project_id, category, rule_text)` 幂等，DB 约束：`uq_world_rules_key`）
+
 ### 5.1 PG 业务状态
 
 ```sql

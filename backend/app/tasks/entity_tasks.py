@@ -58,10 +58,11 @@ async def _materialize_entities_to_postgres(
     Best-effort: failures must never break the extraction task.
     """
     from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert
 
     from app.db.neo4j import init_neo4j
     from app.db.session import async_session_factory
-    from app.models.project import Character, Relationship
+    from app.models.project import Character, Relationship, WorldRule
     from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
     from app.services.rel_type import canonicalize_rel_type
 
@@ -70,7 +71,14 @@ async def _materialize_entities_to_postgres(
 
     driver = _neo4j_mod._driver
     if driver is None:
-        return {"chars_created": 0, "chars_seen": 0, "rels_created": 0, "rels_seen": 0}
+        return {
+            "chars_created": 0,
+            "chars_seen": 0,
+            "rels_created": 0,
+            "rels_seen": 0,
+            "rules_created": 0,
+            "rules_seen": 0,
+        }
 
     try:
         # IMPORTANT: do NOT use EntityTimelineService.get_world_snapshot() here.
@@ -108,8 +116,26 @@ async def _materialize_entities_to_postgres(
                         rel_type = canonicalize_rel_type(rtype)
                         rels.append((src, tgt, rel_type))
 
+            # World rules: materialize all WorldRule nodes.
+            # Neo4j schema (EntityTimelineService): (:WorldRule {project_id, category, text})
+            rules_result = await session.run(
+                "MATCH (w:WorldRule {project_id: $pid}) RETURN w.category AS category, w.text AS text",
+                pid=project_id,
+            )
+            rules: list[tuple[str, str]] = []
+            async for rec in rules_result:
+                cat = rec.get("category") if rec else None
+                txt = rec.get("text") if rec else None
+                if isinstance(cat, str) and isinstance(txt, str):
+                    cat = cat.strip()
+                    txt = txt.strip()
+                    if cat and txt:
+                        rules.append((cat, txt))
+            world_rules = sorted(set(rules))
+
         created_chars = 0
         created_rels = 0
+        created_rules = 0
 
         async with async_session_factory() as db:
             if char_names:
@@ -148,28 +174,37 @@ async def _materialize_entities_to_postgres(
             else:
                 by_name = {}
 
+            # Relationships: bulk insert w/ ON CONFLICT DO NOTHING.
+            rel_rows = []
             for (src_name, tgt_name, rel_type) in rels:
                 src = by_name.get(src_name)
                 tgt = by_name.get(tgt_name)
                 if not src or not tgt:
                     continue
+                rel_rows.append(
+                    {
+                        "project_id": project_id,
+                        "source_id": str(src.id),
+                        "target_id": str(tgt.id),
+                        "rel_type": rel_type,
+                    }
+                )
+            if rel_rows:
+                stmt = insert(Relationship).values(rel_rows)
+                stmt = stmt.on_conflict_do_nothing(constraint="uq_relationships_rel_key")
+                result = await db.execute(stmt)
+                created_rels += int(getattr(result, "rowcount", 0) or 0)
 
-                # Use a SAVEPOINT so unique-constraint conflicts don't abort the whole transaction.
-                try:
-                    async with db.begin_nested():
-                        db.add(
-                            Relationship(
-                                project_id=project_id,
-                                source_id=src.id,
-                                target_id=tgt.id,
-                                rel_type=rel_type,
-                            )
-                        )
-                        await db.flush()
-                        created_rels += 1
-                except Exception:
-                    # Treat unique constraint conflicts as already-created.
-                    continue
+            # World rules: bulk insert w/ ON CONFLICT DO NOTHING.
+            rule_rows = [
+                {"project_id": project_id, "category": cat, "rule_text": txt}
+                for (cat, txt) in world_rules
+            ]
+            if rule_rows:
+                stmt = insert(WorldRule).values(rule_rows)
+                stmt = stmt.on_conflict_do_nothing(constraint="uq_world_rules_key")
+                result = await db.execute(stmt)
+                created_rules += int(getattr(result, "rowcount", 0) or 0)
 
             try:
                 await db.commit()
@@ -178,7 +213,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -186,12 +221,16 @@ async def _materialize_entities_to_postgres(
             len(char_names),
             created_rels,
             len(rels),
+            created_rules,
+            len(world_rules),
         )
         return {
             "chars_created": created_chars,
             "chars_seen": len(char_names),
             "rels_created": created_rels,
             "rels_seen": len(rels),
+            "rules_created": created_rules,
+            "rules_seen": len(world_rules),
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
