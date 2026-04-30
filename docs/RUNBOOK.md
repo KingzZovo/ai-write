@@ -330,6 +330,7 @@ v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 - relationships（按 `(project_id, source_id, target_id, rel_type)` 幂等，DB 约束：`uq_relationships_rel_key`）
 - world_rules（按 `(project_id, category, rule_text)` 幂等，DB 约束：`uq_world_rules_key`）
 - locations（按 `(project_id, name)` 幂等，DB 约束：`uq_locations_project_name`）
+- character_locations（AT_LOCATION 投影；按 `(project_id, character_id, location_id, chapter_start)` 幂等，DB 约束：`uq_character_locations_key`）
 
 ### 6.12 v1.9+ 一键验收（Neo4j→PG 写回）
 
