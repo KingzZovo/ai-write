@@ -190,7 +190,15 @@ ls /var/lib/docker/volumes/ai-write_qdrant_data/_data/snapshots/text_chunks/
 鉴权：
 
 - Header：`Authorization: Bearer <JWT>`
-- 额外 gate：JWT 的 `sub` 必须在环境变量 `ADMIN_USERNAMES` 里（默认已设置为 `king`）
+- 额外 gate：JWT 的 `sub` 必须在环境变量 `ADMIN_USERNAMES` 里（例如：`king`）
+
+部署注意：
+
+- `ADMIN_USERNAMES` 属于**部署配置**（运行时环境变量），不应依赖仓库内文件。
+- 本仓库的 `.env` 文件被 `.gitignore` 忽略（不会被提交），因此**换机/重建环境时必须由部署侧提供该变量**。
+- 推荐做法：
+	- 临时运行：`ADMIN_USERNAMES=king docker compose up -d`
+	- 长期运行：将 `ADMIN_USERNAMES` 写入你的服务管理/部署系统（例如 systemd、k8s Secret、私有 env 管理等）。
 
 示例：
 
