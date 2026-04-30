@@ -44,8 +44,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
 from app.models.project import (
     Chapter,
+    CharacterLocation,
     Character,
     Foreshadow,
+    Location,
     Outline,
     Project,
     Volume,
@@ -723,6 +725,31 @@ class ContextPackBuilder:
 
         # Character cards from PostgreSQL characters + Neo4j state
         try:
+            # v1.9+: Prefer Postgres projection (character_locations) for character current location.
+            # This keeps ContextPack stable even when Neo4j is temporarily unavailable.
+            loc_by_char_id: dict[UUID, str] = {}
+            try:
+                loc_rows = await db.execute(
+                    select(
+                        CharacterLocation.character_id,
+                        Location.name,
+                    )
+                    .join(Location, Location.id == CharacterLocation.location_id)
+                    .where(
+                        CharacterLocation.project_id == pid,
+                        CharacterLocation.chapter_start <= chapter_idx,
+                    )
+                    .order_by(
+                        CharacterLocation.character_id.asc(),
+                        CharacterLocation.chapter_start.desc(),
+                    )
+                )
+                for character_id, loc_name in loc_rows.all():
+                    if character_id not in loc_by_char_id:
+                        loc_by_char_id[character_id] = loc_name
+            except Exception as e:
+                logger.debug("Failed to load character_locations projection: %s", e)
+
             char_result = await db.execute(
                 select(Character)
                 .where(Character.project_id == pid)
@@ -733,7 +760,7 @@ class ContextPackBuilder:
                 profile = char.profile_json or {}
                 card = CharacterCard(
                     name=char.name,
-                    location=profile.get("location", ""),
+                    location=(loc_by_char_id.get(char.id) or profile.get("location", "")),
                     power_level=profile.get("power_level", ""),
                     mental_state=profile.get("mental_state", ""),
                 )

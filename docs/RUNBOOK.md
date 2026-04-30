@@ -332,6 +332,11 @@ v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 - locations（按 `(project_id, name)` 幂等，DB 约束：`uq_locations_project_name`）
 - character_locations（AT_LOCATION 投影；按 `(project_id, character_id, location_id, chapter_start)` 幂等，DB 约束：`uq_character_locations_key`）
 
+读端统一（v1.9+）：
+
+- `backend/app/services/checkers/geo_jump.py`：优先读 Postgres 的 `character_locations`（fallback Neo4j）
+- `backend/app/services/context_pack.py`：CharacterCard.location 优先读 Postgres 的 `character_locations`（fallback 角色 profile_json / Neo4j enrich）
+
 ### 6.12 v1.9+ 一键验收（Neo4j→PG 写回）
 
 ```bash
