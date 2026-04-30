@@ -51,7 +51,10 @@ END,
     ELSE rel_type
 END
 WHERE project_id = '${PROJECT_ID}'
-  AND (length(rel_type) > 6 OR rel_type IN ('查档对照'));
+  AND (
+    length(rel_type) > 6
+    OR rel_type IN ('查档对照', '押解', '押送', '审查', '监控', '管辖')
+  );
 
 -- 4) Enforce varchar(50) bound (defensive)
 UPDATE relationships
