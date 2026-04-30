@@ -180,32 +180,25 @@ async def _materialize_entities_to_postgres(
                 if not src or not tgt:
                     continue
 
-                exists_rel = await db.execute(
-                    select(Relationship.id).where(
-                        Relationship.project_id == project_id,
-                        Relationship.source_id == src.id,
-                        Relationship.target_id == tgt.id,
-                        Relationship.rel_type == rel_type,
-                    )
+                rel_row = Relationship(
+                    project_id=project_id,
+                    source_id=src.id,
+                    target_id=tgt.id,
+                    rel_type=rel_type,
                 )
-                if exists_rel.first():
-                    continue
-
-                db.add(
-                    Relationship(
-                        project_id=project_id,
-                        source_id=src.id,
-                        target_id=tgt.id,
-                        rel_type=rel_type,
-                    )
-                )
-                created_rels += 1
+                db.add(rel_row)
+                try:
+                    # Let the DB unique constraint (uq_relationships_rel_key) enforce idempotency.
+                    await db.flush()
+                    created_rels += 1
+                except Exception:
+                    # Treat unique constraint conflicts as already-created.
+                    await db.rollback()
+                    break
 
             try:
                 await db.commit()
             except Exception:
-                # DB-level dedupe (uq_relationships_rel_key) may race with concurrent writers.
-                # Best-effort: rollback and continue without failing the extraction task.
                 await db.rollback()
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
