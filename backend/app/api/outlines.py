@@ -261,13 +261,14 @@ async def extract_settings(
         label = (r.get("label") or "").strip()
         note = (r.get("note") or "").strip()
         sentiment = (r.get("sentiment") or "neutral").strip()
+        # Idempotency: rel_type is canonicalized; treat (src,tgt,rel_type) as the identity.
+        # label/note/sentiment are descriptive and may vary across extraction runs.
         dup = await db.execute(
             select(Relationship.id).where(
                 Relationship.project_id == project_id,
                 Relationship.source_id == src,
                 Relationship.target_id == tgt,
                 Relationship.rel_type == rel_type,
-                Relationship.label == label,
             )
         )
         if dup.scalar_one_or_none():
