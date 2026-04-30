@@ -180,21 +180,22 @@ async def _materialize_entities_to_postgres(
                 if not src or not tgt:
                     continue
 
-                rel_row = Relationship(
-                    project_id=project_id,
-                    source_id=src.id,
-                    target_id=tgt.id,
-                    rel_type=rel_type,
-                )
-                db.add(rel_row)
+                # Use a SAVEPOINT so unique-constraint conflicts don't abort the whole transaction.
                 try:
-                    # Let the DB unique constraint (uq_relationships_rel_key) enforce idempotency.
-                    await db.flush()
-                    created_rels += 1
+                    async with db.begin_nested():
+                        db.add(
+                            Relationship(
+                                project_id=project_id,
+                                source_id=src.id,
+                                target_id=tgt.id,
+                                rel_type=rel_type,
+                            )
+                        )
+                        await db.flush()
+                        created_rels += 1
                 except Exception:
                     # Treat unique constraint conflicts as already-created.
-                    await db.rollback()
-                    break
+                    continue
 
             try:
                 await db.commit()
