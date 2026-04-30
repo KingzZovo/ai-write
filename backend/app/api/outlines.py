@@ -252,7 +252,19 @@ async def extract_settings(
         tgt = name_to_id.get(tgt_name)
         if not src or not tgt or src == tgt:
             continue
-        rel_type = canonicalize_rel_type((r.get("rel_type") or "other"))
+        rel_type = (r.get("rel_type") or "other").strip()
+        # rel_type is used downstream for behavior/OOC checks. Keep it short and stable.
+        # Prefer canonical keywords like: 敌对/对立/盟友/朋友/恋人/师徒/上下级/监管/同伴/同舍/其他
+        # If the extractor returned verbose descriptions, normalize to a compact token.
+        if "（" in rel_type:
+            rel_type = rel_type.split("（", 1)[0].strip()
+        if "(" in rel_type:
+            rel_type = rel_type.split("(", 1)[0].strip()
+        # common pattern: "A/B（...）" -> "A"
+        if "/" in rel_type:
+            rel_type = rel_type.split("/", 1)[0].strip()
+        # DB field is VARCHAR(50)
+        rel_type = (rel_type or "other")[:50]
         label = (r.get("label") or "").strip()
         note = (r.get("note") or "").strip()
         sentiment = (r.get("sentiment") or "neutral").strip()
