@@ -104,7 +104,16 @@ async def _materialize_entities_to_postgres(
                 rtype = rec.get("rtype") if rec else None
                 if isinstance(src, str) and isinstance(tgt, str) and isinstance(rtype, str):
                     if src.strip() and tgt.strip() and rtype.strip():
-                        rels.append((src, tgt, rtype))
+                        # Normalize rel_type to keep it short/stable (see spec §8).
+                        rel_type = rtype.strip()
+                        if "（" in rel_type:
+                            rel_type = rel_type.split("（", 1)[0].strip()
+                        if "(" in rel_type:
+                            rel_type = rel_type.split("(", 1)[0].strip()
+                        if "/" in rel_type:
+                            rel_type = rel_type.split("/", 1)[0].strip()
+                        rel_type = (rel_type or "other")[:50]
+                        rels.append((src, tgt, rel_type))
 
         created_chars = 0
         created_rels = 0
