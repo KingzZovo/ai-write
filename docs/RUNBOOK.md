@@ -307,6 +307,15 @@ PROJECT_ID=<project_id> bash scripts/dedupe_relationships_pg.sh
 
 升级前需要先执行一次去重脚本（见 6.8），否则迁移会失败。
 
+### 6.10 唯一约束下的并发写入容错（IntegrityError 处理）
+
+在 `relationships` 增加唯一约束后，极少数情况下（并发写入 / 重试竞态）可能触发 DB 的唯一性冲突。
+
+v1.9 处理策略：
+
+- 写入侧将唯一冲突视为“已存在”，进行 rollback 并继续，不影响主链路执行。
+- 典型现象：entity materialize 日志里 `rels_created=0`，但整体 `status=ok`（符合预期）。
+
 ### 5.1 PG 业务状态
 
 ```sql
