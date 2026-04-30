@@ -62,7 +62,7 @@ async def _materialize_entities_to_postgres(
 
     from app.db.neo4j import init_neo4j
     from app.db.session import async_session_factory
-    from app.models.project import Character, Relationship, WorldRule
+    from app.models.project import Character, Location, Relationship, WorldRule
     from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
     from app.services.rel_type import canonicalize_rel_type
 
@@ -78,6 +78,8 @@ async def _materialize_entities_to_postgres(
             "rels_seen": 0,
             "rules_created": 0,
             "rules_seen": 0,
+            "locs_created": 0,
+            "locs_seen": 0,
         }
 
     try:
@@ -133,9 +135,22 @@ async def _materialize_entities_to_postgres(
                         rules.append((cat, txt))
             world_rules = sorted(set(rules))
 
+            # Locations: materialize all Location node names.
+            loc_result = await session.run(
+                "MATCH (l:Location {project_id: $pid}) RETURN DISTINCT l.name AS name",
+                pid=project_id,
+            )
+            loc_names: list[str] = []
+            async for rec in loc_result:
+                n = rec.get("name") if rec else None
+                if isinstance(n, str) and n.strip():
+                    loc_names.append(n.strip())
+            locations = sorted(set(loc_names))
+
         created_chars = 0
         created_rels = 0
         created_rules = 0
+        created_locs = 0
 
         async with async_session_factory() as db:
             if char_names:
@@ -206,6 +221,17 @@ async def _materialize_entities_to_postgres(
                 result = await db.execute(stmt)
                 created_rules += int(getattr(result, "rowcount", 0) or 0)
 
+            # Locations: bulk insert w/ ON CONFLICT DO NOTHING.
+            loc_rows = [
+                {"project_id": project_id, "name": name}
+                for name in locations
+            ]
+            if loc_rows:
+                stmt = insert(Location).values(loc_rows)
+                stmt = stmt.on_conflict_do_nothing(constraint="uq_locations_project_name")
+                result = await db.execute(stmt)
+                created_locs += int(getattr(result, "rowcount", 0) or 0)
+
             try:
                 await db.commit()
             except Exception:
@@ -213,7 +239,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -223,6 +249,8 @@ async def _materialize_entities_to_postgres(
             len(rels),
             created_rules,
             len(world_rules),
+            created_locs,
+            len(locations),
         )
         return {
             "chars_created": created_chars,
@@ -231,6 +259,8 @@ async def _materialize_entities_to_postgres(
             "rels_seen": len(rels),
             "rules_created": created_rules,
             "rules_seen": len(world_rules),
+            "locs_created": created_locs,
+            "locs_seen": len(locations),
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()

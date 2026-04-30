@@ -56,6 +56,10 @@ class Project(Base):
         "WorldRule", back_populates="project", cascade="all, delete-orphan"
     )
 
+    locations = relationship(
+        "Location", back_populates="project", cascade="all, delete-orphan"
+    )
+
 
 class Volume(Base):
     __tablename__ = "volumes"
@@ -179,6 +183,21 @@ class WorldRule(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="world_rules")
+
+
+class Location(Base):
+    __tablename__ = "locations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="locations")
 
 
 class StyleProfile(Base):
