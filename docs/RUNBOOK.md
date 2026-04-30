@@ -309,6 +309,10 @@ v1.9 处理策略：
 - 写入侧将唯一冲突视为“已存在”，进行 rollback 并继续，不影响主链路执行。
 - 典型现象：entity materialize 日志里 `rels_created=0`，但整体 `status=ok`（符合预期）。
 
+实现细节（v1.9）：
+
+- 写入侧使用 DB SAVEPOINT（事务嵌套），让单条关系写入冲突不会中断整批写入。
+
 ### 5.1 PG 业务状态
 
 ```sql

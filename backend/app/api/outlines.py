@@ -274,21 +274,22 @@ async def extract_settings(
         )
         if dup.scalar_one_or_none():
             continue
-        db.add(Relationship(
-            project_id=project_id,
-            source_id=src,
-            target_id=tgt,
-            rel_type=rel_type,
-            label=label,
-            note=note,
-            sentiment=sentiment,
-        ))
+        # Use a SAVEPOINT so unique-constraint conflicts don't abort the whole request.
         try:
-            await db.flush()
-            rels_created += 1
+            async with db.begin_nested():
+                db.add(Relationship(
+                    project_id=project_id,
+                    source_id=src,
+                    target_id=tgt,
+                    rel_type=rel_type,
+                    label=label,
+                    note=note,
+                    sentiment=sentiment,
+                ))
+                await db.flush()
+                rels_created += 1
         except IntegrityError:
             # DB has uq_relationships_rel_key; treat as already-created.
-            await db.rollback()
             continue
 
     return ExtractResponse(
