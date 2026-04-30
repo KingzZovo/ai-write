@@ -235,6 +235,38 @@ PROJECT_ID=<project_id> bash scripts/verify_entity_writeback.sh
 - 查询 PG `characters/relationships` 计数与关键角色抽样
 - grep `/metrics` 里是否出现 `entity_pg_materialize_total{...}`
 
+### 6.5 Worker 主链路验收（Celery 执行）
+
+说明：
+
+- 生产链路中，`entities.extract_chapter` 由 Celery worker 执行。
+- worker 侧执行 materialize **不会**在 backend 的 `/metrics` 上体现（`/metrics` 由 backend 进程暴露）。
+
+手动 enqueue（从 backend 容器发任务到 worker）：
+
+```bash
+docker exec ai-write-backend-1 python -c "from app.tasks import celery_app; r=celery_app.send_task('entities.extract_chapter', kwargs={'project_id':'<project_id>','chapter_idx':11,'caller':'runbook.manual.enqueue'}); print(r.id)"
+```
+
+查看 worker 是否收到/执行：
+
+```bash
+docker logs --tail 200 ai-write-celery-worker-1 | grep -E 'Task entities\\.extract_chapter\\[|entity_extraction skip|Entity extraction complete' | tail -n 50
+```
+
+对账（以 Postgres 为准）：
+
+```bash
+docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -c "\
+SELECT COUNT(*) AS characters_n FROM characters WHERE project_id='<project_id>';\
+SELECT COUNT(*) AS relationships_n FROM relationships WHERE project_id='<project_id>';\
+"
+```
+
+常见结果：
+
+- 若该章节已完成抽取，会出现 `entity_extraction skip: already completed`，任务会以 `status=skipped` 结束（符合预期）。
+
 ### 5.1 PG 业务状态
 
 ```sql
