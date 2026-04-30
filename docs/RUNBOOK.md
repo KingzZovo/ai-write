@@ -267,6 +267,16 @@ SELECT COUNT(*) AS relationships_n FROM relationships WHERE project_id='<project
 
 - 若该章节已完成抽取，会出现 `entity_extraction skip: already completed`，任务会以 `status=skipped` 结束（符合预期）。
 
+### 6.6 rel_type 清洗（存量数据一次性修复）
+
+背景：历史数据里 `relationships.rel_type` 可能包含括号解释或斜杠组合（例如 `对立/不信任（...）`），会影响筛选统计与下游校验。
+
+仓库提供脚本（可重复执行）：`scripts/normalize_relationship_rel_type_pg.sh`
+
+```bash
+PROJECT_ID=<project_id> bash scripts/normalize_relationship_rel_type_pg.sh
+```
+
 ### 5.1 PG 业务状态
 
 ```sql
