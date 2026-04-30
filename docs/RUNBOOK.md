@@ -292,6 +292,14 @@ PROJECT_ID=<project_id> bash scripts/normalize_relationship_rel_type_pg.sh
 PROJECT_ID=<project_id> bash scripts/dedupe_relationships_pg.sh
 ```
 
+### 6.9 relationships 唯一约束（防止重复写入）
+
+为保证写回幂等与防止重复数据，v1.9 增加 DB 级唯一约束：
+
+- `relationships`：`(project_id, source_id, target_id, rel_type)`
+
+升级前需要先执行一次去重脚本（见 6.8），否则迁移会失败。
+
 ### 5.1 PG 业务状态
 
 ```sql
