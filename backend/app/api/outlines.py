@@ -13,7 +13,6 @@ from app.db.neo4j import init_neo4j
 from app.db import neo4j as _neo4j_mod
 from app.db.session import get_db
 from app.models.project import Character, Outline, Relationship, WorldRule
-from app.tasks.entity_tasks import _materialize_entities_to_postgres
 from app.services.rel_type import canonicalize_rel_type
 from app.services.settings_extractor import extract_settings_from_outline
 
@@ -252,43 +251,7 @@ async def extract_settings(
         tgt = name_to_id.get(tgt_name)
         if not src or not tgt or src == tgt:
             continue
-        rel_type = (r.get("rel_type") or "other").strip()
-        # rel_type is used downstream for behavior/OOC checks. Keep it short and stable.
-        # Prefer canonical keywords like: 敌对/对立/盟友/朋友/恋人/师徒/上下级/监管/同伴/同舍/其他
-        # If the extractor returned verbose descriptions, normalize to a compact token.
-        raw_rel_type = rel_type
-        if "（" in rel_type:
-            rel_type = rel_type.split("（", 1)[0].strip()
-        if "(" in rel_type:
-            rel_type = rel_type.split("(", 1)[0].strip()
-        # common pattern: "A/B（...）" -> "A"
-        if "/" in rel_type:
-            rel_type = rel_type.split("/", 1)[0].strip()
-        # keyword canonicalization
-        if any(k in raw_rel_type for k in ["敌对", "仇敌", "死敌"]):
-            rel_type = "敌对"
-        elif any(k in raw_rel_type for k in ["对立", "不信任", "对手"]):
-            rel_type = "对立"
-        # Regulatory / enforcement actions are treated as 监管.
-        elif any(k in raw_rel_type for k in [
-            "监管", "押解", "押送", "看押", "管辖", "盘查", "监控", "审查", "取证", "查档", "查档对照",
-        ]):
-            rel_type = "监管"
-        elif any(k in raw_rel_type for k in ["审讯", "逼问"]):
-            rel_type = "审讯"
-        elif any(k in raw_rel_type for k in ["师生", "师徒"]):
-            rel_type = "师生"
-        elif any(k in raw_rel_type for k in ["上下级", "上位", "下属"]):
-            rel_type = "上下级"
-        elif any(k in raw_rel_type for k in ["同舍", "同寝"]):
-            rel_type = "同舍"
-        elif any(k in raw_rel_type for k in ["同伴", "同学", "同行", "协作"]):
-            rel_type = "同伴"
-        # Search / missing-person narratives are treated as 失联.
-        elif any(k in raw_rel_type for k in ["失联", "寻找"]):
-            rel_type = "失联"
-        # DB field is VARCHAR(50)
-        rel_type = (rel_type or "other")[:50]
+        rel_type = canonicalize_rel_type((r.get("rel_type") or "other"))
         label = (r.get("label") or "").strip()
         note = (r.get("note") or "").strip()
         sentiment = (r.get("sentiment") or "neutral").strip()

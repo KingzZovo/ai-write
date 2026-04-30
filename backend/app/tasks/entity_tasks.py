@@ -63,6 +63,7 @@ async def _materialize_entities_to_postgres(
     from app.db.session import async_session_factory
     from app.models.project import Character, Relationship
     from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
+    from app.services.rel_type import canonicalize_rel_type
 
     await init_neo4j()
     from app.db import neo4j as _neo4j_mod
@@ -104,38 +105,7 @@ async def _materialize_entities_to_postgres(
                 rtype = rec.get("rtype") if rec else None
                 if isinstance(src, str) and isinstance(tgt, str) and isinstance(rtype, str):
                     if src.strip() and tgt.strip() and rtype.strip():
-                        # Normalize rel_type to keep it short/stable (see spec §8).
-                        raw_rel_type = rtype.strip()
-                        rel_type = raw_rel_type
-                        if "（" in rel_type:
-                            rel_type = rel_type.split("（", 1)[0].strip()
-                        if "(" in rel_type:
-                            rel_type = rel_type.split("(", 1)[0].strip()
-                        if "/" in rel_type:
-                            rel_type = rel_type.split("/", 1)[0].strip()
-                        if any(k in raw_rel_type for k in ["敌对", "仇敌", "死敌"]):
-                            rel_type = "敌对"
-                        elif any(k in raw_rel_type for k in ["对立", "不信任", "对手"]):
-                            rel_type = "对立"
-                        # Regulatory / enforcement actions are treated as 监管.
-                        elif any(k in raw_rel_type for k in [
-                            "监管", "押解", "押送", "看押", "管辖", "盘查", "监控", "审查", "取证", "查档", "查档对照",
-                        ]):
-                            rel_type = "监管"
-                        elif any(k in raw_rel_type for k in ["审讯", "逼问"]):
-                            rel_type = "审讯"
-                        elif any(k in raw_rel_type for k in ["师生", "师徒"]):
-                            rel_type = "师生"
-                        elif any(k in raw_rel_type for k in ["上下级", "上位", "下属"]):
-                            rel_type = "上下级"
-                        elif any(k in raw_rel_type for k in ["同舍", "同寝"]):
-                            rel_type = "同舍"
-                        elif any(k in raw_rel_type for k in ["同伴", "同学", "同行", "协作"]):
-                            rel_type = "同伴"
-                        # Search / missing-person narratives are treated as 失联.
-                        elif any(k in raw_rel_type for k in ["失联", "寻找"]):
-                            rel_type = "失联"
-                        rel_type = (rel_type or "other")[:50]
+                        rel_type = canonicalize_rel_type(rtype)
                         rels.append((src, tgt, rel_type))
 
         created_chars = 0
