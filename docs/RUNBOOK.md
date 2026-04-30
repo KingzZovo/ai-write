@@ -206,6 +206,20 @@ curl -s http://127.0.0.1:8000/metrics | grep -E '^entity_pg_materialize_total\{'
 # entity_pg_materialize_total{outcome="success",reason="ok"} 1
 ```
 
+### 6.4 一键验收脚本（推荐）
+
+仓库提供脚本：`scripts/verify_entity_writeback.sh`
+
+```bash
+PROJECT_ID=<project_id> bash scripts/verify_entity_writeback.sh
+```
+
+该脚本会依次执行：
+
+- 调用 admin materialize 接口（backend 进程内）
+- 查询 PG `characters/relationships` 计数与关键角色抽样
+- grep `/metrics` 里是否出现 `entity_pg_materialize_total{...}`
+
 ### 5.1 PG 业务状态
 
 ```sql
