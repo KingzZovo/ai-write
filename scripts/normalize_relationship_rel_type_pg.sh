@@ -41,7 +41,7 @@ END,
     rel_type = CASE
     WHEN rel_type ~ '(敌对|仇敌|死敌)' THEN '敌对'
     WHEN rel_type ~ '(对立|不信任|对手)' THEN '对立'
-    WHEN rel_type ~ '(监管|押解|押送|看押|管辖|盘查|监控|审查|取证|查档)' THEN '监管'
+    WHEN rel_type ~ '(监管|押解|押送|看押|管辖|盘查|监控|审查|取证|查档|查档对照)' THEN '监管'
     WHEN rel_type ~ '(审讯|逼问)' THEN '审讯'
     WHEN rel_type ~ '(师生|师徒)' THEN '师生'
     WHEN rel_type ~ '(上下级|上位|下属)' THEN '上下级'
