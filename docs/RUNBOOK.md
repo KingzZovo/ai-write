@@ -322,6 +322,14 @@ v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 - characters（按 `(project_id, name)` 幂等）
 - relationships（按 `(project_id, source_id, target_id, rel_type)` 幂等，DB 约束：`uq_relationships_rel_key`）
 - world_rules（按 `(project_id, category, rule_text)` 幂等，DB 约束：`uq_world_rules_key`）
+- locations（按 `(project_id, name)` 幂等，DB 约束：`uq_locations_project_name`）
+
+### 6.12 v1.9+ 一键验收（Neo4j→PG 写回）
+
+```bash
+PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
+	bash scripts/verify_entity_writeback_v19.sh
+```
 
 ### 5.1 PG 业务状态
 
