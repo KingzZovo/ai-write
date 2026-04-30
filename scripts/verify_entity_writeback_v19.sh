@@ -43,6 +43,8 @@ echo "[2/3] materialize (2nd run; must be idempotent: created=0)"
 OUT2="$(call_materialize)"
 echo "$OUT2"
 
+export OUT2_JSON="$OUT2"
+
 python - <<'PY'
 import json, os, sys
 

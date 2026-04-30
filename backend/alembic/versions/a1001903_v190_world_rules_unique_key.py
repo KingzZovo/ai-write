@@ -15,10 +15,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_unique_constraint(
-        "uq_world_rules_key",
-        "world_rules",
-        ["project_id", "category", "rule_text"],
+    # Idempotent: local dev environments may have applied the constraint manually.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'uq_world_rules_key'
+          ) THEN
+            ALTER TABLE world_rules
+              ADD CONSTRAINT uq_world_rules_key
+              UNIQUE (project_id, category, rule_text);
+          END IF;
+        END
+        $$;
+        """
     )
 
 
