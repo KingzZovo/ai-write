@@ -287,6 +287,18 @@ PROJECT_ID=<project_id> bash scripts/normalize_relationship_rel_type_pg.sh
 - Neo4j → PG materialize 路径：同样按关键字归一。
 - 存量 PG 数据：使用 `scripts/normalize_relationship_rel_type_pg.sh`，当 `rel_type` 过长时会把原值保存在 `label`（若 label 为空），并把 `rel_type` 归一化。
 
+### 6.8 relationships 去重（存量数据一次性修复）
+
+背景：当历史数据已存在重复关系，或 rel_type 规范化导致“同一对角色同一 rel_type”出现多条记录时，需要做一次性去重。
+
+去重 key：`(project_id, source_id, target_id, rel_type)`（保留最早 created_at 的那条）。
+
+仓库提供脚本（可重复执行）：`scripts/dedupe_relationships_pg.sh`
+
+```bash
+PROJECT_ID=<project_id> bash scripts/dedupe_relationships_pg.sh
+```
+
 ### 5.1 PG 业务状态
 
 ```sql
