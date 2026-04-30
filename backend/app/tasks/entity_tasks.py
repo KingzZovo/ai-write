@@ -118,7 +118,9 @@ async def _materialize_entities_to_postgres(
                         elif any(k in raw_rel_type for k in ["对立", "不信任", "对手"]):
                             rel_type = "对立"
                         # Regulatory / enforcement actions are treated as 监管.
-                        elif any(k in raw_rel_type for k in ["监管", "押解", "押送", "看押", "管辖", "盘查", "监控", "审查", "取证", "查档", "查档对照"]):
+                        elif any(k in raw_rel_type for k in [
+                            "监管", "押解", "押送", "看押", "管辖", "盘查", "监控", "审查", "取证", "查档", "查档对照",
+                        ]):
                             rel_type = "监管"
                         elif any(k in raw_rel_type for k in ["审讯", "逼问"]):
                             rel_type = "审讯"
@@ -130,6 +132,7 @@ async def _materialize_entities_to_postgres(
                             rel_type = "同舍"
                         elif any(k in raw_rel_type for k in ["同伴", "同学", "同行", "协作"]):
                             rel_type = "同伴"
+                        # Search / missing-person narratives are treated as 失联.
                         elif any(k in raw_rel_type for k in ["失联", "寻找"]):
                             rel_type = "失联"
                         rel_type = (rel_type or "other")[:50]
