@@ -61,13 +61,49 @@ if bad:
 print('OK: materialize idempotent')
 PY
 
-echo "[3/3] postgres duplicate check (relationships)"
+echo "[3/6] postgres duplicate check (relationships)"
 docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -c "\
 WITH dup AS (\
   SELECT project_id, source_id, target_id, rel_type, COUNT(*) AS n\
   FROM relationships\
   WHERE project_id='${PROJECT_ID}'\
   GROUP BY project_id, source_id, target_id, rel_type\
+  HAVING COUNT(*) > 1\
+)\
+SELECT COUNT(*) AS remaining_dup_groups, COALESCE(SUM(n),0) AS remaining_dup_rows FROM dup;\
+"
+
+echo "[4/6] postgres duplicate check (world_rules)"
+docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -c "\
+WITH dup AS (\
+  SELECT project_id, category, rule_text, COUNT(*) AS n\
+  FROM world_rules\
+  WHERE project_id='${PROJECT_ID}'\
+  GROUP BY project_id, category, rule_text\
+  HAVING COUNT(*) > 1\
+)\
+SELECT COUNT(*) AS remaining_dup_groups, COALESCE(SUM(n),0) AS remaining_dup_rows FROM dup;\
+"
+
+echo "[5/6] postgres duplicate check (locations)"
+docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -c "\
+WITH dup AS (\
+  SELECT project_id, name, COUNT(*) AS n\
+  FROM locations\
+  WHERE project_id='${PROJECT_ID}'\
+  GROUP BY project_id, name\
+  HAVING COUNT(*) > 1\
+)\
+SELECT COUNT(*) AS remaining_dup_groups, COALESCE(SUM(n),0) AS remaining_dup_rows FROM dup;\
+"
+
+echo "[6/6] postgres duplicate check (character_locations)"
+docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -c "\
+WITH dup AS (\
+  SELECT project_id, character_id, location_id, chapter_start, COUNT(*) AS n\
+  FROM character_locations\
+  WHERE project_id='${PROJECT_ID}'\
+  GROUP BY project_id, character_id, location_id, chapter_start\
   HAVING COUNT(*) > 1\
 )\
 SELECT COUNT(*) AS remaining_dup_groups, COALESCE(SUM(n),0) AS remaining_dup_rows FROM dup;\
