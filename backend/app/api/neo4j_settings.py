@@ -88,8 +88,11 @@ async def create_world_rule(
     rid = str(uuid.uuid4())
     try:
         async with neo4j.session() as session:
+            # Use MERGE to align with Neo4j uniqueness constraint and keep write idempotent.
             result = await session.run(
-                "CREATE (w:WorldRule {id: $id, project_id: $pid, category: $cat, text: $txt})",
+                "MERGE (w:WorldRule {project_id: $pid, category: $cat, text: $txt}) "
+                "ON CREATE SET w.id = $id "
+                "RETURN w.id AS id",
                 id=rid,
                 pid=str(project_id),
                 cat=str(body.category).strip(),
