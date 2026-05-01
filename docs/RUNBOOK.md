@@ -404,6 +404,58 @@ docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 \
 
 回填完成后建议再跑一次 materialize（或直接跑 6.12 的一键验收脚本），以确认 Neo4j→PG 投影链路口径已对齐。
 
+### 6.13 Foreshadows：Neo4j 为真相源（v1.9+）
+
+背景：foreshadows 在 v1.9+ 按与 settings 同样的口径收敛 —— **Neo4j 单写真相源**，Postgres `foreshadows` 仅作为读优化投影。
+
+#### 6.13.1 写入口（API）
+
+- `POST /api/projects/{project_id}/foreshadows`
+- `PUT /api/projects/{project_id}/foreshadows/{foreshadow_id}`
+- `POST /api/projects/{project_id}/foreshadows/{foreshadow_id}/resolve`
+- `DELETE /api/projects/{project_id}/foreshadows/{foreshadow_id}`
+
+约定：上述接口的写入应以 Neo4j 为准；接口内部会触发一次 materialize，使 PG 读模型尽快收敛。
+
+#### 6.13.2 常见故障：materialize 报 invalid UUID
+
+现象：`POST /api/admin/entities/materialize` 返回 `status=error`，日志中出现 `invalid UUID '<xxx>'`，且 `foreshadows_seen/upserted` 为 0。
+
+原因：Neo4j 中存在历史测试数据，`(:Foreshadow {id: 'fs_test_001'})` 之类的非 UUID 值；而 Postgres `foreshadows.id` 是 `uuid` 类型。
+
+处理：
+
+1) 优先清理坏数据（示例）：
+
+```bash
+PID=<project_id>
+docker exec ai-write-neo4j-1 cypher-shell -u neo4j -p "$NEO4J_PASSWORD" \
+  "MATCH (f:Foreshadow {project_id:'$PID', id:'fs_test_001'}) DETACH DELETE f;"
+```
+
+2) materialize 层会跳过非 UUID 的 foreshadow id，避免整批失败（仍建议清理）。
+
+#### 6.13.3 验收（Neo4j ↔ PG 对账）
+
+```bash
+TOK=$(cat /tmp/king_tok)
+PID=<project_id>
+
+# 1) 触发 materialize
+curl -sS -X POST http://127.0.0.1:8000/api/admin/entities/materialize \
+  -H "Authorization: Bearer $TOK" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":"'$PID'","chapter_idx":0,"caller":"runbook.foreshadows.verify"}'
+
+# 2) Neo4j 计数
+docker exec ai-write-neo4j-1 cypher-shell -u neo4j -p "$NEO4J_PASSWORD" \
+  "MATCH (f:Foreshadow {project_id:'$PID'}) RETURN count(f) AS n;"
+
+# 3) Postgres 计数
+docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -At -c \
+  "SELECT count(*) FROM foreshadows WHERE project_id='$PID';"
+```
+
 注意：relationships 回填会对 `rel_type` 做 canonicalize（见 `backend/app/services/rel_type.py`）。例如：
 
 - `同学` → `同伴`
