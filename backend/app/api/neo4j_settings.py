@@ -50,7 +50,7 @@ async def upsert_character(
     """Upsert a Character node in Neo4j, then materialize to Postgres."""
     try:
         async with neo4j.session() as session:
-            await session.run(
+            result = await session.run(
                 "MERGE (c:Character {project_id: $pid, name: $name}) "
                 "ON CREATE SET c.id = $id "
                 "SET c.profile_json = $profile "
@@ -60,6 +60,7 @@ async def upsert_character(
                 id=str(uuid.uuid4()),
                 profile=json.dumps(body.profile_json or {}, ensure_ascii=False),
             )
+            await result.consume()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
 
@@ -87,13 +88,14 @@ async def create_world_rule(
     rid = str(uuid.uuid4())
     try:
         async with neo4j.session() as session:
-            await session.run(
+            result = await session.run(
                 "CREATE (w:WorldRule {id: $id, project_id: $pid, category: $cat, text: $txt})",
                 id=rid,
                 pid=str(project_id),
                 cat=str(body.category).strip(),
                 txt=str(body.rule_text).strip(),
             )
+            await result.consume()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
 
@@ -122,21 +124,23 @@ async def create_relationship(
     try:
         async with neo4j.session() as session:
             # Ensure both characters exist.
-            await session.run(
+            r1 = await session.run(
                 "MERGE (a:Character {project_id: $pid, name: $src}) "
                 "ON CREATE SET a.id = $aid",
                 pid=str(project_id),
                 src=str(body.source).strip(),
                 aid=str(uuid.uuid4()),
             )
-            await session.run(
+            await r1.consume()
+            r2 = await session.run(
                 "MERGE (b:Character {project_id: $pid, name: $tgt}) "
                 "ON CREATE SET b.id = $bid",
                 pid=str(project_id),
                 tgt=str(body.target).strip(),
                 bid=str(uuid.uuid4()),
             )
-            await session.run(
+            await r2.consume()
+            r3 = await session.run(
                 "MATCH (a:Character {project_id: $pid, name: $src}), "
                 "      (b:Character {project_id: $pid, name: $tgt}) "
                 "CREATE (a)-[:RELATES_TO {type: $rtype, chapter_start: $cs, chapter_end: null}]->(b)",
@@ -146,6 +150,7 @@ async def create_relationship(
                 rtype=str(body.rel_type).strip(),
                 cs=int(body.chapter_start),
             )
+            await r3.consume()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
 
