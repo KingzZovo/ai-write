@@ -463,6 +463,15 @@ docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -At -c \
   "SELECT count(*) FROM foreshadows WHERE project_id='$PID';"
 ```
 
+#### 6.13.4 删除同步（Neo4j delete → PG delete）
+
+说明：v1.9+ materialize 会在写入/更新（upsert）之外，额外执行一次“删除同步”：
+
+- 以 Neo4j 当前的 `(:Foreshadow {project_id})` 集合为准
+- Postgres 中该 `project_id` 下存在、但 Neo4j 中已不存在的 `foreshadows.id` 会被清理
+
+用途：避免出现“Neo4j 已删除但 PG 读模型仍残留”的漂移。
+
 注意：relationships 回填会对 `rel_type` 做 canonicalize（见 `backend/app/services/rel_type.py`）。例如：
 
 - `同学` → `同伴`
