@@ -34,6 +34,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.neo4j import init_neo4j
+from app.db import neo4j as _neo4j_mod
+from app.tasks.entity_tasks import _materialize_entities_to_postgres
 from app.models.project import Character, Foreshadow, Outline, WorldRule
 
 logger = logging.getLogger(__name__)
@@ -147,6 +150,12 @@ async def etl_foreshadows(
     )
     existing_descs = {(r[0] or "")[:80] for r in existing_res.all()}
 
+    await init_neo4j()
+    driver = _neo4j_mod._driver
+    if driver is None:
+        logger.warning("etl_foreshadows: neo4j driver not initialized")
+        return 0, 0
+
     volumes = await _load_volume_outlines(db, pid)
     for vol in volumes:
         fs = vol.get("foreshadows") or {}
@@ -171,22 +180,45 @@ async def etl_foreshadows(
                 skipped += 1
                 continue
             cond = f.get("resolve_conditions") or []
-            db.add(Foreshadow(
-                id=uuid.uuid4(),
-                project_id=uuid.UUID(pid),
-                type="plot",
-                description=desc,
-                planted_chapter=int(vidx),  # use volume idx as a coarse anchor
-                resolve_conditions_json=cond if isinstance(cond, list) else [],
-                resolution_blueprint_json=None,
-                narrative_proximity=0.5,
-                status="planted",
-                resolved_chapter=None,
-            ))
+            fid = str(uuid.uuid4())
+            try:
+                async with driver.session() as session:
+                    r = await session.run(
+                        "MERGE (f:Foreshadow {project_id: $pid, id: $id}) "
+                        "SET f.type = $type, "
+                        "    f.description = $desc, "
+                        "    f.planted_chapter = $planted, "
+                        "    f.resolve_conditions_json = $conds, "
+                        "    f.resolution_blueprint_json = $blueprint, "
+                        "    f.narrative_proximity = $prox, "
+                        "    f.status = $status, "
+                        "    f.resolved_chapter = $resolved "
+                        "RETURN f.id AS id",
+                        pid=pid,
+                        id=fid,
+                        type="plot",
+                        desc=desc,
+                        planted=int(vidx),
+                        conds=json.dumps(cond if isinstance(cond, list) else [], ensure_ascii=False),
+                        blueprint=json.dumps({}, ensure_ascii=False),
+                        prox=0.5,
+                        status="planted",
+                        resolved=None,
+                    )
+                    await r.consume()
+            except Exception as e:
+                logger.warning("etl_foreshadows: neo4j write failed: %s", e)
+                skipped += 1
+                continue
             existing_descs.add(key)
             inserted += 1
+
     if inserted:
-        await db.commit()
+        await _materialize_entities_to_postgres(
+            project_id=pid,
+            chapter_idx=0,
+            caller="outline_to_facts.etl_foreshadows",
+        )
     return inserted, skipped
 
 
