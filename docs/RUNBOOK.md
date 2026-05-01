@@ -419,6 +419,11 @@ docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 \
 
 约定：上述接口的写入应以 Neo4j 为准；接口内部会触发一次 materialize，使 PG 读模型尽快收敛。
 
+补充：除 API 外，以下内部服务/脚本也应遵循同一口径（写 Neo4j → materialize → PG）：
+
+- `backend/app/services/foreshadow_manager.py::ForeshadowManager.create()`：创建伏笔时写入 Neo4j，再 materialize 回 PG（禁止直接 `db.add(Foreshadow(...))` 作为真相源）。
+- `backend/app/services/outline_to_facts.py::etl_foreshadows()`：从 outline ETL planted foreshadows 时写入 Neo4j，再 materialize 回 PG（不再直接 commit 插入 foreshadows 表）。
+
 #### 6.13.2 常见故障：materialize 报 invalid UUID
 
 现象：`POST /api/admin/entities/materialize` 返回 `status=error`，日志中出现 `invalid UUID '<xxx>'`，且 `foreshadows_seen/upserted` 为 0。
