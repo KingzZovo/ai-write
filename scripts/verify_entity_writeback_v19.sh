@@ -84,7 +84,8 @@ reconcile_counts() {
 
 	n_chars="$(neo4j_count "MATCH (c:Character {project_id: '$pid'}) RETURN count(DISTINCT c.name)")"
 	n_rels="$(neo4j_count "MATCH (a:Character {project_id: '$pid'})-[r:RELATES_TO]->(b:Character {project_id: '$pid'}) RETURN count(DISTINCT a.name + '|' + b.name + '|' + r.type)")"
-	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(DISTINCT w.category + '|' + w.rule_text)")"
+	# WorldRule node stores rule text under `text` (not `rule_text`).
+	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(DISTINCT w.category + '|' + w.text)")"
 	n_locs="$(neo4j_count "MATCH (l:Location {project_id: '$pid'}) RETURN count(l)")"
 	n_atlocs="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:AT_LOCATION]->(:Location {project_id: '$pid'}) RETURN count(r)")"
 	n_cstates="$(neo4j_count "MATCH (c:Character {project_id: '$pid'})-[:HAS_STATE]->(s:CharacterState) RETURN count(DISTINCT c.name + '|' + toString(s.chapter_start))")"
