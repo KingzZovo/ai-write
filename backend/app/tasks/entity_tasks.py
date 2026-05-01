@@ -72,6 +72,7 @@ async def _materialize_entities_to_postgres(
         CharacterLocation,
         CharacterOrganization,
         CharacterState,
+        Foreshadow,
         Location,
         Organization,
         Relationship,
@@ -214,6 +215,64 @@ async def _materialize_entities_to_postgres(
                 )
             memberships = sorted(set(memberships))
 
+            # Foreshadows: materialize all Foreshadow nodes.
+            fs_result = await session.run(
+                "MATCH (f:Foreshadow {project_id: $pid}) "
+                "RETURN f.id AS id, f.type AS type, f.description AS description, "
+                "       f.planted_chapter AS planted, f.resolve_conditions_json AS conds, "
+                "       f.resolution_blueprint_json AS blueprint, f.narrative_proximity AS prox, "
+                "       f.status AS status, f.resolved_chapter AS resolved",
+                pid=project_id,
+            )
+            foreshadows: list[dict[str, object]] = []
+            async for rec in fs_result:
+                fid = rec.get("id") if rec else None
+                ftype = rec.get("type") if rec else None
+                desc = rec.get("description") if rec else None
+                planted = rec.get("planted") if rec else None
+                conds = rec.get("conds") if rec else None
+                blueprint = rec.get("blueprint") if rec else None
+                prox = rec.get("prox") if rec else None
+                status = rec.get("status") if rec else None
+                resolved = rec.get("resolved") if rec else None
+
+                if not isinstance(fid, str) or not fid.strip():
+                    continue
+                if not isinstance(ftype, str) or not ftype.strip():
+                    continue
+                if not isinstance(desc, str) or not desc.strip():
+                    continue
+                if not isinstance(planted, int):
+                    continue
+
+                # Stored as JSON strings in Neo4j; be defensive.
+                try:
+                    conds_json = json.loads(conds) if isinstance(conds, str) and conds.strip() else []
+                except Exception:
+                    conds_json = []
+                try:
+                    blueprint_json = (
+                        json.loads(blueprint)
+                        if isinstance(blueprint, str) and blueprint.strip()
+                        else {}
+                    )
+                except Exception:
+                    blueprint_json = {}
+
+                foreshadows.append(
+                    {
+                        "id": fid.strip(),
+                        "type": ftype.strip(),
+                        "description": desc.strip(),
+                        "planted_chapter": int(planted),
+                        "resolve_conditions_json": conds_json,
+                        "resolution_blueprint_json": blueprint_json,
+                        "narrative_proximity": float(prox) if isinstance(prox, (int, float)) else 0.0,
+                        "status": str(status).strip() if isinstance(status, str) and status.strip() else "planted",
+                        "resolved_chapter": int(resolved) if isinstance(resolved, int) else None,
+                    }
+                )
+
             # AT_LOCATION: materialize all Character-AT_LOCATION->Location edges.
             # Neo4j schema (EntityTimelineService):
             #   (c:Character)-[:AT_LOCATION {chapter_start, chapter_end}]->(l:Location)
@@ -275,6 +334,7 @@ async def _materialize_entities_to_postgres(
         created_locs = 0
         created_orgs = 0
         created_memberships = 0
+        upserted_foreshadows = 0
         created_atlocs = 0
         created_cstates = 0
         skipped_cstates_missing_character = 0
@@ -389,6 +449,29 @@ async def _materialize_entities_to_postgres(
                 stmt = stmt.on_conflict_do_nothing(constraint="uq_organizations_project_name")
                 result = await db.execute(stmt)
                 created_orgs += int(getattr(result, "rowcount", 0) or 0)
+
+            # Foreshadows: upsert by primary key id.
+            if foreshadows:
+                fs_rows = []
+                for f in foreshadows:
+                    fs_rows.append({"project_id": project_id, **f})
+                stmt = insert(Foreshadow).values(fs_rows)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[Foreshadow.id],
+                    set_={
+                        "type": stmt.excluded.type,
+                        "description": stmt.excluded.description,
+                        "planted_chapter": stmt.excluded.planted_chapter,
+                        "resolve_conditions_json": stmt.excluded.resolve_conditions_json,
+                        "resolution_blueprint_json": stmt.excluded.resolution_blueprint_json,
+                        "narrative_proximity": stmt.excluded.narrative_proximity,
+                        "status": stmt.excluded.status,
+                        "resolved_chapter": stmt.excluded.resolved_chapter,
+                        "project_id": stmt.excluded.project_id,
+                    },
+                )
+                result = await db.execute(stmt)
+                upserted_foreshadows += int(getattr(result, "rowcount", 0) or 0)
 
             # MEMBER_OF: bulk insert projection rows.
             if memberships:
@@ -514,7 +597,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d orgs=%d/%d member_of=%d/%d atlocs=%d/%d cstates=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d orgs=%d/%d member_of=%d/%d foreshadows=%d/%d atlocs=%d/%d cstates=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -530,6 +613,8 @@ async def _materialize_entities_to_postgres(
             len(organizations),
             created_memberships,
             len(memberships),
+            upserted_foreshadows,
+            len(foreshadows),
             created_atlocs,
             len(at_locs),
             created_cstates,
@@ -548,6 +633,8 @@ async def _materialize_entities_to_postgres(
             "orgs_seen": len(organizations),
             "member_of_created": created_memberships,
             "member_of_seen": len(memberships),
+            "foreshadows_upserted": upserted_foreshadows,
+            "foreshadows_seen": len(foreshadows),
             "atlocs_created": created_atlocs,
             "atlocs_seen": len(at_locs),
             "cstates_created": created_cstates,
@@ -577,6 +664,8 @@ async def _materialize_entities_to_postgres(
             "orgs_seen": 0,
             "member_of_created": 0,
             "member_of_seen": 0,
+            "foreshadows_upserted": 0,
+            "foreshadows_seen": 0,
             "atlocs_created": 0,
             "atlocs_seen": 0,
             "cstates_created": 0,

@@ -11,6 +11,7 @@ Neo4j node types:
 - (:Location {id, project_id, name})
 - (:Organization {id, project_id, name})
 - (:WorldRule {id, project_id, category, text})
+- (:Foreshadow {id, project_id, type, description, planted_chapter, resolve_conditions_json, resolution_blueprint_json, narrative_proximity, status, resolved_chapter})
 
 Relationship types:
 - (:Character)-[:HAS_STATE]->(:CharacterState)
@@ -149,6 +150,10 @@ class EntityTimelineService:
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (o:Organization) REQUIRE (o.project_id, o.name) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (f:Foreshadow) REQUIRE (f.project_id, f.id) IS UNIQUE"
                 )
                 # Indexes for fast lookup
                 await session.run(

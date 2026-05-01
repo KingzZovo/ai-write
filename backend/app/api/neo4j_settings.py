@@ -129,6 +129,18 @@ class Neo4jSetMembershipRequest(BaseModel):
     chapter_start: int = Field(default=0, ge=0)
 
 
+class Neo4jForeshadowUpsertRequest(BaseModel):
+    id: str | None = Field(None, description="Optional stable id; if omitted a new UUID is generated")
+    type: str = Field(..., min_length=1, max_length=20)
+    description: str = Field(..., min_length=1)
+    planted_chapter: int = Field(default=0, ge=0)
+    resolve_conditions: list[str] = Field(default_factory=list)
+    resolution_blueprint: dict[str, Any] | None = None
+    narrative_proximity: float = Field(default=0.0, ge=0.0, le=1.0)
+    status: str = Field(default="planted", min_length=1, max_length=20)
+    resolved_chapter: int | None = None
+
+
 @router.post("/relationships", status_code=202)
 async def create_relationship(
     project_id: str,
@@ -275,9 +287,7 @@ async def set_character_membership(
 ) -> dict[str, Any]:
     """Set character membership in Neo4j via MEMBER_OF.
 
-    NOTE: We still call materialize as best-effort, but membership is currently
-    a Neo4j-only truth-source edge (PG does not have a corresponding read model
-    table in v1.9).
+    NOTE: We still call materialize as best-effort; Postgres is a projection.
     """
     cname = str(body.character).strip()
     oname = str(body.organization).strip()
@@ -340,4 +350,54 @@ async def set_character_membership(
         "organization": oname,
         "chapter_start": cs,
     }
+
+
+@router.post("/foreshadows/set", status_code=202)
+async def upsert_foreshadow(
+    project_id: str,
+    body: Neo4jForeshadowUpsertRequest,
+    neo4j: AsyncDriver = Depends(get_neo4j),
+) -> dict[str, Any]:
+    """Upsert a Foreshadow node in Neo4j, then materialize to Postgres (best-effort)."""
+    fid = str(body.id).strip() if body.id else str(uuid.uuid4())
+    ftype = str(body.type).strip()
+    desc = str(body.description).strip()
+    planted = int(body.planted_chapter)
+    status = str(body.status).strip()
+    resolved_ch = int(body.resolved_chapter) if body.resolved_chapter is not None else None
+
+    try:
+        async with neo4j.session() as session:
+            result = await session.run(
+                "MERGE (f:Foreshadow {project_id: $pid, id: $id}) "
+                "SET f.type = $type, "
+                "    f.description = $desc, "
+                "    f.planted_chapter = $planted, "
+                "    f.resolve_conditions_json = $conds, "
+                "    f.resolution_blueprint_json = $blueprint, "
+                "    f.narrative_proximity = $prox, "
+                "    f.status = $status, "
+                "    f.resolved_chapter = $resolved "
+                "RETURN f.id AS id",
+                pid=str(project_id),
+                id=fid,
+                type=ftype,
+                desc=desc,
+                planted=planted,
+                conds=json.dumps(list(body.resolve_conditions or []), ensure_ascii=False),
+                blueprint=json.dumps(body.resolution_blueprint or {}, ensure_ascii=False),
+                prox=float(body.narrative_proximity or 0.0),
+                status=status,
+                resolved=resolved_ch,
+            )
+            await result.consume()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=planted,
+        caller="api.neo4j_settings.foreshadows.upsert",
+    )
+    return {"status": "accepted", "entity": "foreshadow", "id": fid}
 
