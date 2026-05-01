@@ -238,6 +238,13 @@ async def _materialize_entities_to_postgres(
 
                 if not isinstance(fid, str) or not fid.strip():
                     continue
+                # PG foreshadows.id is UUID. Skip legacy/non-UUID ids.
+                try:
+                    import uuid as _uuid
+
+                    fid = str(_uuid.UUID(fid.strip()))
+                except Exception:
+                    continue
                 if not isinstance(ftype, str) or not ftype.strip():
                     continue
                 if not isinstance(desc, str) or not desc.strip():
