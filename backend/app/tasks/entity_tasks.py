@@ -62,7 +62,7 @@ async def _materialize_entities_to_postgres(
 
     Best-effort: failures must never break the extraction task.
     """
-    from sqlalchemy import select
+    from sqlalchemy import delete, select
     from sqlalchemy.dialects.postgresql import insert
 
     from app.db.neo4j import init_neo4j
@@ -479,6 +479,23 @@ async def _materialize_entities_to_postgres(
                 )
                 result = await db.execute(stmt)
                 upserted_foreshadows += int(getattr(result, "rowcount", 0) or 0)
+
+            # Foreshadows: deletion sync.
+            # Materialize is the reconciliation step, so Postgres should not keep
+            # foreshadows that were deleted from Neo4j.
+            neo4j_fs_ids = {f.get("id") for f in foreshadows if f.get("id")}
+            pg_fs_rows = await db.execute(
+                select(Foreshadow.id).where(Foreshadow.project_id == project_id)
+            )
+            pg_fs_ids = {str(r[0]) for r in pg_fs_rows.all()}
+            stale_ids = sorted(pg_fs_ids - neo4j_fs_ids)
+            if stale_ids:
+                await db.execute(
+                    delete(Foreshadow).where(
+                        Foreshadow.project_id == project_id,
+                        Foreshadow.id.in_(stale_ids),
+                    )
+                )
 
             # MEMBER_OF: bulk insert projection rows.
             if memberships:
