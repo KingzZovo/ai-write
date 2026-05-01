@@ -260,9 +260,37 @@ async def update_foreshadow(
 async def delete_foreshadow(
     project_id: UUID,
     foreshadow_id: UUID,
+    neo4j: AsyncDriver = Depends(get_neo4j),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete a foreshadow."""
+    """Delete a foreshadow.
+
+    Deletes from Neo4j (source of truth), then materializes to Postgres.
+    """
+    try:
+        async with neo4j.session() as session:
+            r = await session.run(
+                "MATCH (f:Foreshadow {project_id: $pid, id: $id}) DETACH DELETE f",
+                pid=str(project_id),
+                id=str(foreshadow_id),
+            )
+            summary = await r.consume()
+            # If the node didn't exist, treat as 404 to match previous behavior.
+            if summary.counters.nodes_deleted == 0:
+                raise HTTPException(status_code=404, detail="Foreshadow not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=0,
+        caller="api.foreshadows.delete",
+    )
+
+    # Best-effort cleanup in PG if row exists (materialize should handle it too,
+    # but current materialize implementation is upsert-only).
     result = await db.execute(
         select(Foreshadow).where(
             Foreshadow.id == foreshadow_id,
@@ -270,11 +298,9 @@ async def delete_foreshadow(
         )
     )
     foreshadow = result.scalar_one_or_none()
-    if foreshadow is None:
-        raise HTTPException(status_code=404, detail="Foreshadow not found")
-
-    await db.delete(foreshadow)
-    await db.flush()
+    if foreshadow is not None:
+        await db.delete(foreshadow)
+        await db.flush()
 
 
 @router.post("/{foreshadow_id}/resolve", response_model=ForeshadowResponse)
@@ -282,26 +308,56 @@ async def resolve_foreshadow(
     project_id: UUID,
     foreshadow_id: UUID,
     body: ForeshadowResolveRequest,
+    neo4j: AsyncDriver = Depends(get_neo4j),
     db: AsyncSession = Depends(get_db),
 ) -> ForeshadowResponse:
-    """Manually mark a foreshadow as resolved."""
-    result = await db.execute(
+    """Manually mark a foreshadow as resolved.
+
+    Writes to Neo4j (source of truth), materializes to Postgres.
+    """
+    try:
+        async with neo4j.session() as session:
+            # Ensure exists and not already resolved.
+            r0 = await session.run(
+                "MATCH (f:Foreshadow {project_id: $pid, id: $id}) "
+                "RETURN f.status AS status",
+                pid=str(project_id),
+                id=str(foreshadow_id),
+            )
+            rec0 = await r0.single()
+            if rec0 is None:
+                raise HTTPException(status_code=404, detail="Foreshadow not found")
+            if rec0.get("status") == "resolved":
+                raise HTTPException(status_code=400, detail="Foreshadow is already resolved")
+
+            r1 = await session.run(
+                "MATCH (f:Foreshadow {project_id: $pid, id: $id}) "
+                "SET f.status = 'resolved', "
+                "    f.resolved_chapter = $resolved_chapter, "
+                "    f.narrative_proximity = 1.0",
+                pid=str(project_id),
+                id=str(foreshadow_id),
+                resolved_chapter=int(body.resolved_chapter),
+            )
+            await r1.consume()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=int(body.resolved_chapter),
+        caller="api.foreshadows.resolve",
+    )
+
+    row = await db.execute(
         select(Foreshadow).where(
             Foreshadow.id == foreshadow_id,
             Foreshadow.project_id == project_id,
         )
     )
-    foreshadow = result.scalar_one_or_none()
+    foreshadow = row.scalar_one_or_none()
     if foreshadow is None:
-        raise HTTPException(status_code=404, detail="Foreshadow not found")
-
-    if foreshadow.status == "resolved":
-        raise HTTPException(status_code=400, detail="Foreshadow is already resolved")
-
-    foreshadow.status = "resolved"
-    foreshadow.resolved_chapter = body.resolved_chapter
-    foreshadow.narrative_proximity = 1.0
-
-    await db.flush()
-    await db.refresh(foreshadow)
+        raise HTTPException(status_code=500, detail="pg_materialize_missing")
     return ForeshadowResponse.model_validate(foreshadow)
