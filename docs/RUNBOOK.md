@@ -317,6 +317,14 @@ v1.9 处理策略：
 
 约定：Neo4j 是结构化实体的真相源；Postgres 是读优化投影。
 
+补充约束（v1.9+）：
+
+- **禁止直接写 Postgres settings 表**（characters / world_rules / relationships）：
+	- `backend/app/api/settings.py` 的写接口已禁用（返回 410），避免 PG 与 Neo4j 漂移。
+	- 读接口仍可保留用于读取投影 / 历史数据（具体以产品侧调用为准）。
+- **写入必须走 Neo4j**，并通过 materialize 收敛到 PG 读模型：
+	- 写入口：`/api/projects/{project_id}/neo4j-settings/*`（见下方 6.12）
+
 v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 
 - characters（按 `(project_id, name)` 幂等）
@@ -325,6 +333,18 @@ v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 - locations（按 `(project_id, name)` 幂等，DB 约束：`uq_locations_project_name`）
 - character_locations（AT_LOCATION 投影；按 `(project_id, character_id, location_id, chapter_start)` 幂等，DB 约束：`uq_character_locations_key`）
 - character_states（HAS_STATE 投影；按 `(project_id, character_id, chapter_start)` 幂等，DB 约束：`uq_character_states_key`）
+
+### 6.12 Neo4j settings 写入口（推荐；写 Neo4j + 触发 materialize）
+
+背景：原 `/api/projects/{project_id}/*` settings 写接口（PG CRUD）在 v1.9+ 被禁用，以确保 Neo4j 单写真相源。
+
+写接口（返回 `202 Accepted`）：
+
+- `POST /api/projects/{project_id}/neo4j-settings/characters`
+- `POST /api/projects/{project_id}/neo4j-settings/world-rules`
+- `POST /api/projects/{project_id}/neo4j-settings/relationships`
+
+实现位置：`backend/app/api/neo4j_settings.py`
 
 读端统一（v1.9+）：
 
