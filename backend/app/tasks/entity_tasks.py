@@ -57,6 +57,7 @@ async def _materialize_entities_to_postgres(
     - Insert `world_rules` by (project_id, category, rule_text)
     - Insert `locations` by (project_id, name)
     - Insert `character_locations` by (project_id, character_id, location_id, chapter_start)
+    - Insert `character_states` by (project_id, character_id, chapter_start)
 
     Best-effort: failures must never break the extraction task.
     """
@@ -65,7 +66,14 @@ async def _materialize_entities_to_postgres(
 
     from app.db.neo4j import init_neo4j
     from app.db.session import async_session_factory
-    from app.models.project import Character, Location, Relationship, WorldRule
+    from app.models.project import (
+        Character,
+        CharacterLocation,
+        CharacterState,
+        Location,
+        Relationship,
+        WorldRule,
+    )
     from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
     from app.services.rel_type import canonicalize_rel_type
 
@@ -175,11 +183,42 @@ async def _materialize_entities_to_postgres(
             # Deduplicate by key.
             at_locs = sorted(set(at_locs))
 
+            # HAS_STATE: materialize all Character-HAS_STATE->CharacterState nodes.
+            # Neo4j schema (EntityTimelineService):
+            #   (c:Character)-[:HAS_STATE]->(s:CharacterState {chapter_start, chapter_end, status_json})
+            cs_result = await session.run(
+                "MATCH (c:Character {project_id: $pid})-[:HAS_STATE]->(s:CharacterState) "
+                "RETURN c.name AS cname, s.chapter_start AS cs, s.chapter_end AS ce, s.status_json AS status "
+                "ORDER BY c.name, s.chapter_start",
+                pid=project_id,
+            )
+            cstates: list[tuple[str, int, int | None, str]] = []
+            async for rec in cs_result:
+                cname = rec.get("cname") if rec else None
+                cs = rec.get("cs") if rec else None
+                ce = rec.get("ce") if rec else None
+                status = rec.get("status") if rec else None
+                if not isinstance(cname, str) or not cname.strip():
+                    continue
+                if not isinstance(cs, int):
+                    continue
+                status_str = status if isinstance(status, str) else ("{}" if status is None else str(status))
+                cstates.append(
+                    (
+                        cname.strip(),
+                        int(cs),
+                        int(ce) if isinstance(ce, int) else None,
+                        status_str,
+                    )
+                )
+            cstates = sorted(set(cstates))
+
         created_chars = 0
         created_rels = 0
         created_rules = 0
         created_locs = 0
         created_atlocs = 0
+        created_cstates = 0
 
         async with async_session_factory() as db:
             if char_names:
@@ -300,6 +339,40 @@ async def _materialize_entities_to_postgres(
                     result = await db.execute(stmt)
                     created_atlocs += int(getattr(result, "rowcount", 0) or 0)
 
+            # HAS_STATE: bulk insert projection rows.
+            if cstates:
+                import uuid as _uuid
+
+                cs_char_rows = await db.execute(
+                    select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name.in_([c for (c, _, _, _) in cstates]),
+                    )
+                )
+                cs_by_name = {c.name: c for c in cs_char_rows.scalars().all()}
+
+                cs_rows = []
+                for (cname, cs, ce, status_str) in cstates:
+                    c = cs_by_name.get(cname)
+                    if not c:
+                        continue
+                    cs_rows.append(
+                        {
+                            "id": str(_uuid.uuid4()),
+                            "project_id": project_id,
+                            "character_id": str(c.id),
+                            "chapter_start": int(cs),
+                            "chapter_end": int(ce) if ce is not None else None,
+                            "status_json": status_str,
+                        }
+                    )
+
+                if cs_rows:
+                    stmt = insert(CharacterState).values(cs_rows)
+                    stmt = stmt.on_conflict_do_nothing(constraint="uq_character_states_key")
+                    result = await db.execute(stmt)
+                    created_cstates += int(getattr(result, "rowcount", 0) or 0)
+
             try:
                 await db.commit()
             except Exception:
@@ -307,7 +380,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d atlocs=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d atlocs=%d/%d cstates=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -321,6 +394,8 @@ async def _materialize_entities_to_postgres(
             len(locations),
             created_atlocs,
             len(at_locs),
+            created_cstates,
+            len(cstates),
         )
         return {
             "chars_created": created_chars,
@@ -333,6 +408,8 @@ async def _materialize_entities_to_postgres(
             "locs_seen": len(locations),
             "atlocs_created": created_atlocs,
             "atlocs_seen": len(at_locs),
+            "cstates_created": created_cstates,
+            "cstates_seen": len(cstates),
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
@@ -355,6 +432,8 @@ async def _materialize_entities_to_postgres(
             "locs_seen": 0,
             "atlocs_created": 0,
             "atlocs_seen": 0,
+            "cstates_created": 0,
+            "cstates_seen": 0,
         }
 
 
