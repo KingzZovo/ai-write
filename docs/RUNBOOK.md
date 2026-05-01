@@ -11,35 +11,40 @@
 
 ## 1. 正确写入路径（推荐入口）
 
-### 1.1 通用 Neo4j 设定集写入接口
+### 1.1 当前 main 上的实际写入口（事实）
+
+main HEAD（截至 `17fb371`）上 **唯一已实现** 的设定集写入口：
 
 ```
+POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings
+```
+
+该接口内部直接调用 Neo4j 写入 + 在最后一步调用 `_materialize_entities_to_postgres()` 把投影同步回 PG（见 `backend/app/api/outlines.py:152` 与 `backend/app/tasks/entity_tasks.py:47`）。章节生成 / 大纲提取链路也通过同一条路径触发 entity_tasks。
+
+### 1.2 README 里写的「通用 Neo4j 设定集写入接口」（注意：未在 main 实现）
+
+```
+# README v1.9+ 文档化入口
 POST /api/projects/{project_id}/neo4j-settings/world-rules
 POST /api/projects/{project_id}/neo4j-settings/relationships
 POST /api/projects/{project_id}/neo4j-settings/locations
 POST /api/projects/{project_id}/neo4j-settings/character-states
+
+# README v1.9+ 文档化手动 materialize
+POST /api/admin/entities/materialize
 ```
 
-约束：先落 Neo4j；触发或随后调用 materialize 把投影同步回 PG。
+> ⚠ **现状（已通过 `git ls-files backend/app/api/` 确认）**：`backend/app/api/neo4j_settings.py` 与 `backend/app/api/admin_entities.py` **不在 origin/main**（仅在 `feature/v1.0-big-bang` 历史里有过 `dc98363 feat(v1.9): add neo4j settings write API + materialize projection`）。
+>
+> README 里这些接口属于「目标架构」，不是当前 main 的可用入口。在它们落地之前，请使用 §1.1 的 `extract-settings` 入口。
 
-### 1.2 从大纲提取设定集
+### 1.3 从大纲提取设定集（main 实际可用）
 
 ```
 POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings
 ```
 
 Extractor 会把 `characters / world_rules / relationships` 抽取并落到 Neo4j；不要绕过它去手写 PG。
-
-### 1.3 手动 materialize（强制刷新 PG 投影）
-
-```
-POST /api/admin/entities/materialize
-```
-
-触发时机：
-- 怀疑 PG 投影脏了 / drift
-- Neo4j 直改后想立刻在前端看到
-- 离线 ETL / 数据修复后
 
 ## 2. Anti-pattern（绝对禁止）
 
@@ -57,19 +62,20 @@ await db.execute(text("INSERT INTO world_rules ..."))
 
 任何对 `world_rules / relationships / locations / character_states` 的「写」都视为 drift 风险，应：
 1. 改为先写 Neo4j，再 materialize；或
-2. 标记为 410，引导到 `/neo4j-settings/*`。
+2. 标记为 410，引导到 §1.1 的 `extract-settings`（或将来的 `/neo4j-settings/*`）。
 
 ## 3. Legacy 接口现状
 
 | Path | Method | 现状 | 替代 |
 |------|--------|------|------|
-| `/api/projects/{project_id}/world-rules` | POST/PUT/DELETE | 410 Gone | `/neo4j-settings/world-rules` |
-| `/api/projects/{project_id}/relationships` | POST/PUT/DELETE | 410 Gone | `/neo4j-settings/relationships` |
+| `/api/projects/{project_id}/world-rules` | POST/PUT/DELETE | 410 Gone | `extract-settings`（§1.1） |
+| `/api/projects/{project_id}/relationships` | POST/PUT/DELETE | 410 Gone | `extract-settings`（§1.1） |
 | `/api/projects/{project_id}/foreshadows` | POST/PUT/DELETE/resolve | ⚠ 当前仍 PG 直写（待路线决策） | TBD（详见 docs/PROGRESS.md P2） |
 
-> ⚠ Foreshadows：仓库内目前有**两处** PG 直写 Foreshadow（已通过本地 grep 确认）：
-> - `backend/app/api/foreshadows.py`：POST/PUT/DELETE/resolve 直接 `db.add(Foreshadow(...))` / `db.delete(foreshadow)` / `setattr(...)`
-> - `backend/app/services/foreshadow_manager.py:84`（`create` 方法）：`db.add(Foreshadow(...))`，被章节生成 / 大纲提取链路调用
+> ⚠ Foreshadows：仓库内目前有**三处** PG 直写 Foreshadow（已通过本地 grep 确认）：
+> - `backend/app/api/foreshadows.py:111`（POST 创建）
+> - `backend/app/api/foreshadows.py:179`（DELETE）
+> - `backend/app/services/foreshadow_manager.py:84`（service `create`，被章节生成 / 大纲提取链路调用）
 >
 > 需要在下一个 follow-up PR 里二选一：
 > - **选项 A**：纳入 Neo4j 真相源链路 —— 新增 `/neo4j-settings/foreshadows` 写入口 + materialize 投影；同时把 `foreshadow_manager.create` 改走 Neo4j 写入口。
@@ -115,7 +121,7 @@ python3 -m compileall -q backend/app
 
 期望：无输出（全部通过）或仅警告，无 SyntaxError。
 
-### 4.4 设定集对账（P3，如脚本就位）
+### 4.4 设定集对账（P3）
 
 ```bash
 cd /root/ai-write
@@ -123,9 +129,10 @@ PROJECT_ID=<uuid> CHAPTER_IDX=0 \
   bash scripts/verify_entity_writeback_v19.sh
 ```
 
-期望：脚本输出 OK，Neo4j 与 PG 投影一致。
+期望：脚本输出 `OK: 设定集 writeback v1.9 对账通过`，Neo4j 与 PG 投影一致。
 
-> 当前 `scripts/` 目录在仓库中**不存在**（`verify_entity_writeback_v19.sh` 尚未入仓）。需要先把脚本提交到 `scripts/` 才能跑这一步；列入 P3 follow-up。
+> 脚本已在本 PR 入仓（`scripts/verify_entity_writeback_v19.sh`，151 行，bash -n SYNTAX_OK）。
+> 依赖：`curl`、`psql`；可选 `cypher-shell`（无则跳过 Neo4j 端对账，仅做 API + PG 端）。
 
 ### 4.5 Legacy 410 烟测
 
@@ -157,9 +164,9 @@ grep -R --line-number -E "(\\bForeshadow\\(|db\\.add\\(.*Foreshadow|db\\.delete\
 
 1. 不要直接改 PG。
 2. 找到 Neo4j 真相源；如有备份按部门规约恢复。
-3. 调 `POST /api/admin/entities/materialize` 重建 PG 投影。
-4. 如步骤 3 后仍不一致，手动 truncate PG 对应表（`world_rules / relationships / locations / character_states`）后再 materialize。
-5. 复跑 §4.4 对账脚本确认（如脚本已就位）。
+3. **当前 main 还没有暴露 `POST /api/admin/entities/materialize` 公开端点**。临时方案：通过任意章节调用 `extract-settings`（§1.1）会触发同一个 `_materialize_entities_to_postgres()`；或临时 import `backend/app/tasks/entity_tasks._materialize_entities_to_postgres` 在 shell 里直接调用。
+4. 如步骤 3 后仍不一致，手动 truncate PG 对应表（`world_rules / relationships / locations / character_states`）后再触发 §1.1。
+5. 复跑 §4.4 对账脚本确认。
 
 ## 6. 产物目录禁止入仓
 

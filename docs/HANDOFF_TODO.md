@@ -9,8 +9,7 @@
 
 ## P1 文档（必须）
 - [x] `docs/RUNBOOK.md` 写清：Neo4j truth + PG projection（本 PR）
-- [x] 写清正确写入口：`/neo4j-settings/*`、`/outlines/{id}/extract-settings`（RUNBOOK §1）
-- [x] 写清手动 materialize：`/api/admin/entities/materialize`（RUNBOOK §1.3）
+- [x] 写清正确写入口：main 上是 `/outlines/{id}/extract-settings`；README 描述的 `/neo4j-settings/*` 与 `/admin/entities/materialize` 不在 main（RUNBOOK §1）
 - [x] 写清 legacy 410：`/world-rules`、`/relationships` 写接口（RUNBOOK §3）
 - [x] 标注 foreshadows 仍 PG 直写（待 follow-up）（RUNBOOK §3 + PROGRESS §3）
 - [x] 把 service 层残留 `foreshadow_manager.py:84` 也写进 RUNBOOK / PROGRESS（不止 api 层）
@@ -24,5 +23,9 @@
 
 ## P3 验收（仅本机）
 - [x] `python3 -m compileall -q backend/app` ✅ COMPILEALL_OK（2026-05-01，AWS MCP shell）
-- [ ] `scripts/verify_entity_writeback_v19.sh` 当前仓库**不存在** → 需先把脚本提交到 `scripts/`，再跑 `PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh`
+- [x] `scripts/verify_entity_writeback_v19.sh` 入仓（本 PR，151 行，`bash -n` SYNTAX_OK）
+- [ ] 在有真实 PROJECT_ID + 启动后端服务的环境跑：`PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh`
 - [x] 结果回填到本 PR 描述 Verification 段（详见 PR 描述）
+
+## P4 架构 vs 文档一致性（新增）
+- [ ] 决策：是否把 `feature/v1.0-big-bang` 上的 `neo4j_settings.py` + `admin_entities.py`（commit `dc98363` 起的 v1.9 链）合并到 main，或反过来修订 README 把这俩路由族标为 v1.10 计划
