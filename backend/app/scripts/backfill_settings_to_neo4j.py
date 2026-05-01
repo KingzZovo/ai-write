@@ -74,6 +74,7 @@ async def _amain(args: argparse.Namespace) -> int:
                 str(row[0] or "").strip(),
                 str(row[1] or "").strip(),
                 canonicalize_rel_type(str(row[2] or "").strip()),
+                str(row[2] or "").strip(),
             )
             for row in rel_rows.all()
             if str(row[0] or "").strip()
@@ -94,8 +95,8 @@ async def _amain(args: argparse.Namespace) -> int:
             print(f"  [dry-run] world_rule category={w.category!r} text={w.rule_text!r}")
         if len(rules) > 10:
             print(f"  ... and {len(rules) - 10} more world_rules")
-        for (src, tgt, rtype) in rels[:10]:
-            print(f"  [dry-run] relationship {src!r} -[{rtype}]-> {tgt!r}")
+        for (src, tgt, rtype, raw_type) in rels[:10]:
+            print(f"  [dry-run] relationship {src!r} -[{rtype}]-> {tgt!r} (raw={raw_type!r})")
         if len(rels) > 10:
             print(f"  ... and {len(rels) - 10} more relationships")
         return 0
@@ -147,7 +148,7 @@ async def _amain(args: argparse.Namespace) -> int:
 
         # Relationships: write RELATES_TO edges.
         # Use chapter_start=0 for settings relationships (timeless settings model).
-        for (src, tgt, rtype) in rels:
+        for (src, tgt, rtype, raw_type) in rels:
             res = await session.run(
                 "MERGE (a:Character {project_id: $pid, name: $src}) "
                 "ON CREATE SET a.id = $aid",
@@ -169,11 +170,13 @@ async def _amain(args: argparse.Namespace) -> int:
                 "MATCH (a:Character {project_id: $pid, name: $src}) "
                 "MATCH (b:Character {project_id: $pid, name: $tgt}) "
                 "MERGE (a)-[rel:RELATES_TO {project_id: $pid, source_name: $src, target_name: $tgt, type: $rtype, chapter_start: 0}]->(b) "
-                "ON CREATE SET rel.chapter_end = null",
+                "ON CREATE SET rel.chapter_end = null, rel.raw_type = $raw_type "
+                "SET rel.raw_type = coalesce(rel.raw_type, $raw_type)",
                 pid=project_id,
                 src=src,
                 tgt=tgt,
                 rtype=rtype,
+                raw_type=raw_type,
             )
             await res.consume()
             wrote_rels += 1

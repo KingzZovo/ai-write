@@ -152,15 +152,24 @@ async def create_relationship(
             # Use MERGE to keep this endpoint idempotent under retries.
             # We also persist identifying fields on the relationship to support
             # Neo4j uniqueness constraints.
+            # Store canonical type on r.type (materialize expects r.type), and
+            # preserve original user-provided type for audit/debug.
+            from app.services.rel_type import canonicalize_rel_type
+
+            raw_type = str(body.rel_type).strip()
+            rtype = canonicalize_rel_type(raw_type)
+
             r3 = await session.run(
                 "MATCH (a:Character {project_id: $pid, name: $src}), "
                 "      (b:Character {project_id: $pid, name: $tgt}) "
                 "MERGE (a)-[r:RELATES_TO {project_id: $pid, source_name: $src, target_name: $tgt, type: $rtype, chapter_start: $cs}]->(b) "
-                "ON CREATE SET r.chapter_end = null",
+                "ON CREATE SET r.chapter_end = null, r.raw_type = $raw_type "
+                "SET r.raw_type = coalesce(r.raw_type, $raw_type)",
                 pid=str(project_id),
                 src=str(body.source).strip(),
                 tgt=str(body.target).strip(),
-                rtype=str(body.rel_type).strip(),
+                rtype=rtype,
+                raw_type=raw_type,
                 cs=int(body.chapter_start),
             )
             await r3.consume()
