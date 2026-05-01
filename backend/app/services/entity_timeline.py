@@ -127,6 +127,11 @@ class EntityTimelineService:
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR ()-[r:RELATES_TO]-() REQUIRE (r.project_id, r.source_name, r.target_name, r.type, r.chapter_start) IS UNIQUE"
                 )
+                # AT_LOCATION uniqueness: one active location per character per chapter_start.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:AT_LOCATION]-() REQUIRE (r.project_id, r.character_name, r.chapter_start) IS UNIQUE"
+                )
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (w:WorldRule) REQUIRE (w.project_id, w.category, w.text) IS UNIQUE"
@@ -520,9 +525,9 @@ class EntityTimelineService:
                 await session.run(
                     "MATCH (c:Character {project_id: $pid, name: $cname}), "
                     "      (l:Location {project_id: $pid, name: $lname}) "
-                    "CREATE (c)-[:AT_LOCATION {"
-                    "  chapter_start: $start, chapter_end: null"
-                    "}]->(l)",
+                    "MERGE (c)-[r:AT_LOCATION {project_id: $pid, character_name: $cname, chapter_start: $start}]->(l) "
+                    "ON CREATE SET r.chapter_end = null "
+                    "SET r.location_name = $lname",
                     pid=project_id,
                     cname=character_name,
                     lname=location_name,

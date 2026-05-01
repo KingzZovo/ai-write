@@ -117,6 +117,12 @@ class Neo4jRelationshipCreateRequest(BaseModel):
     chapter_start: int = Field(default=0, ge=0)
 
 
+class Neo4jSetLocationRequest(BaseModel):
+    character: str = Field(..., min_length=1, max_length=200)
+    location: str = Field(..., min_length=1, max_length=200)
+    chapter_start: int = Field(default=0, ge=0)
+
+
 @router.post("/relationships", status_code=202)
 async def create_relationship(
     project_id: str,
