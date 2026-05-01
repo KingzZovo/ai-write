@@ -123,6 +123,10 @@ class EntityTimelineService:
                 )
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (w:WorldRule) REQUIRE (w.project_id, w.category, w.text) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (l:Location) REQUIRE (l.project_id, l.name) IS UNIQUE"
                 )
                 await session.run(
