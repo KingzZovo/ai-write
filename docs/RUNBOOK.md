@@ -410,6 +410,14 @@ docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 \
 
 回填完成后建议再跑一次 materialize（或直接跑 6.12 的一键验收脚本），以确认 Neo4j→PG 投影链路口径已对齐。
 
+注意：relationships 回填会对 `rel_type` 做 canonicalize（见 `backend/app/services/rel_type.py`）。例如：
+
+- `同学` → `同伴`
+- `寻找` → `失联`
+- `同舍转对立` → `同舍`（因为包含“同舍”关键词）
+
+因此你可能观察到 “PG relationships 行数” 与 “Neo4j `chapter_start=0` 的 RELATES_TO 边数” 不完全一致：多种原始关系类型会被收敛到同一个 canonical token。
+
 #### Alembic 本地升级（v1.9+）
 
 说明：`backend/alembic/env.py` 默认从应用配置读取 DB URL；本地/CI 可以用 `DATABASE_URL` 覆盖。
