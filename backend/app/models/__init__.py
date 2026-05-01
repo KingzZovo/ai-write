@@ -41,6 +41,8 @@ from app.models.project import (
     Volume,
     VolumeSummary,
     WorldRule,
+    Organization,
+    CharacterOrganization,
 )
 
 __all__ = [
@@ -56,9 +58,11 @@ __all__ = [
     "ChapterVariant",
     "ChapterVersion",
     "Character",
+    "CharacterOrganization",
     "CrawlTask",
     "FilterWord",
     "Foreshadow",
+    "Organization",
     "GenreProfile",
     "LLMCallLog",
     "LLMEndpoint",

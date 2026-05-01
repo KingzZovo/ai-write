@@ -200,6 +200,19 @@ class Location(Base):
     project = relationship("Project", back_populates="locations")
 
 
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
 class CharacterLocation(Base):
     __tablename__ = "character_locations"
 
@@ -217,6 +230,30 @@ class CharacterLocation(Base):
     location_id = Column(
         UUID(as_uuid=True),
         ForeignKey("locations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterOrganization(Base):
+    __tablename__ = "character_organizations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organization_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
     )
     chapter_start = Column(Integer, nullable=False)
