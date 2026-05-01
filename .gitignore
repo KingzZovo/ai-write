@@ -26,6 +26,13 @@ out/
 .DS_Store
 Thumbs.db
 
+# Local artifacts
+.audit-v*/
+.tmp_*.sse
+.pytest_cache/
+backend/.coverage
+backend/app/prompts/*.txt
+
 # Docker volumes
 postgres_data/
 redis_data/
