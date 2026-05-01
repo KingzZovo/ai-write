@@ -67,9 +67,13 @@ await db.execute(text("INSERT INTO world_rules ..."))
 | `/api/projects/{project_id}/relationships` | POST/PUT/DELETE | 410 Gone | `/neo4j-settings/relationships` |
 | `/api/projects/{project_id}/foreshadows` | POST/PUT/DELETE/resolve | ⚠ 当前仍 PG 直写（待路线决策） | TBD（详见 docs/PROGRESS.md P2） |
 
-> ⚠ Foreshadows：当前 `backend/app/api/foreshadows.py` 的 POST/PUT/DELETE/resolve 均直接 `db.add(Foreshadow(...))` / `db.delete(...)` / `setattr(...)`。需要在下一个 follow-up PR 里二选一：
-> - 纳入 Neo4j 真相源链路（新增 `/neo4j-settings/foreshadows` + materialize 投影）；或
-> - 显式声明 `foreshadows` 不入 Neo4j 真相源链路（明确写在本节，并补回归测试防漂移）。
+> ⚠ Foreshadows：仓库内目前有**两处** PG 直写 Foreshadow（已通过本地 grep 确认）：
+> - `backend/app/api/foreshadows.py`：POST/PUT/DELETE/resolve 直接 `db.add(Foreshadow(...))` / `db.delete(foreshadow)` / `setattr(...)`
+> - `backend/app/services/foreshadow_manager.py:84`（`create` 方法）：`db.add(Foreshadow(...))`，被章节生成 / 大纲提取链路调用
+>
+> 需要在下一个 follow-up PR 里二选一：
+> - **选项 A**：纳入 Neo4j 真相源链路 —— 新增 `/neo4j-settings/foreshadows` 写入口 + materialize 投影；同时把 `foreshadow_manager.create` 改走 Neo4j 写入口。
+> - **选项 B**：显式声明 `foreshadows` 不入 Neo4j 真相源链路（写在本节），并补回归测试防漂移。
 
 ## 4. 验收命令（复制即用）
 
@@ -79,19 +83,23 @@ await db.execute(text("INSERT INTO world_rules ..."))
 cd /root/ai-write
 
 git fetch origin main
-git reset --hard origin/main
+git reset --hard origin/main   # 仅在本地无价值脏改动时使用
 
 git status            # 期望: working tree clean
 git log -1 --oneline  # 期望: 与 origin/main HEAD 一致
 ```
 
+> 如果本地有未提交改动且不确定能否丢弃：**先 `git diff` 与 `git diff HEAD origin/main -- <path>` 对比**。如本地改动恰好等于 origin 已合并 PR 的 diff，可安全 `git checkout -- <path>` 丢弃；否则用 `git stash -u` 暂存再 reset。
+
 ### 4.2 Stash 处理
 
 ```bash
 git stash list
+# 想看 stash 内容：
+# git stash show --stat stash@{0}
+# git stash show -p stash@{0}
 # 仅按需要恢复单个 md：
 # git checkout stash@{0} -- README.md
-# git checkout stash@{0} -- ITERATION_PLAN.md
 # 确认无用：
 # git stash drop stash@{0}
 # 或清空：
@@ -102,7 +110,7 @@ git stash list
 
 ```bash
 cd /root/ai-write
-python -m compileall -q backend/app
+python3 -m compileall -q backend/app
 ```
 
 期望：无输出（全部通过）或仅警告，无 SyntaxError。
@@ -116,6 +124,8 @@ PROJECT_ID=<uuid> CHAPTER_IDX=0 \
 ```
 
 期望：脚本输出 OK，Neo4j 与 PG 投影一致。
+
+> 当前 `scripts/` 目录在仓库中**不存在**（`verify_entity_writeback_v19.sh` 尚未入仓）。需要先把脚本提交到 `scripts/` 才能跑这一步；列入 P3 follow-up。
 
 ### 4.5 Legacy 410 烟测
 
@@ -136,9 +146,12 @@ grep -R --line-number -E "DELETE FROM (world_rules|relationships|locations|fores
 grep -R --line-number -E "\\bWorldRule\\(" backend/app || true
 grep -R --line-number -E "\\bRelationship\\(" backend/app || true
 grep -R --line-number -E "db\\.add\\(.*(WorldRule|Relationship|Location)" backend/app || true
+grep -R --line-number -E "(\\bForeshadow\\(|db\\.add\\(.*Foreshadow|db\\.delete\\(foreshadow)" backend/app || true
 ```
 
-期望：除 `foreshadows.py` 已知项外，全部 0 行。
+期望：
+- 前 6 条：除 `models/project.py` 的 `class WorldRule(Base)` / `class Relationship(Base)` 类定义（误匹配，正常）外，全部 0 命中。
+- 第 7 条 Foreshadow：当前预期命中 `backend/app/api/foreshadows.py:111`、`:179` 与 `backend/app/services/foreshadow_manager.py:84`，待 follow-up PR 处理后清零。
 
 ## 5. 灾难恢复（PG 投影坏了 / drift）
 
@@ -146,7 +159,7 @@ grep -R --line-number -E "db\\.add\\(.*(WorldRule|Relationship|Location)" backen
 2. 找到 Neo4j 真相源；如有备份按部门规约恢复。
 3. 调 `POST /api/admin/entities/materialize` 重建 PG 投影。
 4. 如步骤 3 后仍不一致，手动 truncate PG 对应表（`world_rules / relationships / locations / character_states`）后再 materialize。
-5. 复跑 §4.4 对账脚本确认。
+5. 复跑 §4.4 对账脚本确认（如脚本已就位）。
 
 ## 6. 产物目录禁止入仓
 
@@ -175,7 +188,7 @@ grep -R --line-number -E "db\\.add\\(.*(WorldRule|Relationship|Location)" backen
 ## Verification
 # 可复制命令 + 预期输出
 cd /root/ai-write
-python -m compileall -q backend/app
+python3 -m compileall -q backend/app
 # expected: no SyntaxError
 
 ## Docs updated
