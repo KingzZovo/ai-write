@@ -143,10 +143,14 @@ async def create_relationship(
                 bid=str(uuid.uuid4()),
             )
             await r2.consume()
+            # Use MERGE to keep this endpoint idempotent under retries.
+            # We also persist identifying fields on the relationship to support
+            # Neo4j uniqueness constraints.
             r3 = await session.run(
                 "MATCH (a:Character {project_id: $pid, name: $src}), "
                 "      (b:Character {project_id: $pid, name: $tgt}) "
-                "CREATE (a)-[:RELATES_TO {type: $rtype, chapter_start: $cs, chapter_end: null}]->(b)",
+                "MERGE (a)-[r:RELATES_TO {project_id: $pid, source_name: $src, target_name: $tgt, type: $rtype, chapter_start: $cs}]->(b) "
+                "ON CREATE SET r.chapter_end = null",
                 pid=str(project_id),
                 src=str(body.source).strip(),
                 tgt=str(body.target).strip(),

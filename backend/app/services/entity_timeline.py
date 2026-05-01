@@ -121,6 +121,12 @@ class EntityTimelineService:
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (c:Character) REQUIRE (c.project_id, c.name) IS UNIQUE"
                 )
+                # RELATES_TO uniqueness: (project_id, src, tgt, type, chapter_start)
+                # NOTE: requires we always set these properties on the relationship.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:RELATES_TO]-() REQUIRE (r.project_id, r.source_name, r.target_name, r.type, r.chapter_start) IS UNIQUE"
+                )
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (w:WorldRule) REQUIRE (w.project_id, w.category, w.text) IS UNIQUE"
