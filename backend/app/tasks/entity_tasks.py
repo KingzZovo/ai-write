@@ -101,16 +101,29 @@ async def _materialize_entities_to_postgres(
         # a silent no-op.
 
         async with driver.session() as session:
-            # Characters: materialize all Character node names.
+            # Characters: materialize all Character nodes.
+            # We also pull optional profile_json (string) if present.
             result = await session.run(
-                "MATCH (c:Character {project_id: $pid}) RETURN DISTINCT c.name AS name",
+                "MATCH (c:Character {project_id: $pid}) "
+                "RETURN DISTINCT c.name AS name, c.profile_json AS profile_json",
                 pid=project_id,
             )
+            char_profiles: dict[str, dict[str, Any]] = {}
             names: list[str] = []
             async for rec in result:
                 n = rec.get("name") if rec else None
+                p = rec.get("profile_json") if rec else None
                 if isinstance(n, str) and n.strip():
-                    names.append(n)
+                    name = n.strip()
+                    names.append(name)
+                    # profile_json is optional; store {} if missing/unparseable.
+                    if isinstance(p, str) and p.strip():
+                        try:
+                            obj = json.loads(p)
+                            if isinstance(obj, dict):
+                                char_profiles[name] = obj
+                        except Exception:
+                            pass
             char_names = sorted(set(names))
 
             # Relationships: materialize all RELATES_TO edges.
@@ -240,7 +253,7 @@ async def _materialize_entities_to_postgres(
                     Character(
                         project_id=project_id,
                         name=name,
-                        profile_json={},
+                        profile_json=char_profiles.get(name, {}),
                     )
                 )
                 created_chars += 1
