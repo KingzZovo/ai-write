@@ -260,6 +260,26 @@ async def _materialize_entities_to_postgres(
 
             await db.flush()
 
+            # Update existing character profile_json from Neo4j when available.
+            # This keeps PG read models in sync even when characters were
+            # originally created by legacy PG-only paths.
+            if char_names and char_profiles:
+                all_rows = await db.execute(
+                    select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name.in_(char_names),
+                    )
+                )
+                for c in all_rows.scalars().all():
+                    new_profile = char_profiles.get(c.name)
+                    if (
+                        isinstance(new_profile, dict)
+                        and new_profile
+                        and c.profile_json != new_profile
+                    ):
+                        c.profile_json = new_profile
+                await db.flush()
+
             if char_names:
                 all_rows = await db.execute(
                     select(Character).where(
