@@ -219,6 +219,7 @@ async def _materialize_entities_to_postgres(
         created_locs = 0
         created_atlocs = 0
         created_cstates = 0
+        skipped_cstates_missing_character = 0
 
         async with async_session_factory() as db:
             if char_names:
@@ -355,6 +356,7 @@ async def _materialize_entities_to_postgres(
                 for (cname, cs, ce, status_str) in cstates:
                     c = cs_by_name.get(cname)
                     if not c:
+                        skipped_cstates_missing_character += 1
                         continue
                     cs_rows.append(
                         {
@@ -410,6 +412,7 @@ async def _materialize_entities_to_postgres(
             "atlocs_seen": len(at_locs),
             "cstates_created": created_cstates,
             "cstates_seen": len(cstates),
+            "cstates_skipped_missing_character": skipped_cstates_missing_character,
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
@@ -434,6 +437,7 @@ async def _materialize_entities_to_postgres(
             "atlocs_seen": 0,
             "cstates_created": 0,
             "cstates_seen": 0,
+            "cstates_skipped_missing_character": 0,
         }
 
 
