@@ -364,11 +364,11 @@ PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
 - Neo4j：Character / RELATES_TO / WorldRule / Location / AT_LOCATION
 - Postgres：characters / relationships / world_rules / locations / character_locations
 
-预期口径：在 materialize 之后，这些计数应当一致；如果不一致，优先重跑 materialize，并确认查询过滤条件都按同一个 `project_id`。
+预期口径：在 materialize 之后，**投影表**（locations / character_locations / character_states）的计数应当一致；如果不一致，优先重跑 materialize，并确认查询过滤条件都按同一个 `project_id`。
 
 常见差异解释：
 
-- Neo4j 的 `WorldRule` 节点可能为空（例如只在 PG 侧通过 API 维护 world_rules），此时 Neo4j count=0、PG count>0 属于“数据源口径未统一”而不是 materialize 失败。
+- `characters / relationships / world_rules` 可能在 PG 侧通过 admin/settings 入口维护（而不是从 Neo4j materialize），此时 Neo4j 与 PG count 不一致属于“数据源口径未统一”而不是 materialize 失败。
 - `character_locations` 为 0 但 Neo4j `AT_LOCATION` 有值：通常表示 materialize 尚未实际写入该项目的 AT_LOCATION 投影，或 Neo4j 的 AT_LOCATION 边没有落到同一个 `project_id`。
 
 #### Alembic 本地升级（v1.9+）
