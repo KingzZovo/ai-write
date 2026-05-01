@@ -102,10 +102,11 @@ reconcile_counts() {
 	# This is a coarse reconciliation signal. We expect PG to eventually match Neo4j
 	# after materialize. Any mismatch may indicate partial materialize or schema drift.
 	local bad=0
+	# NOTE: We only hard-reconcile projections that are written exclusively via
+	# Neo4j materialize (locations / character_locations / character_states).
+	# characters / relationships / world_rules can be edited/seeded via PG admin
+	# settings UI and may legitimately diverge from Neo4j.
 	for pair in \
-		"characters:$n_chars:$p_chars" \
-		"relationships:$n_rels:$p_rels" \
-		"world_rules:$n_rules:$p_rules" \
 		"locations:$n_locs:$p_locs" \
 		"at_location_edges:$n_atlocs:$p_atlocs" \
 		"character_states:$n_cstates:$p_cstates"
