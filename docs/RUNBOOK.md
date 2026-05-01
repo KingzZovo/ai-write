@@ -418,6 +418,17 @@ docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 \
 
 因此你可能观察到 “PG relationships 行数” 与 “Neo4j `chapter_start=0` 的 RELATES_TO 边数” 不完全一致：多种原始关系类型会被收敛到同一个 canonical token。
 
+同时，为了保证可审计性：
+
+- Neo4j 关系边会同时存储：
+	- `r.type`：canonical 后的关系类型（materialize 使用）
+	- `r.raw_type`：原始输入类型（用于解释收敛/合并原因）
+
+这适用于：
+
+- API 写入口：`POST /api/projects/{project_id}/neo4j-settings/relationships`
+- 回填脚本：`python -m app.scripts.backfill_settings_to_neo4j`
+
 #### Alembic 本地升级（v1.9+）
 
 说明：`backend/alembic/env.py` 默认从应用配置读取 DB URL；本地/CI 可以用 `DATABASE_URL` 覆盖。
