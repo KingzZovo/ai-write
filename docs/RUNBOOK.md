@@ -367,6 +367,8 @@ PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
 
 该脚本会验证：materialize 幂等、以及 `relationships/world_rules/locations/character_locations` 无重复组。
 
+备注：脚本中 Neo4j 的 WorldRule 计数使用 `w.text` 字段（不是 `w.rule_text`），与当前 Neo4j 写入 schema 保持一致。
+
 同时会检查以下 Postgres 唯一约束是否存在（避免环境漏建约束导致 silently duplicated）：
 
 - `uq_relationships_rel_key`
