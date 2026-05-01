@@ -184,9 +184,8 @@
 | v0.3.0 | 2026-04-16 | 中文化+移动端+过滤词+书源评分+排行榜+搜索 |
 | v0.4.0 | 2026-04-19 | 项目管理页+回收站+向导可编辑+字数目标+单卷重生+关系表+7 bug 修复 |
 | v0.5.0 | 2026-04-21 | Prompt Routing + ModelRouter 重构 + LLM 日志 + /api/ask-user + Vector/RAG + 前端 5 新页 |
-| v0.6.0 | In progress | 离线反编译 + 三库语义解耦（详见 docs/V06_DESIGN.md） |
+| v0.6.0 | In progress | 离线反编译 + 三库语义解耦（详见 docs/V06_DESIGN.md）；设定集写入收敛为 Neo4j 真相源 + materialize→PG 投影 |
 | v0.7.0 | TBD | 状态机 + Critic + 记忆压缩 + 全局大纲（详见 docs/V07_DESIGN.md） |
 | v0.8.0 | TBD | 写法引擎资产化 + 去 AI 味 + Agent Tool Registry v1（详见 docs/V08_DESIGN.md） |
 | v0.9.0 | TBD | 设定集一等公民 + 关系图 + 版本 Diff（详见 docs/V09_DESIGN.md） |
 | v1.0.0 | TBD | LangGraph + BVSR + 多 Agent 协作 + 生产就绪（详见 docs/V10_DESIGN.md） |
-
