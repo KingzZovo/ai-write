@@ -385,6 +385,24 @@ PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
 - `characters / relationships / world_rules` 可能在 PG 侧通过 admin/settings 入口维护（而不是从 Neo4j materialize），此时 Neo4j 与 PG count 不一致属于“数据源口径未统一”而不是 materialize 失败。
 - `character_locations` 为 0 但 Neo4j `AT_LOCATION` 有值：通常表示 materialize 尚未实际写入该项目的 AT_LOCATION 投影，或 Neo4j 的 AT_LOCATION 边没有落到同一个 `project_id`。
 
+#### v1.9+ 存量项目口径收敛：PG settings → Neo4j 回填
+
+如果项目在 v1.9 之前主要通过 Postgres settings 表维护（characters / world_rules），迁移到“Neo4j 真相源”后可能出现：PG 有数据但 Neo4j 为 0（或偏少）。
+
+此时可对单项目执行一次回填脚本（幂等可重跑；使用 Neo4j MERGE）：
+
+```bash
+PROJECT_ID=<project_id>
+
+docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 \
+  python -m app.scripts.backfill_settings_to_neo4j --project-id $PROJECT_ID --dry-run
+
+docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 \
+  python -m app.scripts.backfill_settings_to_neo4j --project-id $PROJECT_ID
+```
+
+回填完成后建议再跑一次 materialize（或直接跑 6.12 的一键验收脚本），以确认 Neo4j→PG 投影链路口径已对齐。
+
 #### Alembic 本地升级（v1.9+）
 
 说明：`backend/alembic/env.py` 默认从应用配置读取 DB URL；本地/CI 可以用 `DATABASE_URL` 覆盖。
