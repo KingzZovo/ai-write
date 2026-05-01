@@ -87,14 +87,14 @@ reconcile_counts() {
 	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(w)")"
 	n_locs="$(neo4j_count "MATCH (l:Location {project_id: '$pid'}) RETURN count(l)")"
 	n_atlocs="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:AT_LOCATION]->(:Location {project_id: '$pid'}) RETURN count(r)")"
-	n_cstates="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[:HAS_STATE]->(s:CharacterState) RETURN count(s)")"
+	n_cstates="$(neo4j_count "MATCH (c:Character {project_id: '$pid'})-[:HAS_STATE]->(s:CharacterState) RETURN count(DISTINCT c.name + '|' + toString(s.chapter_start))")"
 
 	p_chars="$(pg_count "SELECT count(*) FROM characters WHERE project_id='$pid';")"
 	p_rels="$(pg_count "SELECT count(*) FROM relationships WHERE project_id='$pid';")"
 	p_rules="$(pg_count "SELECT count(*) FROM world_rules WHERE project_id='$pid';")"
 	p_locs="$(pg_count "SELECT count(*) FROM locations WHERE project_id='$pid';")"
 	p_atlocs="$(pg_count "SELECT count(*) FROM character_locations WHERE project_id='$pid';")"
-	p_cstates="$(pg_count "SELECT count(*) FROM character_states WHERE project_id='$pid';")"
+	p_cstates="$(pg_count "SELECT count(DISTINCT (character_id::text || '|' || chapter_start::text)) FROM character_states WHERE project_id='$pid';")"
 
 	echo "Neo4j counts: characters=$n_chars relationships=$n_rels world_rules=$n_rules locations=$n_locs at_locations=$n_atlocs character_states=$n_cstates"
 	echo "Postgres counts: characters=$p_chars relationships=$p_rels world_rules=$p_rules locations=$p_locs character_locations=$p_atlocs character_states=$p_cstates"
