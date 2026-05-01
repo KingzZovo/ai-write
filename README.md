@@ -247,6 +247,22 @@ celery -A app.tasks:celery_app beat --loglevel=info
 
 详见 [ITERATION_PLAN.md](ITERATION_PLAN.md)
 
+## 设定集数据源约定（v1.9+）
+
+为避免 Postgres 与 Neo4j 漂移，设定集相关实体（`world_rules` / `relationships` / `locations` / `character_states` 等）的约定是：
+
+- **Neo4j 是真相源（source of truth）**：所有写入优先落 Neo4j
+- **Postgres 是读优化投影（read model）**：通过 materialize 从 Neo4j 投影回 PG
+
+常用写入口：
+
+- `POST /api/projects/{project_id}/neo4j-settings/*`
+- `POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings`
+
+手动投影：
+
+- `POST /api/admin/entities/materialize`
+
 **当前版本 v0.4.0** — 项目管理、工作区 UX、数据质量大幅提升：
 - `/` 项目列表 + `/trash` 回收站 + 软删除/批量/重命名
 - URL 驱动工作区 + 向导可跳可编辑
