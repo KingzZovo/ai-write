@@ -164,9 +164,10 @@ async def _amain(args: argparse.Namespace) -> int:
                 bid=str(uuid.uuid4()),
             )
             await res.consume()
+            # Avoid cartesian product warnings by matching endpoints in a single connected pattern.
             res = await session.run(
-                "MATCH (a:Character {project_id: $pid, name: $src}), "
-                "      (b:Character {project_id: $pid, name: $tgt}) "
+                "MATCH (a:Character {project_id: $pid, name: $src}) "
+                "MATCH (b:Character {project_id: $pid, name: $tgt}) "
                 "MERGE (a)-[rel:RELATES_TO {project_id: $pid, source_name: $src, target_name: $tgt, type: $rtype, chapter_start: 0}]->(b) "
                 "ON CREATE SET rel.chapter_end = null",
                 pid=project_id,
