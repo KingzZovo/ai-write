@@ -8,7 +8,8 @@
 - [x] `git status` = working tree clean，stash 列表为空
 
 ## P1 文档（必须）
-- [x] `docs/RUNBOOK.md` 写清：Neo4j truth + PG projection（本 PR）
+- [x] `docs/RUNBOOK.md` 写清：Neo4j truth + PG projection（PR #6）
+- [x] 修正 README §设定集数据源约定 + `backend/app/api/settings.py` 410 message——明确“实际入口 = `extract-settings`；v1.10 计划推 `/neo4j-settings/*` + `/admin/entities/materialize`”（本 PR）
 - [x] 写清正确写入口：main 上是 `/outlines/{id}/extract-settings`；README 描述的 `/neo4j-settings/*` 与 `/admin/entities/materialize` 不在 main（RUNBOOK §1）
 - [x] 写清 legacy 410：`/world-rules`、`/relationships` 写接口（RUNBOOK §3）
 - [x] 标注 foreshadows 仍 PG 直写（待 follow-up）（RUNBOOK §3 + PROGRESS §3）
