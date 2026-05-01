@@ -180,3 +180,74 @@ async def create_relationship(
         "rel_type": body.rel_type,
     }
 
+
+@router.post("/locations/set", status_code=202)
+async def set_character_location(
+    project_id: str,
+    body: Neo4jSetLocationRequest,
+    neo4j: AsyncDriver = Depends(get_neo4j),
+) -> dict[str, Any]:
+    """Set character location in Neo4j via AT_LOCATION, then materialize to Postgres."""
+    cname = str(body.character).strip()
+    lname = str(body.location).strip()
+    cs = int(body.chapter_start)
+
+    try:
+        async with neo4j.session() as session:
+            # Ensure nodes exist
+            r1 = await session.run(
+                "MERGE (c:Character {project_id: $pid, name: $cname}) "
+                "ON CREATE SET c.id = $cid",
+                pid=str(project_id),
+                cname=cname,
+                cid=str(uuid.uuid4()),
+            )
+            await r1.consume()
+            r2 = await session.run(
+                "MERGE (l:Location {project_id: $pid, name: $lname}) "
+                "ON CREATE SET l.id = $lid",
+                pid=str(project_id),
+                lname=lname,
+                lid=str(uuid.uuid4()),
+            )
+            await r2.consume()
+
+            # Close previous open AT_LOCATION
+            r3 = await session.run(
+                "MATCH (c:Character {project_id: $pid, name: $cname})-[r:AT_LOCATION]->(:Location) "
+                "WHERE r.chapter_end IS NULL "
+                "SET r.chapter_end = $end",
+                pid=str(project_id),
+                cname=cname,
+                end=cs - 1,
+            )
+            await r3.consume()
+
+            # Open (idempotent) AT_LOCATION
+            r4 = await session.run(
+                "MATCH (c:Character {project_id: $pid, name: $cname}), (l:Location {project_id: $pid, name: $lname}) "
+                "MERGE (c)-[r:AT_LOCATION {project_id: $pid, character_name: $cname, chapter_start: $cs}]->(l) "
+                "ON CREATE SET r.chapter_end = null "
+                "SET r.location_name = $lname",
+                pid=str(project_id),
+                cname=cname,
+                lname=lname,
+                cs=cs,
+            )
+            await r4.consume()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=cs,
+        caller="api.neo4j_settings.locations.set",
+    )
+    return {
+        "status": "accepted",
+        "entity": "at_location",
+        "character": cname,
+        "location": lname,
+        "chapter_start": cs,
+    }
+
