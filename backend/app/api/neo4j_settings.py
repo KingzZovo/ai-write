@@ -359,7 +359,16 @@ async def upsert_foreshadow(
     neo4j: AsyncDriver = Depends(get_neo4j),
 ) -> dict[str, Any]:
     """Upsert a Foreshadow node in Neo4j, then materialize to Postgres (best-effort)."""
-    fid = str(body.id).strip() if body.id else str(uuid.uuid4())
+    # Postgres foreshadows.id is UUID, so the Neo4j Foreshadow.id must be a UUID string.
+    # Accept caller-provided UUID, otherwise generate one.
+    fid: str
+    if body.id:
+        try:
+            fid = str(uuid.UUID(str(body.id).strip()))
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid_foreshadow_id: must be UUID")
+    else:
+        fid = str(uuid.uuid4())
     ftype = str(body.type).strip()
     desc = str(body.description).strip()
     planted = int(body.planted_chapter)
