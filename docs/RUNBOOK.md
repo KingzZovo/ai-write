@@ -365,7 +365,7 @@ PROJECT_ID=<project_id> CHAPTER_IDX=<chapter_idx> TOKEN_FILE=/tmp/king_tok \
 	bash scripts/verify_entity_writeback_v19.sh
 ```
 
-该脚本会验证：materialize 幂等、以及 `relationships/world_rules/locations/character_locations` 无重复组。
+该脚本会验证：materialize 幂等、以及 `relationships/world_rules/locations/character_locations` 无重复组，并在 reconcile 阶段对齐 `locations/character_locations/character_states/foreshadows` 的 Neo4j↔PG 计数。
 
 备注：脚本中 Neo4j 的 WorldRule 计数使用 `w.text` 字段（不是 `w.rule_text`），与当前 Neo4j 写入 schema 保持一致。
 
