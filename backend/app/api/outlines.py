@@ -1,14 +1,20 @@
 """Outline management endpoints."""
 
+import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.neo4j import init_neo4j
+from app.db import neo4j as _neo4j_mod
 from app.db.session import get_db
 from app.models.project import Character, Outline, Relationship, WorldRule
+from app.tasks.entity_tasks import _materialize_entities_to_postgres
+from app.services.rel_type import canonicalize_rel_type
 from app.services.settings_extractor import extract_settings_from_outline
 
 router = APIRouter(prefix="/api/projects/{project_id}/outlines", tags=["outlines"])
@@ -167,6 +173,13 @@ async def extract_settings(
 
     extracted = await extract_settings_from_outline(raw_text)
 
+    # v1.9+ architecture: settings are written to Neo4j (source of truth) and
+    # materialized back to Postgres as a read model.
+    await init_neo4j()
+    driver = _neo4j_mod._driver
+    if driver is None:
+        raise HTTPException(status_code=500, detail="neo4j_not_initialized")
+
     # Dedupe against existing rows
     existing_char_names = set()
     result = await db.execute(
@@ -204,7 +217,21 @@ async def extract_settings(
         key = (category, rule_text)
         if key in existing_rule_keys:
             continue
-        db.add(WorldRule(project_id=project_id, category=category, rule_text=rule_text))
+        rid = str(uuid.uuid4())
+        try:
+            async with driver.session() as session:
+                neo_res = await session.run(
+                    "MERGE (w:WorldRule {project_id: $pid, category: $cat, text: $txt}) "
+                    "ON CREATE SET w.id = $id "
+                    "RETURN w.id AS id",
+                    id=rid,
+                    pid=str(project_id),
+                    cat=category,
+                    txt=rule_text,
+                )
+                await neo_res.consume()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
         existing_rule_keys.add(key)
         rules_created += 1
 
@@ -225,33 +252,70 @@ async def extract_settings(
         tgt = name_to_id.get(tgt_name)
         if not src or not tgt or src == tgt:
             continue
-        rel_type = (r.get("rel_type") or "other").strip()
+        rel_type = canonicalize_rel_type((r.get("rel_type") or "other"))
         label = (r.get("label") or "").strip()
         note = (r.get("note") or "").strip()
         sentiment = (r.get("sentiment") or "neutral").strip()
+        # Idempotency: rel_type is canonicalized; treat (src,tgt,rel_type) as the identity.
+        # label/note/sentiment are descriptive and may vary across extraction runs.
         dup = await db.execute(
             select(Relationship.id).where(
                 Relationship.project_id == project_id,
                 Relationship.source_id == src,
                 Relationship.target_id == tgt,
                 Relationship.rel_type == rel_type,
-                Relationship.label == label,
             )
         )
         if dup.scalar_one_or_none():
             continue
-        db.add(Relationship(
-            project_id=project_id,
-            source_id=src,
-            target_id=tgt,
-            rel_type=rel_type,
-            label=label,
-            note=note,
-            sentiment=sentiment,
-        ))
-        rels_created += 1
+        # Write to Neo4j truth (idempotent MERGE). Materialize will project to PG.
+        try:
+            async with driver.session() as session:
+                # Ensure both nodes exist
+                r1 = await session.run(
+                    "MERGE (a:Character {project_id: $pid, name: $src}) "
+                    "ON CREATE SET a.id = $aid",
+                    pid=str(project_id),
+                    src=src_name,
+                    aid=str(uuid.uuid4()),
+                )
+                await r1.consume()
+                r2 = await session.run(
+                    "MERGE (b:Character {project_id: $pid, name: $tgt}) "
+                    "ON CREATE SET b.id = $bid",
+                    pid=str(project_id),
+                    tgt=tgt_name,
+                    bid=str(uuid.uuid4()),
+                )
+                await r2.consume()
 
-    await db.flush()
+                raw_type = str(r.get("rel_type") or "other").strip()
+
+                r3 = await session.run(
+                    "MATCH (a:Character {project_id: $pid, name: $src}), "
+                    "      (b:Character {project_id: $pid, name: $tgt}) "
+                    "MERGE (a)-[rel:RELATES_TO {project_id: $pid, source_name: $src, target_name: $tgt, type: $rtype, chapter_start: $cs}]->(b) "
+                    "ON CREATE SET rel.chapter_end = null, rel.raw_type = $raw_type "
+                    "SET rel.raw_type = coalesce(rel.raw_type, $raw_type)",
+                    pid=str(project_id),
+                    src=src_name,
+                    tgt=tgt_name,
+                    rtype=rel_type,
+                    raw_type=raw_type,
+                    cs=0,
+                )
+                await r3.consume()
+                rels_created += 1
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    # Best-effort projection
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=0,
+        caller="api.outlines.extract_settings",
+    )
+
     return ExtractResponse(
         characters_created=chars_created,
         world_rules_created=rules_created,
