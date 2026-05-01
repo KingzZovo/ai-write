@@ -123,6 +123,12 @@ class Neo4jSetLocationRequest(BaseModel):
     chapter_start: int = Field(default=0, ge=0)
 
 
+class Neo4jSetMembershipRequest(BaseModel):
+    character: str = Field(..., min_length=1, max_length=200)
+    organization: str = Field(..., min_length=1, max_length=200)
+    chapter_start: int = Field(default=0, ge=0)
+
+
 @router.post("/relationships", status_code=202)
 async def create_relationship(
     project_id: str,
@@ -257,6 +263,81 @@ async def set_character_location(
         "entity": "at_location",
         "character": cname,
         "location": lname,
+        "chapter_start": cs,
+    }
+
+
+@router.post("/organizations/set-membership", status_code=202)
+async def set_character_membership(
+    project_id: str,
+    body: Neo4jSetMembershipRequest,
+    neo4j: AsyncDriver = Depends(get_neo4j),
+) -> dict[str, Any]:
+    """Set character membership in Neo4j via MEMBER_OF.
+
+    NOTE: We still call materialize as best-effort, but membership is currently
+    a Neo4j-only truth-source edge (PG does not have a corresponding read model
+    table in v1.9).
+    """
+    cname = str(body.character).strip()
+    oname = str(body.organization).strip()
+    cs = int(body.chapter_start)
+
+    try:
+        async with neo4j.session() as session:
+            # Ensure nodes exist
+            r1 = await session.run(
+                "MERGE (c:Character {project_id: $pid, name: $cname}) "
+                "ON CREATE SET c.id = $cid",
+                pid=str(project_id),
+                cname=cname,
+                cid=str(uuid.uuid4()),
+            )
+            await r1.consume()
+            r2 = await session.run(
+                "MERGE (o:Organization {project_id: $pid, name: $oname}) "
+                "ON CREATE SET o.id = $oid",
+                pid=str(project_id),
+                oname=oname,
+                oid=str(uuid.uuid4()),
+            )
+            await r2.consume()
+
+            # Close previous open memberships (best-effort)
+            r3 = await session.run(
+                "MATCH (c:Character {project_id: $pid, name: $cname})-[r:MEMBER_OF]->(:Organization) "
+                "WHERE r.chapter_end IS NULL "
+                "SET r.chapter_end = $end",
+                pid=str(project_id),
+                cname=cname,
+                end=cs - 1,
+            )
+            await r3.consume()
+
+            # Open (idempotent) MEMBER_OF
+            r4 = await session.run(
+                "MATCH (c:Character {project_id: $pid, name: $cname}), (o:Organization {project_id: $pid, name: $oname}) "
+                "MERGE (c)-[r:MEMBER_OF {project_id: $pid, character_name: $cname, org_name: $oname, chapter_start: $cs}]->(o) "
+                "ON CREATE SET r.chapter_end = null",
+                pid=str(project_id),
+                cname=cname,
+                oname=oname,
+                cs=cs,
+            )
+            await r4.consume()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=cs,
+        caller="api.neo4j_settings.organizations.set_membership",
+    )
+    return {
+        "status": "accepted",
+        "entity": "member_of",
+        "character": cname,
+        "organization": oname,
         "chapter_start": cs,
     }
 
