@@ -244,6 +244,12 @@ async def etl_world_rules(
     )
     existing = {(r[0] or "")[:60] for r in existing_res.all()}
 
+    await init_neo4j()
+    driver = _neo4j_mod._driver
+    if driver is None:
+        logger.warning("etl_world_rules: neo4j driver not initialized")
+        return 0, 0
+
     # Cap input to keep extraction cost bounded.
     if len(raw) > 12000:
         raw = raw[:8000] + "\n\n…(中部省略)…\n\n" + raw[-4000:]
@@ -299,17 +305,31 @@ async def etl_world_rules(
         if rule[:60] in existing:
             skipped += 1
             continue
-        db.add(WorldRule(
-            id=uuid.uuid4(),
-            project_id=uuid.UUID(pid),
-            category=cat or "general",
-            rule_text=rule[:1000],
-            metadata_json={"source": "outline_to_facts.etl_world_rules"},
-        ))
+        rid = str(uuid.uuid4())
+        try:
+            async with driver.session() as session:
+                r = await session.run(
+                    "MERGE (w:WorldRule {project_id: $pid, category: $cat, text: $txt}) "
+                    "ON CREATE SET w.id = $id "
+                    "RETURN w.id AS id",
+                    id=rid,
+                    pid=pid,
+                    cat=cat or "general",
+                    txt=rule[:1000],
+                )
+                await r.consume()
+        except Exception as e:
+            logger.warning("etl_world_rules: neo4j write failed: %s", e)
+            skipped += 1
+            continue
         existing.add(rule[:60])
         inserted += 1
     if inserted:
-        await db.commit()
+        await _materialize_entities_to_postgres(
+            project_id=pid,
+            chapter_idx=0,
+            caller="outline_to_facts.etl_world_rules",
+        )
     return inserted, skipped
 
 
