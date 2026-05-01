@@ -79,14 +79,15 @@ reconcile_counts() {
 
 	echo "[0.5/6] reconcile Neo4j vs Postgres counts (project_id=$pid)"
 
-	local n_chars n_rels n_rules n_locs n_atlocs n_cstates
-	local p_chars p_rels p_rules p_locs p_atlocs p_cstates
+	local n_chars n_rels n_rules n_locs n_atlocs n_cstates n_foreshadows
+	local p_chars p_rels p_rules p_locs p_atlocs p_cstates p_foreshadows
 
 	n_chars="$(neo4j_count "MATCH (c:Character {project_id: '$pid'}) RETURN count(DISTINCT c.name)")"
 	n_rels="$(neo4j_count "MATCH (a:Character {project_id: '$pid'})-[r:RELATES_TO]->(b:Character {project_id: '$pid'}) RETURN count(DISTINCT a.name + '|' + b.name + '|' + r.type)")"
 	# WorldRule node stores rule text under `text` (not `rule_text`).
 	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(DISTINCT w.category + '|' + w.text)")"
 	n_locs="$(neo4j_count "MATCH (l:Location {project_id: '$pid'}) RETURN count(l)")"
+	n_foreshadows="$(neo4j_count "MATCH (f:Foreshadow {project_id: '$pid'}) RETURN count(f)")"
 	n_atlocs="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:AT_LOCATION]->(:Location {project_id: '$pid'}) RETURN count(r)")"
 	n_cstates="$(neo4j_count "MATCH (c:Character {project_id: '$pid'})-[:HAS_STATE]->(s:CharacterState) RETURN count(DISTINCT c.name + '|' + toString(s.chapter_start))")"
 
@@ -94,11 +95,12 @@ reconcile_counts() {
 	p_rels="$(pg_count "SELECT count(DISTINCT (source_id::text || '|' || target_id::text || '|' || rel_type)) FROM relationships WHERE project_id='$pid';")"
 	p_rules="$(pg_count "SELECT count(DISTINCT (category || '|' || rule_text)) FROM world_rules WHERE project_id='$pid';")"
 	p_locs="$(pg_count "SELECT count(*) FROM locations WHERE project_id='$pid';")"
+	p_foreshadows="$(pg_count "SELECT count(*) FROM foreshadows WHERE project_id='$pid';")"
 	p_atlocs="$(pg_count "SELECT count(*) FROM character_locations WHERE project_id='$pid';")"
 	p_cstates="$(pg_count "SELECT count(DISTINCT (character_id::text || '|' || chapter_start::text)) FROM character_states WHERE project_id='$pid';")"
 
-	echo "Neo4j counts: characters=$n_chars relationships=$n_rels world_rules=$n_rules locations=$n_locs at_locations=$n_atlocs character_states=$n_cstates"
-	echo "Postgres counts: characters=$p_chars relationships=$p_rels world_rules=$p_rules locations=$p_locs character_locations=$p_atlocs character_states=$p_cstates"
+	echo "Neo4j counts: characters=$n_chars relationships=$n_rels world_rules=$n_rules locations=$n_locs foreshadows=$n_foreshadows at_locations=$n_atlocs character_states=$n_cstates"
+	echo "Postgres counts: characters=$p_chars relationships=$p_rels world_rules=$p_rules locations=$p_locs foreshadows=$p_foreshadows character_locations=$p_atlocs character_states=$p_cstates"
 
 	# This is a coarse reconciliation signal. We expect PG to eventually match Neo4j
 	# after materialize. Any mismatch may indicate partial materialize or schema drift.
@@ -109,6 +111,7 @@ reconcile_counts() {
 	# settings UI and may legitimately diverge from Neo4j.
 	for pair in \
 		"locations:$n_locs:$p_locs" \
+		"foreshadows:$n_foreshadows:$p_foreshadows" \
 		"at_location_edges:$n_atlocs:$p_atlocs" \
 		"character_states:$n_cstates:$p_cstates"
 	do
