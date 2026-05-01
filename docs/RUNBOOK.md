@@ -330,6 +330,11 @@ v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 - `backend/app/services/checkers/geo_jump.py`：优先读 Postgres 的 `character_locations`（fallback Neo4j）
 - `backend/app/services/context_pack.py`：CharacterCard.location 优先读 Postgres 的 `character_locations`（fallback 角色 profile_json / Neo4j enrich）
 
+仍依赖 Neo4j 的读端（待后续补齐投影或调整口径）：
+
+- `backend/app/services/checkers/time_reversal.py`：时间线逆序检查需要 Neo4j 的 CharacterState 时间段数据
+- `backend/app/services/hook_manager.py`：`_check_character_consistency` 通过 Neo4j 判定角色 alive/dead（当前未投影到 PG）
+
 ### 6.12 v1.9+ 一键验收（Neo4j→PG 写回）
 
 ```bash
