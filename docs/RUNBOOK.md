@@ -344,6 +344,7 @@ v1.9 materialize（`POST /api/admin/entities/materialize`）当前覆盖：
 - `POST /api/projects/{project_id}/neo4j-settings/world-rules`
 - `POST /api/projects/{project_id}/neo4j-settings/relationships`
 - `POST /api/projects/{project_id}/neo4j-settings/locations/set`
+- `POST /api/projects/{project_id}/neo4j-settings/organizations/set-membership`
 
 实现位置：`backend/app/api/neo4j_settings.py`
 
