@@ -24,6 +24,16 @@ router = APIRouter(
 )
 
 
+# NOTE (v1.9+): Neo4j is the source of truth for settings entities like
+# world_rules / relationships. Postgres tables are read-optimized projections
+# materialized from Neo4j. To avoid drift, legacy Postgres write endpoints are
+# disabled; use /neo4j-settings/* instead.
+LEGACY_SETTINGS_WRITE_DISABLED_DETAIL = (
+    "Legacy Postgres settings write endpoints are disabled (v1.9+). "
+    "Write to Neo4j via /neo4j-settings/* and materialize back to Postgres."
+)
+
+
 # =========================================================================
 # Character schemas
 # =========================================================================
@@ -233,24 +243,7 @@ async def create_world_rule(
     body: WorldRuleCreateRequest,
     db: AsyncSession = Depends(get_db),
 ) -> WorldRuleResponse:
-    """Create a new world rule."""
-    rule = WorldRule(
-        project_id=project_id,
-        category=body.category,
-        rule_text=body.rule_text,
-    )
-    db.add(rule)
-    await db.flush()
-    await db.refresh(rule)
-    await record_change(
-        db,
-        project_id=project_id,
-        target_type="world_rule",
-        target_id=rule.id,
-        action="create",
-        after={"category": rule.category, "rule_text": rule.rule_text},
-    )
-    return WorldRuleResponse.model_validate(rule)
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 @router.put("/world-rules/{rule_id}", response_model=WorldRuleResponse)
@@ -260,34 +253,7 @@ async def update_world_rule(
     body: WorldRuleUpdateRequest,
     db: AsyncSession = Depends(get_db),
 ) -> WorldRuleResponse:
-    """Update a world rule."""
-    result = await db.execute(
-        select(WorldRule).where(
-            WorldRule.id == rule_id,
-            WorldRule.project_id == project_id,
-        )
-    )
-    rule = result.scalar_one_or_none()
-    if rule is None:
-        raise HTTPException(status_code=404, detail="World rule not found")
-
-    before_state = {"category": rule.category, "rule_text": rule.rule_text}
-    update_data = body.model_dump(exclude_unset=True)
-    for field_name, value in update_data.items():
-        setattr(rule, field_name, value)
-
-    await db.flush()
-    await db.refresh(rule)
-    await record_change(
-        db,
-        project_id=project_id,
-        target_type="world_rule",
-        target_id=rule.id,
-        action="update",
-        before=before_state,
-        after={"category": rule.category, "rule_text": rule.rule_text},
-    )
-    return WorldRuleResponse.model_validate(rule)
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 @router.delete("/world-rules/{rule_id}", status_code=204)
@@ -296,29 +262,7 @@ async def delete_world_rule(
     rule_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete a world rule."""
-    result = await db.execute(
-        select(WorldRule).where(
-            WorldRule.id == rule_id,
-            WorldRule.project_id == project_id,
-        )
-    )
-    rule = result.scalar_one_or_none()
-    if rule is None:
-        raise HTTPException(status_code=404, detail="World rule not found")
-
-    before_state = {"category": rule.category, "rule_text": rule.rule_text}
-    deleted_id = rule.id
-    await db.delete(rule)
-    await db.flush()
-    await record_change(
-        db,
-        project_id=project_id,
-        target_type="world_rule",
-        target_id=deleted_id,
-        action="delete",
-        before=before_state,
-    )
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 # =========================================================================
@@ -360,35 +304,7 @@ async def create_relationship(
     body: RelationshipCreate,
     db: AsyncSession = Depends(get_db),
 ) -> RelationshipResponse:
-    rel = Relationship(
-        project_id=project_id,
-        source_id=body.source_id,
-        target_id=body.target_id,
-        rel_type=body.rel_type,
-        label=body.label,
-        note=body.note,
-        sentiment=body.sentiment,
-        since_volume_id=body.since_volume_id,
-        until_volume_id=body.until_volume_id,
-    )
-    db.add(rel)
-    await db.flush()
-    await db.refresh(rel)
-    await record_change(
-        db,
-        project_id=project_id,
-        target_type="relationship",
-        target_id=rel.id,
-        action="create",
-        after={
-            "source_id": str(rel.source_id),
-            "target_id": str(rel.target_id),
-            "rel_type": rel.rel_type,
-            "label": rel.label,
-            "sentiment": rel.sentiment,
-        },
-    )
-    return RelationshipResponse.model_validate(rel)
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 @router.post("/relationships/bulk", response_model=RelationshipBulkResponse, status_code=201)
@@ -397,21 +313,7 @@ async def bulk_create_relationships(
     body: RelationshipBulkRequest,
     db: AsyncSession = Depends(get_db),
 ) -> RelationshipBulkResponse:
-    created = 0
-    for item in body.items:
-        rel = Relationship(
-            project_id=project_id,
-            source_id=item.source_id,
-            target_id=item.target_id,
-            rel_type=item.rel_type,
-            label=item.label,
-            note=item.note,
-            sentiment=item.sentiment,
-        )
-        db.add(rel)
-        created += 1
-    await db.flush()
-    return RelationshipBulkResponse(created=created)
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 @router.put("/relationships/{relationship_id}", response_model=RelationshipResponse)
@@ -421,35 +323,7 @@ async def update_relationship(
     body: RelationshipUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> RelationshipResponse:
-    rel = await db.get(Relationship, relationship_id)
-    if rel is None or str(rel.project_id) != project_id:
-        raise HTTPException(status_code=404, detail="Relationship not found")
-    before_state = {
-        "rel_type": rel.rel_type,
-        "label": rel.label,
-        "note": rel.note,
-        "sentiment": rel.sentiment,
-    }
-    data = body.model_dump(exclude_unset=True)
-    for k, v in data.items():
-        setattr(rel, k, v)
-    await db.flush()
-    await db.refresh(rel)
-    await record_change(
-        db,
-        project_id=project_id,
-        target_type="relationship",
-        target_id=rel.id,
-        action="update",
-        before=before_state,
-        after={
-            "rel_type": rel.rel_type,
-            "label": rel.label,
-            "note": rel.note,
-            "sentiment": rel.sentiment,
-        },
-    )
-    return RelationshipResponse.model_validate(rel)
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 @router.delete("/relationships/{relationship_id}", status_code=204)
@@ -458,27 +332,7 @@ async def delete_relationship(
     relationship_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    rel = await db.get(Relationship, relationship_id)
-    if rel is None or str(rel.project_id) != project_id:
-        raise HTTPException(status_code=404, detail="Relationship not found")
-    before_state = {
-        "source_id": str(rel.source_id),
-        "target_id": str(rel.target_id),
-        "rel_type": rel.rel_type,
-        "label": rel.label,
-        "sentiment": rel.sentiment,
-    }
-    deleted_id = rel.id
-    await db.delete(rel)
-    await db.flush()
-    await record_change(
-        db,
-        project_id=project_id,
-        target_type="relationship",
-        target_id=deleted_id,
-        action="delete",
-        before=before_state,
-    )
+    raise HTTPException(status_code=410, detail=LEGACY_SETTINGS_WRITE_DISABLED_DETAIL)
 
 
 # =========================================================================
