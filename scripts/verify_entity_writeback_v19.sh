@@ -82,16 +82,16 @@ reconcile_counts() {
 	local n_chars n_rels n_rules n_locs n_atlocs n_cstates
 	local p_chars p_rels p_rules p_locs p_atlocs p_cstates
 
-	n_chars="$(neo4j_count "MATCH (c:Character {project_id: '$pid'}) RETURN count(c)")"
-	n_rels="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:RELATES_TO]->(:Character {project_id: '$pid'}) RETURN count(r)")"
-	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(w)")"
+	n_chars="$(neo4j_count "MATCH (c:Character {project_id: '$pid'}) RETURN count(DISTINCT c.name)")"
+	n_rels="$(neo4j_count "MATCH (a:Character {project_id: '$pid'})-[r:RELATES_TO]->(b:Character {project_id: '$pid'}) RETURN count(DISTINCT a.name + '|' + b.name + '|' + r.type)")"
+	n_rules="$(neo4j_count "MATCH (w:WorldRule {project_id: '$pid'}) RETURN count(DISTINCT w.category + '|' + w.rule_text)")"
 	n_locs="$(neo4j_count "MATCH (l:Location {project_id: '$pid'}) RETURN count(l)")"
 	n_atlocs="$(neo4j_count "MATCH (:Character {project_id: '$pid'})-[r:AT_LOCATION]->(:Location {project_id: '$pid'}) RETURN count(r)")"
 	n_cstates="$(neo4j_count "MATCH (c:Character {project_id: '$pid'})-[:HAS_STATE]->(s:CharacterState) RETURN count(DISTINCT c.name + '|' + toString(s.chapter_start))")"
 
-	p_chars="$(pg_count "SELECT count(*) FROM characters WHERE project_id='$pid';")"
-	p_rels="$(pg_count "SELECT count(*) FROM relationships WHERE project_id='$pid';")"
-	p_rules="$(pg_count "SELECT count(*) FROM world_rules WHERE project_id='$pid';")"
+	p_chars="$(pg_count "SELECT count(DISTINCT name) FROM characters WHERE project_id='$pid';")"
+	p_rels="$(pg_count "SELECT count(DISTINCT (source_id::text || '|' || target_id::text || '|' || rel_type)) FROM relationships WHERE project_id='$pid';")"
+	p_rules="$(pg_count "SELECT count(DISTINCT (category || '|' || rule_text)) FROM world_rules WHERE project_id='$pid';")"
 	p_locs="$(pg_count "SELECT count(*) FROM locations WHERE project_id='$pid';")"
 	p_atlocs="$(pg_count "SELECT count(*) FROM character_locations WHERE project_id='$pid';")"
 	p_cstates="$(pg_count "SELECT count(DISTINCT (character_id::text || '|' || chapter_start::text)) FROM character_states WHERE project_id='$pid';")"
