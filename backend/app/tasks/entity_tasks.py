@@ -70,8 +70,10 @@ async def _materialize_entities_to_postgres(
     from app.models.project import (
         Character,
         CharacterLocation,
+        CharacterOrganization,
         CharacterState,
         Location,
+        Organization,
         Relationship,
         WorldRule,
     )
@@ -172,6 +174,46 @@ async def _materialize_entities_to_postgres(
                     loc_names.append(n.strip())
             locations = sorted(set(loc_names))
 
+            # Organizations: materialize all Organization node names.
+            org_result = await session.run(
+                "MATCH (o:Organization {project_id: $pid}) RETURN DISTINCT o.name AS name",
+                pid=project_id,
+            )
+            org_names: list[str] = []
+            async for rec in org_result:
+                n = rec.get("name") if rec else None
+                if isinstance(n, str) and n.strip():
+                    org_names.append(n.strip())
+            organizations = sorted(set(org_names))
+
+            # MEMBER_OF: materialize all Character-MEMBER_OF->Organization edges.
+            member_result = await session.run(
+                "MATCH (c:Character {project_id: $pid})-[r:MEMBER_OF]->(o:Organization {project_id: $pid}) "
+                "RETURN c.name AS cname, o.name AS oname, r.chapter_start AS cs, r.chapter_end AS ce",
+                pid=project_id,
+            )
+            memberships: list[tuple[str, str, int, int | None]] = []
+            async for rec in member_result:
+                cname = rec.get("cname") if rec else None
+                oname = rec.get("oname") if rec else None
+                cs = rec.get("cs") if rec else None
+                ce = rec.get("ce") if rec else None
+                if not isinstance(cname, str) or not cname.strip():
+                    continue
+                if not isinstance(oname, str) or not oname.strip():
+                    continue
+                if not isinstance(cs, int):
+                    continue
+                memberships.append(
+                    (
+                        cname.strip(),
+                        oname.strip(),
+                        int(cs),
+                        int(ce) if isinstance(ce, int) else None,
+                    )
+                )
+            memberships = sorted(set(memberships))
+
             # AT_LOCATION: materialize all Character-AT_LOCATION->Location edges.
             # Neo4j schema (EntityTimelineService):
             #   (c:Character)-[:AT_LOCATION {chapter_start, chapter_end}]->(l:Location)
@@ -231,6 +273,8 @@ async def _materialize_entities_to_postgres(
         created_rels = 0
         created_rules = 0
         created_locs = 0
+        created_orgs = 0
+        created_memberships = 0
         created_atlocs = 0
         created_cstates = 0
         skipped_cstates_missing_character = 0
@@ -335,6 +379,60 @@ async def _materialize_entities_to_postgres(
                 result = await db.execute(stmt)
                 created_locs += int(getattr(result, "rowcount", 0) or 0)
 
+            # Organizations: bulk insert w/ ON CONFLICT DO NOTHING.
+            org_rows = [
+                {"project_id": project_id, "name": name}
+                for name in organizations
+            ]
+            if org_rows:
+                stmt = insert(Organization).values(org_rows)
+                stmt = stmt.on_conflict_do_nothing(constraint="uq_organizations_project_name")
+                result = await db.execute(stmt)
+                created_orgs += int(getattr(result, "rowcount", 0) or 0)
+
+            # MEMBER_OF: bulk insert projection rows.
+            if memberships:
+                # Refresh lookup maps (characters + organizations).
+                mem_char_rows = await db.execute(
+                    select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name.in_([c for (c, _, _, _) in memberships]),
+                    )
+                )
+                mem_char_by_name = {c.name: c for c in mem_char_rows.scalars().all()}
+                mem_org_rows = await db.execute(
+                    select(Organization).where(
+                        Organization.project_id == project_id,
+                        Organization.name.in_([o for (_, o, _, _) in memberships]),
+                    )
+                )
+                mem_org_by_name = {o.name: o for o in mem_org_rows.scalars().all()}
+
+                mem_rows = []
+                for (cname, oname, cs, ce) in memberships:
+                    c = mem_char_by_name.get(cname)
+                    o = mem_org_by_name.get(oname)
+                    if not c or not o:
+                        continue
+                    mem_rows.append(
+                        {
+                            "project_id": project_id,
+                            "character_id": str(c.id),
+                            "organization_id": str(o.id),
+                            "chapter_start": int(cs),
+                            "chapter_end": int(ce) if ce is not None else None,
+                        }
+                    )
+                if mem_rows:
+                    from app.models.project import CharacterOrganization
+
+                    stmt = insert(CharacterOrganization).values(mem_rows)
+                    stmt = stmt.on_conflict_do_nothing(
+                        constraint="uq_character_organizations_key"
+                    )
+                    result = await db.execute(stmt)
+                    created_memberships += int(getattr(result, "rowcount", 0) or 0)
+
             # AT_LOCATION: bulk insert projection rows.
             if at_locs:
                 # Refresh lookup maps (characters + locations).
@@ -416,7 +514,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d atlocs=%d/%d cstates=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d orgs=%d/%d member_of=%d/%d atlocs=%d/%d cstates=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -428,6 +526,10 @@ async def _materialize_entities_to_postgres(
             len(world_rules),
             created_locs,
             len(locations),
+            created_orgs,
+            len(organizations),
+            created_memberships,
+            len(memberships),
             created_atlocs,
             len(at_locs),
             created_cstates,
@@ -442,6 +544,10 @@ async def _materialize_entities_to_postgres(
             "rules_seen": len(world_rules),
             "locs_created": created_locs,
             "locs_seen": len(locations),
+            "orgs_created": created_orgs,
+            "orgs_seen": len(organizations),
+            "member_of_created": created_memberships,
+            "member_of_seen": len(memberships),
             "atlocs_created": created_atlocs,
             "atlocs_seen": len(at_locs),
             "cstates_created": created_cstates,
@@ -467,6 +573,10 @@ async def _materialize_entities_to_postgres(
             "rules_seen": 0,
             "locs_created": 0,
             "locs_seen": 0,
+            "orgs_created": 0,
+            "orgs_seen": 0,
+            "member_of_created": 0,
+            "member_of_seen": 0,
             "atlocs_created": 0,
             "atlocs_seen": 0,
             "cstates_created": 0,
