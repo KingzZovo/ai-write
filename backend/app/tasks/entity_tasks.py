@@ -35,6 +35,7 @@ project is deleted via the existing wipe path.
 from __future__ import annotations
 
 import logging
+import json
 from datetime import datetime, timezone
 from typing import Any
 
