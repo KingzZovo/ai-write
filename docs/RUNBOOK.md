@@ -474,6 +474,8 @@ docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -At -c \
 
 用途：避免出现“Neo4j 已删除但 PG 读模型仍残留”的漂移。
 
+同时，`scripts/verify_entity_writeback_v19.sh` 的 reconcile 步骤会对齐 foreshadows 的 Neo4j↔PG 计数，可作为回归检测信号。
+
 注意：relationships 回填会对 `rel_type` 做 canonicalize（见 `backend/app/services/rel_type.py`）。例如：
 
 - `同学` → `同伴`
