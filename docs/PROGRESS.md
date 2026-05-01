@@ -38,7 +38,7 @@
   - 远端 `search_code`：11 条 PG 直写模式 = **0 命中**
   - 本地 grep 复核：除 `models/project.py:156 class WorldRule(Base)` / `:425 class Relationship(Base)` 类定义（误匹配，正常）外，全部 0 命中
   - 但发现 `Foreshadow` PG 直写 **3 处**：`backend/app/api/foreshadows.py:111`、`:179`、`backend/app/services/foreshadow_manager.py:84` → 列入 P2 follow-up
-- [x] PR #3 — 禁用 legacy `/world-rules`、`/relationships` 写接口（→ 410），引导到 `/neo4j-settings/*`
+- [x] PR #3 — 禁用 legacy `/world-rules`、`/relationships` 写接口（→ 410）；410 message 在本 PR 重写为引导 `extract-settings`（v1.10 计划后推 `/neo4j-settings/*`）
 - [x] PR #2 — README + ITERATION_PLAN 文档持续维护
 - [x] PR #1 — v1.9 主要收敛（outlines extract / world_rules ETL / relationships deletion sync 等）
 
@@ -51,7 +51,7 @@
     - `backend/app/services/foreshadow_manager.py:84`（service `create`，被章节生成 / 大纲提取链路调用）
   - 阻塞点：需要决策 Foreshadow 是否纳入 Neo4j 真相源链路
   - 下一步动作：开 follow-up PR
-    - **选项 A**：新增 `/neo4j-settings/foreshadows` 写入口 + materialize 投影回 `foreshadows` 表，把现有 `/foreshadows` 写接口改 410；同步把 `foreshadow_manager.create` 改走 Neo4j 写入口
+    - **选项 A**：（依赖 v1.10 先引入 `/neo4j-settings/*` 路由族）新增 `/neo4j-settings/foreshadows` 写入口 + materialize 投影回 `foreshadows` 表，把现有 `/foreshadows` 写接口改 410；同步把 `foreshadow_manager.create` 改走 Neo4j 写入口
     - **选项 B**：在 RUNBOOK §3 显式声明 foreshadows 不入 Neo4j 真相源链路，并加回归测试避免别处误用
 
 - [ ] **架构 vs main 一致性：决策是否把 `neo4j_settings.py` + `admin_entities.py` 从 `feature/v1.0-big-bang` 合并到 main**

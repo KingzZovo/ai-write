@@ -14,9 +14,9 @@
 
 - PR #1：v1.9 主要收敛（outlines extract / world_rules ETL / relationships deletion sync 等）
 - PR #2：README + ITERATION_PLAN 文档持续维护
-- PR #3：禁用 legacy PG 直写接口（`/world-rules`、`/relationships` 的 POST/PUT/DELETE → **410**）
+- PR #3：禁用 legacy PG 直写接口（`/world-rules`、`/relationships` 的 POST/PUT/DELETE → **410**，引导 `extract-settings`；v1.10 计划后推 `/neo4j-settings/*`）
 - PR #4 / PR #5：HANDOFF_EXECUTION + PROGRESS 模板
-- PR #6（本 PR `chore/runbook-and-handoff-sync`）：补齐 `docs/RUNBOOK.md` + 同步 PROGRESS/HANDOFF + 补 `.gitignore` 产物目录 + **本机执行 P0 + P3 compileall** + **新增 `scripts/verify_entity_writeback_v19.sh`** + **修正「main vs README 入口」事实**
+- PR #6（本 PR `chore/runbook-and-handoff-sync`）：补齐 `docs/RUNBOOK.md` + 同步 PROGRESS/HANDOFF + 补 `.gitignore` 产物目录 + **本机执行 P0 + P3 compileall** + **新增 `scripts/verify_entity_writeback_v19.sh`** + **修正「main vs README 入口」事实** + **本 PR 中同步修正 README + 410 message 指向 `extract-settings`**
 
 ---
 
@@ -74,8 +74,8 @@ git stash drop stash@{0}
 > ✅ 已在本 PR 完成，详见 `docs/RUNBOOK.md`。任何人不会再误用 PG 直写。
 
 包含：
-- 唯一正确写入路径：**main 实际写入口** = `POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings`（先 Neo4j → 调 `_materialize_entities_to_postgres` 投回 PG）
-- README 文档化但**未在 main 实现**的入口：`POST /api/projects/{pid}/neo4j-settings/*`、`POST /api/admin/entities/materialize`
+- 当前 main 实际写入口：`POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings`（先 Neo4j → 调 `_materialize_entities_to_postgres` 投回 PG）
+- 计划中的写入口（v1.10 待实现，任何分支都未包含）：`POST /api/projects/{pid}/neo4j-settings/*`、`POST /api/admin/entities/materialize`
 - Legacy 接口现状：`/world-rules`、`/relationships` 的写接口返回 **410**；`/foreshadows` 当前仍 PG 直写（待决策）
 
 ---
@@ -119,7 +119,7 @@ grep -R --line-number -E "(\\bForeshadow\\(|db\\.add\\(.*Foreshadow|db\\.delete\
 - `backend/app/services/foreshadow_manager.py:84`（service `create` 方法）：`db.add(Foreshadow(...))`，被章节生成 / 大纲提取链路调用
 
 处理策略二选一：
-- **选项 A**：新增 `/neo4j-settings/foreshadows` 写入口 + materialize 投影回 `foreshadows` 表；把现有 `/foreshadows` 写接口改 410；同步把 `foreshadow_manager.create` 改走 Neo4j 写入口。
+- **选项 A**：（依赖 v1.10 先引入 `/neo4j-settings/*` 路由族）新增 `/neo4j-settings/foreshadows` 写入口 + materialize 投影回 `foreshadows` 表；把现有 `/foreshadows` 写接口改 410；同步把 `foreshadow_manager.create` 改走 Neo4j 写入口。
 - **选项 B**：在 RUNBOOK §3 显式声明 `foreshadows` 不入 Neo4j 真相源链路；加回归测试避免别处误用。
 
 ---
