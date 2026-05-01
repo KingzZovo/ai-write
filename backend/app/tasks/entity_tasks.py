@@ -424,6 +424,55 @@ async def _materialize_entities_to_postgres(
                 result = await db.execute(stmt)
                 created_rels += int(getattr(result, "rowcount", 0) or 0)
 
+            # Deletion sync (v1.9+): keep Postgres relationships consistent with
+            # Neo4j truth. If a relationship no longer exists in Neo4j, remove it
+            # from the PG read model.
+            try:
+                # Load all existing PG relationship keys.
+                pg_rel_rows = await db.execute(
+                    select(Relationship.source_id, Relationship.target_id, Relationship.rel_type).where(
+                        Relationship.project_id == project_id
+                    )
+                )
+                pg_keys = {
+                    (str(sid), str(tid), str(rt))
+                    for sid, tid, rt in pg_rel_rows.all()
+                    if sid and tid and rt
+                }
+
+                # Build Neo4j relationship keys mapped to PG character ids.
+                # (Materialize already created/upserted characters earlier.)
+                char_map_rows = await db.execute(
+                    select(Character.id, Character.name).where(Character.project_id == project_id)
+                )
+                name_to_id = {
+                    (name or "").strip(): str(cid)
+                    for cid, name in char_map_rows.all()
+                    if cid and isinstance(name, str) and name.strip()
+                }
+                neo_keys: set[tuple[str, str, str]] = set()
+                for src_name, tgt_name, rel_type in rels:
+                    sid = name_to_id.get((src_name or "").strip())
+                    tid = name_to_id.get((tgt_name or "").strip())
+                    if sid and tid and rel_type:
+                        neo_keys.add((sid, tid, rel_type))
+
+                stale = sorted(pg_keys - neo_keys)
+                if stale:
+                    # Delete row-by-row with a batch of OR clauses.
+                    # Relationship count per project is typically small.
+                    for sid, tid, rt in stale:
+                        await db.execute(
+                            delete(Relationship).where(
+                                Relationship.project_id == project_id,
+                                Relationship.source_id == sid,
+                                Relationship.target_id == tid,
+                                Relationship.rel_type == rt,
+                            )
+                        )
+            except Exception:
+                logger.exception("relationships_deletion_sync_failed")
+
             # World rules: bulk insert w/ ON CONFLICT DO NOTHING.
             rule_rows = [
                 {"project_id": project_id, "category": cat, "rule_text": txt}

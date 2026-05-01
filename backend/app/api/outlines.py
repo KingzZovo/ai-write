@@ -13,6 +13,7 @@ from app.db.neo4j import init_neo4j
 from app.db import neo4j as _neo4j_mod
 from app.db.session import get_db
 from app.models.project import Character, Outline, Relationship, WorldRule
+from app.tasks.entity_tasks import _materialize_entities_to_postgres
 from app.services.rel_type import canonicalize_rel_type
 from app.services.settings_extractor import extract_settings_from_outline
 
@@ -267,23 +268,53 @@ async def extract_settings(
         )
         if dup.scalar_one_or_none():
             continue
-        # Use a SAVEPOINT so unique-constraint conflicts don't abort the whole request.
+        # Write to Neo4j truth (idempotent MERGE). Materialize will project to PG.
         try:
-            async with db.begin_nested():
-                db.add(Relationship(
-                    project_id=project_id,
-                    source_id=src,
-                    target_id=tgt,
-                    rel_type=rel_type,
-                    label=label,
-                    note=note,
-                    sentiment=sentiment,
-                ))
-                await db.flush()
+            async with driver.session() as session:
+                # Ensure both nodes exist
+                r1 = await session.run(
+                    "MERGE (a:Character {project_id: $pid, name: $src}) "
+                    "ON CREATE SET a.id = $aid",
+                    pid=str(project_id),
+                    src=src_name,
+                    aid=str(uuid.uuid4()),
+                )
+                await r1.consume()
+                r2 = await session.run(
+                    "MERGE (b:Character {project_id: $pid, name: $tgt}) "
+                    "ON CREATE SET b.id = $bid",
+                    pid=str(project_id),
+                    tgt=tgt_name,
+                    bid=str(uuid.uuid4()),
+                )
+                await r2.consume()
+
+                raw_type = str(r.get("rel_type") or "other").strip()
+
+                r3 = await session.run(
+                    "MATCH (a:Character {project_id: $pid, name: $src}), "
+                    "      (b:Character {project_id: $pid, name: $tgt}) "
+                    "MERGE (a)-[rel:RELATES_TO {project_id: $pid, source_name: $src, target_name: $tgt, type: $rtype, chapter_start: $cs}]->(b) "
+                    "ON CREATE SET rel.chapter_end = null, rel.raw_type = $raw_type "
+                    "SET rel.raw_type = coalesce(rel.raw_type, $raw_type)",
+                    pid=str(project_id),
+                    src=src_name,
+                    tgt=tgt_name,
+                    rtype=rel_type,
+                    raw_type=raw_type,
+                    cs=0,
+                )
+                await r3.consume()
                 rels_created += 1
-        except IntegrityError:
-            # DB has uq_relationships_rel_key; treat as already-created.
-            continue
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    # Best-effort projection
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=0,
+        caller="api.outlines.extract_settings",
+    )
 
     return ExtractResponse(
         characters_created=chars_created,
