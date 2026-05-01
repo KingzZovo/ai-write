@@ -251,6 +251,45 @@ class HookManager:
         if not characters_in_outline:
             return warnings
 
+        # Prefer Postgres projection (character_states) when available.
+        try:
+            db = await self._get_db()
+            from sqlalchemy import text
+
+            at_chapter = max(int(chapter_idx) - 1, 1)
+            rows = await db.execute(
+                text(
+                    """
+                    SELECT ch.name
+                    FROM character_states cs
+                    JOIN characters ch
+                      ON ch.id = cs.character_id
+                    WHERE cs.project_id = :pid
+                      AND cs.chapter_start <= :idx
+                      AND (cs.chapter_end IS NULL OR cs.chapter_end >= :idx)
+                      AND (
+                        cs.status_json::text LIKE '%"alive": false%'
+                        OR cs.status_json::text LIKE '%"status": "dead"%'
+                        OR cs.status_json::text LIKE '%死亡%'
+                      )
+                    """
+                ),
+                {"pid": str(project_id), "idx": int(at_chapter)},
+            )
+            dead_names = {r[0] for r in rows.all() if r and r[0]}
+            if dead_names:
+                for char_name in characters_in_outline:
+                    if char_name in dead_names:
+                        warnings.append(
+                            f"Character '{char_name}' appears in outline "
+                            f"but is marked as dead in the knowledge graph"
+                        )
+                return warnings
+        except Exception as exc:
+            logger.debug(
+                "PG character_states check failed; falling back to Neo4j: %s", exc
+            )
+
         # Try to query Neo4j for character state
         try:
             # B2' (v1.5.0): read via EntityTimelineService so we hit the
