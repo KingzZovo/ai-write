@@ -27,10 +27,16 @@ router = APIRouter(
 # NOTE (v1.9+): Neo4j is the source of truth for settings entities like
 # world_rules / relationships. Postgres tables are read-optimized projections
 # materialized from Neo4j. To avoid drift, legacy Postgres write endpoints are
-# disabled; use /neo4j-settings/* instead.
+# disabled. The actually-implemented entry on main is
+# POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings
+# (writes Neo4j + materializes back to PG via
+# backend/app/tasks/entity_tasks.py:_materialize_entities_to_postgres).
+# The /neo4j-settings/* router is documented as a v1.10 plan but not yet
+# implemented on any branch (see docs/RUNBOOK.md §1).
 LEGACY_SETTINGS_WRITE_DISABLED_DETAIL = (
     "Legacy Postgres settings write endpoints are disabled (v1.9+). "
-    "Write to Neo4j via /neo4j-settings/* and materialize back to Postgres."
+    "Write via POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings "
+    "(Neo4j is the truth source; PG is materialized from it)."
 )
 
 
