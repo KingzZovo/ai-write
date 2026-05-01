@@ -224,6 +224,26 @@ class CharacterLocation(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
+class CharacterState(Base):
+    __tablename__ = "character_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    status_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
 class StyleProfile(Base):
     """A writing style profile that can be bound to a book/chapter/generation."""
 
