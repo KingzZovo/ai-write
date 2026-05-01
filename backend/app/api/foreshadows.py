@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import uuid
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from neo4j import AsyncDriver
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.neo4j import get_neo4j
 from app.db.session import get_db
 from app.models.project import Foreshadow
+from app.tasks.entity_tasks import _materialize_entities_to_postgres
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/foreshadows",
@@ -105,22 +110,58 @@ async def list_foreshadows(
 async def create_foreshadow(
     project_id: UUID,
     body: ForeshadowCreateRequest,
+    neo4j: AsyncDriver = Depends(get_neo4j),
     db: AsyncSession = Depends(get_db),
 ) -> ForeshadowResponse:
-    """Create a foreshadow manually."""
-    foreshadow = Foreshadow(
-        project_id=project_id,
-        type=body.type,
-        description=body.description,
-        planted_chapter=body.planted_chapter,
-        resolve_conditions_json=body.resolve_conditions,
-        resolution_blueprint_json=body.resolution_blueprint or {},
-        narrative_proximity=0.0,
-        status="planted",
+    """Create a foreshadow.
+
+    v1.9+ recommended architecture: write to Neo4j (source of truth) and
+    materialize into Postgres (read model).
+    """
+    fid = str(uuid.uuid4())
+    try:
+        async with neo4j.session() as session:
+            r = await session.run(
+                "MERGE (f:Foreshadow {project_id: $pid, id: $id}) "
+                "SET f.type = $type, "
+                "    f.description = $desc, "
+                "    f.planted_chapter = $planted, "
+                "    f.resolve_conditions_json = $conds, "
+                "    f.resolution_blueprint_json = $blueprint, "
+                "    f.narrative_proximity = $prox, "
+                "    f.status = $status, "
+                "    f.resolved_chapter = $resolved "
+                "RETURN f.id AS id",
+                pid=str(project_id),
+                id=fid,
+                type=str(body.type).strip(),
+                desc=str(body.description).strip(),
+                planted=int(body.planted_chapter),
+                conds=json.dumps(list(body.resolve_conditions or []), ensure_ascii=False),
+                blueprint=json.dumps(body.resolution_blueprint or {}, ensure_ascii=False),
+                prox=0.0,
+                status="planted",
+                resolved=None,
+            )
+            await r.consume()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=int(body.planted_chapter),
+        caller="api.foreshadows.create",
     )
-    db.add(foreshadow)
-    await db.flush()
-    await db.refresh(foreshadow)
+
+    row = await db.execute(
+        select(Foreshadow).where(
+            Foreshadow.id == UUID(fid),
+            Foreshadow.project_id == project_id,
+        )
+    )
+    foreshadow = row.scalar_one_or_none()
+    if foreshadow is None:
+        raise HTTPException(status_code=500, detail="pg_materialize_missing")
     return ForeshadowResponse.model_validate(foreshadow)
 
 
@@ -129,19 +170,13 @@ async def update_foreshadow(
     project_id: UUID,
     foreshadow_id: UUID,
     body: ForeshadowUpdateRequest,
+    neo4j: AsyncDriver = Depends(get_neo4j),
     db: AsyncSession = Depends(get_db),
 ) -> ForeshadowResponse:
-    """Update a foreshadow."""
-    result = await db.execute(
-        select(Foreshadow).where(
-            Foreshadow.id == foreshadow_id,
-            Foreshadow.project_id == project_id,
-        )
-    )
-    foreshadow = result.scalar_one_or_none()
-    if foreshadow is None:
-        raise HTTPException(status_code=404, detail="Foreshadow not found")
+    """Update a foreshadow.
 
+    Writes to Neo4j (source of truth) and materializes to Postgres.
+    """
     update_data = body.model_dump(exclude_unset=True)
 
     # Map API field names to ORM column names
@@ -150,12 +185,74 @@ async def update_foreshadow(
         "resolution_blueprint": "resolution_blueprint_json",
     }
 
+    # Build patch for Neo4j.
+    allowed = {
+        "type",
+        "description",
+        "planted_chapter",
+        "resolve_conditions_json",
+        "resolution_blueprint_json",
+        "narrative_proximity",
+        "status",
+        "resolved_chapter",
+    }
+    neo4j_updates: dict[str, Any] = {}
     for api_field, value in update_data.items():
         orm_field = field_mapping.get(api_field, api_field)
-        setattr(foreshadow, orm_field, value)
+        if orm_field in allowed:
+            neo4j_updates[orm_field] = value
 
-    await db.flush()
-    await db.refresh(foreshadow)
+    try:
+        async with neo4j.session() as session:
+            # Ensure the node exists.
+            r0 = await session.run(
+                "MATCH (f:Foreshadow {project_id: $pid, id: $id}) RETURN f.id AS id",
+                pid=str(project_id),
+                id=str(foreshadow_id),
+            )
+            rec0 = await r0.single()
+            if rec0 is None:
+                raise HTTPException(status_code=404, detail="Foreshadow not found")
+
+            # Apply updates (SET only provided fields).
+            set_parts = []
+            params: dict[str, Any] = {"pid": str(project_id), "id": str(foreshadow_id)}
+            for k, v in neo4j_updates.items():
+                if k in ("resolve_conditions_json", "resolution_blueprint_json"):
+                    params[k] = json.dumps(v or ([] if k == "resolve_conditions_json" else {}), ensure_ascii=False)
+                else:
+                    params[k] = v
+                set_parts.append(f"f.{k} = ${k}")
+
+            if set_parts:
+                q = (
+                    "MATCH (f:Foreshadow {project_id: $pid, id: $id}) "
+                    "SET "
+                    + ", ".join(set_parts)
+                )
+                r1 = await session.run(q, **params)
+                await r1.consume()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"neo4j_write_failed: {e}")
+
+    # Materialize and return PG read model.
+    chapter_idx = int(neo4j_updates.get("planted_chapter") or 0)
+    await _materialize_entities_to_postgres(
+        project_id=str(project_id),
+        chapter_idx=chapter_idx,
+        caller="api.foreshadows.update",
+    )
+    row = await db.execute(
+        select(Foreshadow).where(
+            Foreshadow.id == foreshadow_id,
+            Foreshadow.project_id == project_id,
+        )
+    )
+    foreshadow = row.scalar_one_or_none()
+    if foreshadow is None:
+        raise HTTPException(status_code=500, detail="pg_materialize_missing")
     return ForeshadowResponse.model_validate(foreshadow)
 
 
