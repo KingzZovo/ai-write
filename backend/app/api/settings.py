@@ -18,6 +18,19 @@ from app.models.project import Character, WorldRule
 from app.services.change_log import record_change
 
 
+def _write_disabled() -> None:
+    # v1.9+: Neo4j is the source of truth for structured entities.
+    # Postgres tables under /settings are read-optimized projections and MUST
+    # NOT be mutated directly to avoid drift.
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Write endpoints disabled: Neo4j is the source of truth; "
+            "Postgres settings are read-only projections."
+        ),
+    )
+
+
 router = APIRouter(
     prefix="/api/projects/{project_id}",
     tags=["settings"],
@@ -117,6 +130,7 @@ async def create_character(
     db: AsyncSession = Depends(get_db),
 ) -> CharacterResponse:
     """Create a new character."""
+    _write_disabled()
     character = Character(
         project_id=project_id,
         name=body.name,
@@ -144,6 +158,7 @@ async def update_character(
     db: AsyncSession = Depends(get_db),
 ) -> CharacterResponse:
     """Update a character."""
+    _write_disabled()
     result = await db.execute(
         select(Character).where(
             Character.id == character_id,
@@ -180,6 +195,7 @@ async def delete_character(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a character."""
+    _write_disabled()
     result = await db.execute(
         select(Character).where(
             Character.id == character_id,
@@ -234,6 +250,7 @@ async def create_world_rule(
     db: AsyncSession = Depends(get_db),
 ) -> WorldRuleResponse:
     """Create a new world rule."""
+    _write_disabled()
     rule = WorldRule(
         project_id=project_id,
         category=body.category,
@@ -261,6 +278,7 @@ async def update_world_rule(
     db: AsyncSession = Depends(get_db),
 ) -> WorldRuleResponse:
     """Update a world rule."""
+    _write_disabled()
     result = await db.execute(
         select(WorldRule).where(
             WorldRule.id == rule_id,
@@ -297,6 +315,7 @@ async def delete_world_rule(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a world rule."""
+    _write_disabled()
     result = await db.execute(
         select(WorldRule).where(
             WorldRule.id == rule_id,
@@ -360,6 +379,7 @@ async def create_relationship(
     body: RelationshipCreate,
     db: AsyncSession = Depends(get_db),
 ) -> RelationshipResponse:
+    _write_disabled()
     rel = Relationship(
         project_id=project_id,
         source_id=body.source_id,
@@ -397,6 +417,7 @@ async def bulk_create_relationships(
     body: RelationshipBulkRequest,
     db: AsyncSession = Depends(get_db),
 ) -> RelationshipBulkResponse:
+    _write_disabled()
     created = 0
     for item in body.items:
         rel = Relationship(
@@ -421,6 +442,7 @@ async def update_relationship(
     body: RelationshipUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> RelationshipResponse:
+    _write_disabled()
     rel = await db.get(Relationship, relationship_id)
     if rel is None or str(rel.project_id) != project_id:
         raise HTTPException(status_code=404, detail="Relationship not found")
@@ -458,6 +480,7 @@ async def delete_relationship(
     relationship_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    _write_disabled()
     rel = await db.get(Relationship, relationship_id)
     if rel is None or str(rel.project_id) != project_id:
         raise HTTPException(status_code=404, detail="Relationship not found")
