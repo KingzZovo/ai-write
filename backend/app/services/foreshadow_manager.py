@@ -18,8 +18,13 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from neo4j import AsyncDriver
+
+from app.db.neo4j import init_neo4j
+from app.db import neo4j as _neo4j_mod
 from app.db.session import async_session_factory
 from app.models.project import Foreshadow
+from app.tasks.entity_tasks import _materialize_entities_to_postgres
 from app.services.model_router import get_model_router
 
 logger = logging.getLogger(__name__)
@@ -80,20 +85,63 @@ class ForeshadowManager:
         Returns:
             The newly created Foreshadow ORM instance.
         """
+        # v1.9+ architecture: Neo4j is the source of truth; Postgres is a read model.
+        # So creation must write to Neo4j, then materialize back to Postgres.
         db = await self._get_db()
-        foreshadow = Foreshadow(
+
+        await init_neo4j()
+        driver: AsyncDriver | None = _neo4j_mod._driver
+        if driver is None:
+            raise RuntimeError("Neo4j driver has not been initialized")
+
+        import uuid
+
+        fid = str(uuid.uuid4())
+        try:
+            async with driver.session() as session:
+                r = await session.run(
+                    "MERGE (f:Foreshadow {project_id: $pid, id: $id}) "
+                    "SET f.type = $type, "
+                    "    f.description = $desc, "
+                    "    f.planted_chapter = $planted, "
+                    "    f.resolve_conditions_json = $conds, "
+                    "    f.resolution_blueprint_json = $blueprint, "
+                    "    f.narrative_proximity = $prox, "
+                    "    f.status = $status, "
+                    "    f.resolved_chapter = $resolved "
+                    "RETURN f.id AS id",
+                    pid=str(project_id),
+                    id=fid,
+                    type=str(type).strip(),
+                    desc=str(description).strip(),
+                    planted=int(planted_chapter),
+                    conds=json.dumps(list(resolve_conditions or []), ensure_ascii=False),
+                    blueprint=json.dumps(resolution_blueprint or {}, ensure_ascii=False),
+                    prox=0.0,
+                    status="planted",
+                    resolved=None,
+                )
+                await r.consume()
+        except Exception as e:
+            raise RuntimeError(f"neo4j_write_failed: {e}")
+
+        await _materialize_entities_to_postgres(
             project_id=str(project_id),
-            description=description,
-            type=type,
-            planted_chapter=planted_chapter,
-            resolve_conditions_json=resolve_conditions,
-            resolution_blueprint_json=resolution_blueprint or {},
-            narrative_proximity=0.0,
-            status="planted",
+            chapter_idx=int(planted_chapter),
+            caller="ForeshadowManager.create",
         )
-        db.add(foreshadow)
-        await db.flush()
-        await db.refresh(foreshadow)
+
+        # Return the Postgres read-model row.
+        row = await db.execute(
+            select(Foreshadow).where(
+                Foreshadow.project_id == str(project_id),
+                Foreshadow.id == fid,
+            )
+        )
+        foreshadow = row.scalar_one_or_none()
+        if foreshadow is None:
+            raise RuntimeError("pg_materialize_missing")
+
         logger.info(
             "Created foreshadow %s (type=%s) for project %s at chapter %d",
             foreshadow.id, type, project_id, planted_chapter,
