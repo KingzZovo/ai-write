@@ -16,7 +16,7 @@
 - 更新人：自动执行代理（GitHub MCP + AWS MCP shell @ `/root/ai-write`）
 - 关联 PR：#8 - #18（v1.0 → v1.9 共 11 个 release PR 全部合入）
 - 本地状态：`main` HEAD = `0a4f9a1`（PR #18 合并 commit），working tree clean
-- 远端状态：`origin/main` = `0a4f9a1`；`origin/feature/v1.0-big-bang` 与 main 内容一致（已无独立价值，可关闭）
+- 远端状态：`origin/main` HEAD = `960a38b`（PR #19 合并）；P6 仓库清理已完成（仅剩 `main` + `archive/feature-v1.0-big-bang` tag）
 
 ## 2. 已完成（按时间倒序）
 
@@ -95,8 +95,7 @@
 - [ ] `alembic upgrade head`（target = `a1001908`）
 - [ ] 配置 env `ADMIN_USERNAMES`（JSON 数组，例 `["admin","king"]`），否则 `/api/admin/*` 路由族对所有 JWT-sub 返回 403
 - [ ] 验证 v1.9 entity writeback 全链：写 `POST /api/projects/{pid}/neo4j-settings/foreshadows` → Neo4j `(:Foreshadow)` 节点出现 → PG `foreshadows` 表 materialize 出同一行
-- [ ] 关闭 / 删除 `feature/v1.0-big-bang` 远端分支（其内容已 100% 在 main 上）
-- [ ] 关闭 / 删除 11 个 `release/v1.*` 远端分支（已 merge）
+- [x] **仓库清理完成**（2026-05-02 晚）：origin 上仅剩 `main` + `archive/feature-v1.0-big-bang` tag（锁 `73e7897` 237 commit 历史）。删除：feature/v1.0-big-bang + 11 个 release/v1.* + 4 个 doc/fix 分支 + 3 个 chore 分支
 
 ### 后续大版本（参考 ITERATION_PLAN.md）
 
