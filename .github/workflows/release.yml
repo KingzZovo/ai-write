@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component:
+          - {name: backend, context: backend, dockerfile: backend/Dockerfile}
+          - {name: frontend, context: frontend, dockerfile: frontend/Dockerfile}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute tags
+        id: tags
+        shell: bash
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "sha_short=$SHA_SHORT" >> $GITHUB_OUTPUT
+          echo "git_tag=$GIT_TAG"    >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: '${${{ github.actor }}}'
+          password: '${${{ secrets.GITHUB_TOKEN }}}'
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.component.context }}
+          file: ${{ matrix.component.dockerfile }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}-${{ matrix.component.name }}:${{ steps.tags.outputs.sha_short }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}-${{ matrix.component.name }}:${{ steps.tags.outputs.git_tag }}
+          build-args: |
+            GIT_SHA=${{ steps.tags.outputs.sha_short }}
+            GIT_TAG=${{ steps.tags.outputs.git_tag }}
+            BUILD_TIME=${{ steps.tags.outputs.build_time }}

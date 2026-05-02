@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy import Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -458,3 +459,36 @@ class Relationship(Base):
         nullable=True,
     )
     evolution_json = Column(JSON, default=list)  # [{volume_id, label, sentiment, note}]
+
+
+class ChapterVariant(Base):
+    """BVSR candidate draft for a chapter (v1.0).
+
+    One row per N-draft run. ``is_winner`` flags the variant that critic picked.
+    ``selected_by_user`` means the author later manually overrode the winner.
+    """
+
+    __tablename__ = "chapter_variants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("generation_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    variant_idx = Column(Integer, nullable=False)
+    content_text = Column(Text, nullable=False)
+    word_count = Column(Integer, default=0)
+    score = Column(Float, nullable=True)
+    hard_count = Column(Integer, default=0)
+    soft_count = Column(Integer, default=0)
+    ai_trap_count = Column(Integer, default=0)
+    critic_report_json = Column(JSON, default=dict)
+    is_winner = Column(Boolean, default=False)
+    selected_by_user = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)

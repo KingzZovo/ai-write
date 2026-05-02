@@ -17,6 +17,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,6 +93,20 @@ async def get_run(run_id: UUID, db: AsyncSession = Depends(get_db)) -> RunRespon
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
     return RunResponse.model_validate(run)
+
+
+@router.get("/api/generation-runs/{run_id}/graph", response_class=PlainTextResponse)
+async def get_run_graph(run_id: UUID, db: AsyncSession = Depends(get_db)) -> str:
+    """Return a DOT representation of the generation graph.
+
+    Topology is static today (v1.0 chunk 8). Endpoint still takes run_id
+    so the frontend can highlight the run's current phase later.
+    """
+    run = await db.get(GenerationRun, str(run_id))
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    from app.graphs.generation_graph import to_dot
+    return to_dot()
 
 
 @router.get(

@@ -31,6 +31,12 @@ dependencies = [
     "mobi",
     "bcrypt",
     "cryptography",
+    "prometheus-client",
+    "sentry-sdk[fastapi,celery]",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "reportlab",
+    "python-docx",
 ]
 
 [build-system]

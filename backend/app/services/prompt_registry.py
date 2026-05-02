@@ -522,6 +522,11 @@ async def run_text_prompt(
         messages.append({"role": "user", "content": user_content})
 
     router = get_model_router()
+    # Prometheus metric provider / model labels ("unknown" when route has no
+    # explicit endpoint yet).
+    _provider = getattr(route, "provider", None) or "unknown"
+    _model = route.model or "unknown"
+    from app.observability.metrics import time_llm_call
     async with log_llm_call(
         db=db,
         task_type=task_type,
@@ -533,9 +538,12 @@ async def run_text_prompt(
         model=route.model or "",
         endpoint_id=route.endpoint_id,
     ) as ctx:
-        result = await router.generate_by_route(route, messages, **kwargs)
-        ctx.add_chunk(result.text)
-        ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
+        with time_llm_call(task_type, _provider, _model) as mbox:
+            result = await router.generate_by_route(route, messages, **kwargs)
+            ctx.add_chunk(result.text)
+            ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
+            mbox["input_tokens"] = result.usage.input_tokens
+            mbox["output_tokens"] = result.usage.output_tokens
 
     if route.prompt_id:
         await registry.track_result(route.prompt_id, success=bool(result.text))

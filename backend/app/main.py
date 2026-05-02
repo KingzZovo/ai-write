@@ -14,12 +14,19 @@ from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshadows, generate, knowledge, lora, model_config, outlines, pipeline, projects, prompts, quality, rewrite, settings, styles, vector_store, versions, volumes
 from app.api.auth import verify_token
+from app.api import admin_usage
+from app.api import export as export_api
+from app.middlewares.quota import QuotaMiddleware
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
 from app.db.session import engine
+from app.observability.sentry_init import init_sentry
 
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry as early as possible (no-op without SENTRY_DSN)
+init_sentry(component="backend")
 
 
 @asynccontextmanager
@@ -145,6 +152,8 @@ app = FastAPI(
 _PUBLIC_PATHS = frozenset({
     "/api/auth/login",
     "/api/health",
+    "/api/version",
+    "/metrics",
     "/docs",
     "/openapi.json",
 })
@@ -193,6 +202,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(AuthMiddleware)
+app.add_middleware(QuotaMiddleware)
 
 # ---------------------------------------------------------------------------
 # Routers
@@ -224,6 +234,53 @@ from app.api import generation_runs  # noqa: E402
 app.include_router(generation_runs.router)
 from app.api import writing_engine  # noqa: E402
 app.include_router(writing_engine.router)
+from app.api import version  # noqa: E402
+app.include_router(version.router)
+from app.api import metrics as metrics_api  # noqa: E402
+app.include_router(metrics_api.router)
+from app.api import debug as debug_api  # noqa: E402
+app.include_router(debug_api.router)
+from app.api import variants as variants_api  # noqa: E402
+app.include_router(variants_api.router)
+from app.api import run_bus as run_bus_api  # noqa: E402
+app.include_router(run_bus_api.router)
+app.include_router(admin_usage.router)
+app.include_router(export_api.router)
+
+# Prometheus HTTP duration middleware
+# ---------------------------------------------------------------------------
+import time as _time  # noqa: E402
+
+from app.observability.metrics import (  # noqa: E402
+    HTTP_REQUEST_DURATION,
+    HTTP_REQUEST_TOTAL,
+)
+
+
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    """Records request duration + count. Uses route.path_template to avoid
+    cardinality blowup from path params."""
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        start = _time.monotonic()
+        status = "500"
+        try:
+            response = await call_next(request)
+            status = str(response.status_code)
+            return response
+        finally:
+            elapsed = _time.monotonic() - start
+            route = request.scope.get("route")
+            path_tpl = getattr(route, "path", None) or request.url.path
+            # Collapse unmatched paths (e.g. 404) to avoid label explosion.
+            if route is None and not path_tpl.startswith("/api/") and path_tpl not in ("/metrics", "/docs", "/openapi.json"):
+                path_tpl = "__other__"
+            method = request.method
+            HTTP_REQUEST_DURATION.labels(method, path_tpl, status).observe(elapsed)
+            HTTP_REQUEST_TOTAL.labels(method, path_tpl, status).inc()
+
+
+app.add_middleware(PrometheusMiddleware)
 from app.api import changelog  # noqa: E402
 app.include_router(changelog.router)
 
