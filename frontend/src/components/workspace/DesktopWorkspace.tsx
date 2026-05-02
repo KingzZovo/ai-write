@@ -129,6 +129,8 @@ export default function DesktopWorkspace() {
   const [editorContent, setEditorContent] = useState('')
   const [creativeInput, setCreativeInput] = useState('')
   const [outlinePreview, setOutlinePreview] = useState('')
+  // PR-OL1: AI-suggested volume plan parsed from staged SSE done event.
+  const [volumePlan, setVolumePlan] = useState<Array<{idx:number; title:string; theme:string; core_conflict:string; est_chapters:number}> | null>(null)
   const [activeView, setActiveView] = useState<'editor' | 'outline' | 'wizard'>(
     'wizard'
   )
@@ -315,6 +317,13 @@ export default function DesktopWorkspace() {
                 // Replace the per-chunk interleaved preview with the
                 // canonical reassembled 9-section outline.
                 setOutlinePreview(full)
+              }
+              // PR-OL1: capture AI-suggested volume plan for step 2 prefill.
+              if (Array.isArray(evt.volume_plan)) {
+                setVolumePlan(evt.volume_plan as typeof volumePlan)
+                if (evt.volume_plan.length > 0) {
+                  setVolumeCountInput(String(evt.volume_plan.length))
+                }
               }
             }
           }
@@ -944,6 +953,24 @@ export default function DesktopWorkspace() {
                       </details>
                     )}
 
+                    {volumePlan && volumePlan.length > 0 && (
+                      <div className="mb-4 border border-blue-200 bg-blue-50 rounded-xl p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-medium text-blue-900">📜 AI 推荐卷规划</span>
+                          <span className="text-xs text-blue-700">共 {volumePlan.length} 卷，共 {volumePlan.reduce((s, v) => s + (v.est_chapters || 0), 0)} 章（已自动填入卷数）</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {volumePlan.map((v) => (
+                            <div key={v.idx} className="text-xs text-gray-700 bg-white rounded px-2 py-1.5">
+                              <span className="font-semibold text-gray-900">第{v.idx}卷 {v.title}</span>
+                              <span className="text-gray-500 ml-1">({v.est_chapters}章)</span>
+                              {v.theme && <span className="text-gray-600"> · {v.theme}</span>}
+                              {v.core_conflict && <div className="text-gray-500 mt-0.5">冲突: {v.core_conflict}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="mb-4 flex items-center gap-3 flex-wrap">
                       <label className="text-sm text-gray-700">共</label>
                       <input

@@ -65,3 +65,24 @@
   3. 同一人物多场景出现且作者未明确是同一人，不要合并为一个 Character 实体。
 - entity_tasks PG bulk insert 同步加 “与上一条相同则 SKIP”
 - 数据修补脉本：合并现有 status_json 相同的相邻记录。
+
+
+## 2026-05-03 (PR-OL1) · 卷规划 从 prompt 驱动 → 结构化 JSON
+
+背景：之前 “七、分卷规划” 仅要求 LLM 写 “至少 3 卷” 纯文本，创建向导需要 detectVolumeCount() 正则反推卷数，默认 fallback 3。
+
+### Change
+- BOOK_OUTLINE_SYSTEM / BOOK_OUTLINE_SKELETON_SYSTEM：去掉 “至少 3 卷” 硬编码，prompt 明确 “根据创意/节奉自由决定 2-8 卷”；要求在段末输出 <volume-plan> JSON 块 (idx/title/theme/core_conflict/est_chapters)。
+- OutlineGenerator._extract_volume_plan()：负责容错解析 (容忍 ```json 栈、疑似 JSON 结构)。
+- staged_stream done event：多一个 volume_plan 字段。
+- 前端 DesktopWorkspace.tsx：接收 evt.volume_plan 后自动 prefill volumeCountInput；在 step 2 顶部显示“📜 AI 推荐卷规划”卡片，列出每卷 卷名、预估章数、主题、冲突。
+
+### Verification
+- backend syntax: `python -c "import app.services.outline_generator"` → ok
+- frontend `tsc --noEmit` → 无新增错。
+- E2E：新建项目，全书大纲 staged 生成 → 调试 控制台 SSE 中看到 done.volume_plan；跳到 step 2 后顶部出现卷规划卡片，“共 N 卷” 已自动填入。
+- 未变：detectVolumeCount() 作为 fallback 仍保留（当 LLM 忘记输出卷规划块时）。
+
+### Next
+- PR-OL2：knowledge_tasks outline_book 后台任务读 volume_plan 创建空 Volume 行（不再需要 手动“生成分卷大纲” 打拾）
+- PR-OL3：卷规划卡片可点击编辑 (调整卷名/章数后创建项目)

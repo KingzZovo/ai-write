@@ -69,3 +69,10 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 
 **依然待办（C 块）**
 - 按 ITERATION_PLAN.md 拆五个 PR 调整 outline pipeline。
+
+## 2026-05-03 04:55 · PR-OL1 卷规划 结构化
+
+- 后端 BOOK_OUTLINE_*_SYSTEM：去掉“至少 3 卷”限制；prompt 要求输出 <volume-plan> JSON 块。
+- OutlineGenerator 新增 _extract_volume_plan + done event 多一个 volume_plan 字段。
+- 前端 DesktopWorkspace step 2 顶部显示“AI 推荐卷规划”卡片，prefill 卷数。
+- 上一轮 (commit 03f7ccc) 修复人物状态重复/通用名警示。
