@@ -199,3 +199,40 @@
 
 ### Next
 - 未来可考虑: Volume 重排序 / 拖拽 / 插入中间卷
+
+
+## 2026-05-03 (PR-OL8) · Volume 重排序 + 删除
+
+### Change
+- frontend SimpleVolumeCard:
+  * onVolumeChanged prop
+  * ↑↓ 上移/下移 (3-step swap volume_idx 避免 uq 冲突)
+  * ✖ 删除本卷 + confirm
+  * 父传 onVolumeChanged 重拉 volumes
+
+### Verification
+- frontend build OK
+- E2E 预期: 点↑↓列表重排; 点✖删除 (cascade chapters)
+
+## 2026-05-03 (PR-OL9) · outline edit 后 cascade 同步 chapter
+
+### Change
+- backend api/outlines.py PUT /outlines/{id}:
+  * 如 outline.level == "volume" 且 content_json.chapter_summaries 存在
+  * 查同 project + volume_idx 的 Volume → 拉 Chapter by chapter_idx
+  * 将 cs[i] 写入 chapter.outline_json
+  * 将 cs[i].summary/概要/description 写入 chapter.summary (变了才写)
+  * cascade_synced_chapters 计数，只记日志。失败不阻断 outline 保存
+
+### Verification
+- backend syntax ok
+- E2E: PUT /outlines/{volume_oid} 部分改 chapter_summaries[i].summary →
+  查 chapters 表 chapter.summary 已同步
+
+## 2026-05-03 · 修补脚本 scripts/cleanup_character_states_dup.py
+
+### Change
+- 新增 dry-run 脚本: 扫描 project 的 character_states，报告
+  “同一 character 相邻两条 status_json byte-equal” 的 group
+- --execute 才真删 (默认 dry-run)
+- 适用: PR-OL6 只对未来生成生效，旧数据需手动跑该脚本修补

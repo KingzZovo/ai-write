@@ -101,3 +101,9 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 - PR-OL6 抽取 prompt 加规则 (仅变化/场景修饰/不合并/章号≥1/状态是变化)
 - PR-OL6 entity_tasks PG bulk insert 预查最近 status_json则SKIP
 - PR-OL7 step 2 Volume 列表 加“✎”重命名、PUT /volumes/{id}
+
+## 2026-05-03 06:05 · PR-OL8 + PR-OL9 + cleanup script
+
+- PR-OL8 Volume 重排序 ↑↓ + 删除 ✖
+- PR-OL9 outline PUT 后 cascade 同步 chapters.outline_json + summary
+- scripts/cleanup_character_states_dup.py dry-run 脚本
