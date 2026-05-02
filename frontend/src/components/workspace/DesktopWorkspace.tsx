@@ -2,8 +2,10 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
+import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
 import { GeneratePanel, getSelectedStyleId } from '@/components/panels/GeneratePanel'
 
 // Lazy load heavy panels — only loaded when their CollapsibleSection is opened
@@ -16,7 +18,8 @@ const WritingGuidePanel = dynamic(() => import('@/components/panels/WritingGuide
 const AntiAIPanel = dynamic(() => import('@/components/panels/AntiAIPanel').then(m => ({ default: m.AntiAIPanel })), { ssr: false })
 const VersionPanel = dynamic(() => import('@/components/panels/VersionPanel').then(m => ({ default: m.VersionPanel })), { ssr: false })
 const TokenDashboard = dynamic(() => import('@/components/panels/TokenDashboard').then(m => ({ default: m.TokenDashboard })), { ssr: false })
-const RelationshipGraph = dynamic(() => import('@/components/panels/RelationshipGraph').then(m => ({ default: m.RelationshipGraph })), { ssr: false })
+const CharacterCardPanel = dynamic(() => import('@/components/panels/CharacterCardPanel').then(m => ({ default: m.CharacterCardPanel })), { ssr: false })
+const CascadeTasksPanel = dynamic(() => import('@/components/panels/CascadeTasksPanel').then(m => ({ default: m.CascadeTasksPanel })), { ssr: false })
 import {
   useProjectStore,
   normalizeVolume,
@@ -29,11 +32,6 @@ import { apiFetch, apiSSE } from '@/lib/api'
 // ----------------------------------------------------------------
 // Types for API responses
 // ----------------------------------------------------------------
-
-interface ProjectListRes {
-  projects: Project[]
-  total: number
-}
 
 interface VolumeRes {
   id: string
@@ -63,15 +61,7 @@ interface OutlineRes {
   content_json: Record<string, unknown>
   version: number
   is_confirmed: number
-}
-
-// ----------------------------------------------------------------
-// Genres
-// ----------------------------------------------------------------
-
-const GENRES = ['玄幻', '仙侠', '都市', '言情', '悬疑', '科幻', '历史', '其他'] as const
-
-// ----------------------------------------------------------------
+}// ----------------------------------------------------------------
 // CollapsibleSection (unchanged from original)
 // ----------------------------------------------------------------
 
@@ -115,17 +105,16 @@ function CollapsibleSection({
 // ================================================================
 
 export default function DesktopWorkspace() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlProjectId = searchParams.get('id')
+
   const {
-    projects,
-    projectsLoaded,
-    setProjects,
-    setProjectsLoaded,
     currentProject,
     selectedChapterId,
     setCurrentProject,
     setVolumes,
     setChapters,
-    addChapters,
     selectChapter,
     volumes,
     chapters,
@@ -140,24 +129,35 @@ export default function DesktopWorkspace() {
   const [editorContent, setEditorContent] = useState('')
   const [creativeInput, setCreativeInput] = useState('')
   const [outlinePreview, setOutlinePreview] = useState('')
-  const [activeView, setActiveView] = useState<'editor' | 'outline' | 'creative' | 'wizard'>(
-    'creative'
+  const [activeView, setActiveView] = useState<'editor' | 'outline' | 'wizard'>(
+    'wizard'
   )
 
-  // New project modal
-  const [showNewProject, setShowNewProject] = useState(false)
-  const [newTitle, setNewTitle] = useState('')
-  const [newGenre, setNewGenre] = useState<string>(GENRES[0])
-  const [newPremise, setNewPremise] = useState('')
-  const [creating, setCreating] = useState(false)
-
-  // Project selector dropdown
-  const [selectorOpen, setSelectorOpen] = useState(false)
+  // v1.4.2 Task B: per-stage progress for the staged book outline SSE.
+  // status: idle | running | done | error. Stages A/B/C correspond to
+  // skeleton / characters / world.
+  type StageKey = 'A' | 'B' | 'C'
+  type StageStatus = 'idle' | 'running' | 'done' | 'error'
+  const [stageStates, setStageStates] = useState<Record<StageKey, StageStatus>>({
+    A: 'idle',
+    B: 'idle',
+    C: 'idle',
+  })
+  const stageLabels: Record<StageKey, string> = { A: '骨架', B: '角色', C: '世界观' }
+  const resetStageStates = () =>
+    setStageStates({ A: 'idle', B: 'idle', C: 'idle' })
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1)
   const [wizardProgress, setWizardProgress] = useState('')
   const [confirmedOutlineId, setConfirmedOutlineId] = useState<string | null>(null)
+  // Volume generation config & results
+  const [volumeCountInput, setVolumeCountInput] = useState('')
+  const [volumeOutlines, setVolumeOutlines] = useState<Record<number, Record<string, unknown>>>({})
+  // Tracks the backend auto-saved outline id for the current in-progress book outline
+  const pendingBookOutlineIdRef = useRef<string | null>(null)
+  // Outline inline editing
+  const [outlineEditing, setOutlineEditing] = useState(false)
 
   // Drawer panel
   const [drawerPanel, setDrawerPanel] = useState<string | null>(null)
@@ -167,18 +167,18 @@ export default function DesktopWorkspace() {
   const lastSavedRef = useRef<string>('')
 
   // ----------------------------------------------------------------
-  // Load project list on mount
+  // Sync URL ?id=... → currentProject; redirect to / if missing/invalid
   // ----------------------------------------------------------------
   useEffect(() => {
-    if (!projectsLoaded) {
-      apiFetch<ProjectListRes>('/api/projects')
-        .then((data) => {
-          setProjects(data.projects)
-          setProjectsLoaded(true)
-        })
-        .catch((err) => console.error('Failed to load projects:', err))
+    if (!urlProjectId) {
+      router.replace('/')
+      return
     }
-  }, [projectsLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (currentProject?.id === urlProjectId) return
+    apiFetch<Project>(`/api/projects/${urlProjectId}`)
+      .then((p) => setCurrentProject(p))
+      .catch(() => router.replace('/'))
+  }, [urlProjectId, currentProject?.id, router, setCurrentProject])
 
   // ----------------------------------------------------------------
   // Load volumes + chapters when a project is selected
@@ -193,31 +193,56 @@ export default function DesktopWorkspace() {
         setVolumes(normalized)
 
         const chs = await apiFetch<ChapterRes[]>(
-          `/api/projects/${projectId}/chapters`
+          `/api/projects/${projectId}/chapters?lightweight=true`
         )
         const normChs = chs.map((c) => normalizeChapter(c as unknown as Record<string, unknown>))
         setChapters(normChs)
 
-        // Check if project has outlines; if not, show wizard
         const outlines = await apiFetch<OutlineRes[]>(
           `/api/projects/${projectId}/outlines`
         )
-        if (outlines.length === 0 && normalized.length === 0) {
-          setActiveView('wizard')
-          setWizardStep(1)
-        } else if (normalized.length > 0) {
-          setActiveView('editor')
-        } else if (outlines.length > 0) {
-          // Has outlines but no volumes — show outline preview
-          const bookOutline = outlines.find(o => o.level === 'book')
-          if (bookOutline) {
-            const cj = bookOutline.content_json as Record<string, unknown> | null
-            const raw = String(cj?.raw_text || JSON.stringify(cj, null, 2) || '')
-            setOutlinePreview(raw)
-            setConfirmedOutlineId(bookOutline.id)
+
+        // Load book outline into preview (prefer confirmed).
+        // Filter out legacy garbage: book-level records whose content is actually
+        // a volume outline (has volume_idx key). Sort by id ascending to prefer
+        // the earliest valid record.
+        const bookOutlines = outlines
+          .filter((o) => o.level === 'book')
+          .filter((o) => {
+            const cj = (o.content_json as Record<string, unknown>) || {}
+            return !('volume_idx' in cj)
+          })
+          .sort((a, b) => (a.id < b.id ? -1 : 1))
+        const bookOutline =
+          bookOutlines.find((o) => o.is_confirmed) || bookOutlines[0] || null
+        if (bookOutline) {
+          const cj = bookOutline.content_json as Record<string, unknown> | null
+          const raw = String(cj?.raw_text || JSON.stringify(cj, null, 2) || '')
+          setOutlinePreview(raw)
+          setConfirmedOutlineId(bookOutline.id)
+        } else {
+          setOutlinePreview('')
+          setConfirmedOutlineId(null)
+        }
+
+        // Index volume outlines by volume_idx (pick the most recent per idx)
+        const volOutlineMap: Record<number, Record<string, unknown>> = {}
+        for (const o of outlines) {
+          if (o.level !== 'volume') continue
+          const cj = (o.content_json as Record<string, unknown>) || {}
+          const idx = typeof cj.volume_idx === 'number' ? cj.volume_idx : null
+          if (idx !== null) {
+            volOutlineMap[idx] = cj
           }
+        }
+        setVolumeOutlines(volOutlineMap)
+
+        // Route to appropriate view
+        if (normalized.length > 0) {
+          setActiveView('editor')
+        } else if (bookOutline) {
           setActiveView('wizard')
-          setWizardStep(2) // Go to step 2 (volume generation) since outline exists
+          setWizardStep(2)
         } else {
           setActiveView('wizard')
           setWizardStep(1)
@@ -236,63 +261,6 @@ export default function DesktopWorkspace() {
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ----------------------------------------------------------------
-  // Select a project from the dropdown
-  // ----------------------------------------------------------------
-  const handleSelectProject = useCallback(
-    (project: Project) => {
-      setCurrentProject(project)
-      selectChapter(null)
-      setEditorContent('')
-      setOutlinePreview('')
-      setSelectorOpen(false)
-    },
-    [setCurrentProject, selectChapter]
-  )
-
-  // ----------------------------------------------------------------
-  // Create new project
-  // ----------------------------------------------------------------
-  const handleCreateProject = useCallback(async () => {
-    if (!newTitle.trim() || creating) return
-    setCreating(true)
-    try {
-      const project = await apiFetch<Project>('/api/projects', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          genre: newGenre,
-          premise: newPremise.trim() || null,
-        }),
-      })
-      setProjects([project, ...projects])
-      setCurrentProject(project)
-      selectChapter(null)
-      setVolumes([])
-      setChapters([])
-      setShowNewProject(false)
-      setNewTitle('')
-      setNewPremise('')
-      setActiveView('wizard')
-      setWizardStep(1)
-    } catch (err) {
-      console.error('Failed to create project:', err)
-    } finally {
-      setCreating(false)
-    }
-  }, [
-    newTitle,
-    newGenre,
-    newPremise,
-    creating,
-    projects,
-    setProjects,
-    setCurrentProject,
-    selectChapter,
-    setVolumes,
-    setChapters,
-  ])
-
-  // ----------------------------------------------------------------
   // Outline generation (SSE)
   // ----------------------------------------------------------------
   const handleGenerateOutline = useCallback(
@@ -301,7 +269,10 @@ export default function DesktopWorkspace() {
       setIsGenerating(true)
       setOutlinePreview('')
       if (level === 'book') {
+        pendingBookOutlineIdRef.current = null
+        setConfirmedOutlineId(null)
         setActiveView('wizard')
+        resetStageStates()
       } else {
         setActiveView('outline')
       }
@@ -312,135 +283,280 @@ export default function DesktopWorkspace() {
           project_id: currentProject?.id || '',
           level,
           user_input: creativeInput,
+          // v1.4.2 Task B: request structured staged SSE events for the
+          // book outline so we can drive per-stage progress indicators.
+          ...(level === 'book' ? { staged_stream: true } : {}),
         },
         (text) => {
           setOutlinePreview((prev) => prev + text)
         },
         () => {
           setIsGenerating(false)
-        }
+        },
+        (evt) => {
+          if (level === 'book' && evt.status === 'saved' && typeof evt.outline_id === 'string') {
+            pendingBookOutlineIdRef.current = evt.outline_id
+          }
+          // v1.4.2 Task B: structured staged events for book outline.
+          if (level === 'book' && typeof evt.event === 'string') {
+            const kind = evt.event as string
+            const stage = evt.stage as StageKey | undefined
+            if (kind === 'stage_start' && stage) {
+              setStageStates((s) => ({ ...s, [stage]: 'running' }))
+            } else if (kind === 'stage_chunk' && stage && typeof evt.delta === 'string') {
+              setOutlinePreview((prev) => prev + (evt.delta as string))
+            } else if (kind === 'stage_end' && stage) {
+              setStageStates((s) => ({ ...s, [stage]: 'done' }))
+            } else if (kind === 'error' && stage) {
+              setStageStates((s) => ({ ...s, [stage]: 'error' }))
+            } else if (kind === 'done') {
+              const full = evt.full_outline
+              if (typeof full === 'string' && full.length > 0) {
+                // Replace the per-chunk interleaved preview with the
+                // canonical reassembled 9-section outline.
+                setOutlinePreview(full)
+              }
+            }
+          }
+        },
       )
     },
     [isGenerating, currentProject, creativeInput, setIsGenerating]
   )
 
   // ----------------------------------------------------------------
-  // Confirm outline => POST to outlines API, advance wizard
+  // Confirm outline => mark auto-saved outline as confirmed, advance wizard
   // ----------------------------------------------------------------
   const handleConfirmOutline = useCallback(async () => {
     if (!currentProject || !outlinePreview) return
 
     try {
-      // Try to parse the outline as JSON; if not, store as raw text
-      let contentJson: Record<string, unknown>
-      try {
-        contentJson = JSON.parse(outlinePreview)
-      } catch {
-        contentJson = { raw_text: outlinePreview }
+      // Backend auto-saved the outline during SSE; we captured its id.
+      // Fall back to fetching the latest unconfirmed book outline if we missed the event.
+      let outlineId = pendingBookOutlineIdRef.current
+      if (!outlineId) {
+        const existing = await apiFetch<OutlineRes[]>(
+          `/api/projects/${currentProject.id}/outlines?level=book`
+        )
+        const latest = [...existing]
+          .filter((o) => !o.is_confirmed)
+          .sort((a, b) => (a.id < b.id ? 1 : -1))[0]
+        outlineId = latest?.id ?? null
       }
 
-      const outline = await apiFetch<OutlineRes>(
-        `/api/projects/${currentProject.id}/outlines`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            level: 'book',
-            content_json: contentJson,
-          }),
-        }
-      )
+      if (!outlineId) {
+        console.error('No book outline found to confirm')
+        return
+      }
 
-      // Confirm it
       await apiFetch<OutlineRes>(
-        `/api/projects/${currentProject.id}/outlines/${outline.id}/confirm`,
+        `/api/projects/${currentProject.id}/outlines/${outlineId}/confirm`,
         { method: 'POST' }
       )
 
-      setConfirmedOutlineId(outline.id)
+      setConfirmedOutlineId(outlineId)
+      pendingBookOutlineIdRef.current = null
       setWizardStep(2)
+
+      // Fire-and-forget: extract structured characters + world rules for later use.
+      // Ignore failures; user can still proceed.
+      apiFetch<{ characters_created: number; world_rules_created: number }>(
+        `/api/projects/${currentProject.id}/outlines/${outlineId}/extract-settings`,
+        { method: 'POST' }
+      )
+        .then((r) =>
+          console.info(
+            `Extracted settings: ${r.characters_created} characters, ${r.world_rules_created} world rules`
+          )
+        )
+        .catch((err) => console.warn('Settings extraction failed:', err))
     } catch (err) {
-      console.error('Failed to save outline:', err)
+      console.error('Failed to confirm outline:', err)
     }
   }, [currentProject, outlinePreview])
 
   // ----------------------------------------------------------------
-  // Wizard Step 2: Generate volume outlines
+  // Wizard Step 2: Generate volume outlines (loop) + create chapters
   // ----------------------------------------------------------------
   const handleGenerateVolumeOutlines = useCallback(async () => {
     if (!currentProject || isGenerating) return
+    if (!confirmedOutlineId) {
+      setWizardProgress('找不到已确认的全书大纲，请返回第一步重新生成。')
+      return
+    }
+    const trimmed = volumeCountInput.trim()
+    let count: number
+    if (trimmed) {
+      const parsed = parseInt(trimmed, 10)
+      if (Number.isNaN(parsed) || parsed < 1) {
+        setWizardProgress('卷数必须是大于 0 的整数。')
+        return
+      }
+      count = Math.min(20, parsed)
+    } else {
+      const detected = detectVolumeCount(outlinePreview)
+      count = detected > 0 ? Math.min(20, detected) : 3
+      setWizardProgress(
+        detected > 0
+          ? `已从大纲识别 ${detected} 卷，开始生成...`
+          : `未能从大纲识别卷数，按默认 3 卷生成...`
+      )
+    }
+
     setIsGenerating(true)
-    setWizardProgress('正在分析大纲，生成分卷结构...')
+    if (trimmed) {
+      setWizardProgress(`准备生成 ${count} 卷大纲...`)
+    }
+    setVolumeOutlines({})
+
+    const createdVolumes: Volume[] = []
+    const createdChapters: Chapter[] = []
+    const outlinesByIdx: Record<number, Record<string, unknown>> = {}
 
     try {
-      // Generate volume outline via SSE
-      let volumeOutlineText = ''
-      await new Promise<void>((resolve) => {
-        apiSSE(
-          '/api/generate/outline',
-          {
-            project_id: currentProject.id,
-            level: 'volume',
-            user_input: creativeInput,
-            parent_outline_id: confirmedOutlineId,
-          },
-          (text) => {
-            volumeOutlineText += text
-            setWizardProgress(`正在生成分卷大纲...\n${volumeOutlineText.slice(-200)}`)
-          },
-          () => resolve()
-        )
-      })
-
-      // Save volume outline
-      let volContentJson: Record<string, unknown>
-      try {
-        volContentJson = JSON.parse(volumeOutlineText)
-      } catch {
-        volContentJson = { raw_text: volumeOutlineText }
+      const isEmptyOrInvalid = (p: Record<string, unknown>) => {
+        const hasStructure =
+          typeof p.title === 'string' ||
+          Array.isArray(p.chapter_summaries) ||
+          typeof p.core_conflict === 'string'
+        return !hasStructure
       }
 
-      await apiFetch<OutlineRes>(
-        `/api/projects/${currentProject.id}/outlines`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            level: 'volume',
-            parent_id: confirmedOutlineId,
-            content_json: volContentJson,
-          }),
+      for (let i = 1; i <= count; i++) {
+        const existing = volumes.find(
+          (v) => (v.volume_idx ?? v.volumeIdx) === i
+        )
+        if (existing) {
+          setWizardProgress((prev) => prev + `\n第 ${i} 卷已存在，跳过`)
+          continue
         }
-      )
 
-      // Create volume records from the outline
-      // Try to extract volume titles from the outline text
-      const volumeTitles = extractVolumeTitles(volumeOutlineText)
-      const createdVolumes: Volume[] = []
+        const runOnce = async (): Promise<{
+          text: string
+          outlineId: string | null
+          parsed: Record<string, unknown>
+        }> => {
+          let text = ''
+          let outlineId: string | null = null
+          await new Promise<void>((resolve) => {
+            apiSSE(
+              '/api/generate/outline',
+              {
+                project_id: currentProject.id,
+                level: 'volume',
+                volume_idx: i,
+                parent_outline_id: confirmedOutlineId,
+                user_input: creativeInput,
+              },
+              (t) => {
+                text += t
+                setWizardProgress(
+                  `正在生成第 ${i}/${count} 卷大纲...\n${text.slice(-200)}`
+                )
+              },
+              () => resolve(),
+              (evt) => {
+                if (evt.status === 'saved' && typeof evt.outline_id === 'string') {
+                  outlineId = evt.outline_id
+                }
+              },
+            )
+          })
+          return { text, outlineId, parsed: parseVolumeOutline(text) }
+        }
 
-      for (let i = 0; i < volumeTitles.length; i++) {
+        setWizardProgress(`正在生成第 ${i}/${count} 卷大纲...`)
+        let { text: volumeOutlineText, outlineId: volumeOutlineId, parsed } = await runOnce()
+        if (isEmptyOrInvalid(parsed)) {
+          setWizardProgress((prev) => prev + `\n第 ${i} 卷首次生成无效，重试中...`)
+          const retry = await runOnce()
+          volumeOutlineText = retry.text
+          volumeOutlineId = retry.outlineId
+          parsed = retry.parsed
+        }
+        if (isEmptyOrInvalid(parsed)) {
+          setWizardProgress((prev) => prev + `\n⚠ 第 ${i} 卷生成失败，已跳过`)
+          continue
+        }
+
+        outlinesByIdx[i] = parsed
+        setVolumeOutlines((prev) => ({ ...prev, [i]: parsed }))
+
+        // Persist the parsed structure back on the outline record (best effort)
+        if (volumeOutlineId) {
+          apiFetch(
+            `/api/projects/${currentProject.id}/outlines/${volumeOutlineId}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({ content_json: parsed }),
+            }
+          ).catch((err) => console.warn('Failed to store structured volume outline:', err))
+        }
+
+        const volumeTitle =
+          typeof parsed.title === 'string' && parsed.title.trim()
+            ? parsed.title.trim()
+            : `第${i}卷`
+        const volumeSummary =
+          typeof parsed.core_conflict === 'string'
+            ? parsed.core_conflict
+            : typeof parsed.emotional_arc === 'string'
+              ? parsed.emotional_arc
+              : null
+
         const vol = await apiFetch<VolumeRes>(
           `/api/projects/${currentProject.id}/volumes`,
           {
             method: 'POST',
             body: JSON.stringify({
-              title: volumeTitles[i],
-              volume_idx: i + 1,
+              title: volumeTitle,
+              volume_idx: i,
+              summary: volumeSummary,
             }),
           }
         )
-        createdVolumes.push(
-          normalizeVolume(vol as unknown as Record<string, unknown>)
-        )
+        const normVol = normalizeVolume(vol as unknown as Record<string, unknown>)
+        createdVolumes.push(normVol)
+        setVolumes([...createdVolumes])
+
+        const chapterSummaries = Array.isArray(parsed.chapter_summaries)
+          ? (parsed.chapter_summaries as Array<Record<string, unknown>>)
+          : []
+
+        for (let ci = 0; ci < chapterSummaries.length; ci++) {
+          const cs = chapterSummaries[ci] || {}
+          const chapterIdx =
+            typeof cs.chapter_idx === 'number' ? cs.chapter_idx : ci + 1
+          const chapterTitle =
+            typeof cs.title === 'string' && cs.title.trim()
+              ? cs.title.trim()
+              : `第${chapterIdx}章`
+          const ch = await apiFetch<ChapterRes>(
+            `/api/projects/${currentProject.id}/chapters`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                volume_id: normVol.id,
+                title: chapterTitle,
+                chapter_idx: chapterIdx,
+                outline_json: cs,
+              }),
+            }
+          )
+          createdChapters.push(
+            normalizeChapter(ch as unknown as Record<string, unknown>)
+          )
+        }
+        setChapters([...createdChapters])
       }
 
-      if (createdVolumes.length > 0) {
-        setVolumes(createdVolumes)
-      }
-
-      setWizardProgress('分卷大纲已生成！')
+      setWizardProgress(
+        `已生成 ${createdVolumes.length} 卷，共 ${createdChapters.length} 章。`
+      )
       setWizardStep(3)
     } catch (err) {
       console.error('Failed to generate volume outlines:', err)
-      setWizardProgress('生成失败，请重试')
+      setWizardProgress('生成失败，请重试。错误：' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setIsGenerating(false)
     }
@@ -449,97 +565,12 @@ export default function DesktopWorkspace() {
     isGenerating,
     creativeInput,
     confirmedOutlineId,
+    volumeCountInput,
+    outlinePreview,
+    volumes,
     setIsGenerating,
     setVolumes,
-  ])
-
-  // ----------------------------------------------------------------
-  // Wizard Step 3: Generate chapter outlines + create chapters
-  // ----------------------------------------------------------------
-  const handleGenerateChapterOutlines = useCallback(async () => {
-    if (!currentProject || isGenerating) return
-
-    const { volumes: currentVolumes } = useProjectStore.getState()
-    if (currentVolumes.length === 0) {
-      setWizardProgress('请先生成分卷大纲')
-      return
-    }
-
-    setIsGenerating(true)
-    setWizardProgress('正在生成章节大纲...')
-
-    try {
-      for (let vi = 0; vi < currentVolumes.length; vi++) {
-        const vol = currentVolumes[vi]
-        setWizardProgress(
-          `正在生成第 ${vi + 1}/${currentVolumes.length} 卷的章节大纲...`
-        )
-
-        // Generate chapter outline for this volume
-        let chapterOutlineText = ''
-        await new Promise<void>((resolve) => {
-          apiSSE(
-            '/api/generate/outline',
-            {
-              project_id: currentProject.id,
-              level: 'chapter',
-              user_input: creativeInput,
-              volume_idx: vi + 1,
-            },
-            (text) => {
-              chapterOutlineText += text
-            },
-            () => resolve()
-          )
-        })
-
-        // Extract chapter titles from the generated text
-        const chapterTitles = extractChapterTitles(chapterOutlineText)
-
-        // Create chapter records
-        const createdChs: Chapter[] = []
-        for (let ci = 0; ci < chapterTitles.length; ci++) {
-          const ch = await apiFetch<ChapterRes>(
-            `/api/projects/${currentProject.id}/chapters`,
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                volume_id: vol.id,
-                title: chapterTitles[ci],
-                chapter_idx: ci + 1,
-                outline_json: { raw_text: chapterOutlineText },
-              }),
-            }
-          )
-          createdChs.push(
-            normalizeChapter(ch as unknown as Record<string, unknown>)
-          )
-        }
-        addChapters(createdChs)
-      }
-
-      setWizardProgress('所有章节大纲已生成！')
-      // Reload all chapters
-      const finalChs = await apiFetch<ChapterRes[]>(
-        `/api/projects/${currentProject.id}/chapters`
-      )
-      setChapters(
-        finalChs.map((c) => normalizeChapter(c as unknown as Record<string, unknown>))
-      )
-      setActiveView('editor')
-    } catch (err) {
-      console.error('Failed to generate chapter outlines:', err)
-      setWizardProgress('生成失败，请重试')
-    } finally {
-      setIsGenerating(false)
-    }
-  }, [
-    currentProject,
-    isGenerating,
-    creativeInput,
-    addChapters,
     setChapters,
-    setIsGenerating,
   ])
 
   // ----------------------------------------------------------------
@@ -611,7 +642,7 @@ export default function DesktopWorkspace() {
       {
         project_id: currentProject.id,
         chapter_id: selectedChapterId,
-        style_id: getSelectedStyleId(),
+        style_id: getSelectedStyleId(currentProject.id),
       },
       (text) => {
         appendStreamContent(text)
@@ -690,71 +721,28 @@ export default function DesktopWorkspace() {
             {drawerPanel === 'strand' && <StrandPanel projectId={currentProject.id} />}
             {drawerPanel === 'foreshadow' && <ForeshadowPanel projectId={currentProject.id} />}
             {drawerPanel === 'settings' && <SettingsPanel projectId={currentProject.id} />}
-            {drawerPanel === 'relationship' && <RelationshipGraph projectId={currentProject.id} />}
+            {drawerPanel === 'relationship' && <CharacterCardPanel projectId={currentProject.id} />}
           </div>
         </div>
       </div>
     )}
 
     <WorkspaceLayout
+      projectId={currentProject?.id}
       sidebar={
         <div className="flex flex-col h-full">
-          {/* ---- Project selector ---- */}
+          {/* ---- Header: back to project list + current title ---- */}
           <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">AI Write</h2>
-
-            {/* Project dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setSelectorOpen(!selectorOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <span className="truncate text-left flex-1">
-                  {currentProject ? currentProject.title : '选择项目...'}
-                </span>
-                <svg
-                  className={`w-4 h-4 text-gray-400 ml-1 transition-transform ${
-                    selectorOpen ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-
-              {selectorOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {projects.length === 0 && (
-                    <div className="px-3 py-2 text-sm text-gray-400">
-                      暂无项目
-                    </div>
-                  )}
-                  {projects.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleSelectProject(p)}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${
-                        currentProject?.id === p.id
-                          ? 'bg-blue-50 text-blue-700 font-medium'
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      <div className="truncate">{p.title}</div>
-                      {p.genre && (
-                        <div className="text-[10px] text-gray-400">{p.genre}</div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => router.push('/')}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-2"
+            >
+              <span>←</span>
+              <span>返回项目列表</span>
+            </button>
+            <h2 className="text-lg font-semibold text-gray-900 truncate">
+              {currentProject?.title || 'AI Write'}
+            </h2>
           </div>
 
           {/* ---- Volume/Chapter tree ---- */}
@@ -764,6 +752,11 @@ export default function DesktopWorkspace() {
                 卷 / 章节
               </h3>
               <OutlineTree
+                projectId={currentProject?.id || ''}
+                volumeOutlines={volumeOutlines}
+                onChanged={() => {
+                  if (currentProject) loadProjectData(currentProject.id)
+                }}
                 onSelectChapter={(chapterId) => {
                   selectChapter(chapterId)
                   setActiveView('editor')
@@ -771,122 +764,10 @@ export default function DesktopWorkspace() {
               />
             </div>
           </div>
-
-          {/* ---- New project button ---- */}
-          <div className="p-3 border-t border-gray-200">
-            <button
-              onClick={() => setShowNewProject(true)}
-              className="w-full px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              + 新建项目
-            </button>
-          </div>
         </div>
       }
       editor={
         <div className="h-full flex flex-col">
-          {/* ---- New Project Modal ---- */}
-          {showNewProject && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">
-                  新建项目
-                </h3>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      书名 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={newTitle}
-                      onChange={(e) => setNewTitle(e.target.value)}
-                      placeholder="输入小说名称"
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      autoFocus
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      类型
-                    </label>
-                    <select
-                      value={newGenre}
-                      onChange={(e) => setNewGenre(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      {GENRES.map((g) => (
-                        <option key={g} value={g}>
-                          {g}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      故事梗概
-                    </label>
-                    <textarea
-                      value={newPremise}
-                      onChange={(e) => setNewPremise(e.target.value)}
-                      placeholder="简要描述你的小说设定和核心创意..."
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={() => setShowNewProject(false)}
-                    className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={handleCreateProject}
-                    disabled={!newTitle.trim() || creating}
-                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {creating ? '创建中...' : '创建项目'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Creative input (no project selected) ---- */}
-          {activeView === 'creative' && (
-            <div className="flex-1 p-8 max-w-2xl mx-auto w-full flex flex-col items-center justify-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                开始你的创作之旅
-              </h2>
-              <p className="text-gray-500 mb-6 text-center">
-                选择一个现有项目，或者点击左下角 &quot;新建项目&quot; 创建一本新书。
-              </p>
-              {!currentProject && projects.length > 0 && (
-                <div className="w-full max-w-sm space-y-2">
-                  {projects.slice(0, 5).map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleSelectProject(p)}
-                      className="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors"
-                    >
-                      <div className="font-medium text-gray-800">{p.title}</div>
-                      {p.genre && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {p.genre}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ---- Outline Wizard ---- */}
           {activeView === 'wizard' && currentProject && (
             <div className="flex-1 p-8 overflow-y-auto">
@@ -895,17 +776,18 @@ export default function DesktopWorkspace() {
                 <div className="flex items-center gap-2 mb-6">
                   {[1, 2, 3].map((step) => (
                     <div key={step} className="flex items-center gap-2">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                      <button
+                        onClick={() => setWizardStep(step)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
                           wizardStep === step
                             ? 'bg-blue-600 text-white'
                             : wizardStep > step
-                              ? 'bg-green-500 text-white'
-                              : 'bg-gray-200 text-gray-500'
+                              ? 'bg-green-500 text-white hover:bg-green-600'
+                              : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
                         }`}
                       >
                         {wizardStep > step ? '✓' : step}
-                      </div>
+                      </button>
                       {step < 3 && (
                         <div
                           className={`w-12 h-0.5 ${
@@ -947,14 +829,73 @@ export default function DesktopWorkspace() {
                     {/* Outline preview */}
                     {outlinePreview && (
                       <div className="mt-6">
-                        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                          大纲预览
-                        </h3>
-                        <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-4 rounded-xl border max-h-96 overflow-y-auto">
-                          {outlinePreview}
-                        </pre>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-sm font-semibold text-gray-700">大纲预览</h3>
+                          {!isGenerating && confirmedOutlineId && (
+                            <button
+                              onClick={() => setOutlineEditing((v) => !v)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              {outlineEditing ? '取消编辑' : '编辑'}
+                            </button>
+                          )}
+                        </div>
+                        {/* v1.4.2 Task B: per-stage progress indicators. */}
+                        {(stageStates.A !== 'idle' ||
+                          stageStates.B !== 'idle' ||
+                          stageStates.C !== 'idle') && (
+                          <div className="flex items-center gap-4 mb-3 text-xs">
+                            {(['A', 'B', 'C'] as const).map((k) => {
+                              const st = stageStates[k]
+                              const cls =
+                                st === 'running'
+                                  ? 'bg-blue-500 animate-pulse'
+                                  : st === 'done'
+                                    ? 'bg-green-500'
+                                    : st === 'error'
+                                      ? 'bg-red-500'
+                                      : 'bg-gray-300'
+                              return (
+                                <div key={k} className="flex items-center gap-1.5">
+                                  <span
+                                    className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`}
+                                  />
+                                  <span className="text-gray-600">{stageLabels[k]}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                        {outlineEditing ? (
+                          <div>
+                            <textarea
+                              value={outlinePreview}
+                              onChange={(e) => setOutlinePreview(e.target.value)}
+                              className="w-full h-96 px-4 py-3 text-sm border border-gray-300 rounded-xl resize-none font-mono"
+                            />
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  if (!currentProject || !confirmedOutlineId) return
+                                  await apiFetch(`/api/projects/${currentProject.id}/outlines/${confirmedOutlineId}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ content_json: { raw_text: outlinePreview } }),
+                                  })
+                                  setOutlineEditing(false)
+                                }}
+                                className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg"
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-4 rounded-xl border max-h-96 overflow-y-auto">
+                            {outlinePreview}
+                          </pre>
+                        )}
 
-                        {!isGenerating && (
+                        {!isGenerating && !confirmedOutlineId && (
                           <div className="mt-4 flex gap-3">
                             <button
                               onClick={handleConfirmOutline}
@@ -985,34 +926,41 @@ export default function DesktopWorkspace() {
                       第二步：生成分卷大纲
                     </h2>
                     <p className="text-gray-500 mb-4 text-sm">
-                      基于全书大纲，AI 将自动生成每卷的详细大纲和结构。
+                      基于全书大纲，AI 将按卷逐个生成分卷大纲，并自动从章节摘要创建章节。
                     </p>
 
-                    {wizardProgress && (
-                      <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border mb-4 max-h-64 overflow-y-auto">
-                        {wizardProgress}
-                      </pre>
+                    {/* Show confirmed book outline for reference */}
+                    {outlinePreview && (
+                      <details className="mb-4 border rounded-xl overflow-hidden" open>
+                        <summary className="cursor-pointer px-4 py-2 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100">
+                          全书大纲（已确认）
+                        </summary>
+                        <pre
+                          className="whitespace-pre-wrap text-sm text-gray-800 bg-white p-4 border-t max-h-72 overflow-y-auto leading-relaxed"
+                          style={{ fontFamily: "'Noto Serif SC', serif" }}
+                        >
+                          {outlinePreview}
+                        </pre>
+                      </details>
                     )}
 
-                    <button
-                      onClick={handleGenerateVolumeOutlines}
-                      disabled={isGenerating}
-                      className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                    >
-                      {isGenerating ? '正在生成...' : '生成分卷大纲'}
-                    </button>
-                  </div>
-                )}
-
-                {/* Step 3: Chapter outlines */}
-                {wizardStep === 3 && (
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900 mb-2">
-                      第三步：生成章节大纲
-                    </h2>
-                    <p className="text-gray-500 mb-4 text-sm">
-                      为每一卷生成章节大纲，并自动创建章节记录。
-                    </p>
+                    <div className="mb-4 flex items-center gap-3 flex-wrap">
+                      <label className="text-sm text-gray-700">共</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={volumeCountInput}
+                        onChange={(e) => setVolumeCountInput(e.target.value)}
+                        placeholder="自动"
+                        disabled={isGenerating}
+                        className="w-24 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 placeholder-gray-400"
+                      />
+                      <label className="text-sm text-gray-700">卷</label>
+                      <span className="text-xs text-gray-400">
+                        （留空则根据大纲自动判断）
+                      </span>
+                    </div>
 
                     {wizardProgress && (
                       <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border mb-4 max-h-64 overflow-y-auto">
@@ -1022,17 +970,99 @@ export default function DesktopWorkspace() {
 
                     <div className="flex gap-3">
                       <button
-                        onClick={handleGenerateChapterOutlines}
-                        disabled={isGenerating}
-                        className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                        onClick={handleGenerateVolumeOutlines}
+                        disabled={isGenerating || !confirmedOutlineId}
+                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                       >
-                        {isGenerating ? '正在生成...' : '生成章节大纲'}
+                        {isGenerating ? '正在生成...' : (volumes.length > 0 ? '补齐缺失卷' : '生成分卷大纲')}
                       </button>
                       <button
-                        onClick={() => setActiveView('editor')}
-                        className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 text-sm"
+                        onClick={() => setWizardStep(1)}
+                        disabled={isGenerating}
+                        className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-50 text-sm"
                       >
-                        跳过，直接进入编辑
+                        返回修改大纲
+                      </button>
+                    </div>
+
+                    {Object.keys(volumeOutlines).length > 0 && currentProject && (
+                      <div className="mt-6 space-y-2">
+                        <h3 className="text-sm font-semibold text-gray-700">已生成分卷</h3>
+                        {volumes
+                          .slice()
+                          .sort((a, b) => (a.volume_idx ?? a.volumeIdx) - (b.volume_idx ?? b.volumeIdx))
+                          .map((v) => {
+                            const vi = v.volume_idx ?? v.volumeIdx
+                            const vo = volumeOutlines[vi]
+                            if (!vo) return null
+                            return (
+                              <VolumeOutlineEditor
+                                key={v.id}
+                                volume={v}
+                                data={vo}
+                                projectId={currentProject.id}
+                                onSaved={(updated) => setVolumeOutlines((prev) => ({ ...prev, [vi]: updated }))}
+                              />
+                            )
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 3: Completion summary */}
+                {wizardStep === 3 && (
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">
+                      第三步：完成
+                    </h2>
+                    <p className="text-gray-500 mb-4 text-sm">
+                      分卷与章节已创建完毕。点击下方按钮进入编辑器开始写作，也可展开各卷查看分卷大纲。
+                    </p>
+
+                    {wizardProgress && (
+                      <div className="mb-4 px-4 py-2 bg-green-50 text-sm text-green-800 rounded-lg border border-green-200">
+                        {wizardProgress}
+                      </div>
+                    )}
+
+                    <div className="space-y-3 mb-4">
+                      {volumes.map((v) => {
+                        const volChapters = chapters.filter(
+                          (c) => (c.volume_id ?? c.volumeId) === v.id
+                        )
+                        const vo = volumeOutlines[v.volume_idx ?? v.volumeIdx]
+                        return (
+                          <details
+                            key={v.id}
+                            className="border rounded-xl overflow-hidden"
+                          >
+                            <summary className="cursor-pointer px-4 py-2.5 bg-gray-50 hover:bg-gray-100 flex items-center justify-between">
+                              <span className="font-medium text-gray-800">
+                                {v.title}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {volChapters.length} 章
+                              </span>
+                            </summary>
+                            <div className="px-4 py-3 bg-white border-t text-sm">
+                              {vo ? (
+                                <VolumeOutlineBlock data={vo} />
+                              ) : (
+                                <div className="text-gray-400">暂无大纲</div>
+                              )}
+                            </div>
+                          </details>
+                        )
+                      })}
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setActiveView('editor')}
+                        className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-medium"
+                      >
+                        开始创作
                       </button>
                     </div>
                   </div>
@@ -1077,10 +1107,16 @@ export default function DesktopWorkspace() {
                 <div className="max-w-3xl mx-auto pt-4 px-6">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-bold text-gray-900">全书大纲</h2>
-                    <button onClick={() => { setActiveView('wizard'); setWizardStep(2) }}
-                      className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg">
-                      继续生成分卷
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { setActiveView('wizard'); setWizardStep(1) }}
+                        className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        编辑大纲
+                      </button>
+                      <button onClick={() => { setActiveView('wizard'); setWizardStep(2) }}
+                        className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        查看分卷
+                      </button>
+                    </div>
                   </div>
                   <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-xl border leading-relaxed"
                     style={{ fontFamily: "'Noto Serif SC', serif" }}>
@@ -1095,6 +1131,16 @@ export default function DesktopWorkspace() {
                       {currentChapter.title}
                     </h3>
                     <div className="flex items-center gap-2">
+                      <ChapterTargetWordsEditor
+                        projectId={currentProject!.id}
+                        chapter={currentChapter}
+                        projectDefault={
+                          currentProject?.settings_json?.target_chapter_words ?? null
+                        }
+                        onSaved={() => {
+                          if (currentProject) loadProjectData(currentProject.id)
+                        }}
+                      />
                       <span className="text-xs text-gray-400">
                         {(
                           currentChapter.word_count ??
@@ -1157,6 +1203,7 @@ export default function DesktopWorkspace() {
           <div className="flex-1 overflow-y-auto">
             <CollapsibleSection title="生成设置" defaultOpen>
               <GeneratePanel
+                projectId={currentProject?.id}
                 onGenerate={handleGenerateChapter}
                 onGenerateOutline={handleGenerateOutline}
               />
@@ -1200,6 +1247,17 @@ export default function DesktopWorkspace() {
               </CollapsibleSection>
             )}
 
+            {currentProject && (
+              <CollapsibleSection title="Cascade 任务">
+                <div className="px-4">
+                  <CascadeTasksPanel
+                    projectId={currentProject.id}
+                    chapterId={selectedChapterId || undefined}
+                  />
+                </div>
+              </CollapsibleSection>
+            )}
+
             {/* Panels that need more space — open as drawers */}
             {currentProject && (
               <div className="border-b border-gray-200 px-4 py-3 space-y-2">
@@ -1234,107 +1292,214 @@ export default function DesktopWorkspace() {
 }
 
 // ================================================================
-// Utility: extract volume titles from generated outline text
+// Utility: parse volume outline JSON (handles markdown fences, partial output)
 // ================================================================
 
-function extractVolumeTitles(text: string): string[] {
-  const titles: string[] = []
-
-  // Try JSON first
+function parseVolumeOutline(text: string): Record<string, unknown> {
+  let cleaned = text.trim()
+  if (cleaned.startsWith('```')) {
+    const lines = cleaned.split('\n')
+    lines.shift()
+    if (lines.length > 0 && lines[lines.length - 1].trim() === '```') {
+      lines.pop()
+    }
+    cleaned = lines.join('\n').trim()
+  }
   try {
-    const parsed = JSON.parse(text)
-    if (Array.isArray(parsed)) {
-      for (const item of parsed) {
-        if (typeof item === 'string') titles.push(item)
-        else if (item && typeof item.title === 'string') titles.push(item.title)
-        else if (item && typeof item.name === 'string') titles.push(item.name)
-      }
-      if (titles.length > 0) return titles
-    }
-    if (parsed && Array.isArray(parsed.volumes)) {
-      for (const v of parsed.volumes) {
-        if (typeof v === 'string') titles.push(v)
-        else if (v && typeof v.title === 'string') titles.push(v.title)
-        else if (v && typeof v.name === 'string') titles.push(v.name)
-      }
-      if (titles.length > 0) return titles
-    }
+    const obj = JSON.parse(cleaned)
+    if (obj && typeof obj === 'object') return obj as Record<string, unknown>
   } catch {
-    // not JSON, try regex
+    // fall through
   }
-
-  // Regex patterns for volume titles
-  const patterns = [
-    /第[一二三四五六七八九十百千\d]+卷[：:]\s*(.+)/g,
-    /卷[一二三四五六七八九十百千\d]+[：:]\s*(.+)/g,
-    /Volume\s*\d+[：:]\s*(.+)/gi,
-    /第[一二三四五六七八九十百千\d]+卷\s+(.+)/g,
-  ]
-
-  for (const pattern of patterns) {
-    let match
-    while ((match = pattern.exec(text)) !== null) {
-      titles.push(match[1].trim())
-    }
-    if (titles.length > 0) return titles
-  }
-
-  // Fallback: if we found nothing, create 3 default volumes
-  if (titles.length === 0) {
-    titles.push('第一卷', '第二卷', '第三卷')
-  }
-
-  return titles
+  return { raw_text: text }
 }
 
-function extractChapterTitles(text: string): string[] {
-  const titles: string[] = []
+// ================================================================
+// Utility: detect volume count from a free-text book outline
+// ================================================================
 
-  // Try JSON first
-  try {
-    const parsed = JSON.parse(text)
-    if (Array.isArray(parsed)) {
-      for (const item of parsed) {
-        if (typeof item === 'string') titles.push(item)
-        else if (item && typeof item.title === 'string') titles.push(item.title)
-        else if (item && typeof item.name === 'string') titles.push(item.name)
-      }
-      if (titles.length > 0) return titles
-    }
-    if (parsed && Array.isArray(parsed.chapters)) {
-      for (const c of parsed.chapters) {
-        if (typeof c === 'string') titles.push(c)
-        else if (c && typeof c.title === 'string') titles.push(c.title)
-        else if (c && typeof c.name === 'string') titles.push(c.name)
-      }
-      if (titles.length > 0) return titles
-    }
-  } catch {
-    // not JSON
-  }
+const CN_NUM_MAP: Record<string, number> = {
+  一: 1, 二: 2, 三: 3, 四: 4, 五: 5,
+  六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+  十一: 11, 十二: 12, 十三: 13, 十四: 14, 十五: 15,
+  十六: 16, 十七: 17, 十八: 18, 十九: 19, 二十: 20,
+}
 
-  // Regex patterns for chapter titles
-  const patterns = [
-    /第[一二三四五六七八九十百千\d]+章[：:]\s*(.+)/g,
-    /章[一二三四五六七八九十百千\d]+[：:]\s*(.+)/g,
-    /Chapter\s*\d+[：:]\s*(.+)/gi,
-    /第[一二三四五六七八九十百千\d]+章\s+(.+)/g,
+function detectVolumeCount(text: string): number {
+  if (!text) return 0
+  const indices = new Set<number>()
+
+  // Arabic numerals: 第1卷, 第 2 卷, 卷3, Volume 4
+  const arabicPatterns = [
+    /第\s*(\d{1,2})\s*卷/g,
+    /卷\s*(\d{1,2})/g,
+    /Volume\s+(\d{1,2})/gi,
+    /Vol\.?\s*(\d{1,2})/gi,
   ]
-
-  for (const pattern of patterns) {
-    let match
-    while ((match = pattern.exec(text)) !== null) {
-      titles.push(match[1].trim())
-    }
-    if (titles.length > 0) return titles
-  }
-
-  // Fallback: create some default chapters
-  if (titles.length === 0) {
-    for (let i = 1; i <= 10; i++) {
-      titles.push(`第${i}章`)
+  for (const re of arabicPatterns) {
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      const n = parseInt(m[1], 10)
+      if (n >= 1 && n <= 50) indices.add(n)
     }
   }
 
-  return titles
+  // Chinese numerals: 第一卷 ... 第二十卷
+  const cnRe = /第([一二三四五六七八九十]{1,3})卷/g
+  let m: RegExpExecArray | null
+  while ((m = cnRe.exec(text)) !== null) {
+    const n = CN_NUM_MAP[m[1]]
+    if (n) indices.add(n)
+  }
+
+  // Non-numbered volumes: 前传/外传/番外/序卷/终章/终卷. Each unique keyword = +1
+  const keywords = ['前传', '外传', '番外', '序卷', '终章', '终卷']
+  let extras = 0
+  for (const kw of keywords) {
+    if (text.includes(kw)) extras += 1
+  }
+
+  if (indices.size === 0 && extras === 0) return 0
+  return indices.size + extras
+}
+
+// ================================================================
+// End of module
+// ================================================================
+
+function ChapterTargetWordsEditor({
+  projectId,
+  chapter,
+  projectDefault,
+  onSaved,
+}: {
+  projectId: string
+  chapter: Chapter
+  projectDefault: number | null | undefined
+  onSaved: () => void
+}) {
+  const initial = (chapter as unknown as { target_word_count?: number | null }).target_word_count ?? null
+  const [text, setText] = useState(initial != null ? String(initial) : '')
+  const [editing, setEditing] = useState(false)
+  const effective = initial != null ? initial : (projectDefault ?? null)
+  const save = async () => {
+    const trimmed = text.trim()
+    const n: number | null = trimmed ? parseInt(trimmed, 10) : null
+    if (trimmed && (Number.isNaN(n!) || (n as number) <= 0)) return
+    await apiFetch(`/api/projects/${projectId}/chapters/${chapter.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ target_word_count: n }),
+    })
+    setEditing(false)
+    onSaved()
+  }
+  return (
+    <span className="text-xs text-gray-500">
+      {editing ? (
+        <>
+          目标：
+          <input
+            type="number"
+            min={0}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+            autoFocus
+            className="w-20 px-1 py-0.5 text-xs border border-blue-300 rounded ml-1"
+            placeholder={projectDefault ? String(projectDefault) : '默认'}
+          />
+        </>
+      ) : (
+        <button onClick={() => setEditing(true)} className="hover:text-gray-800">
+          目标 {effective ? `${effective.toLocaleString()} 字` : '未设'}
+          {initial == null && projectDefault ? '（默认）' : ''}
+        </button>
+      )}
+    </span>
+  )
+}
+
+function VolumeOutlineEditor({
+  volume,
+  data,
+  projectId,
+  onSaved,
+}: {
+  volume: Volume
+  data: Record<string, unknown>
+  projectId: string
+  onSaved: (data: Record<string, unknown>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(() => {
+    if (typeof data.raw_text === 'string') return data.raw_text
+    return JSON.stringify(data, null, 2)
+  })
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const outlines = await apiFetch<OutlineRes[]>(
+        `/api/projects/${projectId}/outlines?level=volume`
+      )
+      const target = outlines.find((o) => {
+        const cj = (o.content_json as Record<string, unknown>) || {}
+        return cj.volume_idx === (volume.volume_idx ?? volume.volumeIdx)
+      })
+      if (!target) return
+      let contentJson: Record<string, unknown>
+      try {
+        contentJson = JSON.parse(text)
+      } catch {
+        contentJson = { ...data, raw_text: text }
+      }
+      await apiFetch(`/api/projects/${projectId}/outlines/${target.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content_json: contentJson }),
+      })
+      onSaved(contentJson)
+      setEditing(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <details className="border rounded-xl overflow-hidden">
+      <summary className="cursor-pointer px-4 py-2 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between">
+        <span>{volume.title}</span>
+        <button
+          onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {editing ? '取消' : '编辑'}
+        </button>
+      </summary>
+      <div className="px-4 py-3 bg-white border-t text-sm">
+        {editing ? (
+          <div>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="w-full h-64 px-3 py-2 text-xs border border-gray-300 rounded-lg font-mono resize-none"
+            />
+            <div className="mt-2">
+              <button
+                onClick={save}
+                disabled={busy}
+                className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg disabled:opacity-50"
+              >
+                {busy ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <VolumeOutlineBlock data={data} />
+        )}
+      </div>
+    </details>
+  )
 }

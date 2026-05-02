@@ -113,15 +113,78 @@ async def batch_generate(
 
 
 @router.get("/stats/tokens")
-async def get_token_stats() -> dict:
-    """Get token usage and cache statistics."""
+async def get_token_stats(
+    project_id: str | None = None,
+    since_hours: int | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get token usage statistics.
+
+    Reads from the persistent ``llm_call_logs`` table so the value survives
+    backend restarts (the legacy in-memory counter from
+    ``ModelRouter.get_usage_stats()`` is also returned for compatibility).
+
+    Query params:
+      project_id: optional filter to a single project.
+      since_hours: optional time window (e.g. 24, 168). Default = all-time.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, func, text as _text
+    from app.models.call_log import LLMCallLog as LlmCallLog
     from app.services.model_router import get_model_router
     from app.services.semantic_cache import SemanticCache
 
-    router = get_model_router()
+    q = select(
+        func.count(LlmCallLog.id).label("calls"),
+        func.coalesce(func.sum(LlmCallLog.input_tokens), 0).label("input_tokens"),
+        func.coalesce(func.sum(LlmCallLog.output_tokens), 0).label("output_tokens"),
+    )
+    if project_id:
+        q = q.where(LlmCallLog.project_id == project_id)
+    if since_hours and since_hours > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=int(since_hours))
+        q = q.where(LlmCallLog.created_at >= cutoff)
+    row = (await db.execute(q)).one()
+    total_input = int(row.input_tokens or 0)
+    total_output = int(row.output_tokens or 0)
+
+    # Per-task breakdown (limited to the same scope).
+    bq = select(
+        LlmCallLog.task_type,
+        func.count(LlmCallLog.id).label("calls"),
+        func.coalesce(func.sum(LlmCallLog.input_tokens), 0).label("i"),
+        func.coalesce(func.sum(LlmCallLog.output_tokens), 0).label("o"),
+    ).group_by(LlmCallLog.task_type).order_by(func.count(LlmCallLog.id).desc())
+    if project_id:
+        bq = bq.where(LlmCallLog.project_id == project_id)
+    if since_hours and since_hours > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=int(since_hours))
+        bq = bq.where(LlmCallLog.created_at >= cutoff)
+    by_task = [
+        {
+            "task_type": r.task_type,
+            "calls": int(r.calls),
+            "input_tokens": int(r.i or 0),
+            "output_tokens": int(r.o or 0),
+        }
+        for r in (await db.execute(bq)).all()
+    ]
+
     cache = SemanticCache()
+    legacy = get_model_router().get_usage_stats()
 
     return {
-        "token_usage": router.get_usage_stats(),
+        "token_usage": {
+            "total_calls": int(row.calls or 0),
+            "total_input_tokens": total_input,
+            "total_output_tokens": total_output,
+            "total_tokens": total_input + total_output,
+            "by_task_type": by_task,
+            "scope": {
+                "project_id": project_id,
+                "since_hours": since_hours,
+            },
+        },
+        "token_usage_inmemory": legacy,
         "cache_stats": cache.get_stats(),
     }
