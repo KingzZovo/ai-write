@@ -1047,6 +1047,17 @@ export default function DesktopWorkspace() {
                         </div>
                       </div>
                     )}
+                    {(!volumePlan || volumePlan.length === 0) && outlinePreview && (
+                      <div className="mb-4 border border-amber-200 bg-amber-50 rounded-xl p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-amber-900">⚠ AI 未输出结构化卷规划</span>
+                          <span className="text-xs text-amber-700">(探测到 {detectVolumeCount(outlinePreview) || 3} 卷，已作为 fallback)</span>
+                        </div>
+                        <div className="text-xs text-amber-800">
+                          请手动确认 / 调整下方“共 N 卷”，或返回修改大纲 让其明确输出 {"<volume-plan>"} JSON 块。
+                        </div>
+                      </div>
+                    )}
                     <div className="mb-4 flex items-center gap-3 flex-wrap">
                       <label className="text-sm text-gray-700">共</label>
                       <input

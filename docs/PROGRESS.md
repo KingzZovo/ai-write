@@ -86,3 +86,8 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 
 - 后端 outlines.py PATCH /{outline_id}/volume-plan 同步 Volume.title
 - 前端 卷规划卡片 加“编辑/保存/取消”，可调卷名/章数
+
+## 2026-05-03 05:25 · PR-OL4 fallback 卡片
+
+- step 2 在 volumePlan 为 null 且 outlinePreview 存在时 显示琰珀色提示卡
+- 提示 包含 detectVolumeCount() 探测结果 作 fallback

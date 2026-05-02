@@ -127,3 +127,19 @@
 ### Next
 - PR-OL4: detectVolumeCount fallback 路径验证 (无 volume_plan 时 仍可创项目)
 - PR-OL5: outline edit 编辑后 试 cascade 重生 章节摘要 同步
+
+
+## 2026-05-03 (PR-OL4) · fallback 提示卡片
+
+### Change
+- frontend/DesktopWorkspace.tsx step 2:
+  * 当 volumePlan 为 null 且 outlinePreview 存在时，顶部显示琰珀色 fallback 卡片
+  * 提示“AI 未输出结构化卷规划” + detectVolumeCount() 探测的卷数
+  * 引导用户手动调整下方 input 或返回修改大纲
+
+### Verification
+- frontend tsc + build OK
+- E2E：如果 LLM 输出中缺 <volume-plan> 块，step 2 顶部出现琰珀色提示卡片
+
+### Next
+- PR-OL5: outline edit 后 cascade 重生章节摘要
