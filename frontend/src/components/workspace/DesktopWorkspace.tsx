@@ -1137,6 +1137,13 @@ export default function DesktopWorkspace() {
                                 data={vo}
                                 projectId={currentProject.id}
                                 onSaved={(updated) => setVolumeOutlines((prev) => ({ ...prev, [vi]: updated }))}
+                                onVolumeChanged={async () => {
+                                  if (!currentProject) return
+                                  try {
+                                    const refreshed = await apiFetch<Volume[]>(`/api/projects/${currentProject.id}/volumes`)
+                                    setVolumes(refreshed)
+                                  } catch {}
+                                }}
                               />
                             )
                           })}
@@ -1560,11 +1567,13 @@ function VolumeOutlineEditor({
   data,
   projectId,
   onSaved,
+  onVolumeChanged,
 }: {
   volume: Volume
   data: Record<string, unknown>
   projectId: string
   onSaved: (data: Record<string, unknown>) => void
+  onVolumeChanged?: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(() => {
@@ -1588,10 +1597,55 @@ function VolumeOutlineEditor({
       // Update local volume reference (safe — volume is a prop snapshot, parent re-fetch will eventually update).
       ;(volume as { title: string }).title = updated.title
       setEditingTitle(false)
+      onVolumeChanged?.()
     } catch (err) {
       console.error("保存卷名失败:", err)
     } finally {
       setSavingTitle(false)
+    }
+  }
+
+  // PR-OL8: move (swap volume_idx) and delete.
+  const moveVolume = async (direction: "up" | "down") => {
+    if (!confirm(`确定${direction === "up" ? "上" : "下"}移 《${volume.title}》吗？`)) return
+    try {
+      const allVolumes = await apiFetch<Volume[]>(`/api/projects/${projectId}/volumes`)
+      const sorted = [...allVolumes].sort(
+        (a, b) => (a.volume_idx ?? a.volumeIdx) - (b.volume_idx ?? b.volumeIdx),
+      )
+      const myIdx = volume.volume_idx ?? volume.volumeIdx
+      const targetIdx = direction === "up" ? myIdx - 1 : myIdx + 1
+      const target = sorted.find((v) => (v.volume_idx ?? v.volumeIdx) === targetIdx)
+      if (!target) {
+        alert(direction === "up" ? "已是第一卷" : "已是最后一卷")
+        return
+      }
+      // Swap: 先把当前 改为一个临时卷号，再交换（避免其他 uq冲突，虽然 model 没 uq 但防万一）
+      const TMP = 9999
+      await apiFetch(`/api/projects/${projectId}/volumes/${volume.id}`, {
+        method: "PUT", body: JSON.stringify({ volume_idx: TMP }),
+      })
+      await apiFetch(`/api/projects/${projectId}/volumes/${target.id}`, {
+        method: "PUT", body: JSON.stringify({ volume_idx: myIdx }),
+      })
+      await apiFetch(`/api/projects/${projectId}/volumes/${volume.id}`, {
+        method: "PUT", body: JSON.stringify({ volume_idx: targetIdx }),
+      })
+      onVolumeChanged?.()
+    } catch (err) {
+      console.error("移动卷失败:", err)
+      alert("移动失败，请重试。")
+    }
+  }
+
+  const deleteVolume = async () => {
+    if (!confirm(`确定删除 《${volume.title}》 及其所有章节吗？此操作不可逆。`)) return
+    try {
+      await apiFetch(`/api/projects/${projectId}/volumes/${volume.id}`, { method: "DELETE" })
+      onVolumeChanged?.()
+    } catch (err) {
+      console.error("删除卷失败:", err)
+      alert("删除失败，请重试。")
     }
   }
 
@@ -1658,12 +1712,29 @@ function VolumeOutlineEditor({
             </>
           )}
         </div>
-        <button
-          onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
-          className="text-xs text-blue-600 hover:underline"
-        >
-          {editing ? '取消编辑' : '编辑大纲'}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.preventDefault(); moveVolume("up") }}
+            className="text-xs px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
+            title="上移"
+          >↑</button>
+          <button
+            onClick={(e) => { e.preventDefault(); moveVolume("down") }}
+            className="text-xs px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
+            title="下移"
+          >↓</button>
+          <button
+            onClick={(e) => { e.preventDefault(); deleteVolume() }}
+            className="text-xs px-1.5 py-0.5 rounded text-red-600 hover:bg-red-50"
+            title="删除本卷"
+          >✖</button>
+          <button
+            onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
+            className="text-xs text-blue-600 hover:underline ml-2"
+          >
+            {editing ? '取消编辑' : '编辑大纲'}
+          </button>
+        </div>
       </summary>
       <div className="px-4 py-3 bg-white border-t text-sm">
         {editing ? (
