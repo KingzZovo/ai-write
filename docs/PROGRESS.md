@@ -29,7 +29,7 @@
 **阶段结果**
 | 阶段 | 状态 | 产出 |
 |---|---|---|
-| P1 参考书预处理 | ✅ | 3 本 status=ready (《龙族》×2 / 《三体》×1)、qdrant 多维 collection 全点亮 |
+| P1 参考书预处理 | ✅ | 3 本 status=ready (《龙族全套》/《天之炽》/《天之炽②女武神》（江南）)、qdrant 多维 collection 全点亮 |
 | P2 创建项目 | ✅ | PID 如上 |
 | P3 书级大纲 | ✅ | OID `f9af7582...` 6766 chars、is_confirmed=1 |
 | P4 分卷大纲 ×3 | ✅ | TID 3个、并发 60-70s、章节摘要 JSON 30×{title,summary,key_events} |
