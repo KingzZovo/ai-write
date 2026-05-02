@@ -1,24 +1,32 @@
 # Handoff TODO（可直接打勾执行）
 
-## P0 本地状态
-- [ ] `git fetch origin main`
-- [ ] `git reset --hard origin/main`
-- [ ] `git status` = clean
-- [ ] `git stash list` 检查是否有历史 stash
-- [ ] 如需恢复，只恢复明确的 md 文件；不要恢复 `.audit-* / backups / .coverage`
+## P0 本地状态（仅本机执行）
+- [x] `git fetch origin main` ✅ 2026-05-01（AWS MCP shell）
+- [x] 丢弃本地未提交的 `backend/app/api/settings.py`（`git diff HEAD origin/main` 与本地 worktree diff 完全一致 = origin/main PR #3 内容 → 安全 `git checkout --`）
+- [x] `git stash drop stash@{0}`（stash 内容 = origin/main PR #2 README + ITERATION_PLAN 子集 → 安全 drop）
+- [x] `git pull --ff-only origin main` → HEAD `17fb371` (PR #5)
+- [x] `git status` = working tree clean，stash 列表为空
 
 ## P1 文档（必须）
-- [ ] `docs/RUNBOOK.md` 写清：Neo4j truth + PG projection
-- [ ] 写清正确写入口：`/neo4j-settings/*`、`/outlines/{id}/extract-settings`
-- [ ] 写清手动 materialize：`/api/admin/entities/materialize`
-- [ ] 写清 legacy 410：`/world-rules`、`/relationships` 写接口
+- [x] `docs/RUNBOOK.md` 写清：Neo4j truth + PG projection（PR #6）
+- [x] 修正 README §设定集数据源约定 + `backend/app/api/settings.py` 410 message——明确“实际入口 = `extract-settings`；v1.10 计划推 `/neo4j-settings/*` + `/admin/entities/materialize`”（本 PR）
+- [x] 写清正确写入口：main 上是 `/outlines/{id}/extract-settings`；README 描述的 `/neo4j-settings/*` 与 `/admin/entities/materialize` 不在 main（RUNBOOK §1）
+- [x] 写清 legacy 410：`/world-rules`、`/relationships` 写接口（RUNBOOK §3）
+- [x] 标注 foreshadows 仍 PG 直写（待 follow-up）（RUNBOOK §3 + PROGRESS §3）
+- [x] 把 service 层残留 `foreshadow_manager.py:84` 也写进 RUNBOOK / PROGRESS（不止 api 层）
 
 ## P2 防回归（清残留 PG 直写）
-- [ ] grep 扫 INSERT/UPDATE/DELETE（world_rules/relationships/locations/foreshadows）
-- [ ] grep 扫 `WorldRule(` / `Relationship(` / `db.add(...WorldRule...)`
-- [ ] 对发现点：迁移到 Neo4j 写入 + materialize 或禁用并写文档
+- [x] 远端 search_code 扫描 INSERT/UPDATE/DELETE（world_rules/relationships/locations/foreshadows）= 0 命中
+- [x] 远端 search_code 扫描 `WorldRule(` / `db.add WorldRule` / `db.add Relationship` = 0 命中
+- [x] 本地 `grep -RnE` 同上模式（`backend/app`）= 除 `models/project.py` 类定义（误匹配，正常）外 0 行
+- [x] 本地 grep `Foreshadow(` 残留：3 处（`api/foreshadows.py:111,179`、`services/foreshadow_manager.py:84`），列入 follow-up
+- [ ] foreshadows 路线决策 + follow-up PR（选项 A：纳入 Neo4j；选项 B：显式排除 + 回归测试）
 
-## P3 验收
-- [ ] `python -m compileall -q backend/app`
-- [ ] `PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh`
-- [ ] 结果记录到 PR 描述中（或 RUNBOOK 的验收段落）
+## P3 验收（仅本机）
+- [x] `python3 -m compileall -q backend/app` ✅ COMPILEALL_OK（2026-05-01，AWS MCP shell）
+- [x] `scripts/verify_entity_writeback_v19.sh` 入仓（本 PR，151 行，`bash -n` SYNTAX_OK）
+- [ ] 在有真实 PROJECT_ID + 启动后端服务的环境跑：`PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh`
+- [x] 结果回填到本 PR 描述 Verification 段（详见 PR 描述）
+
+## P4 架构 vs 文档一致性（新增）
+- [ ] 决策：是否把 `feature/v1.0-big-bang` 上的 `neo4j_settings.py` + `admin_entities.py`（commit `dc98363` 起的 v1.9 链）合并到 main，或反过来修订 README 把这俩路由族标为 v1.10 计划

@@ -254,14 +254,16 @@ celery -A app.tasks:celery_app beat --loglevel=info
 - **Neo4j 是真相源（source of truth）**：所有写入优先落 Neo4j
 - **Postgres 是读优化投影（read model）**：通过 materialize 从 Neo4j 投影回 PG
 
-常用写入口：
+常用写入口（**当前 main 实际可用**）：
 
-- `POST /api/projects/{project_id}/neo4j-settings/*`
-- `POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings`
+- `POST /api/projects/{project_id}/outlines/{outline_id}/extract-settings`——Extractor 抽取 `characters / world_rules / relationships` 并写入 Neo4j，内部调用 `_materialize_entities_to_postgres()` 投影回 PG。入口：`backend/app/api/outlines.py:152`；materialize 函数：`backend/app/tasks/entity_tasks.py:47`。
 
-手动投影：
+计划中的入口（**v1.10 待实现**，本仓库任何分支都不包含）：
 
-- `POST /api/admin/entities/materialize`
+- `POST /api/projects/{project_id}/neo4j-settings/*`——通用 Neo4j 设定集写入接口（world-rules / relationships / locations / character-states）
+- `POST /api/admin/entities/materialize`——手动刷新 PG 投影
+
+> 文档漂移修正（2026-05-02）：以上两个路由族曾仅在未合并的中间提交中出现（commit `dc98363 feat(v1.9): add neo4j settings write API + materialize projection`、`08b0494 feat(v1.9): add admin materialize endpoint`），后续在 `feature/v1.0-big-bang` 重构中被删除；`origin/main` 与 `origin/feature/v1.0-big-bang` 双面均**不包含** `backend/app/api/neo4j_settings.py` / `backend/app/api/admin_entities.py`。详见 `docs/RUNBOOK.md §1` 与 `docs/HANDOFF_EXECUTION.md`。
 
 **当前版本 v0.4.0** — 项目管理、工作区 UX、数据质量大幅提升：
 - `/` 项目列表 + `/trash` 回收站 + 软删除/批量/重命名

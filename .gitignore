@@ -33,3 +33,15 @@ qdrant_data/
 neo4j_data/
 .code-review-graph/
 .worktrees/
+
+# Audit / handoff artifacts
+.audit-*/
+backups/
+
+# Coverage
+backend/.coverage
+.coverage
+.coverage.*
+
+# SSE dump files
+*.sse
