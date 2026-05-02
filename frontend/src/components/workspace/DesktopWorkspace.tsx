@@ -642,7 +642,7 @@ export default function DesktopWorkspace() {
       {
         project_id: currentProject.id,
         chapter_id: selectedChapterId,
-        style_id: getSelectedStyleId(currentProject.id),
+        style_id: getSelectedStyleId(),
       },
       (text) => {
         appendStreamContent(text)

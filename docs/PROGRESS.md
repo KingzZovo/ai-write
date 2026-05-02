@@ -47,3 +47,25 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 **迁移 / 入口**
 - 工作区右侧抽屉 “角色关系” (drawerPanel='relationship') 现在渲染 `<CharacterCardPanel />`， `<RelationshipGraph />` 不再被使用（文件保留，以防后续反棔）。如需重新启用图谱可手动在 DesktopWorkspace.tsx 改回。
 
+
+
+## 2026-05-03 · 人物卡 / 右侧按钮 / i18n / anti-AI 补充
+
+**问题发现**
+- `characters.profile_json` 48/48 全是 `{}`；人物详情实际存在 `character_states.status_json` 中。人物卡“加载不出”的根原。
+- 4 个右侧生成按钮点击即重生，无查看入口、无确认。
+- StylePanel/CascadePanel 多处英文文案未中文化。
+
+**本轮变更**
+- `CharacterCardPanel.tsx` v2：
+  - 启发式重要程度分组（主角/关键剧情角色/配角/路人） = relCnt*3 + stateCnt*1。
+  - “隐藏路人” 开关默认开。
+  - profile + 最新 status_json 合并展示（绕开 profile_json 空表问题）。
+  - 状态变化、人物关系完整入卡。
+- `GeneratePanel.tsx`：3 个大纲按钮拆“📖 查看” / “↺ 重生”双态；重生弹 ConfirmModal。
+- StylePanel + CascadePanel 中文化。
+- 《江南综合写法》 anti_ai_rules 由 3 条 → 8 条，补充朱雀检测报告重灾区的 5 条反 AI 规则。
+- `docs/ITERATION_PLAN.md` 追加“大纲流水线重构” 5 个 PR 拆分。
+
+**依然待办（C 块）**
+- 按 ITERATION_PLAN.md 拆五个 PR 调整 outline pipeline。
