@@ -256,10 +256,16 @@ async def _run_async_generation_impl(task_id: str):
                 if not ch:
                     raise ValueError("章节不存在")
                 gen = ChapterGenerator()
+                # v0.5+ ChapterGenerator: ContextPack + PromptRegistry build context;
+                # style/world_rules/prev_chapter are pulled from db, not passed in.
+                user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
                 async for chunk in gen.generate_stream(
-                    project_settings={}, world_rules=[], book_outline_summary="",
-                    chapter_outline=ch.outline_json or {},
-                    previous_chapter_text="", style_instruction=style_text,
+                    project_id=project_id,
+                    volume_id=ch.volume_id,
+                    chapter_idx=ch.chapter_idx,
+                    db=db,
+                    chapter_id=ch.id,
+                    user_instruction=user_instr,
                 ):
                     collected.append(chunk)
                     if len(collected) % 5 == 0:
