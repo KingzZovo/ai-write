@@ -37,7 +37,11 @@
 - [ ] 烟测：`POST /api/admin/entities/materialize` 返回 200 + 计数指标
 - [ ] 真实环境跑 `verify_entity_writeback_v19.sh`，结果回填到部署 PR
 
-## P6 仓库清理（可选，非阻塞）
-- [ ] 关闭 / 删除 `origin/feature/v1.0-big-bang`（其内容已 100% 在 main）
-- [ ] 关闭 / 删除 11 个 `origin/release/v1.*` 分支（已 merge）
+## P6 仓库清理 ✅ 已关闭（2026-05-02 晚）
+- [x] 建归档 tag `archive/feature-v1.0-big-bang` → `73e7897`（237 commit 历史永久可访）
+- [x] 删除 `origin/feature/v1.0-big-bang`（内容已 100% 在 main，历史锁在 archive tag）
+- [x] 删除 11 个 `origin/release/v1.*` 分支（已 merge进 main）
+- [x] 删除 4 个残留 doc/fix 分支（`docs/handoff-execution-v1` / `docs/maintain-readme-iteration-plan` / `docs/progress-md-v1` / `fix/disable-legacy-settings-writes`，都已 merge）
+- [x] 删除 chore 分支（`chore/post-v1.9-handoff-sync` / `chore/runbook-and-handoff-sync` / `docs/follow-up-plan`）
+- [x] **最终状态**：origin 上仅剩 `main` + `archive/*` tag
 - [ ] 如要继续推进 v2.0+，参考 `ITERATION_PLAN.md` Iteration 系列
