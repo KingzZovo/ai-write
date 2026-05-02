@@ -111,17 +111,144 @@ async def batch_generate(
         headers=SSE_HEADERS,
     )
 
+# ============================================================================
+# Token statistics — sourced from llm_call_logs (DB) instead of in-memory
+# router counters that reset on every process restart.
+# ============================================================================
+
+from datetime import datetime, timedelta, timezone as _tz
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import func, select, and_
+
+
+def _parse_since(since: str | None) -> datetime | None:
+    """Parse a relative window like '7d' / '24h' / '90m', an ISO-8601 string,
+    or None. Returns a tz-aware datetime in UTC, or None if cannot parse.
+    """
+    if not since:
+        return None
+    s = since.strip().lower()
+    try:
+        if s.endswith("d"):
+            return datetime.now(_tz.utc) - timedelta(days=int(s[:-1]))
+        if s.endswith("h"):
+            return datetime.now(_tz.utc) - timedelta(hours=int(s[:-1]))
+        if s.endswith("m"):
+            return datetime.now(_tz.utc) - timedelta(minutes=int(s[:-1]))
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(since.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
 
 @router.get("/stats/tokens")
-async def get_token_stats() -> dict:
-    """Get token usage and cache statistics."""
-    from app.services.model_router import get_model_router
+async def get_token_stats(
+    project_id: str | None = None,
+    since: str | None = None,
+    task_type: str | None = None,
+    group_by: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Aggregate token usage from the ``llm_call_logs`` DB table.
+
+    Query params:
+      - ``project_id``: scope to one project. Omit for global stats.
+      - ``since``: relative window ("7d" / "24h" / "90m") or ISO-8601 datetime.
+      - ``task_type``: filter by a single task type (e.g. "chapter", "outline").
+      - ``group_by``: one of ``task_type`` / ``tier`` / ``model``. When set,
+        an additional ``breakdown`` array is returned keyed by that field.
+
+    Backwards-compatible response shape (used by ``TokenDashboard.tsx``):
+      ``totalInputTokens`` / ``totalOutputTokens`` / ``totalTokens`` /
+      ``cacheHits`` / ``cacheMisses`` / ``cacheHitRate`` are top-level keys.
+    The richer payload (``token_usage`` / ``cache_stats`` / ``breakdown`` /
+    ``filters``) lives alongside for newer consumers.
+    """
+    from app.models.call_log import LLMCallLog
     from app.services.semantic_cache import SemanticCache
 
-    router = get_model_router()
-    cache = SemanticCache()
+    conds: list = []
+    if project_id:
+        try:
+            conds.append(LLMCallLog.project_id == UUID(project_id))
+        except ValueError:
+            conds.append(LLMCallLog.project_id == project_id)
+    cutoff = _parse_since(since)
+    if cutoff is not None:
+        conds.append(LLMCallLog.created_at >= cutoff)
+    if task_type:
+        conds.append(LLMCallLog.task_type == task_type)
+
+    where = and_(*conds) if conds else None
+
+    base = select(
+        func.coalesce(func.sum(LLMCallLog.input_tokens), 0).label("in_tok"),
+        func.coalesce(func.sum(LLMCallLog.output_tokens), 0).label("out_tok"),
+        func.count(LLMCallLog.id).label("calls"),
+    )
+    if where is not None:
+        base = base.where(where)
+    row = (await db.execute(base)).one()
+    in_tok = int(row.in_tok or 0)
+    out_tok = int(row.out_tok or 0)
+    total = in_tok + out_tok
+
+    breakdown: list[dict[str, Any]] = []
+    if group_by in ("task_type", "tier", "model"):
+        col = {
+            "task_type": LLMCallLog.task_type,
+            "tier": LLMCallLog.tier_used,
+            "model": LLMCallLog.model,
+        }[group_by]
+        gq = select(
+            col.label("key"),
+            func.coalesce(func.sum(LLMCallLog.input_tokens), 0).label("in_tok"),
+            func.coalesce(func.sum(LLMCallLog.output_tokens), 0).label("out_tok"),
+            func.count(LLMCallLog.id).label("calls"),
+        ).group_by(col).order_by(func.sum(LLMCallLog.input_tokens + LLMCallLog.output_tokens).desc())
+        if where is not None:
+            gq = gq.where(where)
+        gq = gq.limit(20)
+        for r in (await db.execute(gq)).all():
+            breakdown.append({
+                "key": r.key or "(unknown)",
+                "input_tokens": int(r.in_tok or 0),
+                "output_tokens": int(r.out_tok or 0),
+                "total_tokens": int((r.in_tok or 0) + (r.out_tok or 0)),
+                "calls": int(r.calls or 0),
+            })
+
+    cache_stats = SemanticCache().get_stats()
+    cache_hits = int(cache_stats.get("hits", 0) or 0)
+    cache_misses = int(cache_stats.get("misses", 0) or 0)
+    cache_total = cache_hits + cache_misses
+    cache_hit_rate = (cache_hits / cache_total) if cache_total > 0 else 0.0
 
     return {
-        "token_usage": router.get_usage_stats(),
-        "cache_stats": cache.get_stats(),
+        # Backwards-compatible flat keys (used by frontend TokenDashboard)
+        "totalInputTokens": in_tok,
+        "totalOutputTokens": out_tok,
+        "totalTokens": total,
+        "cacheHits": cache_hits,
+        "cacheMisses": cache_misses,
+        "cacheHitRate": cache_hit_rate,
+        # Richer structured payload
+        "token_usage": {
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+            "total_tokens": total,
+            "calls": int(row.calls or 0),
+        },
+        "cache_stats": cache_stats,
+        "breakdown": breakdown,
+        "filters": {
+            "project_id": project_id,
+            "since": since,
+            "task_type": task_type,
+            "group_by": group_by,
+        },
     }
