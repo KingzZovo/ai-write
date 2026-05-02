@@ -20,6 +20,30 @@
 
 ## 2. 已完成（按时间倒序）
 
+### 2026-05-02 晚 (E2E 全业务验证 + chapter generate-stream 签名修复)
+
+**场景**：全链路 E2E 跑一遇 — 拆分参考小说 → 提取/蒸馏 → 向量化/入库 → 创建小说 → 书级大纲 → 分卷大纲×3 → 章节大纲×30 → 生成 30 章正文。
+
+**项目**：`0eaeff87-2f91-452c-812c-b4bcf2924fe2` (《城下听潮》×仿《龙族》中二都市风)
+
+**阶段结果**
+| 阶段 | 状态 | 产出 |
+|---|---|---|
+| P1 参考书预处理 | ✅ | 3 本 status=ready (《龙族》×2 / 《三体》×1)、qdrant 多维 collection 全点亮 |
+| P2 创建项目 | ✅ | PID 如上 |
+| P3 书级大纲 | ✅ | OID `f9af7582...` 6766 chars、is_confirmed=1 |
+| P4 分卷大纲 ×3 | ✅ | TID 3个、并发 60-70s、章节摘要 JSON 30×{title,summary,key_events} |
+| P5 物化 PG | ✅ | 3 volumes + 30 chapters、每章携 outline_json |
+| P6 生成 30 章正文 | ✅ | **需修复** chapter generate_stream 签名 bug (见下) 后 30/30 全过 |
+
+**Chapter 产出**：30/30 done，277,882 字，avg 9263，min 7377，max 13155；单章耗时 178~280s（4-worker 并发 ≈27 min 跑完 30 章）。抽样 v1.c1 / v2.c5 / v3.c10 剧情连贯、人物（林渡、乔野、闻栖枝）跨卷一致、语言风格合「中二热血×现代都市」。
+
+**Bug fix (PR #21)**：`backend/app/tasks/knowledge_tasks.py` 调用 `ChapterGenerator.generate_stream` 仍按 v0.4 签名传 `project_settings/world_rules/...`，与 v0.5+ 新签名（`*, project_id, volume_id, chapter_idx, db, chapter_id, user_instruction`）不匹配，导致所有 `task_type=chapter` 的 celery 任务 0.06s 立刻 TypeError。patch +9/-3，合并后 E2E 过。
+
+**后续（未起）**
+- 章节生成未自动触发 entity 抽取/cascade/evaluation（`characters=0, foreshadows=0, cascade_tasks=0`），如需可手动调用 `entities.extract_chapter` / `evaluations.evaluate_chapter` celery task 或接入生成后钩子。
+- 建议加 `tests/tasks/test_run_async_generation_chapter.py` mock ChapterGenerator 锁定签名。
+
 ### 2026-05-02 — `feature/v1.0-big-bang` 237 commit 全量回收（11 个 release PR）
 
 按版本号干净拆分，每个 PR 独立 cherry-pick + 解决冲突 + compileall + push + open + merge：
