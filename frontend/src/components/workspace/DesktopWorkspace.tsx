@@ -131,6 +131,9 @@ export default function DesktopWorkspace() {
   const [outlinePreview, setOutlinePreview] = useState('')
   // PR-OL1: AI-suggested volume plan parsed from staged SSE done event.
   const [volumePlan, setVolumePlan] = useState<Array<{idx:number; title:string; theme:string; core_conflict:string; est_chapters:number}> | null>(null)
+  // PR-OL3: edit mode for the volume plan card.
+  const [editingPlan, setEditingPlan] = useState(false)
+  const [savingPlan, setSavingPlan] = useState(false)
   const [activeView, setActiveView] = useState<'editor' | 'outline' | 'wizard'>(
     'wizard'
   )
@@ -955,17 +958,90 @@ export default function DesktopWorkspace() {
 
                     {volumePlan && volumePlan.length > 0 && (
                       <div className="mb-4 border border-blue-200 bg-blue-50 rounded-xl p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-medium text-blue-900">📜 AI 推荐卷规划</span>
-                          <span className="text-xs text-blue-700">共 {volumePlan.length} 卷，共 {volumePlan.reduce((s, v) => s + (v.est_chapters || 0), 0)} 章（已自动填入卷数）</span>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-blue-900">📜 AI 推荐卷规划</span>
+                            <span className="text-xs text-blue-700">共 {volumePlan.length} 卷，共 {volumePlan.reduce((s, v) => s + (v.est_chapters || 0), 0)} 章</span>
+                          </div>
+                          {!editingPlan ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditingPlan(true)}
+                              className="text-xs px-2 py-1 rounded bg-white text-blue-700 border border-blue-300 hover:bg-blue-100"
+                            >✎ 编辑</button>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={savingPlan}
+                                onClick={async () => {
+                                  if (!currentProject || !pendingBookOutlineIdRef.current) {
+                                    setEditingPlan(false)
+                                    return
+                                  }
+                                  setSavingPlan(true)
+                                  try {
+                                    await apiFetch(
+                                      `/api/projects/${currentProject.id}/outlines/${pendingBookOutlineIdRef.current}/volume-plan`,
+                                      { method: "PATCH", body: JSON.stringify({ volume_plan: volumePlan }) },
+                                    )
+                                    setVolumeCountInput(String(volumePlan.length))
+                                  } catch (err) {
+                                    console.error("保存卷规划失败:", err)
+                                  } finally {
+                                    setSavingPlan(false)
+                                    setEditingPlan(false)
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                              >{savingPlan ? "保存中..." : "保存"}</button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingPlan(false)}
+                                className="text-xs px-2 py-1 rounded bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
+                              >取消</button>
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-1.5">
-                          {volumePlan.map((v) => (
+                          {volumePlan.map((v, vi) => (
                             <div key={v.idx} className="text-xs text-gray-700 bg-white rounded px-2 py-1.5">
-                              <span className="font-semibold text-gray-900">第{v.idx}卷 {v.title}</span>
-                              <span className="text-gray-500 ml-1">({v.est_chapters}章)</span>
-                              {v.theme && <span className="text-gray-600"> · {v.theme}</span>}
-                              {v.core_conflict && <div className="text-gray-500 mt-0.5">冲突: {v.core_conflict}</div>}
+                              {!editingPlan ? (
+                                <>
+                                  <span className="font-semibold text-gray-900">第{v.idx}卷 {v.title}</span>
+                                  <span className="text-gray-500 ml-1">({v.est_chapters}章)</span>
+                                  {v.theme && <span className="text-gray-600"> · {v.theme}</span>}
+                                  {v.core_conflict && <div className="text-gray-500 mt-0.5">冲突: {v.core_conflict}</div>}
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-gray-500">第{v.idx}卷</span>
+                                  <input
+                                    type="text"
+                                    value={v.title}
+                                    onChange={(e) => {
+                                      const next = [...volumePlan]
+                                      next[vi] = { ...v, title: e.target.value }
+                                      setVolumePlan(next)
+                                    }}
+                                    placeholder="卷名"
+                                    className="flex-1 min-w-[100px] px-2 py-0.5 border border-gray-300 rounded text-xs"
+                                  />
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={v.est_chapters}
+                                    onChange={(e) => {
+                                      const next = [...volumePlan]
+                                      next[vi] = { ...v, est_chapters: parseInt(e.target.value || "0", 10) || 0 }
+                                      setVolumePlan(next)
+                                    }}
+                                    className="w-16 px-2 py-0.5 border border-gray-300 rounded text-xs"
+                                  />
+                                  <span className="text-gray-500">章</span>
+                                  {v.theme && <div className="w-full text-gray-600 mt-0.5">主题: {v.theme}</div>}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

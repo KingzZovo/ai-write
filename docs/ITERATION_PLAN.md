@@ -105,3 +105,25 @@
 ### Next
 - PR-OL3: 前端卷规划卡片可点击编辑
 - PR-OL4: detectVolumeCount() fallback 依然保留；volume_plan 不在时验证补忙路径
+
+
+## 2026-05-03 (PR-OL3) · 卷规划卡片可编辑
+
+### Change
+- backend/api/outlines.py：新增 PATCH /api/projects/{pid}/outlines/{oid}/volume-plan
+  * 请求体 {volume_plan: [...]}
+  * 更新 outline.content_json["volume_plan"] (flag_modified 触发 SA 检测)
+  * 同步更新现有 Volume.title (匹配 idx)
+- frontend/DesktopWorkspace.tsx：
+  * 卡片右上角 “✎ 编辑” 按钮
+  * 点击后每行变成 input(卷名) + number(章数)
+  * 保存 按钮 调 PATCH 接口；取消还原
+  * editingPlan / savingPlan state
+
+### Verification
+- backend syntax ok
+- E2E：生成全书大纲 → step2 点“编辑”→ 改卷名、章数 → 保存 → 查 outlines 表 content_json["volume_plan"] 已更新；volumes 表 title 已更新。
+
+### Next
+- PR-OL4: detectVolumeCount fallback 路径验证 (无 volume_plan 时 仍可创项目)
+- PR-OL5: outline edit 编辑后 试 cascade 重生 章节摘要 同步

@@ -81,3 +81,8 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 
 - knowledge_tasks outline_book auto-save 后 提取 volume_plan、创建空 Volume
 - Outline.content_json 以 volume_plan 字段持久化 (供前端 跳回 step 2 prefill)
+
+## 2026-05-03 05:15 · PR-OL3 卷规划可编辑
+
+- 后端 outlines.py PATCH /{outline_id}/volume-plan 同步 Volume.title
+- 前端 卷规划卡片 加“编辑/保存/取消”，可调卷名/章数
