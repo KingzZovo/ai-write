@@ -100,7 +100,7 @@ export function ChapterEditor({
           font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
           font-size: 16px;
           line-height: 1.8;
-          color: #1a1a1a;
+          color: var(--text);
         }
         .ProseMirror p {
           margin-bottom: 0.8em;
@@ -110,8 +110,8 @@ export function ChapterEditor({
           outline: none;
         }
         .ai-generated {
-          background-color: rgba(59, 130, 246, 0.05);
-          border-left: 2px solid rgba(59, 130, 246, 0.3);
+          background-color: var(--color-info-50);
+          border-left: 2px solid var(--color-info-500);
           padding-left: 0.5em;
         }
       `}</style>

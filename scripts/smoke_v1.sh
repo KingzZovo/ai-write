@@ -84,3 +84,78 @@ if grep -q 'sidebar-collapsed' "$WL" && grep -q 'panel-collapsed' "$WL" && grep 
 else
   bad "WorkspaceLayout collapse state missing"
 fi
+# chunk-23: per-project key composition + [/] shortcut + mobile auto-collapse.
+DWS="$REPO/frontend/src/components/workspace/DesktopWorkspace.tsx"
+if grep -q 'composeKey' "$WL" && grep -q 'projectId' "$WL" && grep -q "base}:\${projectId" "$WL"; then
+  ok "WorkspaceLayout composes per-project storage key from projectId"
+else
+  bad "WorkspaceLayout per-project key composition missing"
+fi
+if grep -q 'projectId={currentProject?.id}' "$DWS"; then
+  ok "DesktopWorkspace passes currentProject?.id into WorkspaceLayout"
+else
+  bad "DesktopWorkspace does not wire projectId prop"
+fi
+if grep -q "e.key === '\\['" "$WL" && grep -q "e.key === '\\]'" "$WL" && grep -q 'max-width: 767px' "$WL"; then
+  ok "WorkspaceLayout wires [ / ] shortcuts + <768px auto-collapse"
+else
+  bad "WorkspaceLayout shortcut / auto-collapse missing"
+fi
+
+# ---------- 9. i18n language switcher + cookie (Chunk 20) ----------
+head "[9/9] i18n language switcher + cookie"
+SET="$REPO/frontend/src/app/settings/page.tsx"
+PROV="$REPO/frontend/src/lib/i18n/I18nProvider.tsx"
+MSGS="$REPO/frontend/src/lib/i18n/messages.ts"
+if grep -q 'language-switcher' "$SET" && grep -q 'useLocale' "$SET" && grep -q 'ai-write-locale' "$PROV" && grep -q 'settings.preferences.language' "$MSGS"; then
+  ok "settings page wires LanguageSwitcher + cookie ai-write-locale + en catalog"
+else
+  bad "language switcher or cookie assertion missing"
+fi
+
+# ---------- 10. Mobile landing: project list + outline drawer + nav hamburger (Chunk 21) ----------
+head "[10/10] mobile landing"
+PLP="$REPO/frontend/src/components/project/ProjectListPage.tsx"
+MWS="$REPO/frontend/src/components/workspace/MobileWorkspace.tsx"
+NAV="$REPO/frontend/src/components/Navbar.tsx"
+if grep -q 'project-list-grid' "$PLP" && grep -q 'grid-cols-1 md:grid-cols-2' "$PLP" && grep -q 'px-3 md:px-6' "$PLP"; then
+  ok "ProjectListPage: single-col default + mobile padding + data-testid hook"
+else
+  bad "ProjectListPage mobile-landing markers missing"
+fi
+if grep -q 'mobile-outline-drawer' "$MWS" && grep -q 'mobile-outline-toggle' "$MWS"; then
+  ok "MobileWorkspace: outline drawer + toggle present"
+else
+  bad "MobileWorkspace outline drawer markers missing"
+fi
+if grep -q 'nav-hamburger' "$NAV" && grep -q 'nav-mobile-drawer' "$NAV"; then
+  ok "Navbar: hamburger + mobile drawer wired"
+else
+  bad "Navbar hamburger/drawer markers missing"
+fi
+
+# ---------- 11. Design-token migration: no hex/rgba in business UI (Chunk 22) ----------
+head "[11/11] design-token migration"
+# Whitelist: globals.css is the token source; graph-palette.ts is the documented
+# data-viz mirror; layout.tsx themeColor meta tag; lib/graph-palette.ts import lines.
+hits=$(grep -RIl -E '#[0-9a-fA-F]{6}\b|rgba?\(' "$REPO/frontend/src" 2>/dev/null \
+  | grep -vE '(app/globals\.css|lib/graph-palette\.ts|app/layout\.tsx)$' || true)
+if [ -z "$hits" ]; then
+  ok "no hex/rgba literals outside tokens + graph-palette + layout themeColor"
+else
+  bad "stray hex/rgba literals found in: $(echo "$hits" | tr '\n' ' ')"
+fi
+# EditorView.tsx ProseMirror style must use CSS vars
+EV="$REPO/frontend/src/components/editor/EditorView.tsx"
+if grep -q 'var(--text)' "$EV" && grep -q 'var(--color-info-500)' "$EV"; then
+  ok "EditorView style uses --text + --color-info-500 tokens"
+else
+  bad "EditorView style tokens missing"
+fi
+# WritingGuidePanel active card uses shadow-card
+WG="$REPO/frontend/src/components/panels/WritingGuidePanel.tsx"
+if grep -q 'shadow-card' "$WG"; then
+  ok "WritingGuidePanel active card uses shadow-card"
+else
+  bad "WritingGuidePanel shadow-card missing"
+fi

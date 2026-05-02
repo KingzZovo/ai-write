@@ -2,6 +2,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { apiFetch } from '@/lib/api'
+import {
+  NODE_COLOR_PALETTE,
+  NODE_FILL_BRAND,
+  NODE_STROKE_BRAND_DEEP,
+  NODE_STROKE_BRAND_DARKER,
+  SENTIMENT_POSITIVE,
+  SENTIMENT_NEGATIVE,
+  SENTIMENT_NEUTRAL_ALT,
+  GRAPH_LABEL_ON_LIGHT,
+} from '@/lib/graph-palette'
 
 interface Character {
   id: string
@@ -41,15 +51,12 @@ function getNodePositions(count: number): { x: number; y: number }[] {
   })
 }
 
-const NODE_COLORS = [
-  '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B',
-  '#10B981', '#EF4444', '#6366F1', '#14B8A6',
-]
+const NODE_COLORS = NODE_COLOR_PALETTE
 
 function sentimentStroke(sentiment: string): string {
-  if (sentiment === 'positive') return '#10B981'
-  if (sentiment === 'negative') return '#EF4444'
-  return '#9CA3AF'
+  if (sentiment === 'positive') return SENTIMENT_POSITIVE
+  if (sentiment === 'negative') return SENTIMENT_NEGATIVE
+  return SENTIMENT_NEUTRAL_ALT
 }
 
 export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
@@ -136,7 +143,7 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                   y1={src.y}
                   x2={tgt.x}
                   y2={tgt.y}
-                  stroke={isHighlighted ? '#3B82F6' : baseColor}
+                  stroke={isHighlighted ? NODE_FILL_BRAND : baseColor}
                   strokeWidth={isHighlighted ? 2 : 1.3}
                   strokeDasharray={rel.sentiment === 'neutral' && !isHighlighted ? '4 2' : undefined}
                 />
@@ -146,7 +153,7 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                     y={midY - 4}
                     textAnchor="middle"
                     fontSize={9}
-                    fill={isHighlighted ? '#1D4ED8' : baseColor}
+                    fill={isHighlighted ? NODE_STROKE_BRAND_DEEP : baseColor}
                     className="pointer-events-none select-none"
                   >
                     {rel.label}
@@ -175,7 +182,7 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                   r={isHovered ? NODE_RADIUS + 2 : NODE_RADIUS}
                   fill={color}
                   opacity={isHovered ? 1 : 0.85}
-                  stroke={isHovered ? '#1E40AF' : 'white'}
+                  stroke={isHovered ? NODE_STROKE_BRAND_DARKER : 'white'}
                   strokeWidth={isHovered ? 2 : 1.5}
                 />
                 <text
@@ -196,7 +203,7 @@ export function RelationshipGraph({ projectId }: RelationshipGraphProps) {
                     y={pos.y + NODE_RADIUS + 12}
                     textAnchor="middle"
                     fontSize={10}
-                    fill="#374151"
+                    fill={GRAPH_LABEL_ON_LIGHT}
                     className="pointer-events-none"
                   >
                     {char.name}

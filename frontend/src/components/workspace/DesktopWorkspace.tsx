@@ -688,6 +688,7 @@ export default function DesktopWorkspace() {
     )}
 
     <WorkspaceLayout
+      projectId={currentProject?.id}
       sidebar={
         <div className="flex flex-col h-full">
           {/* ---- Header: back to project list + current title ---- */}

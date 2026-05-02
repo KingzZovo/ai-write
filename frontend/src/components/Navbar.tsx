@@ -43,6 +43,7 @@ export function Navbar() {
         aria-label="menu"
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((v) => !v)}
+        data-testid="nav-hamburger"
         className="md:hidden mr-2 p-1.5 rounded hover:bg-gray-100 text-gray-700"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -104,7 +105,10 @@ export function Navbar() {
 
       {/* Mobile drawer */}
       {menuOpen && (
-        <div className="safe-area-x md:hidden fixed left-0 right-0 top-12 bg-white border-b border-gray-200 shadow-popover">
+        <div
+          data-testid="nav-mobile-drawer"
+          className="safe-area-x md:hidden fixed left-0 right-0 top-12 bg-white border-b border-gray-200 shadow-popover"
+        >
           <ul className="flex flex-col py-2">
             {NAV_LINKS.map(({ href, key }) => {
               const isActive = pathname.startsWith(href)
