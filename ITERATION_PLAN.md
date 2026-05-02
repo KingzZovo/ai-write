@@ -189,3 +189,28 @@
 | v0.8.0 | TBD | 写法引擎资产化 + 去 AI 味 + Agent Tool Registry v1（详见 docs/V08_DESIGN.md） |
 | v0.9.0 | TBD | 设定集一等公民 + 关系图 + 版本 Diff（详见 docs/V09_DESIGN.md） |
 | v1.0.0 | TBD | LangGraph + BVSR + 多 Agent 协作 + 生产就绪（详见 docs/V10_DESIGN.md） |
+
+
+## v1.0 → v1.9 闭环实际交付记录（2026-05-02）
+
+> **本节记录**：之前在 `feature/v1.0-big-bang` 分支上迭代的 237 commit，已通过 PR #8～#18 以按版本号拆分的方式全量合入 main。以下是交付清单：
+
+| 版本 | 交付主题 | 代表 PR | commits |
+|---|---|---|---:|
+| v1.0.0 | Docker / Sentry / Prometheus / GH Actions CI / BVSR / LangGraph / usage_quotas / EPUB-PDF-DOCX / i18n / mobile | #8 (`144e84e`) | 20 |
+| v1.1.0 | en i18n + mobile landing + design tokens + sidebar memory | #9 (`444d6bf`) | 5 |
+| v1.2.0 | JSON logging + X-Request-ID + Prometheus 扩展 + Sentry redaction + CI smoke | #10 (`8ea639a`) | 5 |
+| v1.3.0 | target_word_count + budget allocator + cascade | #11 (`3a7eca1`) | 6 |
+| v1.4.0 | LLM tier routing（`llm_endpoints.tier` + `prompt_assets.model_tier` + `/api/llm-routing/matrix`） | #12 (`0d0d0b7`) | 20 |
+| v1.4.1 | probe surface + max_tokens raise + staged outline + Sentry shim | #13 (`4c6bbf4`) | 7 |
+| v1.5.0 | chunker fix + tier-aware fallback + scene mode + cascade tasks + entity unification（Phase A+B+C+D） | #14 (`bb364a5`) | 61 |
+| v1.6.0 | prompt cache plumbing + scene_mode Prometheus metrics | #15 (`31b4875`) | 5 |
+| v1.7.x | cascade panel + time_llm_call + ARCHITECTURE/RUNBOOK baseline + outline injection + post-summarizer + anti-AI prompts | #16 (`0f79975`) | 19 |
+| v1.8.x | dosage-driven anti-AI + longzu profile + Bug L 自动保存修复 | #17 (`b54159d`) | 8 |
+| v1.9.0 | **Entity writeback Neo4j↔PG truth source + F1=A foreshadows-via-Neo4j**（`/neo4j-settings/*` + `/admin/entities/materialize` + 8 个 alembic 迁移） | #18 (`0a4f9a1`) | 81 |
+
+**总计**：237 commit，11 个 release PR，冲突点 6 处均已解决（详 `docs/PROGRESS.md §2`）。
+
+**验证**：main `0a4f9a1` HEAD 上 `foreshadows.py / neo4j_settings.py / admin_entities.py / admin_usage.py / foreshadow_manager.py / usage_service.py` 六个 v1.9 核心文件 blob hash 与 big-bang HEAD `73e7897` 完全一致；compileall 通过；alembic head = `a1001908`。
+
+**后续**：参考 `docs/PROGRESS.md §3 部署 checklist` 与 `docs/HANDOFF_TODO.md P5`。`feature/v1.0-big-bang` 分支可关闭。
