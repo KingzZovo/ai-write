@@ -48,7 +48,7 @@
 
 ## P7 全业务 E2E 验证 ✅ 已关闭（2026-05-02 晚，PR #21）
 
-- [x] 参考书 status=ready (《龙族》/《三体》)，qdrant slice/style/plot/embedding collection 点亮 ✅
+- [x] 参考书 status=ready (《龙族全套》/《天之炽》/《天之炽②女武神》)，qdrant slice/style/plot/embedding collection 点亮 ✅
 - [x] 创建项目 `0eaeff87-2f91-452c-812c-b4bcf2924fe2` ✅
 - [x] 书级大纲×1 (`f9af7582...` 6766 chars)、已 confirm ✅
 - [x] 分卷大纲×3（并发 60-70s/卷）✅
