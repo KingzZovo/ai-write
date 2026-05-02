@@ -1,32 +1,43 @@
 # Handoff TODO（可直接打勾执行）
 
-## P0 本地状态（仅本机执行）
-- [x] `git fetch origin main` ✅ 2026-05-01（AWS MCP shell）
-- [x] 丢弃本地未提交的 `backend/app/api/settings.py`（`git diff HEAD origin/main` 与本地 worktree diff 完全一致 = origin/main PR #3 内容 → 安全 `git checkout --`）
-- [x] `git stash drop stash@{0}`（stash 内容 = origin/main PR #2 README + ITERATION_PLAN 子集 → 安全 drop）
-- [x] `git pull --ff-only origin main` → HEAD `17fb371` (PR #5)
-- [x] `git status` = working tree clean，stash 列表为空
+> 最近一次更新：2026-05-02 晚 — main HEAD = `0a4f9a1` (PR #18 合并)。**所有 P0~P4 + 之前 follow-up 全部关闭**，新增 P5 部署 checklist。**新窗口接手优先看 `docs/PROGRESS.md`**。
 
-## P1 文档（必须）
-- [x] `docs/RUNBOOK.md` 写清：Neo4j truth + PG projection（PR #6）
-- [x] 修正 README §设定集数据源约定 + `backend/app/api/settings.py` 410 message——明确“实际入口 = `extract-settings`；v1.10 计划推 `/neo4j-settings/*` + `/admin/entities/materialize`”（本 PR）
-- [x] 写清正确写入口：main 上是 `/outlines/{id}/extract-settings`；README 描述的 `/neo4j-settings/*` 与 `/admin/entities/materialize` 不在 main（RUNBOOK §1）
+## P0 本地状态（仅本机执行） ✅ 已关闭
+- [x] `git fetch origin main` ✅
+- [x] 丢弃本地未提交的 `backend/app/api/settings.py` ✅
+- [x] `git stash drop stash@{0}` ✅
+- [x] `git pull --ff-only origin main` → HEAD `0a4f9a1` (PR #18) ✅
+- [x] `git status` = working tree clean，stash 列表为空 ✅
+
+## P1 文档（必须） ✅ 已关闭
+- [x] `docs/RUNBOOK.md` 写清 Neo4j truth + PG projection（PR #6）
+- [x] 修正 README §设定集数据源约定 + `backend/app/api/settings.py` 410 message（PR #6 + PR #18）
+- [x] 写清正确写入口：`/outlines/{id}/extract-settings` + `/neo4j-settings/*` + `/admin/entities/materialize` 全部已在 main
 - [x] 写清 legacy 410：`/world-rules`、`/relationships` 写接口（RUNBOOK §3）
-- [x] 标注 foreshadows 仍 PG 直写（待 follow-up）（RUNBOOK §3 + PROGRESS §3）
-- [x] 把 service 层残留 `foreshadow_manager.py:84` 也写进 RUNBOOK / PROGRESS（不止 api 层）
+- [x] foreshadows PG 直写已修复，全部走 `/neo4j-settings/foreshadows`（PR #18）
 
-## P2 防回归（清残留 PG 直写）
-- [x] 远端 search_code 扫描 INSERT/UPDATE/DELETE（world_rules/relationships/locations/foreshadows）= 0 命中
-- [x] 远端 search_code 扫描 `WorldRule(` / `db.add WorldRule` / `db.add Relationship` = 0 命中
-- [x] 本地 `grep -RnE` 同上模式（`backend/app`）= 除 `models/project.py` 类定义（误匹配，正常）外 0 行
-- [x] 本地 grep `Foreshadow(` 残留：3 处（`api/foreshadows.py:111,179`、`services/foreshadow_manager.py:84`），列入 follow-up
-- [ ] foreshadows 路线决策 + follow-up PR（选项 A：纳入 Neo4j；选项 B：显式排除 + 回归测试）
+## P2 防回归（清残留 PG 直写） ✅ 已关闭
+- [x] 远端 search_code + 本地 grep 双路扫描 = 0 命中（除模型类定义误匹配）
+- [x] foreshadows PG 直写 3 处（api/foreshadows.py:111,179、services/foreshadow_manager.py:84）已通过 PR #18 修复
 
-## P3 验收（仅本机）
-- [x] `python3 -m compileall -q backend/app` ✅ COMPILEALL_OK（2026-05-01，AWS MCP shell）
-- [x] `scripts/verify_entity_writeback_v19.sh` 入仓（本 PR，151 行，`bash -n` SYNTAX_OK）
+## P3 验收 ✅ 已关闭（除真实环境）
+- [x] `python3 -m compileall -q backend/app` ✅ COMPILEALL_OK（PR #6 + PR #8~#18 每次 push 前都跑过）
+- [x] `scripts/verify_entity_writeback_v19.sh` 入仓（PR #6，151 行 SYNTAX_OK）
+- [x] `scripts/verify_entity_writeback.sh` 入仓（PR #18 v1.9 自带版本）
 - [ ] 在有真实 PROJECT_ID + 启动后端服务的环境跑：`PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh`
-- [x] 结果回填到本 PR 描述 Verification 段（详见 PR 描述）
 
-## P4 架构 vs 文档一致性（新增）
-- [ ] 决策：是否把 `feature/v1.0-big-bang` 上的 `neo4j_settings.py` + `admin_entities.py`（commit `dc98363` 起的 v1.9 链）合并到 main，或反过来修订 README 把这俩路由族标为 v1.10 计划
+## P4 架构 vs 文档一致性 ✅ 已关闭
+- [x] `feature/v1.0-big-bang` 上的 `neo4j_settings.py` + `admin_entities.py`（dc98363 起的 v1.9 链）已通过 PR #18 cherry-pick 合入 main，README/RUNBOOK 一致性达成
+
+## P5 部署（新窗口可执行） ⏳ 未开始
+- [ ] `alembic upgrade head` → target `a1001908_v190_character_organizations_table`
+- [ ] 配置 env `ADMIN_USERNAMES`（JSON 数组，例 `["admin","king"]`）；缺失时 `/api/admin/*` 路由族对所有 JWT-sub 返回 403
+- [ ] 启动后端 + Celery worker + 前端
+- [ ] 烟测：写 `POST /api/projects/{pid}/neo4j-settings/foreshadows` → Neo4j `(:Foreshadow)` 出现 → PG `foreshadows` 表 materialize 出同一行
+- [ ] 烟测：`POST /api/admin/entities/materialize` 返回 200 + 计数指标
+- [ ] 真实环境跑 `verify_entity_writeback_v19.sh`，结果回填到部署 PR
+
+## P6 仓库清理（可选，非阻塞）
+- [ ] 关闭 / 删除 `origin/feature/v1.0-big-bang`（其内容已 100% 在 main）
+- [ ] 关闭 / 删除 11 个 `origin/release/v1.*` 分支（已 merge）
+- [ ] 如要继续推进 v2.0+，参考 `ITERATION_PLAN.md` Iteration 系列

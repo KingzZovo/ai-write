@@ -1,3 +1,15 @@
+> ⚠️ **2026-05-02 后状态** — 本文档原为 PR #6 后续决策辅助文档，记载 F1、F2、F3 三项决策。F1=A 与 F2 均已落地，F3 仅剩真实环境对账未跑。
+>
+> | follow-up | 决策 | 状态 | 证据 |
+> |---|---|---|---|
+> | F1 foreshadows | A（纳入 Neo4j） | ✅ 已落地 | PR #18 commits `02a5f19 / cd8ed7a / e16c492 / a86738c / 49776e0` |
+> | F2 v1.10 路由族 | 提前落地 | ✅ 已落地 | PR #18 入仓 `neo4j_settings.py / admin_entities.py / admin_usage.py` |
+> | F3 真实环境对账 | 依赖环境 | ⏳ 待跑 | 需真实 PROJECT_ID + 后端启动后跑 `verify_entity_writeback_v19.sh` |
+>
+> 新窗口接手请优先看 `docs/PROGRESS.md`。以下原文作为历史上下文保留。
+
+---
+
 # Follow-up Plan（PR #6 后续决策辅助文档）
 
 > 目的：把 PR #6 Follow-up 段里点名的三项待决策事项写成**具体可执行的 diff 计划**，让用户可以一眼对比选项。本文档**不**代表架构决策，仅为决策辅助。

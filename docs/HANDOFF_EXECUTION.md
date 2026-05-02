@@ -1,3 +1,13 @@
+> ⚠️ **2026-05-02 后状态** — main HEAD = `0a4f9a1`（PR #18 合并）。`feature/v1.0-big-bang` 上的 237 commit 已通过 PR #8～#18 全量回收。**本文档记载的历史上下文仍保留**，但新窗口接手请优先看 `docs/PROGRESS.md`（唯一真相源快照）与 `docs/HANDOFF_TODO.md`（现货 P5 部署 checklist）。
+>
+> **现状补丁**：
+> - F1=A foreshadows-via-Neo4j 已落地（PR #18）。`backend/app/api/foreshadows.py` 与 `backend/app/services/foreshadow_manager.py` 不再 PG 直写，全部走 `/neo4j-settings/foreshadows`。
+> - `/neo4j-settings/*` 与 `/admin/entities/materialize` 路由族已在 main（PR #18）。
+> - alembic head 推进至 `a1001908`，部署前必须 `alembic upgrade head`。
+> - `/api/admin/*` 路由族需配置 env `ADMIN_USERNAMES`（JSON 数组）。
+
+---
+
 # Handoff (执行版) — Neo4j Truth Source 收尾与回归验证
 
 > 目的：把"设定集（settings entities）Neo4j 真相源 + Postgres 投影"的改造收口做干净，让新窗口/新同学只看本文即可接手继续推进。
