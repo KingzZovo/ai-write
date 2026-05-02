@@ -248,6 +248,7 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                     <span className="text-sm font-medium text-stone-800">{c.name}</span>
                     {imp === "protagonist" && <span className="text-[9px] px-1 rounded bg-amber-100 text-amber-700">主</span>}
                     {imp === "key" && <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700">关键</span>}
+                    {isGenericName(c.name) && <span className="text-[9px] px-1 rounded bg-amber-100 text-amber-700" title="通用角色名，可能合并了多个实例。抽取需加场景修饰词区分。">⚠ 通用</span>}
                     {identity && <span className="text-[10px] text-stone-500 truncate">{identity}</span>}
                     <span className="ml-auto text-[10px] text-stone-400 flex-shrink-0">{totalRel} 关系 · {st.length} 状态</span>
                     <svg className={`w-3 h-3 text-stone-400 transition-transform flex-shrink-0 ${isOpen ? "rotate-90" : ""}`} viewBox="0 0 12 12">
@@ -257,11 +258,13 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                   {isOpen && (
                     <div className="px-2.5 pb-2.5 space-y-2 text-[11px]">
                       <ProfileBlock fields={merged} />
-                      {st.length > 0 && (
+                      {(() => {
+                        const stClean = dedupeStates(st)
+                        return stClean.length > 0 && (
                         <div className="border-t border-stone-200 pt-1.5">
-                          <div className="text-[10px] font-medium text-stone-500 mb-1">状态变化 ({st.length})</div>
+                          <div className="text-[10px] font-medium text-stone-500 mb-1">状态变化 ({stClean.length}{stClean.length !== st.length ? ` / 合并自 ${st.length}` : ""})</div>
                           <div className="space-y-1">
-                            {st.map(s => {
+                            {stClean.map(s => {
                               const status = (s.status_json || {}) as Record<string, unknown>
                               const desc = Object.entries(status)
                                 .filter(([, v]) => v !== "" && v !== null && v !== undefined)
@@ -269,14 +272,15 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                                 .join(" · ")
                               return (
                                 <div key={s.id} className="flex items-baseline gap-2">
-                                  <span className="text-stone-400 w-16 flex-shrink-0">第 {s.chapter_start}{s.chapter_end ? `–${s.chapter_end}` : ""} 章</span>
+                                  <span className="text-stone-400 w-16 flex-shrink-0">{s.chapter_start === 0 ? (s.chapter_end ? `初始–${s.chapter_end}章` : "初始") : `第 ${s.chapter_start}${s.chapter_end && s.chapter_end !== s.chapter_start ? `–${s.chapter_end}` : ""} 章`}</span>
                                   <span className="text-stone-700">{desc || "无具体状态"}</span>
                                 </div>
                               )
                             })}
                           </div>
                         </div>
-                      )}
+                        )
+                      })()}
                       {totalRel > 0 && (
                         <div className="border-t border-stone-200 pt-1.5">
                           <div className="text-[10px] font-medium text-stone-500 mb-1">人物关系 ({totalRel})</div>
@@ -334,4 +338,31 @@ function RelationLine({ from, to, rel, reverse }: { from: string; to: string; re
       {rel.note ? <span className="text-stone-400 text-[10px] ml-1 truncate">{rel.note}</span> : null}
     </div>
   )
+}
+
+// 相邻 status_json 完全相同的状态合并为一条，范围拓展到最大 chapter_end
+function dedupeStates(states: CharState[]): CharState[] {
+  if (states.length <= 1) return states
+  const out: CharState[] = []
+  for (const s of states) {
+    const last = out[out.length - 1]
+    if (last && JSON.stringify(last.status_json || {}) === JSON.stringify(s.status_json || {})) {
+      // 合并：拓展 chapter_end
+      const lastEnd = last.chapter_end ?? last.chapter_start
+      const sEnd = s.chapter_end ?? s.chapter_start
+      last.chapter_end = Math.max(lastEnd, sEnd)
+    } else {
+      out.push({ ...s, status_json: s.status_json })
+    }
+  }
+  return out
+}
+
+// 检测否为“通用角色名”（可能多实例被合并）
+function isGenericName(name: string): boolean {
+  if (!name) return false
+  // 有姓名特征：双字+常见姓压、三字全中文、带干、老/小/阿前缀且 ≤ 3 字
+  // 通用词柄：以专业职业/身份为主体
+  const generic = /司机|护士|女人|学姐|学长|学生|路人|孩子|女孩|男孩|老人|交警|警官|保安|院监|院长|老板|货车|送货|外卖|研究员|青年|中年人|女生|男生|服务生|销售|中年男人|中年女人|抱孩子的|值班/
+  return generic.test(name)
 }

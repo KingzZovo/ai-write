@@ -46,3 +46,22 @@
 - 每卷 各自有 L1 outline。
 - 每章 有 L2 outline。
 - 生成正文时，prompt 输入含 L2.summary + L1.本章承担 + 最新 character_states。
+
+
+## 2026-05-03 (补) · 状态重复 + 同名通用角色修复
+
+背景：闻栏枝 10 状态 vs 9 distinct；院监A/院监B/院监 多名同实体；出租车司机/实习护士等 18 个通用名 2 条但 1 distinct；chapter_start=0 出现 47 次。
+
+### Hot fixes (本轮已完成)
+- entity_timeline.update_character_state 加带 "与上一条相同则跳过" 防护
+- chapter_idx 强制 ≥ 1
+- 前端 CharacterCardPanel 显示时 dedupeStates() 相邻同状态合并
+- 前端对通用名加 ⚠ “可能多实例” 警示。
+
+### 后续 PR-OL6（抽取 prompt + 同名区分）
+- entity_extractor prompt 加规则：
+  1. 仅输出本章“有变化”的状态。未变化不要按顶。
+  2. 通用职业/称谓作人物名时必须加场景修饰词：如 “第2章医院护士」 / “末路出租司机」。
+  3. 同一人物多场景出现且作者未明确是同一人，不要合并为一个 Character 实体。
+- entity_tasks PG bulk insert 同步加 “与上一条相同则 SKIP”
+- 数据修补脉本：合并现有 status_json 相同的相邻记录。

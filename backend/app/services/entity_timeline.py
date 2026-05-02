@@ -11,6 +11,7 @@ Neo4j node types:
 - (:Location {id, project_id, name})
 - (:Organization {id, project_id, name})
 - (:WorldRule {id, project_id, category, text})
+- (:Foreshadow {id, project_id, type, description, planted_chapter, resolve_conditions_json, resolution_blueprint_json, narrative_proximity, status, resolved_chapter})
 
 Relationship types:
 - (:Character)-[:HAS_STATE]->(:CharacterState)
@@ -29,7 +30,7 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
-from app.services.model_router import get_model_router
+from app.services.model_router import get_model_router_async
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,27 @@ class EntityTimelineService:
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (c:Character) REQUIRE (c.project_id, c.name) IS UNIQUE"
                 )
+                # RELATES_TO uniqueness: (project_id, src, tgt, type, chapter_start)
+                # NOTE: requires we always set these properties on the relationship.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:RELATES_TO]-() REQUIRE (r.project_id, r.source_name, r.target_name, r.type, r.chapter_start) IS UNIQUE"
+                )
+                # AT_LOCATION uniqueness: one active location per character per chapter_start.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:AT_LOCATION]-() REQUIRE (r.project_id, r.character_name, r.chapter_start) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (w:WorldRule) REQUIRE (w.project_id, w.category, w.text) IS UNIQUE"
+                )
+                # MEMBER_OF uniqueness: (project_id, character_name, org_name, chapter_start)
+                # NOTE: requires we always set these properties on the relationship.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:MEMBER_OF]-() REQUIRE (r.project_id, r.character_name, r.org_name, r.chapter_start) IS UNIQUE"
+                )
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (l:Location) REQUIRE (l.project_id, l.name) IS UNIQUE"
@@ -128,6 +150,10 @@ class EntityTimelineService:
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (o:Organization) REQUIRE (o.project_id, o.name) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (f:Foreshadow) REQUIRE (f.project_id, f.id) IS UNIQUE"
                 )
                 # Indexes for fast lookup
                 await session.run(
@@ -193,9 +219,40 @@ class EntityTimelineService:
         chapter_idx: int,
         state_json: dict[str, Any],
     ) -> None:
-        """Create a new CharacterState and close the previous one's chapter_end."""
+        """Create a new CharacterState if state changed; otherwise no-op.
+
+        v1.7.2: Skip writes when the new state_json is byte-equivalent to the
+        currently-open state. Prevents duplicate "状态变化" cards in the UI
+        when LLM extraction echoes back unchanged status for chapters where the
+        character did not actually change.
+        """
+        # Force chapter_idx >= 1; chapter 0 is reserved for genuine pre-story state.
+        if chapter_idx is None or chapter_idx < 0:
+            chapter_idx = 1
+        new_status_str = json.dumps(state_json or {}, ensure_ascii=False, sort_keys=True)
         try:
             async with self.driver.session() as session:
+                # Probe currently-open state for diff
+                cur = await session.run(
+                    "MATCH (c:Character {project_id: $pid, name: $name})"
+                    "-[:HAS_STATE]->(s:CharacterState) "
+                    "WHERE s.chapter_end IS NULL "
+                    "RETURN s.status_json AS status "
+                    "ORDER BY s.chapter_start DESC LIMIT 1",
+                    pid=project_id,
+                    name=name,
+                )
+                rec = await cur.single()
+                if rec is not None:
+                    prev_raw = rec.get("status")
+                    try:
+                        prev_obj = json.loads(prev_raw) if isinstance(prev_raw, str) else (prev_raw or {})
+                    except Exception:
+                        prev_obj = {}
+                    prev_str = json.dumps(prev_obj, ensure_ascii=False, sort_keys=True)
+                    if prev_str == new_status_str:
+                        # No-op: state unchanged. Don't close prev state, don't create new.
+                        return
                 # Close previous open state
                 await session.run(
                     "MATCH (c:Character {project_id: $pid, name: $name})"
@@ -510,9 +567,9 @@ class EntityTimelineService:
                 await session.run(
                     "MATCH (c:Character {project_id: $pid, name: $cname}), "
                     "      (l:Location {project_id: $pid, name: $lname}) "
-                    "CREATE (c)-[:AT_LOCATION {"
-                    "  chapter_start: $start, chapter_end: null"
-                    "}]->(l)",
+                    "MERGE (c)-[r:AT_LOCATION {project_id: $pid, character_name: $cname, chapter_start: $start}]->(l) "
+                    "ON CREATE SET r.chapter_end = null "
+                    "SET r.location_name = $lname",
                     pid=project_id,
                     cname=character_name,
                     lname=location_name,
@@ -543,10 +600,18 @@ class EntityTimelineService:
         if not chapter_text.strip():
             return
 
-        router = get_model_router()
+        # B2' (v1.5.0): use async router + tier-aware fallback so this path
+        # is celery-loop-safe and resilient to single-endpoint INTERNAL_ERROR
+        # (mirrors the B1' evaluator/checker pattern). Each attempt is logged
+        # to llm_call_logs with caller=EntityTimelineService.extract_and_update.
+        try:
+            router = await get_model_router_async()
+        except Exception as e:
+            logger.warning("entity extraction skipped: model router unavailable: %s", e)
+            return
 
         try:
-            result = await router.generate(
+            result = await router.generate_with_tier_fallback(
                 task_type="extraction",
                 messages=[
                     {
@@ -559,6 +624,11 @@ class EntityTimelineService:
                     },
                 ],
                 max_tokens=2048,
+                _log_meta={
+                    "caller": "EntityTimelineService.extract_and_update",
+                    "project_id": str(project_id),
+                    "chapter_idx": int(chapter_idx),
+                },
             )
 
             data = _parse_json(result.text)
