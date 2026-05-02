@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.project import Character, WorldRule
+from app.models.project import Character, WorldRule, Relationship
 from app.services.change_log import record_change
 
 
@@ -655,4 +655,121 @@ async def list_relationships_as_of_volume(
 
     return RelationshipListResponse(
         relationships=visible, total=len(visible)
+    )
+
+
+
+# =========================================================================
+# Aggregate (设定集) endpoint
+# =========================================================================
+
+
+class SettingsAggregateResponse(BaseModel):
+    """Single-call payload for the workspace `设定集` panel.
+
+    Combines characters / world_rules / locations / organizations /
+    relationships into one response so the UI does not need to fan out
+    to 5+ endpoints. ``stats`` summarises counts per entity type.
+    """
+
+    project_id: str
+    characters: list[CharacterResponse]
+    world_rules: list[WorldRuleResponse]
+    relationships: list[RelationshipResponse]
+    locations: list[dict[str, Any]] = Field(default_factory=list)
+    organizations: list[dict[str, Any]] = Field(default_factory=list)
+    stats: dict[str, int]
+    neo4j_truth: bool = True
+
+
+@router.get("/settings", response_model=SettingsAggregateResponse)
+async def get_settings_aggregate(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SettingsAggregateResponse:
+    """Return the full 设定集 snapshot in one round-trip.
+
+    Reads from Postgres read models (which are materialized from Neo4j by
+    ``backend/app/tasks/entity_tasks.py:_materialize_entities_to_postgres``).
+    The ``neo4j_truth=true`` flag tells the UI that PG values may briefly
+    lag Neo4j after a chapter generation; UI can show a stale-data badge
+    if needed.
+    """
+    from app.models.project import Location as _Location, Organization as _Org
+
+    # Characters
+    char_rows = (
+        await db.execute(
+            select(Character).where(Character.project_id == project_id)
+            .order_by(Character.name)
+        )
+    ).scalars().all()
+    characters = [CharacterResponse.model_validate(c) for c in char_rows]
+
+    # World rules
+    rule_rows = (
+        await db.execute(
+            select(WorldRule).where(WorldRule.project_id == project_id)
+            .order_by(WorldRule.name)
+        )
+    ).scalars().all()
+    world_rules = [WorldRuleResponse.model_validate(r) for r in rule_rows]
+
+    # Relationships
+    rel_rows = (
+        await db.execute(
+            select(Relationship).where(Relationship.project_id == project_id)
+        )
+    ).scalars().all()
+    relationships = [RelationshipResponse.model_validate(r) for r in rel_rows]
+
+    # Locations & Organizations (best-effort; tables may be absent in old DBs)
+    locations: list[dict[str, Any]] = []
+    organizations: list[dict[str, Any]] = []
+    try:
+        loc_rows = (
+            await db.execute(
+                select(_Location).where(_Location.project_id == project_id)
+            )
+        ).scalars().all()
+        for loc in loc_rows:
+            locations.append({
+                "id": str(loc.id),
+                "name": getattr(loc, "name", None),
+                "description": getattr(loc, "description", None),
+                "profile_json": getattr(loc, "profile_json", None),
+            })
+    except Exception:
+        pass
+    try:
+        org_rows = (
+            await db.execute(
+                select(_Org).where(_Org.project_id == project_id)
+            )
+        ).scalars().all()
+        for org in org_rows:
+            organizations.append({
+                "id": str(org.id),
+                "name": getattr(org, "name", None),
+                "description": getattr(org, "description", None),
+                "profile_json": getattr(org, "profile_json", None),
+            })
+    except Exception:
+        pass
+
+    return SettingsAggregateResponse(
+        project_id=project_id,
+        characters=characters,
+        world_rules=world_rules,
+        relationships=relationships,
+        locations=locations,
+        organizations=organizations,
+        stats={
+            "characters": len(characters),
+            "world_rules": len(world_rules),
+            "relationships": len(relationships),
+            "locations": len(locations),
+            "organizations": len(organizations),
+        },
+        neo4j_truth=True,
     )
