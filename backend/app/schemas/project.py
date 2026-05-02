@@ -18,6 +18,7 @@ class ProjectCreate(BaseModel):
     genre: str | None = Field(None, max_length=100)
     premise: str | None = None
     settings_json: dict[str, Any] | None = None
+    target_word_count: int | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -25,6 +26,7 @@ class ProjectUpdate(BaseModel):
     genre: str | None = Field(None, max_length=100)
     premise: str | None = None
     settings_json: dict[str, Any] | None = None
+    target_word_count: int | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -35,6 +37,7 @@ class ProjectResponse(BaseModel):
     genre: str | None = None
     premise: str | None = None
     settings_json: dict[str, Any] | None = None
+    target_word_count: int = 3000000
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
@@ -53,12 +56,14 @@ class VolumeCreate(BaseModel):
     title: str = Field(..., max_length=500)
     volume_idx: int
     summary: str | None = None
+    target_word_count: int | None = None
 
 
 class VolumeUpdate(BaseModel):
     title: str | None = Field(None, max_length=500)
     volume_idx: int | None = None
     summary: str | None = None
+    target_word_count: int | None = None
 
 
 class VolumeResponse(BaseModel):
@@ -69,6 +74,7 @@ class VolumeResponse(BaseModel):
     title: str
     volume_idx: int
     summary: str | None = None
+    target_word_count: int = 200000
     created_at: datetime
 
 
@@ -93,7 +99,7 @@ class ChapterUpdate(BaseModel):
     word_count: int | None = None
     status: str | None = Field(None, max_length=20)
     summary: str | None = None
-    target_words: int | None = None
+    target_word_count: int | None = None
 
 
 class ChapterResponse(BaseModel):
@@ -108,7 +114,7 @@ class ChapterResponse(BaseModel):
     word_count: int
     status: str
     summary: str | None = None
-    target_words: int | None = None
+    target_word_count: int = 50000
     created_at: datetime
     updated_at: datetime
 

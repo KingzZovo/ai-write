@@ -103,7 +103,15 @@ async def update_project(
     body: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> ProjectResponse:
-    """Update an existing project."""
+    """Update an existing project.
+
+    Side-effect (chunk-32): if ``target_word_count`` is changed by this call,
+    we cascade the new total to the project's volumes and chapters via
+    ``allocate_project_budget`` with the soft-guard (``force=False``) --
+    values the user manually overrode stay put; values still equal to the
+    documented default (Volume=200000, Chapter=50000) are re-balanced so
+    ``SUM(volumes)`` lines up with the new project total.
+    """
     result = await db.execute(
         select(Project).where(Project.id == project_id)
     )
@@ -113,10 +121,72 @@ async def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     update_data = body.model_dump(exclude_unset=True)
+    old_total = int(project.target_word_count or 0)
     for field, value in update_data.items():
         setattr(project, field, value)
 
     await db.flush()
+
+    # chunk-32: cascade allocator only when the total actually changed.
+    new_total = int(project.target_word_count or 0)
+    if "target_word_count" in update_data and new_total != old_total and new_total > 0:
+        from app.models.project import Chapter, Volume
+        from app.services.budget_allocator import allocate_project_budget
+
+        vol_rows = (await db.execute(
+            select(Volume)
+            .where(Volume.project_id == project_id)
+            .order_by(Volume.volume_idx)
+        )).scalars().all()
+        vol_list = list(vol_rows)
+        chapters_by_vol: dict[str, list] = {str(v.id): [] for v in vol_list}
+        if vol_list:
+            vol_ids = [v.id for v in vol_list]
+            ch_rows = (await db.execute(
+                select(Chapter)
+                .where(Chapter.volume_id.in_(vol_ids))
+                .order_by(Chapter.chapter_idx)
+            )).scalars().all()
+            for ch in ch_rows:
+                chapters_by_vol.setdefault(str(ch.volume_id), []).append(ch)
+        vol_input: list[dict] = []
+        for v in vol_list:
+            vol_input.append({
+                "id": str(v.id),
+                "volume_idx": v.volume_idx,
+                "current_target": int(v.target_word_count or 0),
+                "chapters": [
+                    {
+                        "id": str(c.id),
+                        "chapter_idx": c.chapter_idx,
+                        "current_target": int(c.target_word_count or 0),
+                    }
+                    for c in chapters_by_vol.get(str(v.id), [])
+                ],
+            })
+        if vol_input:
+            plan = allocate_project_budget(
+                project_total=new_total,
+                volumes=vol_input,
+                force=False,
+            )
+            v_by_id = {str(v.id): v for v in vol_list}
+            ch_by_id: dict[str, object] = {}
+            for chs in chapters_by_vol.values():
+                for c in chs:
+                    ch_by_id[str(c.id)] = c
+            for v_plan in plan["volumes"]:
+                if v_plan["changed"]:
+                    vm = v_by_id.get(v_plan["id"])
+                    if vm is not None:
+                        vm.target_word_count = int(v_plan["new_target"])
+                for c_plan in v_plan["chapters"]:
+                    if c_plan["changed"]:
+                        cm = ch_by_id.get(c_plan["id"])
+                        if cm is not None:
+                            cm.target_word_count = int(c_plan["new_target"])
+            await db.flush()
+
     await db.refresh(project)
     return ProjectResponse.model_validate(project)
 
@@ -257,3 +327,183 @@ async def export_project(
         )
 
     raise HTTPException(status_code=400, detail="不支持的格式，请使用 txt 或 epub")
+
+
+@router.post("/{project_id}/allocate-budget")
+async def allocate_budget(
+    project_id: UUID,
+    force: bool = False,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Allocate target_word_count across volumes and chapters of a project.
+
+    Strategy: equal split with remainder absorbed by the last slot.
+
+    Query params:
+      - force:   when true, overwrite all targets regardless of current value.
+                 when false (default), only overwrite values still equal to the
+                 documented default (Volume=200000, Chapter=50000).
+      - dry_run: when true, return the computed plan without persisting.
+    """
+    from app.models.project import Chapter, Volume
+    from app.services.budget_allocator import allocate_project_budget
+
+    project = await db.get(Project, project_id)
+    if project is None or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    vol_result = await db.execute(
+        select(Volume)
+        .where(Volume.project_id == project_id)
+        .order_by(Volume.volume_idx)
+    )
+    volumes = list(vol_result.scalars().all())
+
+    chapters_by_vol: dict[str, list] = {str(v.id): [] for v in volumes}
+    if volumes:
+        vol_ids = [v.id for v in volumes]
+        ch_result = await db.execute(
+            select(Chapter)
+            .where(Chapter.volume_id.in_(vol_ids))
+            .order_by(Chapter.chapter_idx)
+        )
+        for ch in ch_result.scalars().all():
+            chapters_by_vol.setdefault(str(ch.volume_id), []).append(ch)
+
+    vol_input: list[dict] = []
+    for v in volumes:
+        vol_input.append(
+            {
+                "id": str(v.id),
+                "volume_idx": v.volume_idx,
+                "current_target": int(v.target_word_count or 0),
+                "chapters": [
+                    {
+                        "id": str(c.id),
+                        "chapter_idx": c.chapter_idx,
+                        "current_target": int(c.target_word_count or 0),
+                    }
+                    for c in chapters_by_vol.get(str(v.id), [])
+                ],
+            }
+        )
+
+    plan = allocate_project_budget(
+        project_total=int(project.target_word_count or 0),
+        volumes=vol_input,
+        force=force,
+    )
+
+    if not dry_run:
+        v_by_id = {str(v.id): v for v in volumes}
+        ch_by_id: dict[str, object] = {}
+        for chs in chapters_by_vol.values():
+            for c in chs:
+                ch_by_id[str(c.id)] = c
+        for v_plan in plan["volumes"]:
+            if v_plan["changed"]:
+                vm = v_by_id.get(v_plan["id"])
+                if vm is not None:
+                    vm.target_word_count = int(v_plan["new_target"])
+            for c_plan in v_plan["chapters"]:
+                if c_plan["changed"]:
+                    cm = ch_by_id.get(c_plan["id"])
+                    if cm is not None:
+                        cm.target_word_count = int(c_plan["new_target"])
+        await db.flush()
+
+    plan["dry_run"] = dry_run
+    plan["force"] = force
+    return plan
+
+
+@router.get("/{project_id}/budget-status")
+async def budget_status(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Read-only audit of how target_word_count is distributed on a project.
+
+    Returns three coherence levels:
+      - project_total vs SUM(volumes.target_word_count)   => volumes_drift
+      - each volume.target_word_count vs SUM(its chapters) => per_volume[].chapters_drift
+      - project_total vs SUM(all chapters.target_word_count) => chapters_drift
+
+    drift > 0 means over-allocated (assigned more than the parent budget).
+    drift < 0 means under-allocated. healthy = (drift == 0).
+
+    Never mutates data. Safe to poll.
+    """
+    from app.models.project import Chapter, Volume
+
+    project = await db.get(Project, project_id)
+    if project is None or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    vol_result = await db.execute(
+        select(Volume)
+        .where(Volume.project_id == project_id)
+        .order_by(Volume.volume_idx)
+    )
+    volumes = list(vol_result.scalars().all())
+
+    chapters_by_vol: dict[str, list] = {str(v.id): [] for v in volumes}
+    if volumes:
+        vol_ids = [v.id for v in volumes]
+        ch_result = await db.execute(
+            select(Chapter)
+            .where(Chapter.volume_id.in_(vol_ids))
+            .order_by(Chapter.chapter_idx)
+        )
+        for ch in ch_result.scalars().all():
+            chapters_by_vol.setdefault(str(ch.volume_id), []).append(ch)
+
+    project_total = int(project.target_word_count or 0)
+    volumes_sum = 0
+    chapters_sum = 0
+    project_written = 0
+    per_volume: list[dict] = []
+    for v in volumes:
+        v_target = int(v.target_word_count or 0)
+        v_chapters = chapters_by_vol.get(str(v.id), [])
+        v_ch_sum = sum(int(c.target_word_count or 0) for c in v_chapters)
+        v_written = sum(len(c.content_text or "") for c in v_chapters)
+        v_drift = v_ch_sum - v_target
+        volumes_sum += v_target
+        chapters_sum += v_ch_sum
+        project_written += v_written
+        per_volume.append(
+            {
+                "volume_id": str(v.id),
+                "volume_idx": v.volume_idx,
+                "target": v_target,
+                "chapter_count": len(v_chapters),
+                "chapters_sum": v_ch_sum,
+                "chapters_drift": v_drift,
+                "chapters_healthy": v_drift == 0,
+                "chapters_written": v_written,
+            }
+        )
+
+    volumes_drift = volumes_sum - project_total
+    chapters_drift_vs_project = chapters_sum - project_total
+    completion_ratio = (
+        round(project_written / project_total, 4) if project_total > 0 else 0.0
+    )
+
+    return {
+        "project_id": str(project.id),
+        "project_total": project_total,
+        "volume_count": len(volumes),
+        "volumes_sum": volumes_sum,
+        "volumes_drift": volumes_drift,
+        "volumes_healthy": volumes_drift == 0,
+        "chapters_sum": chapters_sum,
+        "chapters_drift": chapters_drift_vs_project,
+        "chapters_healthy": chapters_drift_vs_project == 0,
+        "chapters_written": project_written,
+        "project_written": project_written,
+        "completion_ratio": completion_ratio,
+        "per_volume": per_volume,
+    }

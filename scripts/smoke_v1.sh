@@ -366,3 +366,315 @@ if [ -f "$JWT_FIX" ] && grep -q 'def sign_smoke_jwt' "$JWT_FIX" 2>/dev/null; the
 else
   bad "tests/fixtures/self_sign_jwt.py missing or lacks sign_smoke_jwt"
 fi
+
+# ---------- 16. v1.3.0 target_word_count schema (chunk-28) ----------
+head "[16/16] v1.3.0 target_word_count schema"
+MIG_V13="backend/alembic/versions/a1001300_v13_target_word_count.py"
+MODEL_PY="backend/app/models/project.py"
+if [ -f "$MIG_V13" ] && grep -q 'revision = "a1001300"' "$MIG_V13" 2>/dev/null; then
+  ok "alembic revision a1001300_v13_target_word_count.py present"
+else
+  bad "alembic revision a1001300 missing or malformed"
+fi
+if grep -q 'down_revision = "a1001200"' "$MIG_V13" 2>/dev/null; then
+  ok "a1001300 chains onto a1001200"
+else
+  bad "a1001300 does not chain onto a1001200"
+fi
+if grep -q 'target_word_count' "$MODEL_PY" 2>/dev/null \
+    && ! grep -q 'target_words = Column' "$MODEL_PY" 2>/dev/null; then
+  ok "Chapter.target_words renamed to target_word_count in ORM"
+else
+  bad "Chapter model still has legacy target_words column"
+fi
+if grep -c 'target_word_count = Column' "$MODEL_PY" 2>/dev/null | grep -q '^3$'; then
+  ok "Project/Volume/Chapter all carry target_word_count ORM field"
+else
+  bad "Project/Volume/Chapter ORM missing target_word_count (expected 3 occurrences)"
+fi
+if is_runtime; then
+  ALEMBIC_CUR=$(docker compose exec -T backend alembic current 2>/dev/null | awk '/head/ {print $1; exit}')
+  if [ "$ALEMBIC_CUR" = "a1001300" ]; then
+    ok "alembic current head = a1001300"
+  else
+    bad "alembic current head != a1001300 (got: '$ALEMBIC_CUR')"
+  fi
+  PG_OUT=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT table_name || '.' || column_name || ':' || is_nullable || ':' || COALESCE(column_default,'') FROM information_schema.columns WHERE table_name IN ('projects','volumes','chapters') AND column_name = 'target_word_count' ORDER BY table_name" 2>/dev/null)
+  if echo "$PG_OUT" | grep -q '^projects.target_word_count:NO:3000000'; then
+    ok "projects.target_word_count column NOT NULL default 3000000"
+  else
+    bad "projects.target_word_count shape wrong: $(echo "$PG_OUT" | grep '^projects')"
+  fi
+  if echo "$PG_OUT" | grep -q '^volumes.target_word_count:NO:200000'; then
+    ok "volumes.target_word_count column NOT NULL default 200000"
+  else
+    bad "volumes.target_word_count shape wrong: $(echo "$PG_OUT" | grep '^volumes')"
+  fi
+  if echo "$PG_OUT" | grep -q '^chapters.target_word_count:NO:50000'; then
+    ok "chapters.target_word_count column NOT NULL default 50000"
+  else
+    bad "chapters.target_word_count shape wrong: $(echo "$PG_OUT" | grep '^chapters')"
+  fi
+  LEGACY=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT 1 FROM information_schema.columns WHERE table_name='chapters' AND column_name='target_words'" 2>/dev/null | tr -d '[:space:]')
+  if [ -z "$LEGACY" ]; then
+    ok "chapters.target_words legacy column removed (renamed)"
+  else
+    bad "chapters.target_words legacy column still present"
+  fi
+else
+  skip "alembic head check (static-only mode)"
+  skip "projects.target_word_count column shape (static-only mode)"
+  skip "volumes.target_word_count column shape (static-only mode)"
+  skip "chapters.target_word_count column shape (static-only mode)"
+  skip "chapters.target_words legacy column removal (static-only mode)"
+fi
+
+# ---------- 17. v1.3.0 budget allocator (chunk-29) ----------
+head "[17/17] v1.3.0 budget allocator"
+ALLOC_PY="backend/app/services/budget_allocator.py"
+ALLOC_TEST="backend/tests/services/test_budget_allocator.py"
+PROJ_API="backend/app/api/projects.py"
+if [ -f "$ALLOC_PY" ] && grep -q 'def allocate_even' "$ALLOC_PY" && grep -q 'def allocate_project_budget' "$ALLOC_PY"; then
+  ok "budget_allocator.py: allocate_even + allocate_project_budget present"
+else
+  bad "budget_allocator.py missing or incomplete"
+fi
+if [ -f "$ALLOC_TEST" ] && grep -q 'def test_' "$ALLOC_TEST"; then
+  ok "test_budget_allocator.py present with unit tests"
+else
+  bad "test_budget_allocator.py missing"
+fi
+if grep -q '/allocate-budget' "$PROJ_API" && grep -q 'allocate_project_budget' "$PROJ_API"; then
+  ok "projects.py exposes POST /{project_id}/allocate-budget wired to allocator"
+else
+  bad "projects.py missing /allocate-budget endpoint or allocator wiring"
+fi
+if is_runtime; then
+  # Try host pytest first (backend image does not ship pytest). Fallback to
+  # in-container python -m pytest if the host has no pytest on PATH.
+  if command -v pytest >/dev/null 2>&1; then
+    rt=$(cd "$REPO" && PYTHONPATH=backend pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_budget_allocator.py 2>&1 | tr -d '\r')
+  else
+    rt=$(docker compose exec -T backend python -m pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_budget_allocator.py 2>&1 | tr -d '\r')
+  fi
+  if echo "$rt" | awk '/[0-9]+ passed/ { found=1; exit } END { exit !found }'; then
+    npass=$(echo "$rt" | grep -oE '[0-9]+ passed' | head -n1 | awk '{print $1}')
+    ok "pytest test_budget_allocator.py: ${npass:-?} passed"
+  else
+    bad "pytest test_budget_allocator.py failed ($(echo "$rt" | tail -3 | tr '\n' ' '))"
+  fi
+  NP=$(curl -sS -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d '{"title":"chunk29-smoke","genre":"test","premise":"budget allocator smoke"}' "$BASE/api/projects" 2>/dev/null)
+  PID=$(echo "$NP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null)
+  if [ -n "$PID" ]; then
+    for i in 1 2 3; do
+      curl -sS -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d "{\"title\":\"vol$i\",\"volume_idx\":$i}" "$BASE/api/projects/$PID/volumes" >/dev/null 2>&1
+    done
+    plan=$(curl -sS -X POST "${AUTH[@]}" "$BASE/api/projects/$PID/allocate-budget?force=true" 2>/dev/null)
+    vsum=$(echo "$plan" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('volume_sum',0))" 2>/dev/null)
+    ptot=$(echo "$plan" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('project_total',0))" 2>/dev/null)
+    if [ -n "$vsum" ] && [ "$vsum" = "$ptot" ] && [ "$ptot" != "0" ]; then
+      ok "allocate-budget: volume_sum == project_total ($vsum)"
+    else
+      bad "allocate-budget: volume_sum=$vsum project_total=$ptot"
+    fi
+    psum=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT COALESCE(SUM(target_word_count),0) FROM volumes WHERE project_id='$PID'" 2>/dev/null | tr -d '[:space:]')
+    if [ "$psum" = "$ptot" ] && [ -n "$psum" ]; then
+      ok "psql SUM(volumes.target_word_count) == project_total ($psum)"
+    else
+      bad "psql volumes sum=$psum project_total=$ptot"
+    fi
+    curl -sS -X DELETE "${AUTH[@]}" "$BASE/api/projects/$PID?purge=true" >/dev/null 2>&1 || true
+  else
+    bad "could not create smoke project for allocator runtime test"
+  fi
+else
+  skip "pytest test_budget_allocator.py (static-only mode)"
+  skip "allocate-budget endpoint roundtrip (static-only mode)"
+  skip "psql volumes sum verification (static-only mode)"
+fi
+
+# ---------- 18. v1.3.0 regenerate-volume budget auto-wire (chunk-30) ----------
+head "[18/18] v1.3.0 regenerate_volume budget auto-wire"
+VOL_API="backend/app/api/volumes.py"
+REGEN_TEST="backend/tests/services/test_regenerate_budget_flow.py"
+if grep -q 'from app.services.budget_allocator import allocate_even' "$VOL_API"; then
+  ok "volumes.py imports allocate_even"
+else
+  bad "volumes.py does NOT import allocate_even"
+fi
+if grep -q 'allocate_even(volume_target' "$VOL_API" && grep -q 'chapter_word_counts' "$VOL_API"; then
+  ok "regenerate_volume wires allocate_even into new chapters + SSE done event"
+else
+  bad "regenerate_volume not wired to allocator (allocate_even call or chapter_word_counts missing)"
+fi
+if [ -f "$REGEN_TEST" ] && grep -q 'def test_regenerate_' "$REGEN_TEST"; then
+  ok "test_regenerate_budget_flow.py present with regression tests"
+else
+  bad "test_regenerate_budget_flow.py missing or empty"
+fi
+if is_runtime; then
+  # Run the regenerate unit tests on the host (backend container lacks pytest).
+  if command -v pytest >/dev/null 2>&1; then
+    rt=$(cd "$REPO" && PYTHONPATH=backend pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_regenerate_budget_flow.py 2>&1 | tr -d '\r')
+  else
+    rt=$(docker compose exec -T backend python -m pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_regenerate_budget_flow.py 2>&1 | tr -d '\r')
+  fi
+  if echo "$rt" | awk '/[0-9]+ passed/ { found=1; exit } END { exit !found }'; then
+    npass=$(echo "$rt" | grep -oE '[0-9]+ passed' | head -n1 | awk '{print $1}')
+    ok "pytest test_regenerate_budget_flow.py: ${npass:-?} passed"
+  else
+    bad "pytest test_regenerate_budget_flow.py failed ($(echo "$rt" | tail -3 | tr '\n' ' '))"
+  fi
+else
+  skip "pytest test_regenerate_budget_flow.py (static-only mode)"
+fi
+
+# ---------- 19. v1.3.0 budget-status read-only audit (chunk-31) ----------
+head "[19/19] v1.3.0 GET /projects/{id}/budget-status"
+PROJ_API="backend/app/api/projects.py"
+if grep -q '@router.get("/{project_id}/budget-status")' "$PROJ_API"; then
+  ok "projects.py exposes GET /{project_id}/budget-status"
+else
+  bad "projects.py missing GET /{project_id}/budget-status"
+fi
+if grep -q 'volumes_drift' "$PROJ_API" && grep -q 'chapters_drift' "$PROJ_API" && grep -q 'per_volume' "$PROJ_API"; then
+  ok "budget-status shape includes volumes_drift + chapters_drift + per_volume"
+else
+  bad "budget-status shape missing drift/per_volume keys"
+fi
+if is_runtime; then
+  # Create a fresh project, add 3 volumes, then curl budget-status; assert healthy.
+  bs_pid=$(curl -sS "${AUTH[@]}" -H 'content-type: application/json' \
+    -X POST "$BASE/api/projects" -d '{"title":"bs_smoke","target_word_count":600000}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+  if [ -n "$bs_pid" ]; then
+    for vi in 1 2 3; do
+      curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+        -X POST "$BASE/api/projects/$bs_pid/volumes" \
+        -d "{\"title\":\"V$vi\",\"volume_idx\":$vi}"
+    done
+    # Trigger allocator so volumes sum to 600000 exactly.
+    curl -sS -o /dev/null "${AUTH[@]}" -X POST "$BASE/api/projects/$bs_pid/allocate-budget?force=true"
+    bs_json=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$bs_pid/budget-status")
+    vd=$(echo "$bs_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_drift"])' 2>/dev/null)
+    vh=$(echo "$bs_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_healthy"])' 2>/dev/null)
+    vc=$(echo "$bs_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volume_count"])' 2>/dev/null)
+    if [ "$vd" = "0" ] && [ "$vh" = "True" ] && [ "$vc" = "3" ]; then
+      ok "budget-status: 3 volumes sum to project_total, drift=0, healthy"
+    else
+      bad "budget-status unhealthy: vd=$vd vh=$vh vc=$vc body=$(echo "$bs_json" | head -c 200)"
+    fi
+    # 404 path: non-existent project
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" \
+      "$BASE/api/projects/00000000-0000-0000-0000-000000000000/budget-status")
+    if [ "$code" = "404" ]; then
+      ok "budget-status returns 404 for missing project"
+    else
+      bad "budget-status missing-project expected 404, got $code"
+    fi
+  else
+    bad "budget-status: could not create smoke project"
+  fi
+else
+  skip "budget-status runtime curl (static-only mode)"
+  skip "budget-status 404 path (static-only mode)"
+fi
+
+# ---------- 20. v1.3.0 PUT project.target_word_count cascades allocator (chunk-32) ----------
+head "[20/20] v1.3.0 PUT /projects/{id} cascades allocator on total change"
+PROJ_API="backend/app/api/projects.py"
+if grep -q 'allocate_project_budget' "$PROJ_API" && grep -q '"target_word_count" in update_data' "$PROJ_API"; then
+  ok "update_project wires allocate_project_budget on target_word_count change"
+else
+  bad "update_project missing allocator cascade"
+fi
+if is_runtime; then
+  cs2_pid=$(curl -sS "${AUTH[@]}" -H 'content-type: application/json' \
+    -X POST "$BASE/api/projects" -d '{"title":"cascade_smoke2","target_word_count":3000000}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+  if [ -n "$cs2_pid" ]; then
+    for vi in 1 2 3 4; do
+      curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+        -X POST "$BASE/api/projects/$cs2_pid/volumes" \
+        -d "{\"title\":\"D$vi\",\"volume_idx\":$vi}"
+    done
+    curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+      -X PUT "$BASE/api/projects/$cs2_pid" -d '{"target_word_count":4000000}'
+    cs2_json=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$cs2_pid/budget-status")
+    cs2_total=$(echo "$cs2_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["project_total"])' 2>/dev/null)
+    cs2_vsum=$(echo "$cs2_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_sum"])' 2>/dev/null)
+    cs2_healthy=$(echo "$cs2_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_healthy"])' 2>/dev/null)
+    if [ "$cs2_total" = "4000000" ]; then
+      ok "PUT target_word_count=4000000 persisted"
+    else
+      bad "PUT total not persisted: $cs2_total"
+    fi
+    if [ "$cs2_vsum" = "4000000" ] && [ "$cs2_healthy" = "True" ]; then
+      ok "PUT cascades allocator: 4 default volumes rebalanced to sum=4000000"
+    else
+      bad "PUT cascade unhealthy: sum=$cs2_vsum healthy=$cs2_healthy"
+    fi
+    curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+      -X PUT "$BASE/api/projects/$cs2_pid" -d '{"title":"cascade_smoke2_renamed"}'
+    cs2_after=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$cs2_pid/budget-status" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes_sum"])' 2>/dev/null)
+    if [ "$cs2_after" = "4000000" ]; then
+      ok "PUT title-only does not re-cascade allocator"
+    else
+      bad "PUT title-only re-cascaded unexpectedly, sum=$cs2_after"
+    fi
+  else
+    bad "cascade smoke: could not create smoke project"
+  fi
+else
+  skip "PUT cascade runtime (static-only mode)"
+  skip "PUT cascade default-rebalance (static-only mode)"
+  skip "PUT cascade no-op (static-only mode)"
+fi
+
+# ---------- 21. v1.3.0 budget-status written-progress fields (chunk-33) ----------
+head "[21/21] v1.3.0 budget-status written progress (chunk-33)"
+PROJ_API="backend/app/api/projects.py"
+if grep -q 'project_written' "$PROJ_API" && grep -q 'chapters_written' "$PROJ_API" && grep -q 'completion_ratio' "$PROJ_API"; then
+  ok "budget-status shape exposes chapters_written + project_written + completion_ratio"
+else
+  bad "budget-status shape missing written/completion_ratio fields"
+fi
+if grep -q 'len(c.content_text or "")' "$PROJ_API"; then
+  ok "budget-status aggregates len(content_text) per chapter"
+else
+  bad "budget-status does not aggregate len(content_text)"
+fi
+if is_runtime; then
+  wp_pid=$(curl -sS "${AUTH[@]}" -H 'content-type: application/json' \
+    -X POST "$BASE/api/projects" -d '{"title":"wp_smoke","target_word_count":600000}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null)
+  if [ -n "$wp_pid" ]; then
+    for vi in 1 2 3; do
+      curl -sS -o /dev/null "${AUTH[@]}" -H 'content-type: application/json' \
+        -X POST "$BASE/api/projects/$wp_pid/volumes" \
+        -d "{\"title\":\"W$vi\",\"volume_idx\":$vi}"
+    done
+    curl -sS -o /dev/null "${AUTH[@]}" -X POST "$BASE/api/projects/$wp_pid/allocate-budget?force=true"
+    wp_json=$(curl -sS "${AUTH[@]}" "$BASE/api/projects/$wp_pid/budget-status")
+    wp_cw=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("chapters_written"))' 2>/dev/null)
+    wp_pw=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("project_written"))' 2>/dev/null)
+    wp_cr=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("completion_ratio"))' 2>/dev/null)
+    if [ "$wp_cw" = "0" ] && [ "$wp_pw" = "0" ] && [ "$wp_cr" = "0.0" ]; then
+      ok "budget-status empty project: chapters_written=0, project_written=0, completion_ratio=0.0"
+    else
+      bad "budget-status written fields wrong: cw=$wp_cw pw=$wp_pw cr=$wp_cr body=$(echo "$wp_json" | head -c 200)"
+    fi
+    wp_pv_keys=$(echo "$wp_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); pv=d.get("per_volume") or []; print(all("chapters_written" in v for v in pv) if pv else True)' 2>/dev/null)
+    if [ "$wp_pv_keys" = "True" ]; then
+      ok "budget-status per_volume rows include chapters_written"
+    else
+      bad "budget-status per_volume rows missing chapters_written"
+    fi
+  else
+    bad "written-progress smoke: could not create smoke project"
+  fi
+else
+  skip "budget-status written fields runtime (static-only mode)"
+  skip "budget-status per_volume written keys (static-only mode)"
+fi

@@ -1301,7 +1301,7 @@ function ChapterTargetWordsEditor({
   projectDefault: number | null | undefined
   onSaved: () => void
 }) {
-  const initial = (chapter as unknown as { target_words?: number | null }).target_words ?? null
+  const initial = (chapter as unknown as { target_word_count?: number | null }).target_word_count ?? null
   const [text, setText] = useState(initial != null ? String(initial) : '')
   const [editing, setEditing] = useState(false)
   const effective = initial != null ? initial : (projectDefault ?? null)
@@ -1311,7 +1311,7 @@ function ChapterTargetWordsEditor({
     if (trimmed && (Number.isNaN(n!) || (n as number) <= 0)) return
     await apiFetch(`/api/projects/${projectId}/chapters/${chapter.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ target_words: n }),
+      body: JSON.stringify({ target_word_count: n }),
     })
     setEditing(false)
     onSaved()
