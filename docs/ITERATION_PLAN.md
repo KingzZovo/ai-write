@@ -143,3 +143,20 @@
 
 ### Next
 - PR-OL5: outline edit 后 cascade 重生章节摘要
+
+
+## 2026-05-03 (PR-OL5) · 卷规划保存后提示 (轻量 cascade)
+
+### Change
+- frontend/DesktopWorkspace.tsx:
+  * 新增 planSaveNotice state
+  * 卷规划 PATCH 保存成功后，检查 volumes.length：
+    - 如存在 N 个分卷大纲：提示 “检测到已生成 N 个分卷大纲，如果卷名/章数有变动请手动删除重生”
+    - 如为空：提示 “点生成分卷大纲开始创建”
+    - 失败时提示重试
+  * Toast 位于卷规划卡片与 fallback 卡之间，可手动关闭
+
+### Note (未做)
+- 未自动删除老 Volume。完整 cascade 重生需要判断 “哪些 volume 名字/章数 变了就 invalidate”，
+  但实际上“卷名稍变”不应该作为 invalidate 信号。仅 “章数变动大” 才应重生。
+  这部分需要产品判断，先交给用户手动控制。

@@ -134,6 +134,8 @@ export default function DesktopWorkspace() {
   // PR-OL3: edit mode for the volume plan card.
   const [editingPlan, setEditingPlan] = useState(false)
   const [savingPlan, setSavingPlan] = useState(false)
+  // PR-OL5: post-save notice prompting to regenerate volumes if any exist.
+  const [planSaveNotice, setPlanSaveNotice] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<'editor' | 'outline' | 'wizard'>(
     'wizard'
   )
@@ -986,8 +988,17 @@ export default function DesktopWorkspace() {
                                       { method: "PATCH", body: JSON.stringify({ volume_plan: volumePlan }) },
                                     )
                                     setVolumeCountInput(String(volumePlan.length))
+                                    // PR-OL5: post-save notice when stale volume outlines exist.
+                                    if (volumes.length > 0) {
+                                      setPlanSaveNotice(
+                                        `卷规划已保存。检测到已生成 ${volumes.length} 个分卷大纲，如果卷名/章数有变动，请手动在底部列表中删除并点 “生成分卷大纲” 重生。`,
+                                      )
+                                    } else {
+                                      setPlanSaveNotice('卷规划已保存。点 “生成分卷大纲” 开始创建。')
+                                    }
                                   } catch (err) {
                                     console.error("保存卷规划失败:", err)
+                                    setPlanSaveNotice('保存失败，请重试。')
                                   } finally {
                                     setSavingPlan(false)
                                     setEditingPlan(false)
@@ -1045,6 +1056,16 @@ export default function DesktopWorkspace() {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {planSaveNotice && (
+                      <div className="mb-3 border border-emerald-200 bg-emerald-50 rounded-lg p-2.5 flex items-start justify-between gap-2">
+                        <span className="text-xs text-emerald-900">{planSaveNotice}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPlanSaveNotice(null)}
+                          className="text-xs text-emerald-700 hover:underline"
+                        >关闭</button>
                       </div>
                     )}
                     {(!volumePlan || volumePlan.length === 0) && outlinePreview && (

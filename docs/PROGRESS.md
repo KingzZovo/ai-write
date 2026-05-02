@@ -91,3 +91,7 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 
 - step 2 在 volumePlan 为 null 且 outlinePreview 存在时 显示琰珀色提示卡
 - 提示 包含 detectVolumeCount() 探测结果 作 fallback
+
+## 2026-05-03 05:35 · PR-OL5 卷规划保存后提示
+
+- 保存卷规划后 检查 volumes.length，toast 提示是否需要重生
