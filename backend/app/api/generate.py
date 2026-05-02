@@ -2,6 +2,7 @@
 
 import json
 import logging
+import asyncio
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,6 +30,26 @@ class GenerateChapterRequest(BaseModel):
     user_instruction: str = ""
     max_tokens: int = 4096
     skip_polish: bool = False
+    # v1.5.0 C1: opt-in two-stage scene-by-scene writing.
+    # When true, the chapter is generated via scene_planner -> per-scene
+    # scene_writer streams (each 800-1200 chars), giving more coherent
+    # pacing and easier per-scene rewrite hooks downstream (C2).
+    use_scene_mode: bool = False
+    # Hint for scene_planner; clamped to 3..6 by SceneOrchestrator. None = auto.
+    n_scenes_hint: int | None = None
+    # Override the chapter target word count for scene-mode planning.
+    target_words: int | None = None
+    # v1.5.0 C2: opt-in auto-revise loop. After the initial scene-mode
+    # write completes and is saved, ChapterEvaluator scores the chapter;
+    # if overall < revise_threshold, SceneOrchestrator is re-run with the
+    # issues fed back as a revise instruction (up to max_revise_rounds).
+    # Only effective when use_scene_mode=True (single-shot ChapterGenerator
+    # cannot consume per-issue feedback meaningfully).
+    auto_revise: bool = False
+    # On the 0-10 evaluator scale (B1' baseline ~7.98). Below threshold = revise.
+    revise_threshold: float = 7.0
+    # Hard cap on rewrite rounds to bound LLM cost (3 total writes max at N=2).
+    max_revise_rounds: int = 2
 
 
 class GenerateOutlineRequest(BaseModel):
@@ -127,6 +148,7 @@ async def generate_chapter(
             logger.warning("Style resolve failed: %s", e)
 
     async def event_stream() -> AsyncGenerator[str, None]:
+        collected_text: list[str] = []
         try:
             yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
 
@@ -156,16 +178,393 @@ async def generate_chapter(
                 yield "data: [DONE]\n\n"
                 return
 
-            generator = ChapterGenerator()
-            async for chunk in generator.generate_stream(
-                project_id=req.project_id,
-                volume_id=resolved_volume_id,
-                chapter_idx=resolved_chapter_idx,
-                db=db,
-                chapter_id=req.chapter_id,
-                user_instruction=effective_user_instruction,
-            ):
+            # v1.5.0 C1: opt-in scene-staged streaming. SceneOrchestrator
+            # plans 3-6 scene briefs (scene_planner) then streams each scene
+            # 800-1200 chars (scene_writer). Falls back to ChapterGenerator's
+            # single-shot "generation" prompt when use_scene_mode is False.
+            stream_iter: AsyncGenerator[str, None]
+            if req.use_scene_mode:
+                from app.services.scene_orchestrator import SceneOrchestrator
+
+                orchestrator = SceneOrchestrator()
+                effective_target_words = req.target_words or target_words
+
+                async def _on_scene_start(scene) -> None:  # type: ignore[no-untyped-def]
+                    pass  # placeholder; SSE "scene" events can be added later
+
+                stream_iter = orchestrator.orchestrate_chapter_stream(
+                    project_id=req.project_id,
+                    volume_id=resolved_volume_id,
+                    chapter_idx=resolved_chapter_idx,
+                    db=db,
+                    chapter_id=req.chapter_id,
+                    user_instruction=effective_user_instruction,
+                    target_words=effective_target_words,
+                    n_scenes_hint=req.n_scenes_hint,
+                    on_scene_start=_on_scene_start,
+                )
+            else:
+                generator = ChapterGenerator()
+                stream_iter = generator.generate_stream(
+                    project_id=req.project_id,
+                    volume_id=resolved_volume_id,
+                    chapter_idx=resolved_chapter_idx,
+                    db=db,
+                    chapter_id=req.chapter_id,
+                    user_instruction=effective_user_instruction,
+                )
+            async for chunk in stream_iter:
+                if chunk:
+                    collected_text.append(chunk)
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
+
+            # Auto-save chapter content to DB (Bug K fix: parity with outline auto-save).
+            full_text = "".join(collected_text)
+            if full_text:
+                try:
+                    from app.db.session import async_session_factory
+                    async with async_session_factory() as save_db:
+                        target_chapter = None
+                        if req.chapter_id:
+                            target_chapter = await save_db.get(Chapter, req.chapter_id)
+                        if target_chapter is None and resolved_volume_id and resolved_chapter_idx is not None:
+                            lookup = await save_db.execute(
+                                select(Chapter).where(
+                                    Chapter.volume_id == resolved_volume_id,
+                                    Chapter.chapter_idx == resolved_chapter_idx,
+                                )
+                            )
+                            target_chapter = lookup.scalar_one_or_none()
+                        if target_chapter is not None:
+                            target_chapter.content_text = full_text
+                            target_chapter.word_count = len(full_text)
+                            target_chapter.status = "completed"
+                            await save_db.commit()
+                            await save_db.refresh(target_chapter)
+                            yield f"data: {json.dumps({'status': 'saved', 'chapter_id': str(target_chapter.id), 'word_count': target_chapter.word_count})}\n\n"
+                            # B2' (v1.5.0): kick entity-extraction task post-commit.
+                            try:
+                                from app.services.entity_dispatch import dispatch_for_chapter
+                                await dispatch_for_chapter(
+                                    target_chapter, save_db,
+                                    caller="api.generate.stream_generate",
+                                )
+                            except Exception as dispatch_err:
+                                logger.warning(
+                                    "Entity dispatch after auto-save failed: %s", dispatch_err
+                                )
+                        else:
+                            logger.warning(
+                                "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",
+                                req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                            )
+                except Exception as save_err:
+                    logger.warning("Failed to auto-save chapter: %s", save_err)
+
+            # ----------------------------------------------------------------
+            # v1.5.0 C2: scene-mode auto-revise loop.
+            # After the initial save, evaluate the chapter; if overall <
+            # revise_threshold, re-run SceneOrchestrator with the issues fed
+            # back as a revise instruction. Up to req.max_revise_rounds extra
+            # writes (so 3 total at N=2). Persists each ChapterEvaluation row
+            # for telemetry and overwrites Chapter.content_text on every
+            # revised round so the latest revision wins. Single-shot
+            # ChapterGenerator path is intentionally skipped — it cannot
+            # consume per-issue feedback meaningfully (no scene boundaries).
+            # ----------------------------------------------------------------
+            if (
+                full_text
+                and req.use_scene_mode
+                and req.auto_revise
+                and resolved_volume_id is not None
+                and resolved_chapter_idx is not None
+                and req.chapter_id
+            ):
+                try:
+                    # C2 deadlock fix: the outer baseline-path session (`db`)
+                    # may still hold an open transaction with row-level locks
+                    # on prompt_assets / projects from earlier ContextPack and
+                    # PromptRegistry SELECTs. Without an explicit rollback,
+                    # the revise scene_writer's UPDATE prompt_assets SET
+                    # success_count=... blocks indefinitely on a transactionid
+                    # lock held by this idle outer session. Force-release.
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    from app.db.session import async_session_factory
+                    from app.models.project import Chapter as _Chapter
+                    from app.models.project import ChapterEvaluation
+                    from app.services.auto_revise import (
+                        issues_to_revise_instruction,
+                        merge_revise_into_user_instruction,
+                        should_revise,
+                    )
+                    from app.services.chapter_evaluator import ChapterEvaluator
+                    from app.services.scene_orchestrator import SceneOrchestrator
+
+                    revise_chapter_id = req.chapter_id
+                    current_text = full_text
+                    revise_outline = chapter_outline or {}
+                    max_rounds = max(0, int(req.max_revise_rounds))
+                    threshold = float(req.revise_threshold)
+
+                    for round_idx in range(1, max_rounds + 1):
+                        # 1) Score the current saved version.
+                        yield f"data: {json.dumps({'event': 'evaluating', 'round': round_idx})}\n\n"
+                        evaluator = ChapterEvaluator()
+                        eval_result = await evaluator.evaluate(
+                            chapter_text=current_text,
+                            chapter_outline=revise_outline,
+                        )
+                        scored_payload = json.dumps({
+                            "event": "scored",
+                            "round": round_idx,
+                            "overall": eval_result.overall,
+                            "issues": len(eval_result.issues),
+                        })
+                        yield f"data: {scored_payload}\n\n"
+                        # Persist evaluation row (best-effort; never blocks).
+                        try:
+                            async with async_session_factory() as eval_db:
+                                eval_db.add(ChapterEvaluation(
+                                    chapter_id=revise_chapter_id,
+                                    plot_coherence=eval_result.plot_coherence,
+                                    character_consistency=eval_result.character_consistency,
+                                    style_adherence=eval_result.style_adherence,
+                                    narrative_pacing=eval_result.narrative_pacing,
+                                    foreshadow_handling=eval_result.foreshadow_handling,
+                                    overall=eval_result.overall,
+                                    issues_json=eval_result.issues,
+                                ))
+                                await eval_db.commit()
+                        except Exception as persist_err:
+                            logger.warning(
+                                "C2 auto-revise: failed to persist ChapterEvaluation row (round=%d): %s",
+                                round_idx, persist_err,
+                            )
+
+                        # 2) Threshold gate.
+                        if not should_revise(eval_result, threshold=threshold):
+                            skipped_payload = json.dumps({
+                                "event": "revise_skipped",
+                                "reason": "score_above_threshold",
+                                "overall": eval_result.overall,
+                                "threshold": threshold,
+                            })
+                            yield f"data: {skipped_payload}\n\n"
+                            break
+
+                        # 3) Build revise instruction and rerun SceneOrchestrator.
+                        revise_instr = issues_to_revise_instruction(
+                            eval_result, round_idx=round_idx,
+                        )
+                        merged_instruction = merge_revise_into_user_instruction(
+                            effective_user_instruction, revise_instr,
+                        )
+                        revising_payload = json.dumps({
+                            "event": "revising",
+                            "round": round_idx,
+                            "overall": eval_result.overall,
+                            "threshold": threshold,
+                        })
+                        yield f"data: {revising_payload}\n\n"
+
+                        revise_orchestrator = SceneOrchestrator()
+                        revised_chunks: list[str] = []
+                        revise_timed_out = False
+                        try:
+                            async with asyncio.timeout(900):  # 15min hard cap per round
+                                async with async_session_factory() as revise_db:
+                                    async for chunk in revise_orchestrator.orchestrate_chapter_stream(
+                                        project_id=req.project_id,
+                                        volume_id=resolved_volume_id,
+                                        chapter_idx=resolved_chapter_idx,
+                                        db=revise_db,
+                                        chapter_id=revise_chapter_id,
+                                        user_instruction=merged_instruction,
+                                        target_words=effective_target_words,
+                                        n_scenes_hint=req.n_scenes_hint,
+                                        on_scene_start=_on_scene_start,
+                                    ):
+                                        if chunk:
+                                            revised_chunks.append(chunk)
+                                        yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                        except asyncio.TimeoutError:
+                            revise_timed_out = True
+                            logger.warning(
+                                "C2 auto-revise round %d timed out after 900s; aborting loop",
+                                round_idx,
+                            )
+                            err_payload = json.dumps({
+                                "event": "revise_error",
+                                "round": round_idx,
+                                "reason": "timeout",
+                                "timeout_seconds": 900,
+                            })
+                            yield f"data: {err_payload}\n\n"
+                        revised_text = "".join(revised_chunks)
+                        if revise_timed_out or not revised_text:
+                            if not revise_timed_out:
+                                logger.warning(
+                                    "C2 auto-revise round %d produced empty text; aborting loop",
+                                    round_idx,
+                                )
+                                err_payload = json.dumps({
+                                    "event": "revise_error",
+                                    "round": round_idx,
+                                    "reason": "empty_briefs",
+                                })
+                                yield f"data: {err_payload}\n\n"
+                            break
+
+                        # 4) Overwrite chapter content with the revised version.
+                        try:
+                            async with async_session_factory() as save_db2:
+                                ch2 = await save_db2.get(_Chapter, revise_chapter_id)
+                                if ch2 is not None:
+                                    ch2.content_text = revised_text
+                                    ch2.word_count = len(revised_text)
+                                    ch2.status = "completed"
+                                    await save_db2.commit()
+                                    saved_payload = json.dumps({
+                                        "status": "saved",
+                                        "chapter_id": revise_chapter_id,
+                                        "word_count": len(revised_text),
+                                        "revise_round": round_idx,
+                                    })
+                                    yield f"data: {saved_payload}\n\n"
+                        except Exception as save2_err:
+                            logger.warning(
+                                "C2 auto-revise round %d save failed: %s",
+                                round_idx, save2_err,
+                            )
+                            break
+                        current_text = revised_text
+                    else:
+                        # for-else: ran out of rounds without breaking. Emit a
+                        # final scored event for the last write so the UI sees
+                        # the converged score even if we never met threshold.
+                        try:
+                            evaluator = ChapterEvaluator()
+                            final_eval = await evaluator.evaluate(
+                                chapter_text=current_text,
+                                chapter_outline=revise_outline,
+                            )
+                            final_payload = json.dumps({
+                                "event": "scored",
+                                "round": max_rounds + 1,
+                                "overall": final_eval.overall,
+                                "issues": len(final_eval.issues),
+                                "rounds_exhausted": True,
+                            })
+                            yield f"data: {final_payload}\n\n"
+                            try:
+                                async with async_session_factory() as eval_db2:
+                                    eval_db2.add(ChapterEvaluation(
+                                        chapter_id=revise_chapter_id,
+                                        plot_coherence=final_eval.plot_coherence,
+                                        character_consistency=final_eval.character_consistency,
+                                        style_adherence=final_eval.style_adherence,
+                                        narrative_pacing=final_eval.narrative_pacing,
+                                        foreshadow_handling=final_eval.foreshadow_handling,
+                                        overall=final_eval.overall,
+                                        issues_json=final_eval.issues,
+                                    ))
+                                    await eval_db2.commit()
+                            except Exception:
+                                logger.warning("C2 auto-revise final eval persist failed", exc_info=True)
+
+                            # C4-4: cascade auto-regenerate trigger.
+                            # When auto-revise exhausts max_rounds without
+                            # meeting `threshold`, the chapter has structural
+                            # issues that no further chapter-local rewrite
+                            # will fix -- the upstream outline / character /
+                            # foreshadow entities are likely the root cause.
+                            # Planner + cascade celery queue handle that out
+                            # of band; SSE "cascade_triggered" notifies the
+                            # UI so it can poll cascade_tasks for status.
+                            #
+                            # Best-effort: any failure here is logged and the
+                            # SSE stream continues to the [DONE] terminator.
+                            try:
+                                from app.services.cascade_planner import (
+                                    plan_cascade,
+                                    should_trigger_cascade,
+                                )
+                                from app.tasks.cascade import (
+                                    enqueue_cascade_candidates,
+                                )
+                                # Look up the row we just persisted via the
+                                # natural ordering. We avoid ``refresh`` on
+                                # the original session because it has
+                                # already exited the ``async with`` scope.
+                                final_eval_row_id = None
+                                try:
+                                    async with async_session_factory() as cdb_lookup:
+                                        from sqlalchemy import select as _select
+                                        latest_id = (await cdb_lookup.execute(
+                                            _select(ChapterEvaluation.id)
+                                            .where(ChapterEvaluation.chapter_id == revise_chapter_id)
+                                            .order_by(ChapterEvaluation.created_at.desc())
+                                            .limit(1)
+                                        )).scalar_one_or_none()
+                                        final_eval_row_id = (
+                                            str(latest_id) if latest_id else None
+                                        )
+                                except Exception:
+                                    logger.warning(
+                                        "C4 cascade: failed to look up final evaluation id",
+                                        exc_info=True,
+                                    )
+
+                                if (
+                                    final_eval_row_id is not None
+                                    and should_trigger_cascade(
+                                        overall=final_eval.overall,
+                                        rounds_exhausted=True,
+                                        threshold=threshold,
+                                    )
+                                ):
+                                    async with async_session_factory() as cdb:
+                                        candidates = await plan_cascade(
+                                            db=cdb,
+                                            project_id=req.project_id,
+                                            source_chapter_id=revise_chapter_id,
+                                            source_evaluation_id=final_eval_row_id,
+                                            issues_json=final_eval.issues,
+                                        )
+                                        cascade_result = await enqueue_cascade_candidates(
+                                            cdb,
+                                            candidates,
+                                            caller="generate.auto_revise.exhausted",
+                                        )
+                                    cascade_payload = json.dumps({
+                                        "event": "cascade_triggered",
+                                        "chapter_id": revise_chapter_id,
+                                        "evaluation_id": final_eval_row_id,
+                                        "overall": final_eval.overall,
+                                        "threshold": threshold,
+                                        "candidates_planned": len(candidates),
+                                        "tasks_inserted": len(
+                                            cascade_result["inserted"]
+                                        ),
+                                        "duplicates": cascade_result["duplicates"],
+                                        "dispatched": cascade_result["dispatched"],
+                                        "task_ids": cascade_result["inserted"],
+                                    })
+                                    yield f"data: {cascade_payload}\n\n"
+                            except Exception:
+                                logger.warning(
+                                    "C4 cascade trigger failed", exc_info=True,
+                                )
+                        except Exception:
+                            logger.warning("C2 auto-revise final eval call failed", exc_info=True)
+                except Exception as revise_err:
+                    logger.warning(
+                        "C2 auto-revise loop failed: %s", revise_err, exc_info=True,
+                    )
+                    yield f"data: {json.dumps({'event': 'revise_error', 'error': str(revise_err)})}\n\n"
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"

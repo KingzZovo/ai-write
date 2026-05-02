@@ -389,6 +389,7 @@ class QdrantStore:
             )
         except Exception as exc:
             logger.warning("Failed to store style_profile for slice %s: %s", slice_id, exc)
+            raise
         return point_id
 
     async def store_beat_sheet(
@@ -417,6 +418,7 @@ class QdrantStore:
             )
         except Exception as exc:
             logger.warning("Failed to store beat_sheet for slice %s: %s", slice_id, exc)
+            raise
         return point_id
 
     async def store_style_sample_redacted(
@@ -447,6 +449,7 @@ class QdrantStore:
             )
         except Exception as exc:
             logger.warning("Failed to store style_sample_redacted for slice %s: %s", slice_id, exc)
+            raise
         return point_id
 
     async def search_style_profiles(

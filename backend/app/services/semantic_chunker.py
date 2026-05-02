@@ -14,6 +14,12 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 _MAX_TOKENS = int(os.getenv("SEMANTIC_CHUNKER_MAX_TOKENS", "800"))
+# Minimum content size for a slice to be emitted standalone. Anything below
+# this threshold is merged into the *next* slice instead of being flushed,
+# so chapter/volume/section headings, stray short dialogue lines, structural
+# tags ("序章", "尾声", "目录", etc.) never become standalone slices that the
+# beat-extraction LLM would otherwise hallucinate against.
+_MIN_TOKENS = int(os.getenv("SEMANTIC_CHUNKER_MIN_TOKENS", "80"))
 # rough chinese/english hybrid: 1 token ≈ 1 han char ≈ 0.75 word
 _APPROX_CHARS_PER_TOKEN = 1
 
@@ -33,6 +39,19 @@ _SCENE_CUES = [
 _SCENE_RE = re.compile("|".join(_SCENE_CUES))
 
 _CHAPTER_RE = re.compile(r"^\s*(?:第[\u4e00-\u9fa5\d]+[章回节]|Chapter\s*\d+)", re.IGNORECASE)
+
+# Volume / part / structural headings that are NOT "第X章/回/节" but still
+# act as semantic boundaries we never want to be alone in a slice.
+#  - 正传·XXX（上/中/下） / 前传·XXX / 番外·XXX
+#  - 序章 / 楽子 / 尾声 / 后记 / 预告 / 目录 / 未完待续
+_STRUCTURE_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:正传|前传|番外|外传|后传)\s*[··・:：\-]?"  # zh "sequel/prequel/spinoff" prefixes
+    r"|序章|序言|序曲|楽子|引子|开篇|尾声|结语|后记|预告|目录|未完待续"
+    r"|上卷|中卷|下卷|第\s*[\u4e00-\u9fa5\d]+\s*卷|Volume\s*\d+|Part\s*\d+"
+    r")",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -58,8 +77,12 @@ def chunk(text: str, *, max_tokens: int | None = None) -> list[Slice]:
     1. Chapter heading starts new slice.
     2. Scene cue line starts new slice.
     3. Otherwise merge paragraphs until max_tokens.
+    4. Slices below _MIN_TOKENS are never flushed standalone; they roll
+       into the next slice. Only the very last slice in the book may be
+       short (we still emit it so we don't drop the tail).
     """
     cap = max_tokens or _MAX_TOKENS
+    floor = _MIN_TOKENS
     slices: list[Slice] = []
     if not text:
         return slices
@@ -73,7 +96,13 @@ def chunk(text: str, *, max_tokens: int | None = None) -> list[Slice]:
     slice_type = "paragraph"
     seq = 0
 
-    def _flush(end_offset: int, stype: str, ch_idx: int | None):
+    def _flush(end_offset: int, stype: str, ch_idx: int | None, *, force: bool = False):
+        """Emit accumulated buf as a Slice.
+
+        If buf size is below `floor` and `force` is False, keep accumulating
+        instead of emitting (the short fragment will roll into the next
+        slice). Pass `force=True` only at end-of-text to flush the tail.
+        """
         nonlocal buf, buf_tokens, buf_start, seq
         if not buf:
             return
@@ -82,6 +111,10 @@ def chunk(text: str, *, max_tokens: int | None = None) -> list[Slice]:
             buf = []
             buf_tokens = 0
             buf_start = end_offset
+            return
+        if not force and buf_tokens < floor:
+            # Hold the fragment in buf so it merges with the next slice;
+            # do NOT reset buf/buf_tokens/buf_start.
             return
         slices.append(
             Slice(
@@ -115,6 +148,21 @@ def chunk(text: str, *, max_tokens: int | None = None) -> list[Slice]:
             slice_type = "scene"
             continue
 
+        if _STRUCTURE_RE.match(stripped):
+            # Volume/part/structural heading: flush whatever is pending
+            # (subject to the floor), then attach this heading to the next
+            # slice's buf so it never stands alone.
+            _flush(cursor, slice_type, chapter_idx)
+            slice_type = "scene"
+            buf.append(line)
+            buf_tokens += line_tokens
+            if not buf and not slices:
+                buf_start = cursor
+            elif not buf:
+                buf_start = cursor
+            cursor += len(line)
+            continue
+
         if _SCENE_RE.match(stripped) and buf_tokens > 0:
             _flush(cursor, slice_type or "scene", chapter_idx)
             slice_type = "scene"
@@ -127,5 +175,5 @@ def chunk(text: str, *, max_tokens: int | None = None) -> list[Slice]:
         buf_tokens += line_tokens
         cursor += len(line)
 
-    _flush(cursor, slice_type or "paragraph", chapter_idx)
+    _flush(cursor, slice_type or "paragraph", chapter_idx, force=True)
     return slices

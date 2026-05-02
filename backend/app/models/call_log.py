@@ -47,4 +47,9 @@ class LLMCallLog(Base):
     )
     status = Column(String(20), default="ok")
     error_message = Column(Text, nullable=True)
+    # v1.5.0 B1 - tier-aware fallback fields
+    tier_used = Column(String(20), nullable=True, index=True)
+    fallback_reason = Column(String(200), nullable=True)
+    attempt_index = Column(Integer, default=0, nullable=False)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, index=True)

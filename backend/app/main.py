@@ -121,6 +121,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("Could not seed built-in prompts: %s", e)
 
+    # v1.5.0 C3: start the prompt-cache background flusher. The flusher
+    # commits buffered ``track_result`` increments on a fresh session every
+    # ``FLUSH_INTERVAL_SECONDS``, so the per-LLM-call UPDATE prompt_assets
+    # never runs on the request session (eliminates the C2 deadlock class).
+    try:
+        from app.services import prompt_cache
+        prompt_cache.start_flusher()
+        # If we just seeded new built-ins, drop any (very small) negative
+        # cache so the next read picks them up immediately.
+        prompt_cache.invalidate()
+        logger.info("Prompt cache flusher started")
+    except Exception as e:
+        logger.warning("Could not start prompt cache flusher: %s", e)
+
     # v0.8: seed writing-engine defaults (incremental, idempotent)
     try:
         from app.services.writing_engine_seed import seed_writing_engine
@@ -138,6 +152,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Closing database connections...")
+    # v1.5.0 C3: stop the flusher first so it can drain any pending counter
+    # ticks before the engine is disposed.
+    try:
+        from app.services import prompt_cache
+        await prompt_cache.stop_flusher()
+    except Exception as e:
+        logger.warning("Prompt cache flusher shutdown failed: %s", e)
     await close_qdrant()
     await close_neo4j()
     await close_redis()
@@ -257,6 +278,8 @@ from app.api import run_bus as run_bus_api  # noqa: E402
 app.include_router(run_bus_api.router)
 app.include_router(admin_usage.router)
 app.include_router(export_api.router)
+from app.api import evaluate as evaluate_api  # noqa: E402  C2 Step D (v1.5.0)
+app.include_router(evaluate_api.router)
 
 # Prometheus HTTP duration middleware
 # ---------------------------------------------------------------------------

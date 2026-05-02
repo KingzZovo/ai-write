@@ -31,7 +31,9 @@ async def test_metrics_endpoint_public(client: AsyncClient):
     assert "# HELP" in text
     assert "# TYPE" in text
     # Our core metric families should be registered.
-    assert "http_request_total" in text
+    # The exported counter family is http_requests_total (plural "requests");
+    # see app/observability/metrics.py.
+    assert "http_requests_total" in text
     assert "http_request_duration_seconds" in text
 
 

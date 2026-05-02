@@ -232,6 +232,20 @@ async def rollback_version(
     chapter.content_text = active.content_text
     chapter.word_count = active.word_count
     await db.flush()
+    # B2' (v1.5.0): rolled-back content is the new canonical body, so
+    # re-extract entities to keep the knowledge graph in sync.
+    try:
+        from app.services.entity_dispatch import dispatch_for_chapter
+        await dispatch_for_chapter(
+            chapter, db,
+            caller="api.versions.rollback",
+        )
+    except Exception as dispatch_err:
+        # Never block a rollback because of a downstream extraction hiccup.
+        import logging
+        logging.getLogger(__name__).warning(
+            "Entity dispatch after rollback failed: %s", dispatch_err
+        )
     return RollbackResponse(
         status="ok",
         chapter_id=chapter_id,

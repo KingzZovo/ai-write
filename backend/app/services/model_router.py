@@ -382,6 +382,16 @@ class ModelRouter:
                     self._endpoint_tiers[key] = getattr(ep, "tier", "standard") or "standard"
                     self._endpoint_names[key] = getattr(ep, "name", "") or ""
                     api_key = decrypt_api_key(ep.api_key or "")
+                    # v1.4.1 hardening: NVIDIA endpoints are embedding-only.
+                    # Never register them into the chat provider dict where they
+                    # would otherwise be wrapped as OpenAIProvider. With an
+                    # empty base_url the OpenAI SDK silently defaults to
+                    # https://api.openai.com/v1, causing chat tasks that fell
+                    # into the fallback branch to leak the nvapi- key to the
+                    # public OpenAI API. Their embedding role is still handled
+                    # via the dedicated embedding_provider path below.
+                    if ep.provider_type == "nvidia":
+                        continue
                     if ep.provider_type == "anthropic":
                         self.register_provider(key, AnthropicProvider(api_key=api_key))
                     else:
@@ -415,11 +425,28 @@ class ModelRouter:
                         None,
                     )
                     if emb_ep:
-                        self.embedding_provider = EmbeddingProvider(
-                            api_key=decrypt_api_key(emb_ep.api_key or ""),
-                            base_url=emb_ep.base_url or "",
-                            model=emb_prompt.model_name or emb_ep.default_model,
-                        )
+                        emb_api_key = decrypt_api_key(emb_ep.api_key or "")
+                        emb_model = emb_prompt.model_name or emb_ep.default_model
+                        if emb_ep.provider_type == "nvidia":
+                            # v1.4.2 fix: NVIDIA embeddings require a different
+                            # request schema (input=list, input_type, modality,
+                            # encoding_format, truncate) and are not speakable
+                            # via the OpenAI SDK. Using the generic OpenAI-style
+                            # EmbeddingProvider here would either leak to
+                            # api.openai.com (when base_url is empty) or be
+                            # rejected by NVIDIA with 400/401. Route NVIDIA
+                            # endpoints to the dedicated httpx-based provider.
+                            self.embedding_provider = NvidiaEmbeddingProvider(
+                                api_key=emb_api_key,
+                                base_url=emb_ep.base_url or "",
+                                model=emb_model,
+                            )
+                        else:
+                            self.embedding_provider = EmbeddingProvider(
+                                api_key=emb_api_key,
+                                base_url=emb_ep.base_url or "",
+                                model=emb_model,
+                            )
 
                 self._db_loaded = True
                 logger.info("Loaded %d endpoints, %d task routes from DB",
@@ -429,14 +456,29 @@ class ModelRouter:
 
     def _get_route(self, task_type: str) -> TaskRouteConfig:
         route = self.task_routing.get(task_type)
-        if not route and self.providers:
-            first = next(iter(self.providers))
-            return TaskRouteConfig(provider_key=first, model_name="")
-        if not route:
+        if route:
+            return route
+        # v1.4.1 hardening: fall back only to chat-capable providers.
+        # Skip endpoints whose tier is "embedding" so a chat task never gets
+        # silently routed to an embeddings endpoint. If no chat-capable
+        # provider is configured, raise an explicit error pointing the user
+        # to the Prompt management UI instead of leaking requests.
+        chat_keys = [
+            k for k in self.providers
+            if self._endpoint_tiers.get(k, "standard") != "embedding"
+        ]
+        if chat_keys:
+            return TaskRouteConfig(provider_key=chat_keys[0], model_name="")
+        if self.providers:
             raise ValueError(
-                f"No model configured for '{task_type}'. "
-                "Configure at Settings > Model Configuration.")
-        return route
+                f"No chat-capable model configured for task '{task_type}'. "
+                "All registered endpoints are embedding-tier. Open "
+                "/prompts and bind a non-embedding endpoint to this prompt."
+            )
+        raise ValueError(
+            f"No model configured for '{task_type}'. "
+            "Configure at Settings > Model Configuration."
+        )
 
     def _pick_endpoint_by_tier(self, tier: str) -> str | None:
         """v1.4 — return the first registered provider_key whose endpoint tier matches.
@@ -449,6 +491,18 @@ class ModelRouter:
             if t == tier and key in self.providers:
                 return key
         return None
+
+    def _pick_endpoints_by_tier(self, tier: str) -> list[str]:
+        """v1.5 — return ALL registered provider_keys whose endpoint tier matches.
+
+        Used by tier-aware fallback to enumerate every candidate within a tier
+        (e.g. two distinct standard endpoints), not just the first match.
+        Excludes the embedding tier (embeddings are not chat-capable).
+        """
+        if not tier or tier == "embedding":
+            return []
+        return [k for k, t in self._endpoint_tiers.items()
+                if t == tier and k in self.providers]
 
     def list_routes_matrix(self) -> list[dict]:
         """v1.4 — flat snapshot of task routing + endpoint tier for the matrix UI/API.
@@ -493,57 +547,153 @@ class ModelRouter:
 
     async def generate(self, task_type: str, messages: list[dict],
                        temperature: float | None = None,
-                       max_tokens: int | None = None, **kw) -> GenerationResult:
+                       max_tokens: int | None = None,
+                       _log_meta: dict | None = None, **kw) -> GenerationResult:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
         model = self._resolve_model(route)
-        result = await provider.generate(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            result = await provider.generate(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw)
+            self._track(result.usage)
+            return result
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", route.provider_key)
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                result = await provider.generate(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw)
+                ctx.add_chunk(result.text)
+                ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
+            await db.commit()
         self._track(result.usage)
         return result
 
     async def generate_stream(self, task_type: str, messages: list[dict],
                               temperature: float | None = None,
-                              max_tokens: int | None = None, **kw) -> AsyncIterator[str]:
+                              max_tokens: int | None = None,
+                              _log_meta: dict | None = None, **kw) -> AsyncIterator[str]:
         route = self._get_route(task_type)
         provider = self._get_provider(route.provider_key)
         model = self._resolve_model(route)
-        async for chunk in provider.generate_stream(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
-            yield chunk
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            async for chunk in provider.generate_stream(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw):
+                yield chunk
+            return
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", route.provider_key)
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                async for chunk in provider.generate_stream(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw):
+                    ctx.add_chunk(chunk)
+                    yield chunk
+            await db.commit()
 
     async def generate_by_route(self, route, messages: list[dict],
                                 temperature: float | None = None,
                                 max_tokens: int | None = None,
+                                _log_meta: dict | None = None,
                                 **kw) -> GenerationResult:
         """Generate using an explicit RouteSpec (v0.5 path)."""
         ep_key = str(route.endpoint_id)
         provider = self._get_provider(ep_key)
         model = route.model or self._endpoint_defaults.get(ep_key, "")
-        result = await provider.generate(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw)
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            result = await provider.generate(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw)
+            self._track(result.usage)
+            return result
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", ep_key)
+        task_type = meta.pop("task_type", "by_route")
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                result = await provider.generate(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw)
+                ctx.add_chunk(result.text)
+                ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
+            await db.commit()
         self._track(result.usage)
         return result
 
     async def stream_by_route(self, route, messages: list[dict],
                               temperature: float | None = None,
                               max_tokens: int | None = None,
+                              _log_meta: dict | None = None,
                               **kw) -> AsyncIterator[str]:
         """Stream using an explicit RouteSpec (v0.5 path)."""
         ep_key = str(route.endpoint_id)
         provider = self._get_provider(ep_key)
         model = route.model or self._endpoint_defaults.get(ep_key, "")
-        async for chunk in provider.generate_stream(
-            messages=messages, model=model,
-            temperature=temperature if temperature is not None else route.temperature,
-            max_tokens=max_tokens if max_tokens is not None else route.max_tokens, **kw):
-            yield chunk
+        eff_temp = temperature if temperature is not None else route.temperature
+        eff_max = max_tokens if max_tokens is not None else route.max_tokens
+        if _log_meta is None:
+            async for chunk in provider.generate_stream(
+                messages=messages, model=model,
+                temperature=eff_temp, max_tokens=eff_max, **kw):
+                yield chunk
+            return
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta)
+        endpoint_id = meta.pop("endpoint_id", ep_key)
+        task_type = meta.pop("task_type", "by_route_stream")
+        async with async_session_factory() as db:
+            async with log_llm_call(
+                db=db, task_type=task_type, model=model,
+                endpoint_id=endpoint_id, messages=messages,
+                prompt_id=meta.pop("prompt_id", None),
+                project_id=meta.pop("project_id", None),
+                chapter_id=meta.pop("chapter_id", None),
+                rag_hits=meta.pop("rag_hits", None),
+            ) as ctx:
+                async for chunk in provider.generate_stream(
+                    messages=messages, model=model,
+                    temperature=eff_temp, max_tokens=eff_max, **kw):
+                    ctx.add_chunk(chunk)
+                    yield chunk
+            await db.commit()
 
     async def generate_with_fallback(self, task_type: str, messages: list[dict],
                                      **kw) -> GenerationResult:
@@ -589,8 +739,262 @@ class ModelRouter:
         }
 
 
+    # =====================================================================
+    # v1.5.0 B1 — tier-aware fallback chain (real fallback, with per-attempt logging)
+    # =====================================================================
+    def _build_tier_attempts(
+        self,
+        *,
+        route=None,
+        preferred_tier: str | None = None,
+        fallback_tiers: list[str] | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """Return ordered list of (tier_label, endpoint_key, model_name) attempts.
+
+        Order:
+          1. If ``route`` is given and its endpoint is registered, that
+             explicit endpoint is the first attempt (with its tier label).
+          2. Else if ``preferred_tier`` is given, the first endpoint whose
+             tier matches is the first attempt.
+          3. Then walk ``fallback_tiers`` (default flagship→standard→small)
+             skipping tiers already attempted and the ``embedding`` tier.
+        Always de-duplicates endpoints; an endpoint is only tried once.
+        """
+        attempts: list[tuple[str, str, str]] = []
+        seen_eps: set[str] = set()
+        if route is not None:
+            ep_key = str(route.endpoint_id)
+            if ep_key in self.providers:
+                tier = self._endpoint_tiers.get(ep_key, "standard")
+                model = (getattr(route, "model", None) or
+                         self._endpoint_defaults.get(ep_key, ""))
+                attempts.append((tier, ep_key, model))
+                seen_eps.add(ep_key)
+        elif preferred_tier and preferred_tier in VALID_TIERS                 and preferred_tier != "embedding":
+            ep_key = self._pick_endpoint_by_tier(preferred_tier)
+            if ep_key and ep_key not in seen_eps:
+                model = self._endpoint_defaults.get(ep_key, "")
+                attempts.append((preferred_tier, ep_key, model))
+                seen_eps.add(ep_key)
+        chain = fallback_tiers or ["flagship", "standard", "small"]
+        for t in chain:
+            if not t or t == "embedding" or t not in VALID_TIERS:
+                continue
+            # v1.5 B1': enumerate ALL endpoints in this tier, not just first match.
+            for ep_key in self._pick_endpoints_by_tier(t):
+                if ep_key in seen_eps:
+                    continue
+                model = self._endpoint_defaults.get(ep_key, "")
+                attempts.append((t, ep_key, model))
+                seen_eps.add(ep_key)
+        # v1.5 B1' final safety net: any remaining chat-capable endpoint not yet
+        # tried, regardless of tier (embedding always excluded). Ensures upstream
+        # transient stream errors on a single endpoint never abort the whole call
+        # if any other configured endpoint can serve the same task.
+        for ep_key, t in self._endpoint_tiers.items():
+            if t == "embedding" or ep_key in seen_eps or ep_key not in self.providers:
+                continue
+            model = self._endpoint_defaults.get(ep_key, "")
+            attempts.append((t, ep_key, model))
+            seen_eps.add(ep_key)
+        return attempts
+
+    async def generate_with_tier_fallback(
+        self,
+        task_type: str,
+        messages: list[dict],
+        *,
+        route=None,
+        preferred_tier: str | None = None,
+        fallback_tiers: list[str] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        _log_meta: dict | None = None,
+        **kw,
+    ) -> GenerationResult:
+        """Generate with a tier-aware fallback chain. Logs every attempt.
+
+        On each attempt, an LLMCallLog row is inserted with ``tier_used``,
+        ``attempt_index``, and (for attempts > 0) ``fallback_reason``.
+        Raises only when *every* tier in the chain has been exhausted.
+        """
+        attempts = self._build_tier_attempts(
+            route=route, preferred_tier=preferred_tier,
+            fallback_tiers=fallback_tiers,
+        )
+        if not attempts:
+            raise RuntimeError(
+                f"No endpoints available for tier-aware fallback (task={task_type}). "
+                "Configure at least one chat-capable endpoint at Settings > Model Configuration."
+            )
+        if route is not None:
+            base_temp = getattr(route, "temperature", 0.7)
+            base_max = getattr(route, "max_tokens", 8192)
+        else:
+            try:
+                br = self._get_route(task_type)
+                base_temp, base_max = br.temperature, br.max_tokens
+            except Exception:
+                base_temp, base_max = 0.7, 8192
+        eff_temp = temperature if temperature is not None else base_temp
+        eff_max = max_tokens if max_tokens is not None else base_max
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta or {})
+        last_err: Exception | None = None
+        fallback_reason: str | None = None
+        for idx, (tier, ep_key, model) in enumerate(attempts):
+            provider = self.providers[ep_key]
+            try:
+                if _log_meta is None:
+                    result = await provider.generate(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, **kw)
+                    self._track(result.usage)
+                    return result
+                async with async_session_factory() as db:
+                    async with log_llm_call(
+                        db=db, task_type=task_type, model=model,
+                        endpoint_id=ep_key, messages=messages,
+                        prompt_id=meta.get("prompt_id"),
+                        project_id=meta.get("project_id"),
+                        chapter_id=meta.get("chapter_id"),
+                        rag_hits=meta.get("rag_hits"),
+                        tier_used=tier,
+                        fallback_reason=fallback_reason if idx > 0 else None,
+                        attempt_index=idx,
+                    ) as ctx:
+                        result = await provider.generate(
+                            messages=messages, model=model,
+                            temperature=eff_temp, max_tokens=eff_max, **kw)
+                        ctx.add_chunk(result.text)
+                        ctx.set_usage(result.usage.input_tokens,
+                                      result.usage.output_tokens)
+                    await db.commit()
+                self._track(result.usage)
+                return result
+            except Exception as e:
+                logger.warning(
+                    "tier-fallback attempt %d (tier=%s ep=%s) failed: %s",
+                    idx, tier, ep_key, e)
+                last_err = e
+                fallback_reason = f"{type(e).__name__}:{str(e)[:160]}"
+                continue
+        raise RuntimeError(
+            f"All tier-fallback attempts failed for task '{task_type}': "
+            f"{fallback_reason}"
+        ) from last_err
+
+    async def stream_with_tier_fallback(
+        self,
+        task_type: str,
+        messages: list[dict],
+        *,
+        route=None,
+        preferred_tier: str | None = None,
+        fallback_tiers: list[str] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        _log_meta: dict | None = None,
+        **kw,
+    ):
+        """Stream with tier-aware fallback. Only falls back BEFORE first chunk
+        is yielded; mid-stream errors propagate (cannot retry without
+        corrupting consumer's accumulated buffer).
+        """
+        attempts = self._build_tier_attempts(
+            route=route, preferred_tier=preferred_tier,
+            fallback_tiers=fallback_tiers,
+        )
+        if not attempts:
+            raise RuntimeError(
+                f"No endpoints available for tier-aware fallback stream (task={task_type})"
+            )
+        if route is not None:
+            base_temp = getattr(route, "temperature", 0.7)
+            base_max = getattr(route, "max_tokens", 8192)
+        else:
+            try:
+                br = self._get_route(task_type)
+                base_temp, base_max = br.temperature, br.max_tokens
+            except Exception:
+                base_temp, base_max = 0.7, 8192
+        eff_temp = temperature if temperature is not None else base_temp
+        eff_max = max_tokens if max_tokens is not None else base_max
+        from app.db.session import async_session_factory
+        from app.services.llm_call_logger import log_llm_call
+        meta = dict(_log_meta or {})
+        last_err: Exception | None = None
+        fallback_reason: str | None = None
+        for idx, (tier, ep_key, model) in enumerate(attempts):
+            provider = self.providers[ep_key]
+            yielded_any = False
+            try:
+                if _log_meta is None:
+                    async for chunk in provider.generate_stream(
+                        messages=messages, model=model,
+                        temperature=eff_temp, max_tokens=eff_max, **kw):
+                        yielded_any = True
+                        yield chunk
+                    return
+                async with async_session_factory() as db:
+                    async with log_llm_call(
+                        db=db, task_type=task_type, model=model,
+                        endpoint_id=ep_key, messages=messages,
+                        prompt_id=meta.get("prompt_id"),
+                        project_id=meta.get("project_id"),
+                        chapter_id=meta.get("chapter_id"),
+                        rag_hits=meta.get("rag_hits"),
+                        tier_used=tier,
+                        fallback_reason=fallback_reason if idx > 0 else None,
+                        attempt_index=idx,
+                    ) as ctx:
+                        async for chunk in provider.generate_stream(
+                            messages=messages, model=model,
+                            temperature=eff_temp, max_tokens=eff_max, **kw):
+                            yielded_any = True
+                            ctx.add_chunk(chunk)
+                            yield chunk
+                    await db.commit()
+                return
+            except Exception as e:
+                logger.warning(
+                    "stream tier-fallback attempt %d (tier=%s ep=%s yielded=%s) failed: %s",
+                    idx, tier, ep_key, yielded_any, e)
+                if yielded_any:
+                    raise
+                last_err = e
+                fallback_reason = f"{type(e).__name__}:{str(e)[:160]}"
+                continue
+        raise RuntimeError(
+            f"All stream tier-fallback attempts failed for task '{task_type}': "
+            f"{fallback_reason}"
+        ) from last_err
+
+
 _router: ModelRouter | None = None
-_router_lock = asyncio.Lock()
+# v1.7 (Bug J residual): Avoid binding the lock to whatever event loop
+# happens to import this module first. Each running loop gets its own
+# Lock from this dict, keyed by id(loop). Stale entries are cleaned up
+# when ``reset_model_router`` is called between celery tasks (see
+# ``app.tasks._run_async_safe``).
+_router_locks: "dict[int, asyncio.Lock]" = {}
+
+
+def _get_router_lock() -> asyncio.Lock:
+    """Return an ``asyncio.Lock`` bound to the *currently running* event loop.
+
+    Lazily creates one per loop so that re-entry under a fresh celery loop
+    (after ``_run_async_safe`` resets the singletons) does not blow up with
+    ``Lock is bound to a different event loop``.
+    """
+    loop = asyncio.get_event_loop()
+    key = id(loop)
+    lock = _router_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _router_locks[key] = lock
+    return lock
 
 
 async def get_model_router_async() -> ModelRouter:
@@ -598,7 +1002,7 @@ async def get_model_router_async() -> ModelRouter:
     # Fast path: already loaded
     if _router is not None and _router._db_loaded:
         return _router
-    async with _router_lock:
+    async with _get_router_lock():
         if _router is None:
             _router = ModelRouter()
         if not _router._db_loaded:
@@ -639,6 +1043,9 @@ def reset_model_router() -> None:
     """Reset singleton (called when config changes via API)."""
     global _router
     _router = None
+    # v1.7: drop any per-loop locks so the next caller (potentially under a
+    # brand new event loop, as celery tasks do) starts from a clean slate.
+    _router_locks.clear()
 
 
 def _load_from_env(router: ModelRouter) -> None:

@@ -38,6 +38,7 @@ dependencies = [
     "langgraph-checkpoint-postgres",
     "reportlab",
     "python-docx",
+    "json-repair",
 ]
 
 [build-system]
@@ -46,3 +47,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+
+[tool.pytest.ini_options]
+# v1.5.0 D-1 — pin event-loop scope to session so the module-level
+# SQLAlchemy AsyncEngine connection pool stays bound to a single loop
+# across the test session. Per-function loop (pytest-asyncio default)
+# caused asyncpg "Future attached to a different loop" RuntimeError
+# on the second test that touched the engine pool.
+asyncio_mode = "strict"
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"

@@ -147,6 +147,15 @@ async def update_chapter(
 
     await db.flush()
     await db.refresh(chapter)
+    if body.content_text is not None:
+        # B2' (v1.5.0): kick the entity-extraction Celery task whenever the
+        # chapter body is rewritten via PATCH. Idempotent and non-blocking.
+        from app.services.entity_dispatch import dispatch_for_chapter
+        await dispatch_for_chapter(
+            chapter, db,
+            caller="api.chapters.update_chapter",
+            project_id_hint=project_id,
+        )
     return ChapterResponse.model_validate(chapter)
 
 

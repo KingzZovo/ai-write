@@ -29,7 +29,7 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
-from app.services.model_router import get_model_router
+from app.services.model_router import get_model_router_async
 
 logger = logging.getLogger(__name__)
 
@@ -543,10 +543,18 @@ class EntityTimelineService:
         if not chapter_text.strip():
             return
 
-        router = get_model_router()
+        # B2' (v1.5.0): use async router + tier-aware fallback so this path
+        # is celery-loop-safe and resilient to single-endpoint INTERNAL_ERROR
+        # (mirrors the B1' evaluator/checker pattern). Each attempt is logged
+        # to llm_call_logs with caller=EntityTimelineService.extract_and_update.
+        try:
+            router = await get_model_router_async()
+        except Exception as e:
+            logger.warning("entity extraction skipped: model router unavailable: %s", e)
+            return
 
         try:
-            result = await router.generate(
+            result = await router.generate_with_tier_fallback(
                 task_type="extraction",
                 messages=[
                     {
@@ -559,6 +567,11 @@ class EntityTimelineService:
                     },
                 ],
                 max_tokens=2048,
+                _log_meta={
+                    "caller": "EntityTimelineService.extract_and_update",
+                    "project_id": str(project_id),
+                    "chapter_idx": int(chapter_idx),
+                },
             )
 
             data = _parse_json(result.text)

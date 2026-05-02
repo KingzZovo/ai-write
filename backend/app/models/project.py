@@ -173,6 +173,9 @@ class WorldRule(Base):
     )
     category = Column(String(100), nullable=False)
     rule_text = Column(Text, nullable=False)
+    # JSON sidecar used by the C4 cascade pipeline to record idempotent
+    # cascade revisions (see app/tasks/cascade.py:_handle_world_rule_target).
+    metadata_json = Column(JSON, default=dict, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="world_rules")
@@ -431,6 +434,41 @@ class FilterWord(Base):
     enabled = Column(Integer, default=1)
     hit_count = Column(Integer, default=0)  # how many times detected
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class EvaluateTask(Base):
+    """v1.5.0 C2 Step D: async evaluation task tracker.
+
+    Decouples the 30-90s evaluator LLM call from the request thread.
+    POST /api/evaluate/start inserts a row in 'pending' status and
+    enqueues a Celery task; GET /api/evaluate/tasks/{id} returns the
+    current status + result_json so the UI can poll without blocking.
+    """
+
+    __tablename__ = "evaluate_tasks"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 'pending' -> 'running' -> 'completed' | 'failed'
+    status = Column(String(20), nullable=False, default="pending")
+    # 0 = baseline eval; >=1 = post auto-revise round eval (C2 telemetry).
+    round_idx = Column(Integer, nullable=False, default=0)
+    caller = Column(String(100), nullable=False, default="")
+    # EvaluationResult.to_dict() snapshot once completed.
+    result_json = Column(JSON, nullable=True)
+    error_text = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
 class Relationship(Base):

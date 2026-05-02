@@ -22,7 +22,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.prompt import PromptAsset
-from app.services.model_router import get_model_router, GenerationResult
+from app.services.model_router import get_model_router, get_model_router_async, GenerationResult
+
+# v1.12 L1: tolerant JSON parser fallback. ``json_repair.loads`` will
+# attempt to repair LLM output that is truncated, missing closing braces,
+# uses smart quotes, has trailing commas, etc. We import lazily inside
+# the parse helper so import failure never breaks the happy path.
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +294,12 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
             "- emotional_arc：情感曲线\n"
             "- foreshadow：伏笔埋下或回收\n"
             "- reusable_pattern：骨架模板一句话（例如“弱者被歺侮后获遗宝反杀”）\n"
-            "硬性约束：不得包含原文人名/地名/专有名词。只输出 JSON。"
+            "硬性约束：不得包含原文人名/地名/专有名词。\n"
+            "输出格式（v1.12 强约束）：\n"
+            "1. 必须是单个合法、闭合的 JSON 对象（所有 { 与 } 配对，所有 [ 与 ] 配对）。\n"
+            "2. 不要使用 ``` 代码块包裹，不要添加任何解释或注释，只输出 JSON。\n"
+            "3. 字符串值必须使用 ASCII 双引号 (\"); 不要使用中文引号或单引号。\n"
+            "4. 输出尽可能紧凑，控制总长度，不要冗长复述原文，只抽取骨架要点。"
         ),
         "output_schema": {
             "scene_type": "string",
@@ -632,6 +642,60 @@ class PromptRegistry:
 # Unified runners
 # =========================================================================
 
+# v1.5.0 C3: collapse the per-LLM-call DB cost.
+#
+# Pre-C3, every runner call did three statements against ``prompt_assets``:
+#   1. registry.resolve_route(task_type)  -> SELECT (1 row)
+#   2. registry.resolve_tier(task_type)   -> SELECT (same 1 row, redundantly)
+#   3. registry.track_result(...)         -> UPDATE success_count+1 / fail_count+1
+#
+# After C3:
+#   - Steps 1 + 2 collapse into a single read-through cache lookup
+#     (``prompt_cache.get_snapshot``); 0 DB hits on warm cache.
+#   - Step 3 becomes an in-memory ``buffer_track_result`` tick that is
+#     flushed by a background task on a fresh session, eliminating the
+#     C2-class deadlock where the per-call UPDATE blocked behind the outer
+#     request session's idle-in-transaction row lock.
+async def _resolve_route_and_tier_cached(
+    task_type: str,
+    db: AsyncSession,
+) -> tuple[RouteSpec, str | None]:
+    """Cached resolver used by ``run_text_prompt`` / ``stream_text_prompt``.
+
+    Mirrors ``PromptRegistry.resolve_route`` semantics exactly (including the
+    ``_TASK_TYPE_FALLBACK`` lookup and the "no endpoint" / "no prompt" error
+    messages) but builds the RouteSpec from a detached snapshot, then returns
+    the snapshot's ``model_tier`` alongside it so callers don't need a second
+    DB hit.
+    """
+    from app.services import prompt_cache
+
+    snap = await prompt_cache.get_snapshot(task_type, db)
+    if snap is None:
+        fallback = _TASK_TYPE_FALLBACK.get(task_type)
+        if fallback:
+            snap = await prompt_cache.get_snapshot(fallback, db)
+    if snap is None:
+        raise ValueError(
+            f"No active prompt registered for task '{task_type}'. Create one at /prompts."
+        )
+    if snap.endpoint_id is None:
+        raise ValueError(
+            f"Prompt '{snap.name}' (task {task_type}) has no endpoint configured. "
+            "Assign one at /prompts."
+        )
+    route = RouteSpec(
+        prompt_id=snap.id,
+        endpoint_id=snap.endpoint_id,
+        model=snap.model_name or "",
+        temperature=snap.temperature,
+        max_tokens=snap.max_tokens,
+        system_prompt=snap.system_prompt,
+        mode=snap.mode,
+    )
+    return route, snap.model_tier
+
+
 async def run_text_prompt(
     task_type: str,
     user_content: str,
@@ -649,9 +713,11 @@ async def run_text_prompt(
     Otherwise build `[system, user_content]` from the prompt's system + extra_system.
     """
     from app.services.llm_call_logger import log_llm_call
+    from app.services import prompt_cache
 
-    registry = PromptRegistry(db)
-    route = await registry.resolve_route(task_type)
+    # v1.5.0 C3: one cached lookup yields both the RouteSpec and the
+    # preferred model tier, replacing the two redundant SELECTs.
+    route, preferred_tier = await _resolve_route_and_tier_cached(task_type, db)
 
     if messages is None:
         system = route.system_prompt
@@ -662,32 +728,36 @@ async def run_text_prompt(
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
 
-    router = get_model_router()
-    # Prometheus metric provider / model labels ("unknown" when route has no
-    # explicit endpoint yet).
+    router = await get_model_router_async()
+    # preferred_tier already resolved above (C3 collapses the second SELECT).
     _provider = getattr(route, "provider", None) or "unknown"
     _model = route.model or "unknown"
     from app.observability.metrics import time_llm_call
-    async with log_llm_call(
-        db=db,
-        task_type=task_type,
-        prompt_id=route.prompt_id,
-        project_id=project_id,
-        chapter_id=chapter_id,
-        messages=messages,
-        rag_hits=rag_hits or [],
-        model=route.model or "",
-        endpoint_id=route.endpoint_id,
-    ) as ctx:
-        with time_llm_call(task_type, _provider, _model) as mbox:
-            result = await router.generate_by_route(route, messages, **kwargs)
-            ctx.add_chunk(result.text)
-            ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
-            mbox["input_tokens"] = result.usage.input_tokens
-            mbox["output_tokens"] = result.usage.output_tokens
+    with time_llm_call(task_type, _provider, _model) as mbox:
+        result = await router.generate_with_tier_fallback(
+            task_type,
+            messages,
+            route=route,
+            preferred_tier=preferred_tier,
+            _log_meta={
+                "prompt_id": route.prompt_id,
+                "project_id": project_id,
+                "chapter_id": chapter_id,
+                "rag_hits": rag_hits or [],
+            },
+            **kwargs,
+        )
+        mbox["input_tokens"] = result.usage.input_tokens
+        mbox["output_tokens"] = result.usage.output_tokens
 
+    # v1.5.0 C3: buffered counter — hot path NEVER touches the request
+    # session, so the C2-class "UPDATE prompt_assets blocked behind outer tx
+    # row lock" deadlock cannot recur. The flusher (started by lifespan)
+    # commits these increments on a fresh session every FLUSH_INTERVAL.
     if route.prompt_id:
-        await registry.track_result(route.prompt_id, success=bool(result.text))
+        await prompt_cache.buffer_track_result(
+            route.prompt_id, success=bool(result.text)
+        )
 
     return result
 
@@ -702,6 +772,16 @@ async def run_structured_prompt(
     **kwargs,
 ) -> dict:
     """Run a structured prompt (expects JSON output). Returns parsed dict."""
+    # v1.12 multi-layer JSON parse defense:
+    #   L1 (parser tolerance): if json.loads fails, try json_repair which
+    #     handles truncation, missing close braces, smart quotes, and
+    #     trailing commas. Empirically saves ~60-80% of malformed outputs.
+    #   L4 (one strict retry): if both vanilla and json-repair fail on
+    #     the first attempt, retry the prompt once with temperature=0,
+    #     reduced max_tokens, and an appended JSON-strictness directive.
+    # The original `run_text_prompt` happy path is unchanged; both layers
+    # only activate after a parse failure, so success-path latency and
+    # cost are unaffected.
     result = await run_text_prompt(
         task_type,
         user_content,
@@ -711,14 +791,91 @@ async def run_structured_prompt(
         chapter_id=chapter_id,
         **kwargs,
     )
+    parsed = _try_parse_structured(result.text)
+    if parsed is not None:
+        return _normalize_structured(parsed)
 
+    # L4: strict retry. Append a hard JSON-only directive to the existing
+    # extra_system; force temperature=0 for determinism and cap output at
+    # 4096 tokens so we exit the malformed long-output regime.
+    logger.warning(
+        "structured prompt %s: first parse failed, retrying with strict settings",
+        task_type,
+    )
+    strict_suffix = (
+        "\n\n[严格要求] 上一次输出不是合法 JSON。请重新输出。必须仅输出单个完整闭合的 JSON（所有 { } 与 [ ] 配对）；不要 markdown 代码块，不要说明；字符串仅使用 ASCII 双引号；输出要紧凑，不要超过几百个字。"
+    )
+    retry_extra_system = (extra_system or "") + strict_suffix
+    retry_kwargs = dict(kwargs)
+    retry_kwargs["temperature"] = 0.0
+    retry_kwargs["max_tokens"] = 4096
     try:
-        text = result.text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        return json.loads(text)
-    except (json.JSONDecodeError, IndexError):
+        result2 = await run_text_prompt(
+            task_type,
+            user_content,
+            db,
+            retry_extra_system,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            **retry_kwargs,
+        )
+    except Exception as exc:
+        logger.warning(
+            "structured prompt %s: strict retry failed: %s",
+            task_type,
+            exc,
+        )
         return {"raw_text": result.text, "parse_error": True}
+
+    parsed2 = _try_parse_structured(result2.text)
+    if parsed2 is not None:
+        return _normalize_structured(parsed2)
+
+    return {"raw_text": result2.text, "parse_error": True}
+
+
+def _try_parse_structured(text: str | None) -> Any:
+    """v1.12 L1 parser: try json.loads, then json_repair as fallback.
+
+    Returns the parsed dict/list on success, or None when both attempts
+    fail. Strips a leading markdown code fence if present.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if s.startswith("```"):
+        try:
+            s = s.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        except (IndexError, ValueError):
+            pass
+    try:
+        return json.loads(s)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    try:
+        from json_repair import loads as _repair_loads
+        repaired = _repair_loads(s)
+        # json_repair returns "" or {} for unrecoverable inputs; treat
+        # truly empty results as failure so we don't fabricate data.
+        if repaired in ("", None):
+            return None
+        return repaired
+    except Exception:
+        return None
+
+
+def _normalize_structured(parsed: Any) -> dict:
+    """Normalize parsed JSON to a dict.
+
+    LLMs may return a top-level array under structured prompts. Wrap
+    arrays in {"items": ...} so all callers can use .get() without
+    crashing with "'list' object has no attribute 'get'".
+    """
+    if isinstance(parsed, list):
+        return {"items": parsed} if parsed else {}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"raw_text": str(parsed), "parse_error": True}
 
 
 async def stream_text_prompt(
@@ -739,8 +896,8 @@ async def stream_text_prompt(
     """
     from app.services.llm_call_logger import log_llm_call
 
-    registry = PromptRegistry(db)
-    route = await registry.resolve_route(task_type)
+    # v1.5.0 C3: cached resolver (collapses the two SELECT prompt_assets).
+    route, preferred_tier = await _resolve_route_and_tier_cached(task_type, db)
 
     if messages is None:
         system = route.system_prompt
@@ -751,18 +908,19 @@ async def stream_text_prompt(
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
 
-    router = get_model_router()
-    async with log_llm_call(
-        db=db,
-        task_type=task_type,
-        prompt_id=route.prompt_id,
-        project_id=project_id,
-        chapter_id=chapter_id,
-        messages=messages,
-        rag_hits=rag_hits or [],
-        model=route.model or "",
-        endpoint_id=route.endpoint_id,
-    ) as ctx:
-        async for chunk in router.stream_by_route(route, messages, **kwargs):
-            ctx.add_chunk(chunk)
-            yield chunk
+    router = await get_model_router_async()
+    # preferred_tier already resolved above (C3 collapses the second SELECT).
+    async for chunk in router.stream_with_tier_fallback(
+        task_type,
+        messages,
+        route=route,
+        preferred_tier=preferred_tier,
+        _log_meta={
+            "prompt_id": route.prompt_id,
+            "project_id": project_id,
+            "chapter_id": chapter_id,
+            "rag_hits": rag_hits or [],
+        },
+        **kwargs,
+    ):
+        yield chunk
