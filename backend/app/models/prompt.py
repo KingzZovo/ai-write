@@ -34,7 +34,7 @@ class PromptAsset(Base):
     endpoint_id = Column(UUID(as_uuid=True), ForeignKey("llm_endpoints.id", ondelete="SET NULL"), nullable=True)
     model_name = Column(String(200), default="")
     temperature = Column(Float, default=0.7)
-    max_tokens = Column(Integer, default=4096)
+    max_tokens = Column(Integer, default=8192)
     # v1.4 — preferred model tier (nullable)
     model_tier = Column(String(20), nullable=True)
     # v0.5 — capability metadata (NovelClaw-inspired)

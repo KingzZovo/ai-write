@@ -285,7 +285,7 @@ async def test_endpoint(
             client = anthropic.AsyncAnthropic(api_key=decrypted_key)
             msg = await client.messages.create(
                 model=endpoint.default_model,
-                max_tokens=32,
+                max_tokens=256,
                 messages=[{"role": "user", "content": probe_text}],
             )
             parts: list[str] = []
@@ -294,9 +294,15 @@ async def test_endpoint(
                 if isinstance(text, str):
                     parts.append(text)
             response_text = "".join(parts).strip() or None
+            if response_text is None:
+                stop_reason = getattr(msg, "stop_reason", None)
+                usage = getattr(msg, "usage", None)
+                response_text = (
+                    f"(empty content; stop_reason={stop_reason}, usage={usage})"
+                )
             request_summary = (
                 f"POST anthropic.messages model={endpoint.default_model} "
-                f"max_tokens=32 content={probe_text!r}"
+                f"max_tokens=256 content={probe_text!r}"
             )
         elif endpoint.provider_type in ("openai", "openai_compatible"):
             import openai
@@ -319,18 +325,60 @@ async def test_endpoint(
                     f"model={endpoint.default_model} input={probe_text!r}"
                 )
             else:
+                # Reasoning-style models (o1, gpt-5.x, Qwen3-thinking,
+                # DeepSeek-R1) consume tokens on hidden reasoning BEFORE
+                # emitting any visible content. max_tokens=32 is far too
+                # small for those -- content comes back empty. Leave enough
+                # headroom for a short greeting after reasoning finishes.
+                probe_max_tokens = 256
                 chat = await client.chat.completions.create(
                     model=endpoint.default_model,
-                    max_tokens=32,
+                    max_tokens=probe_max_tokens,
                     messages=[{"role": "user", "content": probe_text}],
                 )
+                finish_reason: str | None = None
+                reasoning_excerpt: str | None = None
                 if chat.choices:
-                    response_text = (
-                        chat.choices[0].message.content or ""
-                    ).strip() or None
+                    choice = chat.choices[0]
+                    finish_reason = getattr(choice, "finish_reason", None)
+                    choice_msg = choice.message
+                    content = (getattr(choice_msg, "content", None) or "").strip()
+                    response_text = content or None
+                    # Some OpenAI-compatible servers (vLLM reasoning mode,
+                    # DeepSeek-R1 proxy, Qwen3-thinking) surface the hidden
+                    # trace on ``reasoning_content`` / ``reasoning``. Pull it
+                    # out via model_dump so the panel always shows SOMETHING.
+                    raw_msg: dict[str, Any] = {}
+                    if hasattr(choice_msg, "model_dump"):
+                        try:
+                            raw_msg = choice_msg.model_dump()
+                        except Exception:
+                            raw_msg = {}
+                    for attr in ("reasoning_content", "reasoning"):
+                        raw = raw_msg.get(attr)
+                        if isinstance(raw, str) and raw.strip():
+                            reasoning_excerpt = raw.strip()[:400]
+                            break
+                usage = getattr(chat, "usage", None)
+                if response_text is None:
+                    bits = [f"(empty content, finish_reason={finish_reason}"]
+                    if usage is not None:
+                        bits.append(f"usage={usage}")
+                    fallback = ", ".join(bits) + ")"
+                    if reasoning_excerpt:
+                        response_text = (
+                            f"{fallback}\nreasoning: {reasoning_excerpt}"
+                        )
+                    else:
+                        response_text = (
+                            fallback
+                            + " \u2014 likely a reasoning model; "
+                            + "try a larger max_tokens budget."
+                        )
                 request_summary = (
                     f"POST {endpoint.base_url or 'openai'}/chat/completions "
-                    f"model={endpoint.default_model} max_tokens=32 "
+                    f"model={endpoint.default_model} "
+                    f"max_tokens={probe_max_tokens} "
                     f"content={probe_text!r}"
                 )
         elif endpoint.provider_type == "nvidia":

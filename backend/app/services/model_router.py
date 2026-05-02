@@ -116,7 +116,7 @@ class AnthropicProvider(BaseProvider):
         return self._client
 
     async def generate(self, messages, model="claude-sonnet-4-20250514",
-                       temperature=0.7, max_tokens=4096, **kw) -> GenerationResult:
+                       temperature=0.7, max_tokens=8192, **kw) -> GenerationResult:
         system_msg, chat = None, []
         for m in messages:
             if m["role"] == "system":
@@ -134,7 +134,7 @@ class AnthropicProvider(BaseProvider):
         return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
     async def generate_stream(self, messages, model="claude-sonnet-4-20250514",
-                              temperature=0.7, max_tokens=4096, **kw):
+                              temperature=0.7, max_tokens=8192, **kw):
         system_msg, chat = None, []
         for m in messages:
             if m["role"] == "system":
@@ -169,7 +169,7 @@ class OpenAIProvider(BaseProvider):
         return self._client
 
     async def generate(self, messages, model="gpt-4o",
-                       temperature=0.7, max_tokens=4096, **kw) -> GenerationResult:
+                       temperature=0.7, max_tokens=8192, **kw) -> GenerationResult:
         # Some API proxies only return content via streaming.
         # Use stream mode and collect chunks for reliability.
         chunks: list[str] = []
@@ -191,7 +191,7 @@ class OpenAIProvider(BaseProvider):
         return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
     async def generate_stream(self, messages, model="gpt-4o",
-                              temperature=0.7, max_tokens=4096, **kw):
+                              temperature=0.7, max_tokens=8192, **kw):
         stream = await self.client.chat.completions.create(
             model=model, messages=messages,
             temperature=temperature, max_tokens=max_tokens, stream=True)
@@ -399,7 +399,7 @@ class ModelRouter:
                             provider_key=str(p.endpoint_id),
                             model_name=p.model_name or "",
                             temperature=p.temperature if p.temperature is not None else 0.7,
-                            max_tokens=p.max_tokens if p.max_tokens is not None else 4096,
+                            max_tokens=p.max_tokens if p.max_tokens is not None else 8192,
                         )
 
                 # Embedding endpoint — find prompt with task_type="embedding"

@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -39,6 +39,9 @@ class GenerateOutlineRequest(BaseModel):
     volume_idx: int | None = None
     chapter_idx: int | None = None
     style_id: str | None = None
+    # v1.4.2 Task B: opt-in structured staged SSE stream for book outline.
+    # Mirrors ?staged_stream=1 query param; body field wins when both set.
+    staged_stream: bool | None = None
 
 
 SSE_HEADERS = {
@@ -182,6 +185,7 @@ async def generate_chapter(
 async def generate_outline(
     req: GenerateOutlineRequest,
     db: AsyncSession = Depends(get_db),
+    staged_stream: int = Query(0),
 ) -> StreamingResponse:
     """Generate outline at specified level via SSE streaming."""
     # Pre-fetch all DB data before creating the generator (same pattern as generate_chapter)
@@ -265,11 +269,44 @@ async def generate_outline(
             yield f"data: {json.dumps({'status': 'generating', 'level': req.level})}\n\n"
 
             if req.level == "book":
-                async for chunk in await generator.generate_book_outline(
-                    user_input=enhanced_input, stream=True
-                ):
-                    collected_text.append(chunk)
-                    yield f"data: {json.dumps({'text': chunk})}\n\n"
+                # v1.4.2 Task B: opt in to structured staged SSE events.
+                # Body field wins over the query param when explicitly set.
+                want_staged = (
+                    req.staged_stream
+                    if req.staged_stream is not None
+                    else bool(staged_stream)
+                )
+                if want_staged:
+                    stage_iter = await generator.generate_book_outline(
+                        user_input=enhanced_input,
+                        stream=True,
+                        staged=True,
+                    )
+                    async for event in stage_iter:
+                        if not isinstance(event, dict):
+                            # Defensive: legacy stream fall-through.
+                            collected_text.append(str(event))
+                            yield f"data: {json.dumps({'text': str(event)})}\n\n"
+                            continue
+                        kind = event.get("event")
+                        if kind == "stage_chunk":
+                            delta = event.get("delta", "")
+                            if delta:
+                                collected_text.append(delta)
+                        elif kind == "done":
+                            full = event.get("full_outline", "")
+                            if full:
+                                # Replace the per-chunk accumulator with the
+                                # canonical reassembled text so auto-save keeps
+                                # the in-order 9-section document.
+                                collected_text = [full]
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                else:
+                    async for chunk in await generator.generate_book_outline(
+                        user_input=enhanced_input, stream=True, staged=False
+                    ):
+                        collected_text.append(chunk)
+                        yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "volume":
                 async for chunk in await generator.generate_volume_outline(
