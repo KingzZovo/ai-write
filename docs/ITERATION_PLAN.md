@@ -86,3 +86,22 @@
 ### Next
 - PR-OL2：knowledge_tasks outline_book 后台任务读 volume_plan 创建空 Volume 行（不再需要 手动“生成分卷大纲” 打拾）
 - PR-OL3：卷规划卡片可点击编辑 (调整卷名/章数后创建项目)
+
+
+## 2026-05-03 (PR-OL2) · 后台任务读 volume_plan 创建空 Volume
+
+### Change
+- backend/tasks/knowledge_tasks.py auto-save outline：
+  * 生成完 outline_book 后，调 OutlineGenerator()._extract_volume_plan(full_text)
+  * 将 volume_plan 一并写入 Outline.content_json (除了 raw_text)
+  * 根据 volume_plan 中的 idx/title/theme 创建空 Volume 行 (idempotent：existing_idx 跳过)
+- backend/api/generate.py SSE auto-save：同样从 full_text 提取 volume_plan 写入 content_json
+
+### Verification
+- backend syntax ok
+- E2E: 新建项目走 outline_book 任务 → outlines.content_json["volume_plan"] 存在
+- E2E: volumes 表出现 N 个空行 (idx=1..N，title = 卷名)
+
+### Next
+- PR-OL3: 前端卷规划卡片可点击编辑
+- PR-OL4: detectVolumeCount() fallback 依然保留；volume_plan 不在时验证补忙路径

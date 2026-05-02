@@ -18,13 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def _run_async(coro):
-    """Run async function in sync Celery task context."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    """Run async function in sync Celery task context.
+
+    v1.7 X2: delegates to the unified _run_async_safe from app.tasks,
+    which calls reset_model_router + reset_engine before the new loop and
+    dispose_current_engine_async in the finally block. This unifies the
+    8 call-sites here with the rest of the codebase and guarantees the
+    same loop-bound cache hygiene used by tasks/__init__.py.
+    """
+    from app.tasks import _run_async_safe
+    return _run_async_safe(coro)
 
 
 def _make_session():
@@ -169,7 +172,53 @@ async def _run_async_generation_impl(task_id: str):
             generator = OutlineGenerator()
             collected = []
 
-            if task.task_type == "outline_book":
+            if task.task_type == "outline_from_reference":
+                # v1.5.0 D-2: async outline-from-reference. Wraps the
+                # service-layer single-shot LLM call as a single chunk so the
+                # downstream Markdown-strip / humanize / auto-save-outline
+                # logic still applies uniformly. Required params (in
+                # task.params_json): reference_book_id, intent, style_hint,
+                # target_volumes, target_chapters_per_volume.
+                from app.services.outline_from_reference import (
+                    build_outline_from_reference,
+                )
+
+                ref_id = params.get("reference_book_id")
+                if not ref_id:
+                    raise ValueError("reference_book_id missing in params_json")
+                wizard = {
+                    "intent": params.get("intent", ""),
+                    "style_hint": params.get("style_hint", ""),
+                    "target_volumes": params.get("target_volumes", 5),
+                    "target_chapters_per_volume": params.get(
+                        "target_chapters_per_volume", 30
+                    ),
+                }
+                fr = await build_outline_from_reference(
+                    reference_book_id=ref_id,
+                    wizard_params=wizard,
+                    db=db,
+                    project_id=project_id,
+                )
+                if fr.get("status") != "ok":
+                    raise RuntimeError(
+                        "build_outline_from_reference failed: "
+                        f"reason={fr.get('reason')} detail={fr.get('detail')}"
+                    )
+                ot = fr.get("outline_text") or ""
+                collected.append(ot)
+                # Persist sketch metadata so the polling endpoint can show
+                # progress context to the UI without re-running the query.
+                task.params_json = {
+                    **(task.params_json or {}),
+                    "sketch_line_count": fr.get("sketch_line_count"),
+                    "reference_book": fr.get("reference_book"),
+                }
+                task.progress_text = ot
+                task.char_count = len(ot)
+                await db.commit()
+
+            elif task.task_type == "outline_book":
                 async for chunk in await generator.generate_book_outline(
                     user_input=enhanced, stream=True
                 ):
@@ -207,10 +256,16 @@ async def _run_async_generation_impl(task_id: str):
                 if not ch:
                     raise ValueError("章节不存在")
                 gen = ChapterGenerator()
+                # v0.5+ ChapterGenerator: ContextPack + PromptRegistry build context;
+                # style/world_rules/prev_chapter are pulled from db, not passed in.
+                user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
                 async for chunk in gen.generate_stream(
-                    project_settings={}, world_rules=[], book_outline_summary="",
-                    chapter_outline=ch.outline_json or {},
-                    previous_chapter_text="", style_instruction=style_text,
+                    project_id=project_id,
+                    volume_id=ch.volume_id,
+                    chapter_idx=ch.chapter_idx,
+                    db=db,
+                    chapter_id=ch.id,
+                    user_instruction=user_instr,
                 ):
                     collected.append(chunk)
                     if len(collected) % 5 == 0:
@@ -322,13 +377,80 @@ async def _run_async_generation_impl(task_id: str):
 
             # Auto-save outline to outlines table
             if task.task_type.startswith("outline") and full_text and project_id:
-                level = task.task_type.replace("outline_", "")
-                outline = Outline(
-                    project_id=project_id,
-                    level=level,
-                    content_json={"raw_text": full_text},
-                )
-                db.add(outline)
+                # Explicit task_type -> outline level mapping. `outline_from_reference`
+                # is semantically a book-level outline (built from a reference book),
+                # NOT a separate "from_reference" level. The outline_volume branch is
+                # intentionally a no-op here: real volume outlines are written by
+                # /volumes/{id}/regenerate which sets parent_id and dedupes per
+                # volume_idx; auto-saving here would produce orphan rows that no query
+                # path can find (volumes.py requires parent_id == book_outline_id).
+                _outline_level_map = {
+                    "outline_from_reference": "book",
+                    "outline_book": "book",
+                }
+                outline_level = _outline_level_map.get(task.task_type)
+                if outline_level == "book":
+                    # Upsert: enforce one-book-per-project invariant. Migration
+                    # a1001500 adds a partial UNIQUE index on outlines(project_id)
+                    # WHERE level='book'; this DELETE+INSERT keeps the index happy
+                    # and replaces any prior book outline atomically within this txn.
+                    from sqlalchemy import delete as _sql_delete
+                    await db.execute(
+                        _sql_delete(Outline).where(
+                            Outline.project_id == project_id,
+                            Outline.level == "book",
+                        )
+                    )
+                    # PR-OL2: extract <volume-plan> JSON block and persist it
+                    # alongside raw_text so the wizard can prefill volume count
+                    # without re-running the SSE preview.
+                    _vol_plan = None
+                    try:
+                        from app.services.outline_generator import OutlineGenerator as _OG
+                        _vol_plan = _OG()._extract_volume_plan(full_text)
+                    except Exception as _vp_err:
+                        logger.warning("volume_plan extract failed: %s", _vp_err)
+                    _content = {"raw_text": full_text}
+                    if _vol_plan:
+                        _content["volume_plan"] = _vol_plan
+                    db.add(
+                        Outline(
+                            project_id=project_id,
+                            level="book",
+                            content_json=_content,
+                        )
+                    )
+                    # PR-OL2: also create empty Volume rows from the plan so
+                    # the wizard step 2 has a real skeleton to fill in. Skip
+                    # idx that already exists (idempotent on retry).
+                    if _vol_plan:
+                        from sqlalchemy import select as _sql_select
+                        from app.models.project import Volume as _Volume
+                        existing = await db.execute(
+                            _sql_select(_Volume.volume_idx).where(
+                                _Volume.project_id == project_id
+                            )
+                        )
+                        existing_idx = {r[0] for r in existing.all()}
+                        for _v in _vol_plan:
+                            _idx = int(_v.get("idx") or 0)
+                            if _idx <= 0 or _idx in existing_idx:
+                                continue
+                            db.add(_Volume(
+                                project_id=project_id,
+                                volume_idx=_idx,
+                                title=str(_v.get("title") or f"第{_idx}卷"),
+                                summary=str(_v.get("theme") or ""),
+                            ))
+                        logger.info(
+                            "PR-OL2: planned %d volumes from <volume-plan> for project=%s",
+                            len(_vol_plan), project_id,
+                        )
+                else:
+                    logger.info(
+                        "Skipping auto-save for task_type=%s (handled by dedicated endpoint)",
+                        task.task_type,
+                    )
 
             await db.commit()
             logger.info("Async generation complete: %s, %d chars", task.task_type, len(full_text))
@@ -418,6 +540,22 @@ async def _run_pipeline_async(pipeline_id: str):
                 logger.warning("Pipeline chapter %d failed: %s", cs.chapter_idx, e)
 
             await db.commit()
+            # B2' (v1.5.0): kick entity-extraction task post-commit when the
+            # chapter actually got a new body. Failures never block the
+            # pipeline: they retry asynchronously on the celery queue.
+            if cs.state == "completed":
+                try:
+                    from app.services.entity_dispatch import dispatch_for_chapter
+                    await dispatch_for_chapter(
+                        chapter, db,
+                        caller="knowledge_tasks.run_pipeline_chapters",
+                        project_id_hint=str(pipeline.project_id),
+                    )
+                except Exception as dispatch_err:
+                    logger.warning(
+                        "Entity dispatch after pipeline chapter %d failed: %s",
+                        cs.chapter_idx, dispatch_err,
+                    )
             await aio.sleep(1)  # Rate limit
 
         # Advance pipeline state

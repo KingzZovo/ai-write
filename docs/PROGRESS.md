@@ -76,3 +76,8 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 - OutlineGenerator 新增 _extract_volume_plan + done event 多一个 volume_plan 字段。
 - 前端 DesktopWorkspace step 2 顶部显示“AI 推荐卷规划”卡片，prefill 卷数。
 - 上一轮 (commit 03f7ccc) 修复人物状态重复/通用名警示。
+
+## 2026-05-03 05:05 · PR-OL2 后台创建空 Volume
+
+- knowledge_tasks outline_book auto-save 后 提取 volume_plan、创建空 Volume
+- Outline.content_json 以 volume_plan 字段持久化 (供前端 跳回 step 2 prefill)
