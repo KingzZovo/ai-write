@@ -17,6 +17,7 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
+    Gauge,
     Histogram,
     generate_latest,
 )
@@ -37,7 +38,7 @@ HTTP_REQUEST_DURATION = Histogram(
 )
 
 HTTP_REQUEST_TOTAL = Counter(
-    "http_request_total",
+    "http_requests_total",
     "Total HTTP requests by outcome",
     labelnames=("method", "path_template", "status"),
     registry=REGISTRY,
@@ -74,6 +75,64 @@ GENERATION_RUN_PHASE = Counter(
     registry=REGISTRY,
 )
 
+# -------------------- Celery --------------------
+CELERY_TASK_TOTAL = Counter(
+    "celery_task_total",
+    "Total celery tasks by name and status (success/failure/retry/revoked)",
+    labelnames=("task_name", "status"),
+    registry=REGISTRY,
+)
+
+CELERY_TASK_DURATION = Histogram(
+    "celery_task_duration_seconds",
+    "Celery task wall-clock latency in seconds",
+    labelnames=("task_name", "status"),
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+    registry=REGISTRY,
+)
+
+# -------------------- DB connection pool --------------------
+# Gauges populated lazily by `_collect_db_pool_gauges()` before each scrape
+# (registered via a sidecar collector below). Labels: pool="main".
+DB_POOL_SIZE = Gauge(
+    "db_pool_size",
+    "SQLAlchemy connection pool max size",
+    labelnames=("pool",),
+    registry=REGISTRY,
+)
+DB_POOL_CHECKED_OUT = Gauge(
+    "db_pool_checked_out",
+    "SQLAlchemy connections currently checked out from the pool",
+    labelnames=("pool",),
+    registry=REGISTRY,
+)
+DB_POOL_OVERFLOW = Gauge(
+    "db_pool_overflow",
+    "SQLAlchemy connections beyond pool_size currently in use",
+    labelnames=("pool",),
+    registry=REGISTRY,
+)
+
+
+def _refresh_db_pool_gauges() -> None:
+    """Sample current SQLAlchemy pool stats and write them into gauges.
+
+    Imported lazily so this module does not pull in db.session at import time
+    (avoids cycles + lets unit tests import metrics standalone).
+    """
+    try:
+        from app.db.session import engine
+
+        pool = engine.pool
+        DB_POOL_SIZE.labels("main").set(float(pool.size()))
+        DB_POOL_CHECKED_OUT.labels("main").set(float(pool.checkedout()))
+        # overflow() returns -1 when pool has not overflowed; clamp to >=0.
+        ovr = pool.overflow()
+        DB_POOL_OVERFLOW.labels("main").set(float(max(ovr, 0)))
+    except Exception:
+        # Never break /metrics on a transient pool sampling error.
+        pass
+
 
 @contextmanager
 def time_llm_call(
@@ -109,4 +168,5 @@ def time_llm_call(
 
 def render_latest() -> tuple[bytes, str]:
     """Render exposition format for /metrics. Returns (body, content_type)."""
+    _refresh_db_pool_gauges()
     return generate_latest(REGISTRY), CONTENT_TYPE_LATEST

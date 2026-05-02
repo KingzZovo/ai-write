@@ -2,6 +2,28 @@
 
 本项目遵循语义化版本号（SemVer）。
 
+## [1.2.0] - 2026-04-23
+
+v1.2.0 B 系列可观测性 + CI 自动化。给 v1.0/1.1 的骨架+血肉补上神经系统：结构化日志 -> 指标 -> 错误追踪 -> 流水线。所有 v1.2 变更均为非破坏性，schema 未动，向前兼容。
+
+### 新增 / 改进
+
+- **Chunk 24 — 后端结构化 JSON 日志**：新增 `backend/app/observability/logging.py`（loguru JSON sink + stdlib `logging` 拦截 + `_SENSITIVE_KEYS` 脱敏 + Bearer token 正则脱敏），`backend/app/middlewares/request_logging.py`（`RequestLoggingMiddleware` 生成/回显 `X-Request-ID` 头并为每条请求发一行 JSON，包含 method/path/status/latency_ms/user_id/request_id），`main.py` 在启动时 `setup_logging()` 并注册中间件。smoke 新增 [12/12] 五条断言（静态 + 运行时 + 响应头）。
+- **Chunk 25 — Prometheus 指标**：扩展 `backend/app/observability/metrics.py`，HTTP counter 按 Prometheus 命名规范从 `http_request_total` 改名为 `http_requests_total`；新增 `CELERY_TASK_TOTAL` / `CELERY_TASK_DURATION` 两族 celery 指标 + `DB_POOL_SIZE` / `DB_POOL_CHECKED_OUT` / `DB_POOL_OVERFLOW` 三 Gauge；`backend/app/tasks/__init__.py` 接入 celery `task_prerun/postrun/failure/retry/revoked` 信号，为每个任务实例用 `time.monotonic()` 计时；`observability/grafana/dashboards/ai-write-overview.json` 指向新命名；`docker compose up -d prometheus grafana` 起 prometheus(9091)+grafana(3001)。smoke 新增 [13/13] 九条断言覆盖源码 + `/metrics` 响应 + 容器状态 + prom 实际 scrape。
+- **Chunk 26 — Sentry 接入（可选 DSN）**：`backend/app/observability/sentry_init.py` 补 `_scrub_event(event, hint)` 作为 `before_send` 和 `before_send_transaction`，复用 `logging.redact` 对 `event.request.headers/cookies/query_string/data` 与 `extra/contexts/tags` 脱敏；未设 `SENTRY_DSN` 时静默返回 `False`。前端新增 `frontend/src/sentry.client.config.ts` 浏览器端 shim：读 `NEXT_PUBLIC_SENTRY_DSN`，动态 `import('@sentry/browser')`（包未装则 no-op），`beforeSend` 剥离 URL query string 与敏感请求头，自挂 `window.error` / `unhandledrejection` 监听。smoke 新增 [14/14] 四条断言。
+- **Chunk 27 — GitHub Actions CI + smoke 静态子集 + 自签 JWT fixture**：`.github/workflows/ci.yml` 扩为 ruff + mypy（非阻塞基线）+ pytest + next build + compose-validate + 新的 `smoke-static` job（`SMOKE_STATIC_ONLY=1 bash scripts/smoke_v1.sh`）；`backend/tests/fixtures/self_sign_jwt.py` 暴露 `sign_smoke_jwt(subject, ttl_seconds, secret, algorithm)` + pytest `admin_jwt` fixture + `__main__` CLI，smoke 与 CI 共用同一签名路径。`scripts/smoke_v1.sh` 引入 `SMOKE_STATIC_ONLY=1` 网关，把所有 `docker compose exec` / `curl $BASE/api/*` / `/metrics` / prom 查询块改为 SKIP 而非 FAIL，CI 无需起服务容器即可 grep 所有源码级断言。smoke 新增 [15/15] 六条断言（workflow 存在 + pull_request 触发 + 工具链 + smoke 子集调用 + fixture 就位）。
+
+### 版本号
+
+- backend `APP_VERSION` 从 `1.1.0` 提升至 `1.2.0`。
+- `frontend/package.json` `version` 从 `1.1.0` 提升至 `1.2.0`。
+- 镜像按 `GIT_TAG=v1.2.0` 重建 `backend` 与 `celery-worker`。
+
+### smoke 矩阵
+
+- 完整 runtime（本地 docker compose stack）：44 passed / 0 failed。
+- `SMOKE_STATIC_ONLY=1`（CI 模式）：27 passed / 0 failed / 7 skipped。
+
 ## [1.1.0] - 2026-04-23
 
 v1.1.0 A 系列骨架->血肉。在 v1.0 骨架之上填充真正可用的国际化、移动端体验、设计令牌一致性与可记忆的工作区布局。

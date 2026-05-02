@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
-# v1.0.0 8-principles smoke test.
-# Usage: bash scripts/smoke_v1.sh [BASE_URL]
-# BASE_URL defaults to http://localhost:8080 (nginx).
-# Self-signs a JWT inside the backend container using settings.SECRET_KEY.
+# v1.2.0 smoke test (B series: observability + CI).
+# Usage:
+#   bash scripts/smoke_v1.sh [BASE_URL]
+#     BASE_URL defaults to http://localhost:8080 (nginx).
+#
+# Modes:
+#   SMOKE_STATIC_ONLY=1    skip every block that requires a running backend,
+#                          docker compose exec, /metrics curl, or prometheus
+#                          query. Only static grep-based assertions run.
+#                          Designed for GitHub Actions CI where no service
+#                          containers are up.
+#
+# Self-signs a JWT inside the backend container using settings.SECRET_KEY
+# (skipped in static-only mode).
 
 set -u
 
@@ -10,44 +20,70 @@ BASE="${1:-http://localhost:8080}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
+SMOKE_STATIC_ONLY="${SMOKE_STATIC_ONLY:-0}"
+
 pass=0
 fail=0
-trap 'echo; echo "==== summary: ${pass} passed, ${fail} failed ===="; [ "$fail" -eq 0 ]' EXIT
+skipped=0
+trap 'echo; echo "==== summary: ${pass} passed, ${fail} failed, ${skipped} skipped ===="; [ "$fail" -eq 0 ]' EXIT
 
 ok()   { echo "  PASS $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; fail=$((fail+1)); }
+skip() { echo "  SKIP $1"; skipped=$((skipped+1)); }
 head() { echo; echo "-- $1 --"; }
 
-# ---------- self-sign admin JWT ----------
-# Use sub=admin because backend ADMIN_USERNAMES defaults to 'admin'.
-TOKEN=$(docker compose exec -T backend python -c "import jwt, datetime as dt; from app.config import settings; print(jwt.encode({'sub':'admin','exp':dt.datetime.now(dt.timezone.utc)+dt.timedelta(hours=1)}, settings.SECRET_KEY, 'HS256'))" | tr -d '\r\n')
-if [ -z "$TOKEN" ]; then
-  echo "FATAL: could not self-sign JWT"; exit 1
+# True when we have a live backend + docker compose stack available.
+is_runtime() { [ "$SMOKE_STATIC_ONLY" != "1" ]; }
+
+# ---------- self-sign admin JWT (runtime only) ----------
+TOKEN=""
+AUTH=()
+if is_runtime; then
+  TOKEN=$(docker compose exec -T backend python -c "import jwt, datetime as dt; from app.config import settings; print(jwt.encode({'sub':'admin','exp':dt.datetime.now(dt.timezone.utc)+dt.timedelta(hours=1)}, settings.SECRET_KEY, 'HS256'))" | tr -d '\r\n')
+  if [ -z "$TOKEN" ]; then
+    echo "FATAL: could not self-sign JWT"; exit 1
+  fi
+  AUTH=( -H "Authorization: Bearer $TOKEN" )
 fi
-AUTH=( -H "Authorization: Bearer $TOKEN" )
 
 # ---------- 1. Backend /api/version reachable ----------
 head "[1/8] backend /api/version"
-v=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/version" || echo 000)
-[ "$v" = "200" ] && ok "/api/version -> 200" || bad "/api/version -> $v"
+if is_runtime; then
+  v=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/version" || echo 000)
+  [ "$v" = "200" ] && ok "/api/version -> 200" || bad "/api/version -> $v"
+else
+  skip "/api/version (static-only mode)"
+fi
 
 # ---------- 2. Auth token accepted (protected endpoint) ----------
 head "[2/8] auth (self-signed JWT accepted)"
-p=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "$BASE/api/projects" || echo 000)
-[ "$p" = "200" ] && ok "/api/projects with JWT -> 200" || bad "/api/projects with JWT -> $p"
+if is_runtime; then
+  p=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "$BASE/api/projects" || echo 000)
+  [ "$p" = "200" ] && ok "/api/projects with JWT -> 200" || bad "/api/projects with JWT -> $p"
+else
+  skip "/api/projects JWT auth (static-only mode)"
+fi
 
 # ---------- 3. Admin usage quotas (Chunk 12) ----------
 head "[3/8] admin usage quotas"
-u=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "$BASE/api/admin/usage?user_id=admin" || echo 000)
-[ "$u" = "200" ] && ok "/api/admin/usage?user_id=admin -> 200" || bad "/api/admin/usage -> $u"
+if is_runtime; then
+  u=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "$BASE/api/admin/usage?user_id=admin" || echo 000)
+  [ "$u" = "200" ] && ok "/api/admin/usage?user_id=admin -> 200" || bad "/api/admin/usage -> $u"
+else
+  skip "/api/admin/usage (static-only mode)"
+fi
 
 # ---------- 4. Export formats (Chunk 13) ----------
 head "[4/8] export EPUB/PDF/DOCX"
-PID="4fa4252d-5753-4112-9170-65fcc6e35c57"
-for fmt in epub pdf docx; do
-  code=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "$BASE/api/export/projects/${PID}.${fmt}" || echo 000)
-  [ "$code" = "200" ] && ok "export .${fmt} -> 200" || bad "export .${fmt} -> $code"
-done
+if is_runtime; then
+  PID="4fa4252d-5753-4112-9170-65fcc6e35c57"
+  for fmt in epub pdf docx; do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "$BASE/api/export/projects/${PID}.${fmt}" || echo 000)
+    [ "$code" = "200" ] && ok "export .${fmt} -> 200" || bad "export .${fmt} -> $code"
+  done
+else
+  skip "export epub/pdf/docx (static-only mode)"
+fi
 
 # ---------- 5. Design tokens present in globals.css (Chunk 14) ----------
 head "[5/8] design tokens"
@@ -158,4 +194,175 @@ if grep -q 'shadow-card' "$WG"; then
   ok "WritingGuidePanel active card uses shadow-card"
 else
   bad "WritingGuidePanel shadow-card missing"
+fi
+
+# ---------- 12. Backend structured JSON logging (Chunk 24) ----------
+head "[12/12] backend structured logging"
+LOGPY="$REPO/backend/app/observability/logging.py"
+REQMW="$REPO/backend/app/middlewares/request_logging.py"
+MAIN="$REPO/backend/app/main.py"
+if grep -q 'from loguru import logger' "$LOGPY" && grep -q 'def setup_logging' "$LOGPY" && grep -q '_json_sink' "$LOGPY" && grep -q '_SENSITIVE_KEYS' "$LOGPY"; then
+  ok "observability/logging.py: loguru imported + setup_logging + JSON sink + redactor"
+else
+  bad "observability/logging.py missing loguru/setup_logging/JSON sink"
+fi
+if grep -q 'class RequestLoggingMiddleware' "$REQMW" && grep -q 'X-Request-ID' "$REQMW" && grep -q 'log_http_request' "$REQMW"; then
+  ok "middlewares/request_logging.py: RequestLoggingMiddleware + X-Request-ID + http log"
+else
+  bad "request_logging middleware missing"
+fi
+if grep -q 'setup_logging()' "$MAIN" && grep -q 'RequestLoggingMiddleware' "$MAIN"; then
+  ok "main.py wires setup_logging() + RequestLoggingMiddleware"
+else
+  bad "main.py does not wire structured logging"
+fi
+if is_runtime; then
+  # runtime: loguru importable inside the backend container + sink attached.
+  rt=$(docker compose exec -T backend python -c "from app.observability.logging import setup_logging, is_configured; setup_logging(); import sys; sys.stderr.write('__SMOKE_LOG_OK__\n' if is_configured() else '__SMOKE_LOG_NO__\n')" 2>&1 >/dev/null | tr -d '\r')
+  if echo "$rt" | grep -q '__SMOKE_LOG_OK__'; then
+    ok "backend runtime: loguru JSON sink mounted after setup_logging"
+  else
+    bad "backend runtime structured logging not initialized ($rt)"
+  fi
+  # runtime: X-Request-ID echoed back on /api/version response header.
+  rid=$(curl -sSI "$BASE/api/version" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^x-request-id:/ {print $2}' | tr -d '\r\n')
+  if [ -n "$rid" ]; then
+    ok "/api/version response includes X-Request-ID header ($rid)"
+  else
+    bad "/api/version response missing X-Request-ID header"
+  fi
+else
+  skip "loguru runtime check + X-Request-ID echo (static-only mode)"
+fi
+
+# ---------- 13. Prometheus metrics + dashboard (Chunk 25) ----------
+head "[13/13] prometheus metrics"
+METRICS_PY="$REPO/backend/app/observability/metrics.py"
+TASKS_PY="$REPO/backend/app/tasks/__init__.py"
+if grep -q 'http_requests_total' "$METRICS_PY" && grep -q 'CELERY_TASK_TOTAL' "$METRICS_PY" && grep -q 'CELERY_TASK_DURATION' "$METRICS_PY" && grep -q 'DB_POOL_SIZE' "$METRICS_PY" && grep -q '_refresh_db_pool_gauges' "$METRICS_PY"; then
+  ok "observability/metrics.py: http_requests_total + celery + db_pool collectors"
+else
+  bad "observability/metrics.py missing one of: http_requests_total / CELERY_* / DB_POOL_*"
+fi
+if grep -q 'task_prerun' "$TASKS_PY" && grep -q 'task_postrun' "$TASKS_PY" && grep -q 'CELERY_TASK_DURATION' "$TASKS_PY"; then
+  ok "tasks/__init__.py wires celery signals to Prometheus counters"
+else
+  bad "tasks/__init__.py missing celery signal instrumentation"
+fi
+if is_runtime; then
+  # /metrics endpoint reachable + exposes the renamed counter + new families.
+  METRICS_URL="http://127.0.0.1:8000/metrics"
+  m_code=$(curl -sS -o /tmp/_metrics.out -w '%{http_code}' "$METRICS_URL")
+  if [ "$m_code" = "200" ]; then
+    ok "/metrics -> 200"
+  else
+    bad "/metrics -> $m_code"
+  fi
+  if grep -q '^# HELP http_requests_total' /tmp/_metrics.out; then
+    ok "/metrics exposes http_requests_total"
+  else
+    bad "/metrics missing http_requests_total"
+  fi
+  if grep -q '^# HELP celery_task_total' /tmp/_metrics.out && grep -q '^# HELP celery_task_duration_seconds' /tmp/_metrics.out; then
+    ok "/metrics exposes celery_task_total + celery_task_duration_seconds"
+  else
+    bad "/metrics missing celery task families"
+  fi
+  if grep -q '^db_pool_size{pool="main"}' /tmp/_metrics.out; then
+    ok "/metrics exposes db_pool_size for main pool"
+  else
+    bad "/metrics missing db_pool_size{pool=main}"
+  fi
+  # prometheus + grafana containers are running.
+  if docker compose ps --status running --services 2>/dev/null | grep -qx prometheus; then
+    ok "prometheus container running"
+  else
+    bad "prometheus container not running"
+  fi
+  if docker compose ps --status running --services 2>/dev/null | grep -qx grafana; then
+    ok "grafana container running"
+  else
+    bad "grafana container not running"
+  fi
+  # prometheus is actually scraping the backend.
+  sleep 1
+  PROM_URL="http://127.0.0.1:9091/api/v1/query"
+  PROM_QUERY='up{job="ai-write-backend"}'
+  pq=$(curl -sS --get --data-urlencode "query=$PROM_QUERY" "$PROM_URL" 2>/dev/null)
+  if echo "$pq" | grep -q '"value":\[.*"1"\]'; then
+    ok "prometheus reports up{job=ai-write-backend} == 1"
+  else
+    bad "prometheus does not yet report backend as up ($(echo "$pq" | head -c 200))"
+  fi
+else
+  skip "/metrics + prometheus container + prom query (static-only mode)"
+fi
+
+# ---------- 14. Sentry wiring (Chunk 26) ----------
+head "[14/14] sentry wiring"
+SENTRY_PY="$REPO/backend/app/observability/sentry_init.py"
+SENTRY_TS="$REPO/frontend/src/sentry.client.config.ts"
+if grep -q 'before_send=_scrub_event' "$SENTRY_PY" && grep -q 'def _scrub_event' "$SENTRY_PY" && grep -q 'redact' "$SENTRY_PY"; then
+  ok "sentry_init.py wires before_send=_scrub_event using redact()"
+else
+  bad "sentry_init.py missing before_send/redact wiring"
+fi
+if is_runtime; then
+  # Backend runtime: sentry_sdk importable inside the container.
+  sv=$(docker compose exec -T backend python -c "import sentry_sdk, sys; sys.stderr.write('__SMOKE_SDK_OK__ ' + sentry_sdk.VERSION + '\n')" 2>&1 >/dev/null | tr -d '\r')
+  if echo "$sv" | grep -q '__SMOKE_SDK_OK__'; then
+    ok "backend runtime: sentry_sdk importable ($(echo "$sv" | awk '/__SMOKE_SDK_OK__/ {print $2}'))"
+  else
+    bad "backend sentry_sdk import failed ($sv)"
+  fi
+  # Backend runtime: init_sentry no-op without DSN (must not throw, must return False).
+  iv=$(docker compose exec -T backend python -c "import os; os.environ.pop('SENTRY_DSN', None); from app.observability.sentry_init import init_sentry; import sys; sys.stderr.write('__SMOKE_INIT_RET__ ' + str(init_sentry(component='smoke-test')) + '\n')" 2>&1 >/dev/null | tr -d '\r')
+  if echo "$iv" | grep -q '__SMOKE_INIT_RET__ False'; then
+    ok "init_sentry() silently returns False when SENTRY_DSN unset"
+  else
+    bad "init_sentry() did not silent-skip without DSN ($iv)"
+  fi
+else
+  skip "sentry_sdk runtime import + init_sentry no-op (static-only mode)"
+fi
+# Frontend client config exists + DSN env var name + initClientSentry export.
+if [ -f "$SENTRY_TS" ] && grep -q 'NEXT_PUBLIC_SENTRY_DSN' "$SENTRY_TS" && grep -q 'initClientSentry' "$SENTRY_TS" && grep -q '@sentry/browser' "$SENTRY_TS"; then
+  ok "frontend sentry.client.config.ts present + DSN gated + dynamic @sentry/browser shim"
+else
+  bad "frontend sentry.client.config.ts missing or incomplete"
+fi
+
+# ---------- 15. GitHub Actions CI wiring (Chunk 27) ----------
+head "[15/15] github actions CI"
+CI_YML="$REPO/.github/workflows/ci.yml"
+JWT_FIX="$REPO/backend/tests/fixtures/self_sign_jwt.py"
+if [ -f "$CI_YML" ]; then
+  ok ".github/workflows/ci.yml present"
+else
+  bad ".github/workflows/ci.yml missing"
+fi
+if grep -q 'pull_request:' "$CI_YML" 2>/dev/null; then
+  ok "ci.yml triggers on pull_request"
+else
+  bad "ci.yml does not trigger on pull_request"
+fi
+if grep -q 'ruff check' "$CI_YML" 2>/dev/null && grep -q 'mypy' "$CI_YML" 2>/dev/null && grep -q 'pytest' "$CI_YML" 2>/dev/null; then
+  ok "ci.yml runs ruff + mypy + pytest on backend"
+else
+  bad "ci.yml missing ruff/mypy/pytest wiring"
+fi
+if grep -q 'next build' "$CI_YML" 2>/dev/null; then
+  ok "ci.yml runs next build on frontend"
+else
+  bad "ci.yml does not run next build"
+fi
+if grep -q 'smoke_v1.sh' "$CI_YML" 2>/dev/null && grep -q 'SMOKE_STATIC_ONLY' "$CI_YML" 2>/dev/null; then
+  ok "ci.yml invokes smoke_v1.sh with SMOKE_STATIC_ONLY subset"
+else
+  bad "ci.yml does not invoke smoke_v1.sh non-network subset"
+fi
+if [ -f "$JWT_FIX" ] && grep -q 'def sign_smoke_jwt' "$JWT_FIX" 2>/dev/null; then
+  ok "tests/fixtures/self_sign_jwt.py present with sign_smoke_jwt helper"
+else
+  bad "tests/fixtures/self_sign_jwt.py missing or lacks sign_smoke_jwt"
 fi

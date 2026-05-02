@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (lint + pytest)
+    name: Backend (ruff + mypy + pytest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -25,9 +25,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install ruff pytest pytest-asyncio
+          pip install ruff mypy pytest pytest-asyncio
       - name: Ruff lint (non-blocking baseline)
         run: ruff check app --output-format=github || true
+      - name: Mypy (non-blocking baseline)
+        # Baseline run: surfaces type errors in CI logs without failing the
+        # build while the backend codebase is brought up to strict typing.
+        # Flip to blocking in a follow-up chunk once the baseline is clean.
+        run: mypy app --ignore-missing-imports --follow-imports=silent --no-strict-optional || true
       - name: Compile-check
         run: python -m compileall -q app
       - name: Pytest
@@ -35,6 +40,7 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://u:p@localhost:5432/testdb
           REDIS_URL: redis://localhost:6379/0
           APP_ENV: ci
+          SECRET_KEY: ci-smoke-secret
         run: pytest -q --maxfail=3 --disable-warnings tests/ || echo 'pytest baseline'
 
   frontend:
@@ -67,3 +73,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate compose
         run: docker compose config --quiet
+
+  smoke-static:
+    name: Smoke (static, non-network subset)
+    # Runs the scripts/smoke_v1.sh assertions that do NOT require a running
+    # backend, docker compose stack, or network egress (SMOKE_STATIC_ONLY=1).
+    # Catches drift in design-token / i18n / observability source wiring on
+    # every PR without spinning the full stack.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run smoke_v1.sh (static-only subset)
+        shell: bash
+        env:
+          SMOKE_STATIC_ONLY: '1'
+        run: bash scripts/smoke_v1.sh
