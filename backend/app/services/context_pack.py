@@ -200,6 +200,9 @@ class ContextPack:
     current_content: str = ""
     current_outline: dict = field(default_factory=dict)
     future_outlines: list[str] = field(default_factory=list)  # next 10 chapters
+    # v1.7.4 P0-1: book/volume outline injection (was previously missing)
+    book_outline_excerpt: str = ""
+    volume_outline: dict = field(default_factory=dict)
 
     # Layer 2: Facts (~33%)
     world_rules: list[str] = field(default_factory=list)
@@ -230,6 +233,60 @@ class ContextPack:
             return text
         return "...(前文已截断)...\n" + text[-char_limit:]
 
+    def _render_volume_outline_block(self) -> str:
+        """Render volume_outline dict into a readable block for the prompt.
+
+        Volume outline schema (from outline_generator):
+          title, volume_idx, core_conflict, emotional_arc,
+          new_characters[{name,role,identity}], turning_points[str],
+          foreshadows{planted:[{description,resolve_conditions}], resolved:[str]},
+          chapter_summaries[{title,summary,key_events,chapter_idx}],
+          transition_to_next, departing_characters
+        """
+        vo = self.volume_outline or {}
+        if not vo:
+            return ""
+        parts: list[str] = []
+        title = vo.get("title") or ""
+        vidx = vo.get("volume_idx")
+        if title or vidx:
+            parts.append(f"《第{vidx}卷 {title}》".strip())
+        if vo.get("core_conflict"):
+            parts.append(f"核心冲突：{vo['core_conflict']}")
+        if vo.get("emotional_arc"):
+            parts.append(f"情感弧线：{vo['emotional_arc']}")
+        new_chars = vo.get("new_characters") or []
+        if isinstance(new_chars, list) and new_chars:
+            cs = []
+            for c in new_chars[:8]:
+                if isinstance(c, dict):
+                    nm = c.get("name", "")
+                    idn = c.get("identity", "")
+                    rl = c.get("role", "")
+                    line = f"- {nm}（{idn}）：{rl}" if (idn or rl) else f"- {nm}"
+                    cs.append(line)
+            if cs:
+                parts.append("新登场角色：\n" + "\n".join(cs))
+        tps = vo.get("turning_points") or []
+        if isinstance(tps, list) and tps:
+            parts.append("转折点：\n" + "\n".join(f"- {t}" for t in tps[:6]))
+        fs = vo.get("foreshadows") or {}
+        if isinstance(fs, dict):
+            planted = fs.get("planted") or []
+            if isinstance(planted, list) and planted:
+                fs_lines = []
+                for f in planted[:8]:
+                    if isinstance(f, dict):
+                        desc = f.get("description", "")
+                        conds = f.get("resolve_conditions") or []
+                        cond_text = ("→ " + "；".join(conds[:2])) if isinstance(conds, list) and conds else ""
+                        fs_lines.append(f"- {desc} {cond_text}".rstrip())
+                if fs_lines:
+                    parts.append("已埋伏笔：\n" + "\n".join(fs_lines))
+        if vo.get("transition_to_next"):
+            parts.append(f"卷末过渡：{vo['transition_to_next']}")
+        return "\n\n".join(parts)
+
     def to_system_prompt(self, token_budget: int = 8000) -> str:
         """Build the system prompt from all layers with budget allocation.
 
@@ -248,6 +305,16 @@ class ContextPack:
 
         # ---- Layer 1: Proximity ----
         l1_parts: list[str] = []
+
+        # v1.7.4 P0-1: inject book/volume outline at the TOP of L1 so the
+        # generator sees the global picture, not just the current-chapter beat.
+        if self.book_outline_excerpt:
+            l1_parts.append(f"【全书大纲(节选)】\n{self.book_outline_excerpt}")
+
+        if self.volume_outline:
+            vo_text = self._render_volume_outline_block()
+            if vo_text:
+                l1_parts.append(f"【本卷大纲】\n{vo_text}")
 
         if self.recent_summaries:
             summaries_text = "\n".join(
@@ -547,6 +614,66 @@ class ContextPackBuilder:
                         outline_summary = oj
                 direction = f"第{row.chapter_idx}章《{row.title or ''}》: {outline_summary}"
                 pack.future_outlines.append(direction)
+
+            # v1.7.4 P0-1: load book + volume outline so chapter generation
+            # sees the global picture (was missing in v1.7.3 and earlier).
+            try:
+                book_outline_q = await db.execute(
+                    select(Outline.content_json)
+                    .where(Outline.project_id == pid, Outline.level == "book")
+                    .order_by(Outline.version.desc())
+                    .limit(1)
+                )
+                bo = book_outline_q.scalar_one_or_none()
+                if isinstance(bo, dict):
+                    raw = bo.get("raw_text") or bo.get("summary") or ""
+                    if isinstance(raw, str) and raw.strip():
+                        # keep head 1500 + tail 500 chars to give both setup and
+                        # endgame anchors without blowing budget.
+                        if len(raw) > 2200:
+                            pack.book_outline_excerpt = (
+                                raw[:1500].rstrip()
+                                + "\n\n…(中部省略)…\n\n"
+                                + raw[-500:].lstrip()
+                            )
+                        else:
+                            pack.book_outline_excerpt = raw
+            except Exception as e:
+                logger.warning("Failed to load book outline: %s", e)
+
+            try:
+                vol_outline_q = await db.execute(
+                    select(Outline.content_json)
+                    .where(
+                        Outline.project_id == pid,
+                        Outline.level == "volume",
+                    )
+                    .order_by(Outline.version.desc())
+                )
+                for vo_row in vol_outline_q.scalars().all():
+                    if isinstance(vo_row, dict) and (
+                        vo_row.get("volume_idx") is None
+                        or str(vo_row.get("volume_id", vid)) == vid
+                    ):
+                        # match by volume_id when present, otherwise take first
+                        pack.volume_outline = vo_row
+                        break
+                if not pack.volume_outline:
+                    # fallback: take the most recent volume outline
+                    fallback = await db.execute(
+                        select(Outline.content_json)
+                        .where(
+                            Outline.project_id == pid,
+                            Outline.level == "volume",
+                        )
+                        .order_by(Outline.version.desc())
+                        .limit(1)
+                    )
+                    fb = fallback.scalar_one_or_none()
+                    if isinstance(fb, dict):
+                        pack.volume_outline = fb
+            except Exception as e:
+                logger.warning("Failed to load volume outline: %s", e)
 
             # Also try to get summaries from previous volumes if we're at
             # the start of a volume
@@ -1035,7 +1162,24 @@ class ContextPackBuilder:
         pack: ContextPack,
         project_id: str,
     ) -> None:
-        """Load style few-shot samples from project or reference books."""
+        """Load style samples from a StyleProfile or StyleProfileCard fallback.
+
+        v1.7.4 P1-alpha — fixes three bugs simultaneously:
+          1. settings_json key mismatch: support both `style_reference.profile_id`
+             and the legacy `default_style_profile_id`.
+          2. Removes broken `profile.config_json` access (this column does not
+             exist on StyleProfile; real columns are rules_json / anti_ai_rules /
+             tone_keywords / sample_passages).
+          3. Adds a StyleProfileCard fallback: when no aggregated profile is
+             bound, sample top-K cards from the project's reference book and
+             aggregate the 9-dim profile_json into a consensus style sheet.
+
+        Resolution order:
+          A) StyleProfile via settings.style_reference.profile_id
+             OR settings.default_style_profile_id
+          B) StyleProfileCard sampling via settings.style_reference.reference_book_id
+             OR settings.reference_book_id  (or .style_reference.book_id)
+        """
         try:
             db = await self._get_db()
             project = await db.get(Project, project_id)
@@ -1043,37 +1187,229 @@ class ContextPackBuilder:
                 return
 
             settings_json = project.settings_json or {}
-            style_ref = settings_json.get("style_reference", {})
+            style_ref = settings_json.get("style_reference", {}) or {}
 
-            # Check for style profile
-            style_profile_id = style_ref.get("profile_id")
+            # ---- Path A: aggregated StyleProfile ----
+            style_profile_id = (
+                style_ref.get("profile_id")
+                or settings_json.get("default_style_profile_id")
+            )
             if style_profile_id:
                 from app.models.project import StyleProfile
+                try:
+                    profile = await db.get(StyleProfile, style_profile_id)
+                except Exception:
+                    profile = None
+                if profile is not None:
+                    rendered = self._render_style_profile(profile)
+                    if rendered:
+                        pack.style_samples.extend(rendered)
+                        return  # Path A succeeded -> skip fallback
 
-                profile = await db.get(StyleProfile, style_profile_id)
-                if profile and profile.config_json:
-                    config = profile.config_json
-                    sample_ids = config.get("sample_block_ids", [])
-                    if sample_ids:
-                        from app.services.qdrant_store import QdrantStore
-                        from qdrant_client import AsyncQdrantClient
-                        from app.config import settings as app_settings
-
-                        client = AsyncQdrantClient(
-                            host=getattr(app_settings, "QDRANT_HOST", "localhost"),
-                            port=getattr(app_settings, "QDRANT_PORT", 6333),
-                        )
-                        store = QdrantStore(client)
-                        try:
-                            texts = await store.get_sample_texts_for_style(
-                                sample_ids[:3]
-                            )
-                            pack.style_samples.extend(texts)
-                        finally:
-                            await client.close()
+            # ---- Path B: StyleProfileCard fallback (raw cards from reference book) ----
+            ref_book_id = (
+                style_ref.get("reference_book_id")
+                or style_ref.get("book_id")
+                or settings_json.get("reference_book_id")
+            )
+            if ref_book_id:
+                rendered = await self._aggregate_style_cards(db, str(ref_book_id), top_k=12)
+                if rendered:
+                    pack.style_samples.extend(rendered)
 
         except Exception as e:
             logger.debug("Style sample loading skipped: %s", e)
+
+    def _render_style_profile(self, profile) -> list[str]:
+        """Render a StyleProfile ORM row into Layer-3 style_samples text blocks.
+
+        Reads the real columns: rules_json, anti_ai_rules, tone_keywords, sample_passages.
+        Returns 0..N text blocks (each block joins via '---' in the final prompt).
+        """
+        parts: list[str] = []
+        book_label = (
+            getattr(profile, "source_book", None)
+            or getattr(profile, "name", None)
+            or "未命名风格"
+        )
+
+        rules = getattr(profile, "rules_json", None) or []
+        rule_lines: list[str] = []
+        for r in rules[:10]:
+            if isinstance(r, dict):
+                txt = r.get("rule") or r.get("text")
+                if txt:
+                    rule_lines.append(f"- {txt}")
+            elif isinstance(r, str) and r.strip():
+                rule_lines.append(f"- {r}")
+        if rule_lines:
+            parts.append("【风格规则 — " + str(book_label) + "】\n" + "\n".join(rule_lines))
+
+        anti = getattr(profile, "anti_ai_rules", None) or []
+        anti_lines: list[str] = []
+        for a in anti[:10]:
+            if isinstance(a, dict):
+                pat = a.get("pattern") or a.get("rule")
+                if pat:
+                    anti_lines.append(f"- 禁用: {pat}")
+            elif isinstance(a, str) and a.strip():
+                anti_lines.append(f"- 禁用: {a}")
+        if anti_lines:
+            parts.append("【反 AI 硬约束】\n" + "\n".join(anti_lines))
+
+        tone = getattr(profile, "tone_keywords", None) or []
+        if tone:
+            tone_str = " / ".join(str(t) for t in tone[:12] if t)
+            if tone_str:
+                parts.append("【语气词汇】" + tone_str)
+
+        samples = getattr(profile, "sample_passages", None) or []
+        sample_texts: list[str] = []
+        for s in samples[:3]:
+            if isinstance(s, dict):
+                txt = s.get("text") or s.get("passage")
+                if txt:
+                    sample_texts.append(str(txt)[:300])
+            elif isinstance(s, str) and s.strip():
+                sample_texts.append(s[:300])
+        if sample_texts:
+            parts.append("【示例段落】\n" + "\n---\n".join(sample_texts))
+
+        return parts
+
+    async def _aggregate_style_cards(
+        self,
+        db: AsyncSession,
+        book_id: str,
+        top_k: int = 12,
+    ) -> list[str]:
+        """Aggregate top-K StyleProfileCard.profile_json entries from a reference book
+        into Layer-3 style_samples text blocks.
+
+        9 profile_json dims: pov, tense, sentence_rhythm, dialogue_style, sensory_mix,
+        pacing, emotional_register, vocab_tone, forbidden_tells, signature_moves.
+
+        Aggregation strategy: vote pov/tense; pick richest (longest) text for
+        rhythm/dialogue/pacing/emotion; average sensory_mix; union vocab/forbidden/signature.
+        """
+        try:
+            from app.models.decompile import StyleProfileCard
+
+            stmt = (
+                select(StyleProfileCard)
+                .where(StyleProfileCard.book_id == str(book_id))
+                .order_by(StyleProfileCard.created_at.asc())
+                .limit(top_k)
+            )
+            result = await db.execute(stmt)
+            cards = list(result.scalars().all())
+            if not cards:
+                return []
+
+            povs: list[str] = []
+            tenses: list[str] = []
+            rhythms: list[str] = []
+            dialogues: list[str] = []
+            sensory_sums: dict[str, float] = {}
+            sensory_n = 0
+            pacings: list[str] = []
+            emotions: list[str] = []
+            vocab_set: list[str] = []
+            forbidden_set: list[str] = []
+            signature_set: list[str] = []
+
+            def _add_unique(lst: list[str], item: str) -> None:
+                if item and item not in lst:
+                    lst.append(item)
+
+            for c in cards:
+                pj = c.profile_json or {}
+                if not isinstance(pj, dict):
+                    continue
+                if pj.get("pov"):
+                    povs.append(str(pj["pov"]))
+                if pj.get("tense"):
+                    tenses.append(str(pj["tense"]))
+                if pj.get("sentence_rhythm"):
+                    rhythms.append(str(pj["sentence_rhythm"]))
+                if pj.get("dialogue_style"):
+                    dialogues.append(str(pj["dialogue_style"]))
+                sm = pj.get("sensory_mix") or {}
+                if isinstance(sm, dict) and sm:
+                    for k, v in sm.items():
+                        try:
+                            sensory_sums[k] = sensory_sums.get(k, 0.0) + float(v)
+                        except (TypeError, ValueError):
+                            continue
+                    sensory_n += 1
+                if pj.get("pacing"):
+                    pacings.append(str(pj["pacing"]))
+                if pj.get("emotional_register"):
+                    emotions.append(str(pj["emotional_register"]))
+                for k in (pj.get("vocab_tone") or []):
+                    if isinstance(k, str):
+                        _add_unique(vocab_set, k)
+                for k in (pj.get("forbidden_tells") or []):
+                    if isinstance(k, str):
+                        _add_unique(forbidden_set, k)
+                for k in (pj.get("signature_moves") or []):
+                    if isinstance(k, str):
+                        _add_unique(signature_set, k)
+
+            def _pick_longest(lst: list[str]) -> str:
+                return max(lst, key=len) if lst else ""
+
+            def _vote(lst: list[str]) -> str:
+                return max(set(lst), key=lst.count) if lst else ""
+
+            pov_str = _vote(povs)
+            tense_str = _vote(tenses)
+            rhythm_str = _pick_longest(rhythms)
+            dialogue_str = _pick_longest(dialogues)
+            pacing_str = _pick_longest(pacings)
+            emotion_str = _pick_longest(emotions)
+
+            sensory_str = ""
+            if sensory_n > 0 and sensory_sums:
+                avg = {k: v / sensory_n for k, v in sensory_sums.items()}
+                top_sens = sorted(avg.items(), key=lambda x: -x[1])[:5]
+                sensory_str = " / ".join(
+                    f"{k} {round(v * 100)}%" for k, v in top_sens if v > 0.001
+                )
+
+            parts: list[str] = []
+
+            block1_lines: list[str] = []
+            pov_tense = " ".join(s for s in [pov_str, tense_str] if s).strip()
+            if pov_tense:
+                block1_lines.append(f"- 视角/时态: {pov_tense}")
+            if rhythm_str:
+                block1_lines.append(f"- 句式节奏: {rhythm_str}")
+            if dialogue_str:
+                block1_lines.append(f"- 对话风格: {dialogue_str}")
+            if sensory_str:
+                block1_lines.append(f"- 感官分布: {sensory_str}")
+            if pacing_str:
+                block1_lines.append(f"- 节奏: {pacing_str}")
+            if emotion_str:
+                block1_lines.append(f"- 情绪基调: {emotion_str}")
+            if vocab_set:
+                block1_lines.append("- 词汇调性: " + " / ".join(vocab_set[:10]))
+            if block1_lines:
+                parts.append("【参考风格档案 (基于参考书切片聚合)】\n" + "\n".join(block1_lines))
+
+            block2_lines: list[str] = []
+            for t in forbidden_set[:8]:
+                block2_lines.append(f"- 禁忌: {t}")
+            for s in signature_set[:6]:
+                block2_lines.append(f"- 招牌: {s}")
+            if block2_lines:
+                parts.append("【风格禁忌与招牌】\n" + "\n".join(block2_lines))
+
+            return parts
+        except Exception as e:
+            logger.debug("Style cards aggregation failed: %s", e)
+            return []
 
 
 # ---------------------------------------------------------------------------

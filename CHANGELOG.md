@@ -1,5 +1,108 @@
 # Changelog
 
+## [1.7.3] - 2026-04-28
+
+v1.7.3 是 v1.7.x 线上 `stream_by_route` `NameError` 热修复，详见 `RELEASE_NOTES_v1.7.3.md`。
+
+### 修复
+
+- **P0 hotfix `ModelRouter.stream_by_route` `NameError`**：v1.7.1 Z1 重构时给 `generate_by_route` 加了 `task_type: str = "by_route"` 入参但漏加了对称的 `stream_by_route`，导致在 `_log_meta is None` 分支里 `meta.pop("task_type", task_type)` 引用了未定义名。任何不传 `_log_meta` 的流式调用一起手即抛 `NameError: name 'task_type' is not defined`。修复：给 `stream_by_route` 加 `task_type: str = "by_route_stream"` 入参。仅 2 行变动，有重收画面/告警需求的请检查 `llm_call_total{task_type="by_route_stream"}` 是否重现。
+
+### 文档
+
+- 新增 `docs/AUDIT_BASELINE_v1.7.2.md`：v1.7.2 润色调研基线资产 (ruff 72 / mypy 550@56 / pytest 252 passed @ overall 34% / pip-audit 4 / npm audit 4)，P0–P3 优先级清单 + roadmap。**本 hotfix 是该基线扫描 P0 项目中发现的第一个真 bug**。
+- `RELEASE_NOTES_v1.7.3.md`。
+
+### 测试
+
+- pytest **254 passed**（252 + 2 hotfix regression）。5.30 s，无 regression。
+- `ruff check backend/app/services/model_router.py --select F821` → all clean。
+- `/api/health=200` （`docker cp` → backend-1 + celery-worker-1 → `docker restart` 两者）。
+- frontend 未变动。
+
+### Breaking / 注意
+
+- API / Schema 零变动。
+- Prom 标签未变。之前任何不传 `_log_meta` 的流式 `stream_by_route` 调用都是报 NameError 后被上层 `try/except` 吃掉或直接起頋，所以 `llm_call_total{task_type="by_route_stream"}` 可能在此前是一直为 0，本补丁后会开始出样本。
+- L3（Notion 同步审计）仍延后。
+
+## [1.7.2] - 2026-04-28
+
+v1.7.2 是 v1.7.x 观测线的收尾点状补丁，详见 `RELEASE_NOTES_v1.7.2.md`。
+
+### 修复 / 增强
+
+- **Z3 ModelRouter `time_llm_call` 全路径覆盖**：在 `app/services/model_router.py` 的 `generate / generate_stream / generate_by_route / generate_with_tier_fallback` 4 个方法、合计 8 个 provider 调用点（每个方法的 `_log_meta is None` 直分支与 `as ctx:` 日志分支各一次）都加 `with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:` 包裹，`GenerationResult` 返回后填 `_mbox["input_tokens"]/["output_tokens"]`；`generate_with_tier_fallback` 的 wrap 在 `for ... attempts` 循环内，每次 attempt 独立观测一次，失败 attempt 自然记 `status="error"`。`prompt_registry.run_prompt` 的外层 wrap 同步移除避免双计。之后 `entity_timeline / chapter_evaluator / hook_manager / consistency_checker / ooc_checker / outline_generator / settings_extractor / cascade_regenerator / knowledge_tasks` 等调用路径上的所有 LLM 调用都会发 `llm_call_total{status=ok|error}` / `llm_call_duration_seconds` / `llm_token_total{direction=input|output}`。provider 标签从 `route.provider_key`（高基数 endpoint UUID）改为 `provider.__class__.__name__`（如 `OpenAICompatProxy`）。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **252 passed**（v1.7.1 248 + Z3 4）。
+- `/api/health=200`。
+- frontend 未变动，`tsc --noEmit` 仍干净。
+
+### Breaking / 注意
+
+- API / Schema 零变动。
+- **Prom 标签变动**：`llm_call_*{provider}` 从 `"openai_compat_proxy"` 这种字符串改为 `"OpenAICompatProxy"` 之类的类名。如果用于告警 / 面板，需调整匹配正则（如 `provider=~".*Proxy|.*Provider"`）。
+- L3（Notion 同步审计）仍延后。
+
+## [1.7.1] - 2026-04-28
+
+v1.7.1 是 v1.7.0 之后的轻量点状补征。详见 `RELEASE_NOTES_v1.7.1.md`。
+
+### 修复 / 增强
+
+- **Z1 task_type Prom 贯穿**：`app/services/model_router.py` 中 `generate_by_route` 加 `task_type: str = "by_route"` 默认参数；generate / generate_stream / generate_by_route / generate_with_tier_fallback 共 12 个 provider 调用点提升 `task_type=task_type` 作为独立 kwarg，充付下游 `_record_cache_tokens`，从根上消除 `LLM_CACHE_TOKEN_TOTAL{task_type="unknown"}` 退化。
+- **Z2 Cascade 面板内嵌到 /workspace + 详情 modal**：`DesktopWorkspace.tsx` 加载 `CascadeTasksPanel`，以 `<CollapsibleSection title="Cascade 任务">` 呈现在“版本历史”下方，门控 currentProject，并在选中章节时 scope 到该章节；`CascadeTasksPanel.tsx` 表格行可点击开详情 modal，modal 反查 `/api/projects/{pid}/cascade-tasks/{tid}` 拿最新 `issue_summary` / `error_message` / `started_at` / `completed_at` / `duration` / `parent_task_id` 等字段。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **248 passed**（v1.7.0 245 + Z1 3）。
+- frontend `tsc --noEmit` 干净。
+- worker 24 h “attached to a different loop” 警告 = 0。
+
+### Breaking / 注意
+
+- 无破坏性变更。Provider `generate(...)` 现多一个 `task_type=` kwarg、原本就接收 `**kwargs`，二进制兼容。
+- Z3（`time_llm_call` 覆盖补齐到 `ModelRouter.generate*` 路径）仍为 v1.8 候选。
+- L3（Notion 同步审计）按 King 指示推迟。
+
+## [1.7.0] - 2026-04-28
+
+v1.7.0 是 v1.5.x → v1.6.0 遗留项的 carry-forward 收尾，详见 `RELEASE_NOTES_v1.7.0.md`。
+
+### 新增 / 改进
+
+- **X2 `_run_async` 路径统一**：`app/tasks/knowledge_tasks.py` (8 call sites) + `app/tasks/style_tasks.py` (1 call site) 的本地 `_run_async()` 改为 thin delegator → `app/tasks/__init__.py:_run_async_safe`（`reset_engine` + `reset_model_router` 前置，`dispose_current_engine_async` finally）。行为零变更、hardening 限定。
+- **X3 Qdrant 孤立 slice cleanup**：新 `scripts/cleanup_orphan_qdrant_slices.py`（PG-as-truth、`--dry-run` 默认、`--apply` 批量 200）。一次性回收 `style_samples_redacted` 8280 条孤立点（12393→4113、与 PG=4115 对齐）；beat_sheets/style_profiles 都是 4115/4115 干净。
+- **X5 cascade_tasks UI**：新 `GET /api/projects/{pid}/cascade-tasks`（list + `chapter_id`/`status` 过滤 + `limit ∈ [1,500]`）+ `/summary`（status 直方图）+ `/{tid}` 详情；前端新 `CascadeTasksPanel.tsx` + 独立 `/cascade-tasks?project_id=...` 路由，活跃行存在时 15 s 轮询。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **245 passed**（230 + 4 X2 + 5 X3 + 6 X5）。
+- frontend `tsc --noEmit` 干净。
+- worker 24 h "attached to a different loop" 警告 = 0。
+- 真数据 smoke：project `f14712d6` 上 `/cascade-tasks` 返回 v1.5.0 烟测那条 critical/done/outline 行，summary `{done: 1, total: 1}`。
+
+### Breaking / 注意
+
+- 无破坏性变更。
+- X5 endpoint 是 read-only；cascade 写入路径仍走 `app/tasks/cascade.py` planner。
+- `task_type="unknown"` Prom label 仍未补 → v1.8 候选。
+- L3（Notion 同步审计）按 King 指示推迟。
+
 ## [1.6.0] - 2026-04-27
 
 v1.6.0 专注于 prompt cache plumbing + scene mode observability，详见 `RELEASE_NOTES_v1.6.0.md`。

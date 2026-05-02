@@ -727,28 +727,37 @@ async def run_text_prompt(
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
+    else:
+        # v1.7.4 P1-fix: ContextPack path used to bypass route.system_prompt
+        # entirely (the v3 anti-AI prompt never reached the LLM). Prepend it as
+        # its own system message so the registered task prompt is always sent.
+        if route.system_prompt:
+            sys_msg = {"role": "system", "content": route.system_prompt}
+            if extra_system:
+                sys_msg["content"] = f"{sys_msg['content']}\n\n{extra_system}"
+            messages = [sys_msg, *messages]
+        elif extra_system:
+            messages = [{"role": "system", "content": extra_system}, *messages]
 
     router = await get_model_router_async()
     # preferred_tier already resolved above (C3 collapses the second SELECT).
-    _provider = getattr(route, "provider", None) or "unknown"
-    _model = route.model or "unknown"
-    from app.observability.metrics import time_llm_call
-    with time_llm_call(task_type, _provider, _model) as mbox:
-        result = await router.generate_with_tier_fallback(
-            task_type,
-            messages,
-            route=route,
-            preferred_tier=preferred_tier,
-            _log_meta={
-                "prompt_id": route.prompt_id,
-                "project_id": project_id,
-                "chapter_id": chapter_id,
-                "rag_hits": rag_hits or [],
-            },
-            **kwargs,
-        )
-        mbox["input_tokens"] = result.usage.input_tokens
-        mbox["output_tokens"] = result.usage.output_tokens
+    # v1.7.2 Z3: time_llm_call wrap moved into ModelRouter
+    # `generate_with_tier_fallback`; the metric box (status/duration/
+    # tokens) is filled there from result.usage. Keeping the wrap here
+    # would double-count.
+    result = await router.generate_with_tier_fallback(
+        task_type,
+        messages,
+        route=route,
+        preferred_tier=preferred_tier,
+        _log_meta={
+            "prompt_id": route.prompt_id,
+            "project_id": project_id,
+            "chapter_id": chapter_id,
+            "rag_hits": rag_hits or [],
+        },
+        **kwargs,
+    )
 
     # v1.5.0 C3: buffered counter — hot path NEVER touches the request
     # session, so the C2-class "UPDATE prompt_assets blocked behind outer tx
@@ -907,6 +916,15 @@ async def stream_text_prompt(
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_content})
+    else:
+        # v1.7.4 P1-fix: see run_text_prompt for rationale.
+        if route.system_prompt:
+            sys_msg = {"role": "system", "content": route.system_prompt}
+            if extra_system:
+                sys_msg["content"] = f"{sys_msg['content']}\n\n{extra_system}"
+            messages = [sys_msg, *messages]
+        elif extra_system:
+            messages = [{"role": "system", "content": extra_system}, *messages]
 
     router = await get_model_router_async()
     # preferred_tier already resolved above (C3 collapses the second SELECT).

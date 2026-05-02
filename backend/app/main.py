@@ -281,6 +281,9 @@ app.include_router(export_api.router)
 from app.api import evaluate as evaluate_api  # noqa: E402  C2 Step D (v1.5.0)
 app.include_router(evaluate_api.router)
 
+from app.api import cascade as cascade_api  # noqa: E402  v1.7 X5: cascade_tasks UI surface
+app.include_router(cascade_api.router)
+
 # Prometheus HTTP duration middleware
 # ---------------------------------------------------------------------------
 import time as _time  # noqa: E402

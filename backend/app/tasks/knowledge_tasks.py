@@ -18,25 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def _run_async(coro):
-    """Run async function in sync Celery task context."""
-    # v1.4.2 fix: each celery task starts a brand-new event loop. Any
-    # loop-bound resources (asyncpg connection pool inside the cached
-    # AsyncEngine, the cached ModelRouter singleton and its embedding
-    # HTTP client) captured by the *previous* task's loop will raise
-    # ``RuntimeError: Future <...> attached to a different loop`` when
-    # reused here. Drop the global caches so each task re-binds against
-    # its own loop.
-    try:
-        import app.services.model_router as _mr
-        _mr._router = None
-    except Exception:
-        pass
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    """Run async function in sync Celery task context.
+
+    v1.7 X2: delegates to the unified _run_async_safe from app.tasks,
+    which calls reset_model_router + reset_engine before the new loop and
+    dispose_current_engine_async in the finally block. This unifies the
+    8 call-sites here with the rest of the codebase and guarantees the
+    same loop-bound cache hygiene used by tasks/__init__.py.
+    """
+    from app.tasks import _run_async_safe
+    return _run_async_safe(coro)
 
 
 def _make_session():
