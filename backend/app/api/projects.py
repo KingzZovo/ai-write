@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -507,3 +508,53 @@ async def budget_status(
         "completion_ratio": completion_ratio,
         "per_volume": per_volume,
     }
+
+
+
+class ProjectMaterializeResponse(BaseModel):
+    """Result of triggering Neo4j -> Postgres materialization for a project."""
+
+    status: str
+    project_id: str
+    chapter_idx: int
+    result: dict
+
+
+@router.post(
+    "/{project_id}/materialize",
+    response_model=ProjectMaterializeResponse,
+)
+async def trigger_project_materialize(
+    project_id: str,
+    chapter_idx: int = 0,
+    caller: str = "api.projects.materialize",
+) -> ProjectMaterializeResponse:
+    """Materialize Neo4j entity snapshot into Postgres read models.
+
+    Project-level convenience wrapper around the admin endpoint
+    `POST /api/admin/entities/materialize`. Idempotent and incremental;
+    safe to call after any of:
+    - editing /neo4j-settings/* entities
+    - bulk-importing characters or relationships
+    - chapter generation (when the post-gen pipeline is not yet wired)
+
+    Returns counts of created/seen rows per entity type so callers can
+    confirm what changed.
+    """
+    from app.tasks.entity_tasks import _materialize_entities_to_postgres
+
+    try:
+        result = await _materialize_entities_to_postgres(
+            project_id=str(project_id),
+            chapter_idx=int(chapter_idx),
+            caller=str(caller),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"materialize failed: {e}")
+
+    return ProjectMaterializeResponse(
+        status="ok",
+        project_id=str(project_id),
+        chapter_idx=int(chapter_idx),
+        result=result,
+    )
