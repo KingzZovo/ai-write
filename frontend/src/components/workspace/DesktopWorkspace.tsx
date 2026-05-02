@@ -1572,6 +1572,28 @@ function VolumeOutlineEditor({
     return JSON.stringify(data, null, 2)
   })
   const [busy, setBusy] = useState(false)
+  // PR-OL7: inline edit volume title (separate from outline content edit).
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(volume.title || "")
+  const [savingTitle, setSavingTitle] = useState(false)
+
+  const saveTitle = async () => {
+    if (savingTitle || !titleDraft.trim()) return
+    setSavingTitle(true)
+    try {
+      const updated = await apiFetch<{ id: string; title: string }>(
+        `/api/projects/${projectId}/volumes/${volume.id}`,
+        { method: "PUT", body: JSON.stringify({ title: titleDraft.trim() }) },
+      )
+      // Update local volume reference (safe — volume is a prop snapshot, parent re-fetch will eventually update).
+      ;(volume as { title: string }).title = updated.title
+      setEditingTitle(false)
+    } catch (err) {
+      console.error("保存卷名失败:", err)
+    } finally {
+      setSavingTitle(false)
+    }
+  }
 
   const save = async () => {
     if (busy) return
@@ -1605,12 +1627,42 @@ function VolumeOutlineEditor({
   return (
     <details className="border rounded-xl overflow-hidden">
       <summary className="cursor-pointer px-4 py-2 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between">
-        <span>{volume.title}</span>
+        <div className="flex-1 flex items-center gap-2" onClick={(e) => editingTitle && e.preventDefault()}>
+          {editingTitle ? (
+            <>
+              <input
+                type="text"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onClick={(e) => e.preventDefault()}
+                className="flex-1 min-w-[120px] px-2 py-0.5 border border-blue-300 rounded text-sm"
+              />
+              <button
+                onClick={(e) => { e.preventDefault(); saveTitle() }}
+                disabled={savingTitle}
+                className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >{savingTitle ? "保存中..." : "保存名"}</button>
+              <button
+                onClick={(e) => { e.preventDefault(); setTitleDraft(volume.title || ""); setEditingTitle(false) }}
+                className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >取消</button>
+            </>
+          ) : (
+            <>
+              <span>{volume.title}</span>
+              <button
+                onClick={(e) => { e.preventDefault(); setTitleDraft(volume.title || ""); setEditingTitle(true) }}
+                className="text-xs text-gray-500 hover:text-blue-600 hover:underline"
+                title="重命名本卷"
+              >✎</button>
+            </>
+          )}
+        </div>
         <button
           onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
           className="text-xs text-blue-600 hover:underline"
         >
-          {editing ? '取消' : '编辑'}
+          {editing ? '取消编辑' : '编辑大纲'}
         </button>
       </summary>
       <div className="px-4 py-3 bg-white border-t text-sm">

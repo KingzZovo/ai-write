@@ -160,3 +160,42 @@
 - 未自动删除老 Volume。完整 cascade 重生需要判断 “哪些 volume 名字/章数 变了就 invalidate”，
   但实际上“卷名稍变”不应该作为 invalidate 信号。仅 “章数变动大” 才应重生。
   这部分需要产品判断，先交给用户手动控制。
+
+
+## 2026-05-03 (PR-OL6) · 抽取 prompt + PG bulk insert 双重去重
+
+### Change
+- backend/services/prompt_registry.py task_type="summary" system_prompt 加 5 条抽取规则：
+  1. character_states 仅输出本章有变化的角色
+  2. 通用职业/称谓加场景修饰词区分多实例
+  3. 同名多场景出现且作者未明示是同一人，不要合并
+  4. 章号 ≥ 1
+  5. 状态字段需是本章的变化
+- backend/tasks/entity_tasks.py HAS_STATE bulk insert：
+  * 预取每个 character 最近一条 status_json
+  * 如新入 status_json 与最近一条 byte-equal 则 SKIP
+  * skipped_cstates_unchanged 计数器 送入日志
+
+### Verification
+- backend syntax ok
+- E2E: 下一个新项目运行 实体抽取 后查 character_states：N/distinct 应等。
+
+### Note
+- entity_timeline.py update_character_state 已加同样防护 (commit 03f7ccc)。PR-OL6 是 PG 层双保险。
+
+## 2026-05-03 (PR-OL7) · Volume 重命名
+
+### Change
+- frontend/components/workspace/DesktopWorkspace.tsx SimpleVolumeCard:
+  * summary 区加 “✎” 重命名按钮
+  * 点击 后 summary 变 input + 保存名/取消按钮
+  * 保存 调 PUT /api/projects/{pid}/volumes/{vid} { title: ... }
+  * 与原有“编辑大纲” 独立并存
+  * editingTitle / titleDraft / savingTitle state
+
+### Verification
+- frontend tsc + build OK
+- E2E: step 2 列表点“✎”重命名 → 保存 → 查 volumes 表 title 已更新
+
+### Next
+- 未来可考虑: Volume 重排序 / 拖拽 / 插入中间卷

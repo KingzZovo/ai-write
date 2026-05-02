@@ -95,3 +95,9 @@ SELECT count(*) FROM characters WHERE project_id='0eaeff87-2f91-452c-812c-b4bcf2
 ## 2026-05-03 05:35 · PR-OL5 卷规划保存后提示
 
 - 保存卷规划后 检查 volumes.length，toast 提示是否需要重生
+
+## 2026-05-03 05:55 · PR-OL6 + PR-OL7
+
+- PR-OL6 抽取 prompt 加规则 (仅变化/场景修饰/不合并/章号≥1/状态是变化)
+- PR-OL6 entity_tasks PG bulk insert 预查最近 status_json则SKIP
+- PR-OL7 step 2 Volume 列表 加“✎”重命名、PUT /volumes/{id}
