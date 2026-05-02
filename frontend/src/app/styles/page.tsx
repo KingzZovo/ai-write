@@ -7,6 +7,7 @@ interface StyleRule {
   rule: string
   weight: number
   category: string
+  source_metric?: string  // v1.10: dosage_profile metric this rule was derived from
 }
 
 interface AntiAIRule {
@@ -211,9 +212,10 @@ export default function StylesPage() {
               {(style.rules_json?.length > 0) && (
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {style.rules_json.slice(0, 4).map((r, i) => (
-                    <span key={i} className="text-[10px] px-2 py-0.5 bg-gray-50 text-gray-600 rounded border border-gray-100 truncate max-w-[150px]">
+                    <span key={i} className="text-[10px] px-2 py-0.5 bg-gray-50 text-gray-600 rounded border border-gray-100 truncate max-w-[200px]" title={r.source_metric ? '来源指标: ' + r.source_metric : undefined}>
                       <span className={`font-medium ${WEIGHT_COLORS(r.weight)}`}>{WEIGHT_LABELS(r.weight)}</span>
                       {' '}{r.rule}
+                      {r.source_metric && <span className="ml-1 text-[9px] text-blue-500">🔗</span>}
                     </span>
                   ))}
                   {style.rules_json.length > 4 && (
