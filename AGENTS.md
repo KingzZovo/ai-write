@@ -3,6 +3,22 @@
 面向在本仓库内动手的 AI 代理 / 工程师。范围：runtime / backend / DB 约束、踩过的坑、跨章节生成链路的死锁防线。
 不重复 Notion 全局规则页里已有的本地代理通用守则（MCP timeout、shell escape、conventional commit 等）。
 
+## 🎯 系统目标 — 500 万字+
+
+- ai-write 的系统设计下限是**单部作品 500 万字+**。所有容量决策（Qdrant collection 切分、PostgreSQL `chapters` 与未来 `chapter_text_chunks` 分区、ContextPack 4 层窗口压缩、`recent_summaries` 链路保护、tier routing 与 embeddings 重建）必须按这个体量推，不是按当前测试样本。
+- DB 中 `验收测试-玄幻全本200万`（`projects.target_word_count = 2_000_000`）只是测试样本，不是系统上限。任何「先按 200 万写」「50 章够用」「先用简单方案」的提议一律按反规则处理，不进 backlog。
+- 章末写回（`characters` / `relationships.evolution_json` / `foreshadows.status`）、`chapter_versions`、`chapter_variants`、章节 chunk 向量化都不能停留在「已建未启用」，必须按主线版本逐步启用，详见 `PLAN.md` 近期 backlog 与长期路线。
+- 永远先查 schema 再提方案。当前 public schema 实测 **42** 张表（含 `alembic_version`，alembic head `a1001900`）；事实主表是 `characters` / `relationships` / `foreshadows`，不再新建 `entity_records`；向量底座是 Qdrant，不要回退 pgvector。
+
+## 🗂️ 路径索引
+
+三件套 + 关键代码入口。任何 schema、目录、调用链或版本变化必须同步刷新三件套，不允许只改其中一份。
+
+- `PROJECT_STRUCTURE.md` — 项目概览（系统目标 500 万字+） / 服务拓扑 mermaid / 仓库目录树 / 后端模块职责矩阵 / 关键类与函数索引（路径:行号） / DB schema 5 类总览（含「已建未启用」标注） / ContextPack 数据流 mermaid / 章节生成端到端 + 章末写回缺口 / 外部服务清单 / Frontend 概览。
+- `PLAN.md` — 已完成里程碑 v1.0.0–v1.8.0 / 当前活动版本 v1.8.1（章节回写主库链路修复 + ch11 验收候选；附「正文回写 + 角色档案双断裂」事故复盘，含 asyncpg 连接被关 + `api/generate.py` `logger.warning("Failed to auto-save chapter")` 静默吞落库失败的实测证据，以及「凌祝 / 纪砚 / 苏未」是真实角色而非 fixture 误读、字型应为「纪砚」非「纪砥」的纠正） / 近期 backlog v1.9–v2.0（章末实体写回管线、`chapter_versions`、`chapter_variants`、`chapter_text_chunks`、Neo4j 状态机扩展、章末抽取 LLM pass，每条标 S/M/L/XL） / 长期路线（Qdrant 切分 / PG 分区 / 上下文窗口压缩 / `recent_summaries` 链断裂 / 多 LLM 路由 + tier 降级） / 冻结 backlog（v7 commit、`entity_records`、pgvector） / 维护规则。
+- `AGENTS.md` — 本文件，仓库级运行时与 DB 约束、踩坑清单、v1.8.0 dosage 章节、跨章节防线。
+- 关键代码入口：`backend/app/services/context_pack.py`（`ContextPack` L191 / `ContextPackBuilder` L458 / `to_system_prompt` L290 / dosage 渲染 L1223–1310 / Neo4j 接入 L761/828/849）、`backend/app/services/prompt_registry.py`（`run_text_prompt` L699 / messages L711–740）、`backend/app/services/chapter_generator.py`（98 行薄层）、`backend/alembic/versions/`（最新 head `a1001900`）。
+
 ---
 
 ## 🛡️ prompt_registry 死锁双层防线（v1.5.0 / C2 + C3）
@@ -178,4 +194,92 @@ ORDER BY created_at DESC LIMIT 5;
 - **C4**：cascade auto-regenerate。当 `event=scored` 带 `rounds_exhausted=true && overall < threshold` 且 `issues_json` 含跨章节 / 角色一致性级别问题时，把上游 chapter / outline / 角色卡 / world rules 入队列重生成。串行 + 同 project 限流 + 幂等。schema：`cascade_tasks(id, source_chapter_id, target_entity_type, target_entity_id, severity, status, parent_task_id, created_at, completed_at)`。
 
 本文件随每个 chunk 完成同步更新，**不要**留过期信息。
+
+
+---
+
+## 🎨 dosage-driven anti-AI 风格架构（v1.8.0）
+
+**核心原则：剂量学，不是禁令学。** 风格不靠规则禁止，靠参考书量化学习。
+
+v1.7.x 的弯路：在 prompt 里写「禁止比喻」「心理戏 ≤2 次」「对话占比 ≤40%」等单向上限，模型会**把上限当目标**全部往 0 压。结果朱雀 AI 段降到 17%，但句长、段长、比喻全部碎成渣，文学密度坍塌。
+
+v1.8.0 修复方向：
+
+### 数据底座 — `style_profiles.config_json.dosage_profile`
+
+从参考书全文提取 16 维剂量基线（per-kchar 归一化）：
+
+- paragraph / sentence count + length 分布（mean, std）
+- dialogue ratio + turn count + per-kchar + turn_chars_mean
+- metaphor total + sentence-end metaphor + 5 specific patterns（像一/像被/像有人/像某种/像随时）
+- psychology canned phrases（13 类套语，per-kchar）
+- psychology neutral words（4 类中性词，「正常心理描写」非黑名单）
+- parallelism (XYX, ABAB)
+- colloquial particles + onomatopoeia
+- AI metawords（11 类，期望 0）
+
+抽取脚本范式：`/tmp/extract_dosage.py`（输出 `/tmp/<book>_dosage.json`）
+
+### DB 注入
+
+`style_profiles` 表 INSERT，关键字段：
+
+```sql
+INSERT INTO style_profiles (id, name, source_book, config_json, ...)
+VALUES (
+  '<uuid>',
+  '<参考书剂量画像>',
+  '<reference_books.id>',
+  jsonb_build_object('dosage_profile', '<json from /tmp/extract_dosage.py>'::jsonb),
+  ...
+);
+```
+
+**陷阱**：`source` 字段不要写文件名（如 `longzu_full`），写参考书人类可读名（如 `龙族`），否则渲染输出会带尴尬文件名。
+
+### 渲染
+
+`backend/app/services/context_pack.py` `_render_style_profile()`：当 `style_profile.config_json` 含 `dosage_profile` 时，按一章 7000 字换算渲染 9 行剂量段，写入 system prompt。
+
+### 🚨 `style_samples[:3]` 截断陷阱（关键）
+
+`backend/app/services/context_pack.py:401`：
+```python
+ss_text = "\n---\n".join(self.style_samples[:3])
+```
+
+to_system_prompt() 4 层 token 分配（token_budget=8000）下，`style_samples` 槽位**硬截断为前 3 个 element**。任何向 `style_samples` extend 多 element 的渲染函数都会被静默截断。
+
+**铁律**：所有 `_render_*` 风格渲染器**必须** `"\n".join(lines)` 拼成 1 个字符串再 `parts.append`，**不要** `parts.extend(lines)` 当成多 element 加。
+
+症状：渲染脚本独立验证 9 行全部输出 → system prompt 里只剩标题 + 8 行数字行神秘消失。这是 [:3] 截断 + extend 多 element 的组合 bug。
+
+### 双向区间 prompt（v1.8.1 阶段 B 在做）
+
+**单向上限**会被模型当剂量目标向 0 压（已工程证实）。所有剂量数字必须写**双向区间 + 显式下限**：
+
+- ❌ 「对话占比 ≤40%」 → ✅ 「对话占比 28-40%（低于 25% 单调）」
+- ❌ 「心理戏套语 ≤2 次」 → ✅ 「心理戏套语 0-2 次（保留现状）」
+- ❌ 「心理中性词 ≈ 30 次」 → ✅ 「心理中性词 20-40 次（**低于 15 次失去人物深度**）」
+- ❌ 「句长均 29 字」 → ✅ 「句长均 24-34 字（**低于 20 字过碎，高于 40 字粘稠**）」
+
+### 验证管线（每章生成后必跑）
+
+1. `/tmp/diag_<chN>.py`（8 维生成质量诊断器，对照 reference book 基线）
+2. 对话比 / 句长 / 段长 / 比喻总量 / 句尾比喻 / 心理戏 / 心理中性词 / AI 元词 8 维
+3. 朱雀 AI 检测（用户 PDF），验证三栏 Human / Suspected / AI
+
+### 验收基线（v1.8.0）
+
+- **朱雀 AI 检测（ch10「黑市拍卖会」9063 中文字）**：Human 49.17% / Suspected 50.83% / **AI 0%**（首次 AI 段清零）
+- 8 维诊断：3 个 PASS（AI 元词 0 / 心理套语 0 / prompt 自指 0），7 个偏差（句长/段长/比喻/心理中性词被压低，待 v1.8.1 双向区间修复）
+- 327 passed pytest baseline 不变
+
+### 后端容器调试小坑
+
+- `ai-write-backend-1` **没装 `ps`**：进程检查改用 `ls /proc/$PID` 或 `cat /proc/$PID/status`
+- 容器内长跑后台任务必须 `setsid nohup ... < /dev/null &`（`docker exec -d` 会被杀）
+- 容器内 e2e 脚本必须 `docker exec -e PYTHONPATH=/app -w /app` 才能 `import app`
+- shell 引号嵌套（`python3 -c "...\\n..."`）容易把 `\n` 字面注入 .py 文件造成 SyntaxError —— 改用 `write_file` 单独写脚本再 `run_command` 跑
 

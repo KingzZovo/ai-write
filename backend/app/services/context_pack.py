@@ -1275,6 +1275,42 @@ class ContextPackBuilder:
         if sample_texts:
             parts.append("【示例段落】\n" + "\n---\n".join(sample_texts))
 
+        # v8: 渲染 config_json 里的剂量画像（dosage_profile）
+        config = getattr(profile, "config_json", None) or {}
+        if isinstance(config, dict) and isinstance(config.get("dosage_profile"), dict):
+            d = config["dosage_profile"]
+            try:
+                dlg = d.get("dialogue", {}) or {}
+                met = d.get("metaphor", {}) or {}
+                psy = d.get("psychology", {}) or {}
+                snt = d.get("sentence", {}) or {}
+                par_ = d.get("paragraph", {}) or {}
+                col = d.get("colloquial", {}) or {}
+                dr = float(dlg.get("ratio", 0) or 0)
+                mt = float(met.get("total_per_kchar", 0) or 0)
+                ms = float(met.get("sentence_end_per_kchar", 0) or 0)
+                py = float(psy.get("pattern_total_per_kchar", 0) or 0)
+                pyc = float(psy.get("pattern_per_chapter_7k", 0) or 0)
+                pyn = float(psy.get("neutral_words_per_kchar", 0) or 0)
+                slm = float(snt.get("mean_chars", 0) or 0)
+                plm = float(par_.get("mean_chars", 0) or 0)
+                cl = float(col.get("particles_per_kchar", 0) or 0)
+                src_name = d.get("source", "参考书")
+                dosage_lines = [
+                    "【剂量画像 — 仿写参考密度（按一章 7000 字换算）】",
+                    f"· 对话占比 ≈ {dr*100:.0f}%，对话轮均长约 27 字（自然为主，不为凑量而造对话）。",
+                    f"· 比喻总量 ≈ {mt:.1f}/千字（一章约 {mt*7:.0f} 次），其中句尾比喻 ≈ {ms:.1f}/千字（约 {ms*7:.0f} 次）。句尾比喻是江南特色，多用但每个都要独特、不重复。",
+                    f"· 心理戏套语（心里一沉/眼皮一跳/喉咙发紧/头皮发麻/握紧拳等 13 类）总量 ≈ {py:.3f}/千字，一章约 {pyc:.1f} 次。硬上限：每章不得超过 2 次，同一套语不得重复。",
+                    f"· 心理中性词（想 / 觉得 / 感到 / 猛然 / 突然 / 仿佛）≈ {pyn:.1f}/千字（一章约 {pyn*7:.0f} 次）。这是「正常心理描写」，不是黑名单。",
+                    f"· 句长均 {slm:.0f} 字 / 段长均 {plm:.0f} 字。短长结合，不打碎句、不堆长句。",
+                    f"· 口语助词（呀 / 哦 / 哈 / 嘴 / 老子 / 个屁）≈ {cl:.2f}/千字（一章约 {cl*7:.0f} 次）。吝槽口吻误论年轻人主语，能用口语骂人就别用「面色凝重」。",
+                    "· prompt 自指语严禁出现：「以下是 / 根据您 / 以上便是 / prompt / 黑名单 / 护城词 / 伏笔 / 钩子」等。",
+                    f"提示：以上重点为《{src_name}》原作采样基线，仿写不必精确达标，但严禁批量超标——尤其是心理戏套语和句尾比喻不得重复。",
+                ]
+                parts.append("\n".join(dosage_lines))
+            except Exception as e:
+                logger.warning("render dosage_profile failed: %s", e)
+
         return parts
 
     async def _aggregate_style_cards(

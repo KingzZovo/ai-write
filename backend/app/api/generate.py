@@ -25,6 +25,24 @@ def _x4_inc_revise(outcome: str) -> None:
     except Exception:
         pass
 
+def _inc_chapter_auto_save(kind: str, outcome: str, reason: str) -> None:
+    """v1.8.1: increment chapter_auto_save_total. Best-effort.
+
+    Records whether the post-SSE persistence into ``chapters.content_text`` /
+    ``outlines`` actually committed. Before v1.8.1, failures were silently
+    swallowed by ``logger.warning("Failed to auto-save chapter")`` while the
+    SSE client had already received the streamed text, leaving
+    ``chapters.content_text`` empty in the main table. Alert on
+    ``outcome="failure"`` rate > 0.
+    """
+    try:
+        from app.observability.metrics import CHAPTER_AUTO_SAVE_TOTAL
+        CHAPTER_AUTO_SAVE_TOTAL.labels(
+            kind=kind, outcome=outcome, reason=reason,
+        ).inc()
+    except Exception:
+        pass
+
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -250,6 +268,8 @@ async def generate_chapter(
                             target_chapter.status = "completed"
                             await save_db.commit()
                             await save_db.refresh(target_chapter)
+                            # v1.8.1: persistence actually committed; record success.
+                            _inc_chapter_auto_save("chapter", "success", "ok")
                             yield f"data: {json.dumps({'status': 'saved', 'chapter_id': str(target_chapter.id), 'word_count': target_chapter.word_count})}\n\n"
                             # B2' (v1.5.0): kick entity-extraction task post-commit.
                             try:
@@ -283,8 +303,31 @@ async def generate_chapter(
                                 "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",
                                 req.chapter_id, resolved_volume_id, resolved_chapter_idx,
                             )
+                            _inc_chapter_auto_save("chapter", "failure", "no_target_row")
+                            yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
                 except Exception as save_err:
-                    logger.warning("Failed to auto-save chapter: %s", save_err)
+                    # v1.8.1 Bug L: do NOT silently swallow. asyncpg connection-closed,
+                    # transaction-already-aborted, etc. used to leave chapters.content_text
+                    # empty while SSE clients had received streamed text. Emit an SSE
+                    # `save_failed` event so the frontend can surface it, log full traceback,
+                    # and increment chapter_auto_save_total{outcome="failure"}.
+                    logger.error(
+                        "Auto-save chapter FAILED (chapter_id=%s vol=%s idx=%s): %s",
+                        req.chapter_id,
+                        resolved_volume_id,
+                        resolved_chapter_idx,
+                        save_err,
+                        exc_info=True,
+                    )
+                    _inc_chapter_auto_save(
+                        "chapter", "failure", type(save_err).__name__
+                    )
+                    try:
+                        yield (
+                            f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'error': str(save_err)[:500], 'error_class': type(save_err).__name__})}\n\n"
+                        )
+                    except Exception:  # pragma: no cover - SSE pipe might already be closed
+                        pass
 
             # ----------------------------------------------------------------
             # v1.5.0 C2: scene-mode auto-revise loop.
@@ -771,9 +814,27 @@ async def generate_outline(
                         save_db.add(outline)
                         await save_db.commit()
                         await save_db.refresh(outline)
+                        # v1.8.1: persistence actually committed; record success.
+                        _inc_chapter_auto_save("outline", "success", "ok")
                         yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id)})}\n\n"
                 except Exception as save_err:
-                    logger.warning("Failed to auto-save outline: %s", save_err)
+                    # v1.8.1 Bug L: do NOT silently swallow (parity with chapter path).
+                    logger.error(
+                        "Auto-save outline FAILED (project_id=%s level=%s): %s",
+                        req.project_id,
+                        req.level,
+                        save_err,
+                        exc_info=True,
+                    )
+                    _inc_chapter_auto_save(
+                        "outline", "failure", type(save_err).__name__
+                    )
+                    try:
+                        yield (
+                            f"data: {json.dumps({'status': 'save_failed', 'kind': 'outline', 'error': str(save_err)[:500], 'error_class': type(save_err).__name__})}\n\n"
+                        )
+                    except Exception:  # pragma: no cover - SSE pipe might already be closed
+                        pass
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"
