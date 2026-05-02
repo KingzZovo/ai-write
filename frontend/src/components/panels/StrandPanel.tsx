@@ -222,7 +222,21 @@ export function StrandPanel({ projectId }: StrandPanelProps) {
   if (!data) {
     return (
       <div className="space-y-2">
-        <p className="text-xs text-stone-400">暂无三线编织数据。开始写作后将自动分析。</p>
+        <p className="text-xs text-stone-400">加载三线状态失败，请重试或检查后端。</p>
+      </div>
+    )
+  }
+
+  // No chapters generated yet → history empty AND all last_* = 0
+  const hasAnyData =
+    data.history.length > 0 ||
+    data.last_quest_chapter > 0 ||
+    data.last_fire_chapter > 0 ||
+    data.last_constellation_chapter > 0
+  if (!hasAnyData) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-stone-400">暂无三线编织数据。生成章节后将自动分析。</p>
       </div>
     )
   }
