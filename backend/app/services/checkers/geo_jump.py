@@ -32,33 +32,65 @@ async def scan_geo_jump(
     issues: list[dict[str, Any]] = []
     if not draft or not draft.strip():
         return issues
-    if neo4j_driver is None or chapter_idx is None:
+    if chapter_idx is None:
         return issues
 
-    # 查询每个角色在 <= chapter_idx 的最近一条 AT_LOCATION
-    try:
-        query = (
-            "MATCH (c:Character {project_id: $pid})-[r:AT_LOCATION]->(l:Location) "
-            "WHERE r.chapter_start <= $cidx "
-            "  AND (r.chapter_end IS NULL OR r.chapter_end >= $cidx) "
-            "RETURN c.name AS name, l.name AS loc, r.chapter_start AS cs "
-            "ORDER BY r.chapter_start DESC "
-            "LIMIT 100"
-        )
-        async with neo4j_driver.session() as session:
-            result = await session.run(query, pid=str(project_id), cidx=int(chapter_idx))
-            records = [r async for r in result]
-    except Exception as exc:
-        logger.debug("geo_jump neo4j query failed: %s", exc)
-        return issues
-
-    # 去重：每角色取最近一条
+    # v1.9+: Prefer Postgres projection (character_locations) for stability.
     latest_by_char: dict[str, str] = {}
-    for rec in records:
-        name = rec.get("name") or ""
-        loc = rec.get("loc") or ""
-        if name and name not in latest_by_char and loc:
-            latest_by_char[name] = loc
+    try:
+        from sqlalchemy import text
+
+        from app.db.session import async_session_factory
+
+        sql = text(
+            """
+            SELECT c.name AS name, l.name AS loc, cl.chapter_start AS cs
+            FROM character_locations cl
+            JOIN characters c ON c.id = cl.character_id
+            JOIN locations l ON l.id = cl.location_id
+            WHERE cl.project_id = :pid
+              AND cl.chapter_start <= :cidx
+              AND (cl.chapter_end IS NULL OR cl.chapter_end >= :cidx)
+            ORDER BY cl.chapter_start DESC
+            LIMIT 200
+            """
+        )
+        async with async_session_factory() as db:
+            rows = (
+                await db.execute(sql, {"pid": str(project_id), "cidx": int(chapter_idx)})
+            ).mappings().all()
+
+        for r in rows:
+            name = (r.get("name") or "").strip()
+            loc = (r.get("loc") or "").strip()
+            if name and loc and name not in latest_by_char:
+                latest_by_char[name] = loc
+    except Exception as exc:
+        logger.debug("geo_jump pg query failed: %s", exc)
+
+    # Fallback: Neo4j
+    if not latest_by_char and neo4j_driver is not None:
+        try:
+            query = (
+                "MATCH (c:Character {project_id: $pid})-[r:AT_LOCATION]->(l:Location) "
+                "WHERE r.chapter_start <= $cidx "
+                "  AND (r.chapter_end IS NULL OR r.chapter_end >= $cidx) "
+                "RETURN c.name AS name, l.name AS loc, r.chapter_start AS cs "
+                "ORDER BY r.chapter_start DESC "
+                "LIMIT 100"
+            )
+            async with neo4j_driver.session() as session:
+                result = await session.run(query, pid=str(project_id), cidx=int(chapter_idx))
+                records = [r async for r in result]
+        except Exception as exc:
+            logger.debug("geo_jump neo4j query failed: %s", exc)
+            return issues
+
+        for rec in records:
+            name = (rec.get("name") or "").strip()
+            loc = (rec.get("loc") or "").strip()
+            if name and loc and name not in latest_by_char:
+                latest_by_char[name] = loc
 
     has_transit = any(kw in draft for kw in TRANSIT_KEYWORDS)
 

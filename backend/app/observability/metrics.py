@@ -134,6 +134,14 @@ CELERY_TASK_DURATION = Histogram(
     registry=REGISTRY,
 )
 
+# -------------------- v1.9: Neo4j → Postgres materialization -----
+ENTITY_PG_MATERIALIZE_TOTAL = Counter(
+    "entity_pg_materialize_total",
+    "Outcomes of materializing extracted entities into Postgres (success|failure)",
+    labelnames=("outcome", "reason"),  # reason=ok|<ExceptionClass>
+    registry=REGISTRY,
+)
+
 # -------------------- DB connection pool --------------------
 # Gauges populated lazily by `_collect_db_pool_gauges()` before each scrape
 # (registered via a sidecar collector below). Labels: pool="main".

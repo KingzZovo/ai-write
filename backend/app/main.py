@@ -12,9 +12,9 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
-from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshadows, generate, knowledge, lora, model_config, outlines, pipeline, projects, prompts, quality, rewrite, settings, styles, vector_store, versions, volumes
+from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshadows, generate, knowledge, lora, model_config, neo4j_settings, outlines, pipeline, projects, prompts, quality, rewrite, settings, styles, vector_store, versions, volumes
 from app.api.auth import verify_token
-from app.api import admin_usage
+from app.api import admin_entities, admin_usage
 from app.api import export as export_api
 from app.middlewares.quota import QuotaMiddleware
 from app.middlewares.request_logging import RequestLoggingMiddleware
@@ -245,6 +245,7 @@ app.include_router(generate.router)
 app.include_router(knowledge.router)
 app.include_router(foreshadows.router)
 app.include_router(settings.router)
+app.include_router(neo4j_settings.router)
 app.include_router(versions.router)
 app.include_router(rewrite.router)
 app.include_router(lora.router)
@@ -277,6 +278,7 @@ app.include_router(variants_api.router)
 from app.api import run_bus as run_bus_api  # noqa: E402
 app.include_router(run_bus_api.router)
 app.include_router(admin_usage.router)
+app.include_router(admin_entities.router)
 app.include_router(export_api.router)
 from app.api import evaluate as evaluate_api  # noqa: E402  C2 Step D (v1.5.0)
 app.include_router(evaluate_api.router)

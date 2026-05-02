@@ -56,6 +56,10 @@ class Project(Base):
         "WorldRule", back_populates="project", cascade="all, delete-orphan"
     )
 
+    locations = relationship(
+        "Location", back_populates="project", cascade="all, delete-orphan"
+    )
+
 
 class Volume(Base):
     __tablename__ = "volumes"
@@ -179,6 +183,102 @@ class WorldRule(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="world_rules")
+
+
+class Location(Base):
+    __tablename__ = "locations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="locations")
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterLocation(Base):
+    __tablename__ = "character_locations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("locations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterOrganization(Base):
+    __tablename__ = "character_organizations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organization_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterState(Base):
+    __tablename__ = "character_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    status_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
 class StyleProfile(Base):

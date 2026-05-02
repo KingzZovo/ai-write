@@ -25,6 +25,7 @@ async def scan_time_reversal(
     project_id: str,
     chapter_idx: int | None = None,
     neo4j_driver: Any | None = None,
+    db: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Return list of consistency issues in critic_service format.
 
@@ -39,7 +40,55 @@ async def scan_time_reversal(
     if not alive_hits:
         return issues
 
-    if neo4j_driver is None or chapter_idx is None:
+    if chapter_idx is None:
+        return issues
+
+    # Prefer Postgres projection if available.
+    if db is not None:
+        try:
+            from sqlalchemy import text
+
+            rows = await db.execute(
+                text(
+                    """
+                    SELECT ch.name
+                    FROM character_states cs
+                    JOIN characters ch
+                      ON ch.id = cs.character_id
+                    WHERE cs.project_id = :pid
+                      AND cs.chapter_start <= :cidx
+                      AND (cs.chapter_end IS NULL OR cs.chapter_end < :cidx)
+                      AND cs.status_json::text LIKE '%死亡%'
+                    LIMIT 50
+                    """
+                ),
+                {"pid": str(project_id), "cidx": int(chapter_idx)},
+            )
+            names = [r[0] for r in rows.all() if r and r[0]]
+            for name in names:
+                if name not in draft:
+                    continue
+                for kw in alive_hits:
+                    idx_n = draft.find(name)
+                    idx_k = draft.find(kw)
+                    if idx_n < 0 or idx_k < 0:
+                        continue
+                    if abs(idx_n - idx_k) <= 30:
+                        issues.append(
+                            {
+                                "severity": "hard",
+                                "category": "consistency_time_reversal",
+                                "desc": f"角色 {name} 在早前章节已标记死亡/陨落，本章出现「{kw}」的描述，怀疑时间线倒退。",
+                                "location": name,
+                                "source": "consistency:time_reversal:pg",
+                            }
+                        )
+                        break
+            return issues
+        except Exception as exc:
+            logger.debug("time_reversal pg query failed: %s", exc)
+
+    if neo4j_driver is None:
         return issues
 
     # 2) Neo4j 查询：在当前章之前已经被标记 status.存亡=死亡 的角色

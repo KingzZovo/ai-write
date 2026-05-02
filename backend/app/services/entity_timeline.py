@@ -11,6 +11,7 @@ Neo4j node types:
 - (:Location {id, project_id, name})
 - (:Organization {id, project_id, name})
 - (:WorldRule {id, project_id, category, text})
+- (:Foreshadow {id, project_id, type, description, planted_chapter, resolve_conditions_json, resolution_blueprint_json, narrative_proximity, status, resolved_chapter})
 
 Relationship types:
 - (:Character)-[:HAS_STATE]->(:CharacterState)
@@ -121,6 +122,27 @@ class EntityTimelineService:
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (c:Character) REQUIRE (c.project_id, c.name) IS UNIQUE"
                 )
+                # RELATES_TO uniqueness: (project_id, src, tgt, type, chapter_start)
+                # NOTE: requires we always set these properties on the relationship.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:RELATES_TO]-() REQUIRE (r.project_id, r.source_name, r.target_name, r.type, r.chapter_start) IS UNIQUE"
+                )
+                # AT_LOCATION uniqueness: one active location per character per chapter_start.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:AT_LOCATION]-() REQUIRE (r.project_id, r.character_name, r.chapter_start) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (w:WorldRule) REQUIRE (w.project_id, w.category, w.text) IS UNIQUE"
+                )
+                # MEMBER_OF uniqueness: (project_id, character_name, org_name, chapter_start)
+                # NOTE: requires we always set these properties on the relationship.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:MEMBER_OF]-() REQUIRE (r.project_id, r.character_name, r.org_name, r.chapter_start) IS UNIQUE"
+                )
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (l:Location) REQUIRE (l.project_id, l.name) IS UNIQUE"
@@ -128,6 +150,10 @@ class EntityTimelineService:
                 await session.run(
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (o:Organization) REQUIRE (o.project_id, o.name) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (f:Foreshadow) REQUIRE (f.project_id, f.id) IS UNIQUE"
                 )
                 # Indexes for fast lookup
                 await session.run(
@@ -510,9 +536,9 @@ class EntityTimelineService:
                 await session.run(
                     "MATCH (c:Character {project_id: $pid, name: $cname}), "
                     "      (l:Location {project_id: $pid, name: $lname}) "
-                    "CREATE (c)-[:AT_LOCATION {"
-                    "  chapter_start: $start, chapter_end: null"
-                    "}]->(l)",
+                    "MERGE (c)-[r:AT_LOCATION {project_id: $pid, character_name: $cname, chapter_start: $start}]->(l) "
+                    "ON CREATE SET r.chapter_end = null "
+                    "SET r.location_name = $lname",
                     pid=project_id,
                     cname=character_name,
                     lname=location_name,

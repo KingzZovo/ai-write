@@ -221,6 +221,7 @@ async def run_critic(
                     project_id=project_id,
                     chapter_idx=chapter_idx,
                     neo4j_driver=_driver,
+                    db=db,
                 )
             )
         except Exception as exc:
