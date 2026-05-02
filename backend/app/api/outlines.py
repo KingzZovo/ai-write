@@ -109,8 +109,63 @@ async def update_outline(
         outline.is_confirmed = 1 if body.is_confirmed else 0
 
     await db.flush()
+
+    # PR-OL9 cascade: when a volume-level outline is edited, sync each chapter's
+    # outline_json + summary so downstream content generation sees the new plan.
+    cascade_synced_chapters = 0
+    try:
+        if body.content_json is not None and outline.level == "volume":
+            cj = outline.content_json or {}
+            volume_idx = cj.get("volume_idx")
+            chapter_summaries = cj.get("chapter_summaries") or []
+            if volume_idx is not None and isinstance(chapter_summaries, list) and chapter_summaries:
+                from app.models.project import Volume, Chapter
+                from sqlalchemy import select
+                vol_q = await db.execute(
+                    select(Volume).where(
+                        Volume.project_id == project_id,
+                        Volume.volume_idx == int(volume_idx),
+                    )
+                )
+                vol = vol_q.scalar_one_or_none()
+                if vol is not None:
+                    chap_q = await db.execute(
+                        select(Chapter).where(Chapter.volume_id == vol.id)
+                    )
+                    chapters_by_idx = {c.chapter_idx: c for c in chap_q.scalars().all()}
+                    for i, cs in enumerate(chapter_summaries, start=1):
+                        if not isinstance(cs, dict):
+                            continue
+                        ch = chapters_by_idx.get(i)
+                        if ch is None:
+                            continue
+                        ch.outline_json = cs
+                        # PR-OL9: also sync summary text if cs has "summary" / "概要"
+                        new_summary = cs.get("summary") or cs.get("概要") or cs.get("description") or ""
+                        if new_summary and new_summary != ch.summary:
+                            ch.summary = new_summary
+                        cascade_synced_chapters += 1
+                    if cascade_synced_chapters:
+                        await db.flush()
+    except Exception as cascade_err:
+        # Non-fatal: outline saved, cascade is best-effort.
+        import logging
+        logging.getLogger(__name__).warning(
+            "PR-OL9 cascade sync chapter outlines failed: %s", cascade_err,
+        )
+
     await db.refresh(outline)
-    return OutlineResponse.model_validate(outline)
+    resp = OutlineResponse.model_validate(outline)
+    # Surface cascade count via response model_extra (FastAPI will include it).
+    if cascade_synced_chapters:
+        # Pydantic v2 ConfigDict allows extra="allow" but if not, attach in headers won't work.
+        # Simplest: log it; client can ignore.
+        import logging
+        logging.getLogger(__name__).info(
+            "PR-OL9 cascade synced %d chapters for outline %s",
+            cascade_synced_chapters, outline.id,
+        )
+    return resp
 
 
 @router.post("/{outline_id}/confirm")
