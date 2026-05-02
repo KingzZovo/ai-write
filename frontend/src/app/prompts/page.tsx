@@ -8,6 +8,7 @@ interface Endpoint {
   name: string
   provider_type: string
   default_model: string
+  tier: string
 }
 
 interface PromptAsset {
@@ -26,6 +27,7 @@ interface PromptAsset {
   is_active: number
   endpoint_id: string | null
   model_name: string
+  model_tier: string | null
   temperature: number
   max_tokens: number
   category: string
@@ -40,12 +42,31 @@ interface PromptAsset {
 
 const MODE_LABELS: Record<string, string> = { text: '文本', structured: '结构化(JSON)' }
 
+// v1.4 — LLM tier enum (matches backend).
+const TIER_OPTIONS = [
+  { value: '', label: '— 继承端点 —' },
+  { value: 'flagship', label: 'Flagship' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'small', label: 'Small' },
+  { value: 'distill', label: 'Distill' },
+  { value: 'embedding', label: 'Embedding' },
+]
+const TIER_BADGE_CLASS: Record<string, string> = {
+  flagship: 'bg-purple-50 text-purple-700',
+  standard: 'bg-blue-50 text-blue-700',
+  small: 'bg-gray-100 text-gray-700',
+  distill: 'bg-amber-50 text-amber-700',
+  embedding: 'bg-emerald-50 text-emerald-700',
+}
+
 export default function PromptsPage() {
   const [prompts, setPrompts] = useState<PromptAsset[]>([])
   const [endpoints, setEndpoints] = useState<Endpoint[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PromptAsset | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  // v1.4 — filter by endpoint (empty string = all).
+  const [filterEndpointId, setFilterEndpointId] = useState<string>('')
 
   const fetchPrompts = useCallback(async () => {
     try {
@@ -79,7 +100,11 @@ export default function PromptsPage() {
   }
 
   // Group by category, sort each by order
-  const grouped = prompts.reduce<Record<string, PromptAsset[]>>((acc, p) => {
+  // v1.4 — apply endpoint filter before grouping.
+  const visiblePrompts = filterEndpointId
+    ? prompts.filter(p => (p.endpoint_id || '') === filterEndpointId)
+    : prompts
+  const grouped = visiblePrompts.reduce<Record<string, PromptAsset[]>>((acc, p) => {
     const key = p.category || 'Other'
     ;(acc[key] = acc[key] || []).push(p)
     return acc
@@ -99,6 +124,33 @@ export default function PromptsPage() {
           className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800">
           + 新建 Prompt
         </button>
+      </div>
+
+      {/* v1.4 — endpoint filter bar */}
+      <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
+        <span>端点过滤：</span>
+        <select
+          data-testid="prompt-endpoint-filter"
+          value={filterEndpointId}
+          onChange={e => setFilterEndpointId(e.target.value)}
+          className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+        >
+          <option value="">全部 ({prompts.length})</option>
+          {endpoints.map(ep => {
+            const count = prompts.filter(p => p.endpoint_id === ep.id).length
+            return (
+              <option key={ep.id} value={ep.id}>
+                {ep.name} · {ep.tier || 'standard'} ({count})
+              </option>
+            )
+          })}
+        </select>
+        {filterEndpointId && (
+          <button
+            onClick={() => setFilterEndpointId('')}
+            className="text-[11px] text-gray-400 hover:text-gray-600 underline"
+          >清除</button>
+        )}
       </div>
 
       {(showCreate || editing) && (
@@ -137,6 +189,22 @@ export default function PromptsPage() {
                           <code className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-500 rounded">{p.task_type}</code>
                           <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">v{p.version}</span>
                           <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{MODE_LABELS[p.mode] || p.mode}</span>
+                          {/* v1.4 — model_tier badge (inherits endpoint.tier when null) */}
+                          {(() => {
+                            const effTier = p.model_tier || endpoint?.tier || 'standard'
+                            const overridden = !!p.model_tier && !!endpoint && p.model_tier !== endpoint.tier
+                            return (
+                              <span
+                                data-testid="prompt-tier-badge"
+                                data-tier={effTier}
+                                data-overridden={overridden ? '1' : '0'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded ${TIER_BADGE_CLASS[effTier] || 'bg-gray-100 text-gray-700'}`}
+                                title={p.model_tier ? `模型等级覆盖 = ${p.model_tier}` : `继承端点等级 = ${effTier}`}
+                              >
+                                {effTier}{overridden ? '*' : ''}
+                              </span>
+                            )
+                          })()}
                           {p.always_enabled === 1 && (
                             <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">always-on</span>
                           )}
@@ -256,6 +324,8 @@ function PromptForm({
   const [category, setCategory] = useState(prompt?.category || 'Core')
   const [endpointId, setEndpointId] = useState<string>(prompt?.endpoint_id || '')
   const [modelName, setModelName] = useState(prompt?.model_name || '')
+  // v1.4 — model_tier override (empty string = inherit from endpoint).
+  const [modelTier, setModelTier] = useState<string>(prompt?.model_tier || '')
   const [temperature, setTemperature] = useState(prompt?.temperature ?? 0.7)
   const [maxTokens, setMaxTokens] = useState(prompt?.max_tokens ?? 4096)
   const [saving, setSaving] = useState(false)
@@ -270,6 +340,7 @@ function PromptForm({
           body: JSON.stringify({
             name, description, system_prompt: systemPrompt, user_template: userTemplate,
             category, endpoint_id: endpointId || null, model_name: modelName,
+            model_tier: modelTier || null,
             temperature, max_tokens: maxTokens,
           }),
         })
@@ -280,6 +351,7 @@ function PromptForm({
             task_type: taskType, name, description, mode,
             system_prompt: systemPrompt, user_template: userTemplate,
             category, endpoint_id: endpointId || null, model_name: modelName,
+            model_tier: modelTier || null,
             temperature, max_tokens: maxTokens,
           }),
         })
@@ -363,6 +435,26 @@ function PromptForm({
             <option value="text">文本</option>
             <option value="structured">结构化 JSON</option>
           </select>
+        </div>
+      </div>
+
+      {/* v1.4 — model_tier override */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">模型等级覆盖</label>
+          <select
+            data-testid="prompt-model-tier-select"
+            value={modelTier}
+            onChange={e => setModelTier(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+          >
+            {TIER_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-500">
+            留空表示继承端点等级；显式指定后以此为准路由。
+          </p>
         </div>
       </div>
 

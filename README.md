@@ -264,6 +264,11 @@ celery -A app.tasks:celery_app beat --loglevel=info
 - `POST /api/admin/entities/materialize`——手动刷新 PG 投影
 
 > 文档漂移修正（2026-05-02）：以上两个路由族曾仅在未合并的中间提交中出现（commit `dc98363 feat(v1.9): add neo4j settings write API + materialize projection`、`08b0494 feat(v1.9): add admin materialize endpoint`），后续在 `feature/v1.0-big-bang` 重构中被删除；`origin/main` 与 `origin/feature/v1.0-big-bang` 双面均**不包含** `backend/app/api/neo4j_settings.py` / `backend/app/api/admin_entities.py`。详见 `docs/RUNBOOK.md §1` 与 `docs/HANDOFF_EXECUTION.md`。
+**v1.4.0 — LLM tier routing**（详见 [RELEASE_NOTES_v1.4.md](RELEASE_NOTES_v1.4.md)）：
+- `llm_endpoints.tier` + `prompt_assets.model_tier`（alembic `a1001400`），路由优先级 `prompt.model_tier ≫ endpoint.tier ≫ 'standard'`
+- `GET /api/llm-routing/matrix`（可选 `?tier=<enum>`），前端新增 `/llm-routing` 路由矩阵页
+- Env flag 可开关：`CRITIC_SPLIT_ENABLED`、`CRITIC_CONSISTENCY_LLM_ENABLED`、`SETTINGS_EXTRACTOR_SPLIT_ENABLED`、`RAG_QUERY_REWRITE_ENABLED`
+- settings / prompts 页补 tier 下拉 + 徽章；`scripts/smoke_v1.sh [22/22]` 覆盖 tier schema + 路由矩阵
 
 **当前版本 v0.4.0** — 项目管理、工作区 UX、数据质量大幅提升：
 - `/` 项目列表 + `/trash` 回收站 + 软删除/批量/重命名

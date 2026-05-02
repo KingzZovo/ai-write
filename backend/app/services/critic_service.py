@@ -12,7 +12,9 @@ don't need to change: ``{issues, hard_count, soft_count, info_count}``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +25,132 @@ from app.services.anti_ai_scanner import scan_anti_ai
 from app.services.prompt_registry import run_structured_prompt
 
 logger = logging.getLogger(__name__)
+
+
+def _critic_split_enabled() -> bool:
+    """v1.4 — env toggle for the critic_hard + critic_soft split (default on)."""
+    raw = os.getenv("CRITIC_SPLIT_ENABLED", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off", "")
+
+
+def _critic_consistency_llm_enabled() -> bool:
+    """v1.4 — env toggle for consistency_llm_check deep-verdict pass (default off)."""
+    raw = os.getenv("CRITIC_CONSISTENCY_LLM_ENABLED", "0").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+_CONSISTENCY_CATEGORIES = {
+    "consistency",
+    "time_reversal",
+    "geo_jump",
+    "item_missing",
+    "location",
+}
+
+
+def _has_consistency_hit(issues: list[dict[str, Any]]) -> bool:
+    """v1.4 — return True if any LLM-critic issue looks consistency-related."""
+    for it in issues:
+        if not isinstance(it, dict):
+            continue
+        cat = str(it.get("category", "")).lower()
+        if cat in _CONSISTENCY_CATEGORIES:
+            return True
+        tags = it.get("tags") or []
+        if isinstance(tags, list) and any(
+            isinstance(t, str) and t.lower() in _CONSISTENCY_CATEGORIES for t in tags
+        ):
+            return True
+    return False
+
+
+async def _run_consistency_llm_check(
+    user_content: str,
+    db: AsyncSession,
+    *,
+    project_id: str,
+    chapter_id: str | None,
+) -> list[dict[str, Any]]:
+    """v1.4 — deep consistency verdict pass, task_type=consistency_llm_check.
+
+    Appends ``source="llm"`` and ``critic_stream="consistency_llm_check"`` to each
+    returned issue so downstream counts and UIs can tell the streams apart.
+    """
+    try:
+        out = await run_structured_prompt(
+            "consistency_llm_check",
+            user_content,
+            db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+        )
+    except Exception as exc:
+        logger.warning("critic consistency_llm_check failed: %s", exc)
+        return []
+    items: list[dict[str, Any]] = []
+    if isinstance(out, dict) and isinstance(out.get("issues"), list):
+        for it in out["issues"]:
+            if isinstance(it, dict):
+                it.setdefault("source", "llm")
+                it.setdefault("critic_stream", "consistency_llm_check")
+                items.append(it)
+    return items
+
+
+async def _run_llm_critic(
+    user_content: str,
+    db: AsyncSession,
+    *,
+    project_id: str,
+    chapter_id: str | None,
+) -> list[dict[str, Any]]:
+    """v1.4 — call the LLM critic layer, splitting critic_hard + critic_soft when enabled.
+
+    Returns a flat list of issue dicts (already stamped with ``source="llm"``).
+    Failures are logged and an empty list is returned; callers decide how to aggregate.
+    """
+
+    async def _single(task_type: str) -> list[dict[str, Any]]:
+        out = await run_structured_prompt(
+            task_type,
+            user_content,
+            db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+        )
+        items: list[dict[str, Any]] = []
+        if isinstance(out, dict) and isinstance(out.get("issues"), list):
+            for it in out["issues"]:
+                if isinstance(it, dict):
+                    it.setdefault("source", "llm")
+                    it.setdefault("critic_stream", task_type)
+                    items.append(it)
+        return items
+
+    if _critic_split_enabled():
+        results = await asyncio.gather(
+            _single("critic_hard"),
+            _single("critic_soft"),
+            return_exceptions=True,
+        )
+        merged: list[dict[str, Any]] = []
+        all_failed = True
+        for r in results:
+            if isinstance(r, Exception):
+                logger.warning("critic split stream failed: %s", r)
+                continue
+            all_failed = False
+            merged.extend(r)
+        if not all_failed:
+            return merged
+        logger.warning("critic split: both streams failed, falling back to single critic")
+
+    # Fallback: single critic (legacy path).
+    try:
+        return await _single("critic")
+    except Exception as exc:
+        logger.warning("critic LLM pass failed: %s", exc)
+        return []
 
 
 async def _rule_check(draft: str, project_id: str, db: AsyncSession) -> list[dict[str, Any]]:
@@ -129,18 +257,30 @@ async def run_critic(
             f"<draft>\n{draft}\n</draft>\n\n"
             "请按照输出 schema 给出 issues 列表。"
         )
-        out = await run_structured_prompt(
-            "critic",
+        llm_issues = await _run_llm_critic(
             user_content,
             db,
             project_id=project_id,
             chapter_id=chapter_id,
         )
-        if isinstance(out, dict) and isinstance(out.get("issues"), list):
-            for it in out["issues"]:
-                if isinstance(it, dict):
-                    it.setdefault("source", "llm")
-                    issues.append(it)
+        issues.extend(llm_issues)
+        # v1.4 — optional deep consistency verdict when critic_hard flagged something
+        if _critic_consistency_llm_enabled():
+            hard_stream = [
+                it
+                for it in llm_issues
+                if it.get("critic_stream") == "critic_hard"
+                or it.get("severity") == "hard"
+            ]
+            if _has_consistency_hit(hard_stream):
+                issues.extend(
+                    await _run_consistency_llm_check(
+                        user_content,
+                        db,
+                        project_id=project_id,
+                        chapter_id=chapter_id,
+                    )
+                )
     except Exception as exc:
         logger.warning("critic LLM pass failed: %s", exc)
 

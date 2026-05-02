@@ -216,6 +216,8 @@ class LLMEndpoint(Base):
     base_url = Column(String(1000), default="")  # Only for openai_compatible
     api_key = Column(String(500), default="")  # Encrypted in production
     default_model = Column(String(200), nullable=False)  # e.g. "claude-sonnet-4-20250514", "gpt-4o", "text-embedding-3-small"
+    # v1.4 — tiering label for routing matrix
+    tier = Column(String(20), nullable=False, default="standard")
     enabled = Column(Integer, default=1)
     last_test_ok = Column(Integer, default=0)
     last_test_latency = Column(Float, nullable=True)

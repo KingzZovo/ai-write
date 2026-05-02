@@ -2,6 +2,101 @@
 
 本项目遵循语义化版本号（SemVer）。
 
+## [1.4.1] - 2026-04-24
+
+v1.4.1 是 v1.4 的**收尾补丁**，聚焦三处打磨，不触动 tier schema 与路由语义：
+
+### 新增 / 改进
+
+- **Chunk 17 — `/llm-routing/matrix` 字段对齐 + tier helper 单测**：
+  - `backend/app/services/model_router.py` 新增 `VALID_TIERS` / `is_valid_tier()` / `compute_effective_tier()` 三件套，作为 `prompt.model_tier ≫ endpoint.tier ≫ 'standard'` 的唯一真源。
+  - `backend/app/api/llm_routing.py` 重写为 DB 驱动：对每个 active `PromptAsset` 左联 `LLMEndpoint`，逐行计算 `effective_tier` 和 `overridden`，返回前端 `MatrixRow` 期望的完整字段（`task_type / mode / prompt_id / prompt_name / endpoint_id / endpoint_name / endpoint_tier / model_name / model_tier / effective_tier / overridden`）。非法 `?tier=` 继续回 200 + `error: "invalid tier"`。
+  - 新增 `backend/tests/services/test_model_router_tier.py`（18 个 pytest 全通）覆盖三级回落、非法 / 空值拒绝、embedding tier 透传。
+- **Chunk 18 — 端点测试可见性**：
+  - `backend/app/api/model_config.py::TestResult` 扩展为 `sent_text / request_summary / response_text / response_preview / embedding_dim / response_first_floats`。
+  - `test_endpoint` 发送**字面量 `"hi"`**（替代旧的 `"Say hi"`），捕获 anthropic content block 或 openai chat choices；embedding 端点返回 `embedding_dim` + 前 3 位浮点。
+  - `frontend/src/app/settings/page.tsx` 在每个端点卡下新增 `data-testid="endpoint-test-panel"`，同时展示 `请求 / 发送 / 响应` 或 `向量 dim=N head=[...]`；失败时显示红色错误体。用户不再只能看到 `XX ms`。
+- **Chunk 19 — NVIDIA embeddings 兼容**（`https://integrate.api.nvidia.com/v1/embeddings`）：
+  - `backend/app/services/model_router.py` 新增 `NvidiaEmbeddingProvider`，使用 `httpx.AsyncClient` 直接 POST，载荷固定为 `{input: [...], model, modality: ["text"], input_type, encoding_format: "float", truncate: "NONE"}`，响应兼容 OpenAI schema（`data[0].embedding`）。
+  - `VALID_PROVIDER_TYPES` 增加 `"nvidia"`；`test_endpoint` 增加 nvidia 分支（走 `NvidiaEmbeddingProvider.embed_one`，返回 dim + head floats）。
+  - 前端 `settings/page.tsx` 新增 `NVIDIA Embeddings` 供应商选项，`base_url` 占位符为 `https://integrate.api.nvidia.com/v1`，模型建议列表内置 `nvidia/llama-nemotron-embed-vl-1b-v2` 与 `nvidia/nv-embedqa-e5-v5`。
+- **Chunk 20 — CHANGELOG / RELEASE_NOTES_v1.4.1**：本段 + `RELEASE_NOTES_v1.4.1.md` 记录三处补丁；smoke `[38/40]` 覆盖静态 + runtime 断言。
+
+### API / schema
+
+- `GET /api/llm-routing/matrix` 响应字段扩展（兼容老消费者：新字段纯加法）。
+- `POST /api/model-config/endpoints/{id}/test` 响应字段扩展（同上）。
+- `POST/PUT /api/model-config/endpoints` 的 `provider_type` 新增 `nvidia`。
+- 无数据库迁移（不改 alembic head，维持 `a1001400`）。
+
+### smoke 矩阵
+
+- `scripts/smoke_v1.sh` 新增 `[38/38]` / `[39/39]` / `[40/40]` 三段（chunk-17/18/19），静态子集绿；runtime 依赖部署一个 NVIDIA endpoint key 时覆盖 provider_type 创建路径。
+- `test_model_router_tier.py`：18 passed in 0.04s。
+
+### 兼容性
+
+- 不影响既有 v1.4 行为：`MatrixRow` 旧字段仍返回，旧 `TestResult.success/message/latency_ms` 语义不变，非 nvidia provider 走原路径。
+- 不打 git tag，chunk-17 / chunk-18+19 / chunk-20 三次提交构成补丁集。
+
+## [1.4.0] - 2026-04-24
+
+v1.4.0 **LLM tier routing**。引入“endpoint × prompt 两层 tier”模型，使每个 task 能按能力等级而非单一端点路由 LLM；同时在 env flag 控制下拆分了 critic / extractor 并推出 RAG query rewrite 钩子。所有变更默认 **向前兼容**，flag 关闭时行为与 v1.3 等价；**本版不打 git tag**，仅在 CHANGELOG / RELEASE_NOTES 层面记录。
+
+### 新增 / 改进
+
+- **Chunk 1/2 — 规范与实施计划**：`docs/V10_DESIGN.md` + `docs/V10_CHUNKS.md` 完整描述 tier 枚举（`flagship/standard/small/distill/embedding`）、路由优先级`prompt.model_tier ≫ endpoint.tier ≫ 'standard'` 以及分 chunk 的交付顺序。
+- **Chunk 3 — alembic `a1001400`**：给 `llm_endpoints` 新增 `tier TEXT`，给 `prompt_assets` 新增 `model_tier TEXT`，两列均为 nullable；`backend/app/models/prompt.py` / `llm_endpoint.py` ORM 同步补字段。升级交互：`docker compose exec backend alembic upgrade head`。
+- **Chunk 4 — API tier 读写**：`/api/model-config/*` 和 `/api/prompts/*` 读写 `tier` / `model_tier`。
+- **Chunk 5 — `prompt_registry` builtin**：内建 7 个 task_type 的默认 prompt + tier，并提供 `resolve_tier(prompt, endpoint)` 统一解析入口。
+- **Chunk 6 — `model_router` tier registry + `GET /api/llm-routing/matrix`**：响应 `{ rows: MatrixRow[], total, tier, error? }`，支持 `?tier=<enum>` 过滤；非法 tier 不走 5xx，而是返回 `error: "invalid tier"` 让 UI 可展示。
+- **Chunk 7 — critic 拆分**：`critic_service` 拆为 `critic_hard`（一致性 / 连续性 / OOC）+ `critic_soft`（节奏 / 读者拉力 / anti-AI）；`CRITIC_SPLIT_ENABLED=0` 回落到原单 critic。
+- **Chunk 8 — `consistency_llm_check`**：`critic_hard` 命中 consistency 命中时，`CRITIC_CONSISTENCY_LLM_ENABLED=1` 触发一次 LLM 复核并合并分数。
+- **Chunk 9 — `settings_extractor` 3-way split**：`characters` / `world_rules` / `relationships` 三路各自独立 tier，`SETTINGS_EXTRACTOR_SPLIT_ENABLED=0` 任一分类失败时回落到单 extractor。
+- **Chunk 10 — RAG query rewrite**：`context_pack` L3 前置一次 query rewrite，`RAG_QUERY_REWRITE_ENABLED=0` 时行为与 v1.3 完全一致。
+- **Chunk 11 — `scripts/smoke_v1.sh [22/22]`**：8 条新断言覆盖 `alembic current head = a1001400`、tier / model_tier 暴露、`prompt_registry` 7 个 builtin task_type、`/api/llm-routing/matrix` 的 ok / filter / invalid-tier 三条路径。
+- **Chunk 12 — settings ModelConfig tier 下拉 + tier 徽章**：`frontend/src/app/settings/page.tsx` 落实 `TIER_OPTIONS` + `TIER_BADGE_CLASS`。
+- **Chunk 13 — prompts `model_tier` 列 + tier 徽章 + endpoint 过滤**：`frontend/src/app/prompts/page.tsx` 补下拉列与 tier 徽章，顶部新增按端点过滤。
+- **Chunk 14 — `/llm-routing` 路由矩阵页**：`frontend/src/app/llm-routing/page.tsx` 按 `task_type × mode` 分组展示每个 prompt 的 endpoint(tier) / model / effective_tier，overridden 时在右侧标 `*`；顶部支持 tier 过滤，右侧计算总数 / 覆盖数 / 各 tier 计数；`Navbar.tsx` 在 `prompts` 与 `settings` 间插入 `llm-routing` 入口，`lib/i18n/messages.ts` zh/en 加 `nav.llmRouting`（“路由” / “Routing”）。
+- **Chunk 15 — `RELEASE_NOTES_v1.4.md` + README 版本 bullet**：记录 tier 枚举 / env flag / API / schema / smoke 矩阵，README 路线图新增 v1.4 指向 release notes。
+
+### Env flags
+
+- `CRITIC_SPLIT_ENABLED=1`（默认开）
+- `CRITIC_CONSISTENCY_LLM_ENABLED=0`（默认关）
+- `SETTINGS_EXTRACTOR_SPLIT_ENABLED=1`（默认开）
+- `RAG_QUERY_REWRITE_ENABLED=0`（默认关）
+
+### Schema / 迁移
+
+- alembic head 从 `a1001300` 推进到 `a1001400`。
+- 新增列：`llm_endpoints.tier TEXT`、`prompt_assets.model_tier TEXT`（均 nullable）。
+
+### API
+
+- 新增：`GET /api/llm-routing/matrix`（可选 `?tier=flagship|standard|small|distill|embedding`）。
+- 修改：`/api/model-config/*`、`/api/prompts/*` 读写 tier 相关字段。
+
+### smoke 矩阵
+
+- 完整 runtime：[22/22] 全通，含：
+  - `alembic current = a1001400`
+  - `/api/model-config` 含 `tier`
+  - `/api/prompts` 含 `model_tier`
+  - `prompt_registry` 7 builtin task_type
+  - `/api/llm-routing/matrix` ok / `?tier=standard` / `?tier=bogus` 三条路径
+- runtime 手扣验证（chunk-15）：本地空库状态下 `matrix` 返回 `total=0, error=None`，`?tier=standard` 回 `tier="standard", error=None`，`?tier=bogus` 回 `error="invalid tier"`。
+
+### 向前兼容性
+
+- 所有 env flag 关闭时，v1.4 行为与 v1.3 等价。
+- 旧端点 / 旧 prompt 的 `tier` / `model_tier` 允许 NULL，`resolve_tier` 默认落在 `'standard'`。
+- `/llm-routing` 为新增路由，旧页面不受影响。
+
+### 版本号
+
+- 本版 **不打 git tag**，`APP_VERSION` / `frontend/package.json.version` 暂保持 `1.2.0`；`CHANGELOG.md` / `RELEASE_NOTES_v1.4.md` 作为唯一版本发布记录。
+
 ## [1.2.0] - 2026-04-23
 
 v1.2.0 B 系列可观测性 + CI 自动化。给 v1.0/1.1 的骨架+血肉补上神经系统：结构化日志 -> 指标 -> 错误追踪 -> 流水线。所有 v1.2 变更均为非破坏性，schema 未动，向前兼容。

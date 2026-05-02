@@ -394,10 +394,12 @@ else
 fi
 if is_runtime; then
   ALEMBIC_CUR=$(docker compose exec -T backend alembic current 2>/dev/null | awk '/head/ {print $1; exit}')
-  if [ "$ALEMBIC_CUR" = "a1001300" ]; then
-    ok "alembic current head = a1001300"
+  if [ "$ALEMBIC_CUR" = "a1001400" ]; then
+    ok "alembic current head = a1001400 (v1.4 tier baseline)"
+  elif [ "$ALEMBIC_CUR" = "a1001300" ]; then
+    ok "alembic current head = a1001300 (v1.3 baseline)"
   else
-    bad "alembic current head != a1001300 (got: '$ALEMBIC_CUR')"
+    bad "alembic current head != a1001300/a1001400 (got: '$ALEMBIC_CUR')"
   fi
   PG_OUT=$(docker exec ai-write-postgres-1 psql -U postgres -d aiwrite -tAc "SELECT table_name || '.' || column_name || ':' || is_nullable || ':' || COALESCE(column_default,'') FROM information_schema.columns WHERE table_name IN ('projects','volumes','chapters') AND column_name = 'target_word_count' ORDER BY table_name" 2>/dev/null)
   if echo "$PG_OUT" | grep -q '^projects.target_word_count:NO:3000000'; then
@@ -633,7 +635,7 @@ else
 fi
 
 # ---------- 21. v1.3.0 budget-status written-progress fields (chunk-33) ----------
-head "[21/21] v1.3.0 budget-status written progress (chunk-33)"
+head "[21/22] v1.3.0 budget-status written progress (chunk-33)"
 PROJ_API="backend/app/api/projects.py"
 if grep -q 'project_written' "$PROJ_API" && grep -q 'chapters_written' "$PROJ_API" && grep -q 'completion_ratio' "$PROJ_API"; then
   ok "budget-status shape exposes chapters_written + project_written + completion_ratio"
@@ -677,4 +679,212 @@ if is_runtime; then
 else
   skip "budget-status written fields runtime (static-only mode)"
   skip "budget-status per_volume written keys (static-only mode)"
+fi
+
+# ---------- 22. v1.4 LLM routing matrix + tier schema (chunk-6 + chunk-4/5) ----------
+head "[22/22] v1.4 LLM routing matrix + tier schema (chunk-4..6)"
+# static: model_config + prompts expose tier/model_tier
+MC_API="backend/app/api/model_config.py"
+PR_API="backend/app/api/prompts.py"
+LR_API="backend/app/api/llm_routing.py"
+if grep -q 'tier' "$MC_API" && grep -q 'tier' "$PR_API" && grep -q 'model_tier' "$PR_API"; then
+  ok "model_config + prompts expose tier / model_tier fields (chunk-4)"
+else
+  bad "model_config/prompts tier fields missing"
+fi
+if [ -f "$LR_API" ] && grep -q 'list_routes_matrix' backend/app/services/model_router.py && grep -q '/matrix' "$LR_API"; then
+  ok "llm_routing.py + model_router.list_routes_matrix present (chunk-6)"
+else
+  bad "llm_routing matrix wiring missing"
+fi
+# builtin prompts for split/extraction streams (chunk-5)
+if grep -q 'critic_hard' backend/app/services/prompt_registry.py \
+  && grep -q 'critic_soft' backend/app/services/prompt_registry.py \
+  && grep -q 'consistency_llm_check' backend/app/services/prompt_registry.py \
+  && grep -q 'characters_extraction' backend/app/services/prompt_registry.py \
+  && grep -q 'world_rules_extraction' backend/app/services/prompt_registry.py \
+  && grep -q 'relationships_extraction' backend/app/services/prompt_registry.py \
+  && grep -q 'rag_query_rewrite' backend/app/services/prompt_registry.py; then
+  ok "prompt_registry v1.4 builtin task_types present (7 prompts)"
+else
+  bad "prompt_registry v1.4 builtin task_types missing"
+fi
+if grep -q '_TASK_TYPE_FALLBACK' backend/app/services/prompt_registry.py \
+  && grep -q 'async def resolve_tier' backend/app/services/prompt_registry.py; then
+  ok "prompt_registry task_type fallback + resolve_tier present (chunk-5)"
+else
+  bad "prompt_registry fallback/resolve_tier missing"
+fi
+if is_runtime; then
+  mx_json=$(curl -sS "${AUTH[@]}" "$BASE/api/llm-routing/matrix")
+  mx_total=$(echo "$mx_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("total"))' 2>/dev/null)
+  if [ -n "$mx_total" ] && [ "$mx_total" != "None" ]; then
+    ok "GET /api/llm-routing/matrix returns total=$mx_total"
+  else
+    bad "GET /api/llm-routing/matrix failed: body=$(echo "$mx_json" | head -c 200)"
+  fi
+  mx_std=$(curl -sS "${AUTH[@]}" "$BASE/api/llm-routing/matrix?tier=standard")
+  mx_std_tier=$(echo "$mx_std" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("tier"))' 2>/dev/null)
+  if [ "$mx_std_tier" = "standard" ]; then
+    ok "matrix tier filter echoes tier=standard"
+  else
+    bad "matrix tier filter broken: $mx_std_tier"
+  fi
+  mx_bad=$(curl -sS "${AUTH[@]}" "$BASE/api/llm-routing/matrix?tier=bogus")
+  mx_bad_err=$(echo "$mx_bad" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("error"))' 2>/dev/null)
+  if [ "$mx_bad_err" = "invalid tier" ]; then
+    ok "matrix rejects invalid tier with error=invalid tier"
+  else
+    bad "matrix invalid-tier handling wrong: $mx_bad_err"
+  fi
+  ep_list=$(curl -sS "${AUTH[@]}" "$BASE/api/model-config/endpoints")
+  ep_has_tier=$(echo "$ep_list" | python3 -c 'import json,sys; d=json.load(sys.stdin); eps=d.get("endpoints") or []; print(all("tier" in e for e in eps) if eps else True)' 2>/dev/null)
+  if [ "$ep_has_tier" = "True" ]; then
+    ok "GET /api/model-config/endpoints rows expose tier field"
+  else
+    bad "endpoints missing tier field: $(echo "$ep_list" | head -c 200)"
+  fi
+else
+  skip "llm-routing matrix runtime (static-only mode)"
+  skip "llm-routing tier filter runtime (static-only mode)"
+  skip "llm-routing invalid tier runtime (static-only mode)"
+  skip "endpoints tier field runtime (static-only mode)"
+fi
+
+# ---------- 38. v1.4 收尾 — routing matrix full fields + tier helpers (chunk-17) ----------
+head "[38/38] v1.4 routing matrix full fields + tier helpers (chunk-17)"
+MRP="$REPO/backend/app/services/model_router.py"
+LRP="$REPO/backend/app/api/llm_routing.py"
+TIER_TEST="$REPO/backend/tests/services/test_model_router_tier.py"
+if grep -q 'VALID_TIERS' "$MRP" \
+    && grep -q 'def is_valid_tier' "$MRP" \
+    && grep -q 'def compute_effective_tier' "$MRP"; then
+  ok "model_router.py exposes VALID_TIERS + is_valid_tier + compute_effective_tier"
+else
+  bad "model_router.py tier helpers missing"
+fi
+if grep -q 'effective_tier' "$LRP" \
+    && grep -q 'prompt_name' "$LRP" \
+    && grep -q 'endpoint_tier' "$LRP" \
+    && grep -q 'overridden' "$LRP" \
+    && grep -q 'compute_effective_tier' "$LRP"; then
+  ok "llm_routing.py matrix returns prompt/endpoint/effective_tier/overridden fields"
+else
+  bad "llm_routing.py matrix missing expected MatrixRow fields"
+fi
+if [ -f "$TIER_TEST" ] \
+    && grep -q 'test_prompt_tier_wins_over_endpoint_tier' "$TIER_TEST" \
+    && grep -q 'test_defaults_to_standard_when_both_missing' "$TIER_TEST" \
+    && grep -q 'test_invalid_prompt_tier_falls_through_to_endpoint' "$TIER_TEST"; then
+  ok "tests/services/test_model_router_tier.py covers 3-level fallback + invalid tier"
+else
+  bad "tier helper unit tests missing or incomplete"
+fi
+if is_runtime; then
+  # Run the tier helper unit tests (no DB, pure-function).
+  if command -v pytest >/dev/null 2>&1; then
+    rt=$(cd "$REPO" && PYTHONPATH=backend pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_model_router_tier.py 2>&1 | tr -d '\r')
+  else
+    rt=$(docker compose exec -T backend python -m pytest -q --no-header --noconftest -p no:cacheprovider backend/tests/services/test_model_router_tier.py 2>&1 | tr -d '\r')
+  fi
+  if echo "$rt" | awk '/[0-9]+ passed/ { found=1; exit } END { exit !found }'; then
+    npass=$(echo "$rt" | grep -oE '[0-9]+ passed' | head -n1 | awk '{print $1}')
+    ok "pytest test_model_router_tier.py: ${npass:-?} passed"
+  else
+    bad "pytest test_model_router_tier.py failed ($(echo "$rt" | tail -3 | tr '\n' ' '))"
+  fi
+  # Runtime: matrix rows now carry the extended MatrixRow field set.
+  mx_row0=$(curl -sS "${AUTH[@]}" "$BASE/api/llm-routing/matrix" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); r=(d.get("rows") or [{}])[0]; print(",".join(sorted(r.keys())))' 2>/dev/null)
+  if echo "$mx_row0" | grep -q 'effective_tier' \
+      && echo "$mx_row0" | grep -q 'prompt_name' \
+      && echo "$mx_row0" | grep -q 'endpoint_tier' \
+      && echo "$mx_row0" | grep -q 'model_tier' \
+      && echo "$mx_row0" | grep -q 'overridden'; then
+    ok "matrix row0 contains effective_tier/prompt_name/endpoint_tier/model_tier/overridden"
+  else
+    bad "matrix row0 missing v1.4 fields: keys=$mx_row0"
+  fi
+else
+  skip "pytest test_model_router_tier.py (static-only mode)"
+  skip "matrix row0 extended fields runtime (static-only mode)"
+fi
+
+# ---------- 39. v1.4 收尾 — endpoint test visibility (chunk-18) ----------
+head "[39/39] v1.4 endpoint test visibility (chunk-18)"
+MC="$REPO/backend/app/api/model_config.py"
+ST="$REPO/frontend/src/app/settings/page.tsx"
+if grep -q 'sent_text' "$MC" \
+    && grep -q 'request_summary' "$MC" \
+    && grep -q 'response_preview' "$MC" \
+    && grep -q 'embedding_dim' "$MC" \
+    && grep -q 'response_first_floats' "$MC"; then
+  ok "TestResult schema exposes sent_text/request_summary/response_preview/embedding_dim/response_first_floats"
+else
+  bad "TestResult schema missing visibility fields"
+fi
+if grep -q 'probe_text = "hi"' "$MC"; then
+  ok "test_endpoint sends literal probe 'hi' (not 'Say hi')"
+else
+  bad "test_endpoint does not send literal 'hi'"
+fi
+if grep -q 'endpoint-test-panel' "$ST" \
+    && grep -q 'response_preview' "$ST" \
+    && grep -q 'response_first_floats' "$ST"; then
+  ok "settings page renders endpoint-test-panel with response preview + embedding head"
+else
+  bad "settings page missing endpoint-test-panel visibility widget"
+fi
+
+# ---------- 40. v1.4 收尾 — NVIDIA embeddings provider (chunk-19) ----------
+head "[40/40] v1.4 NVIDIA embeddings provider (chunk-19)"
+MR="$REPO/backend/app/services/model_router.py"
+if grep -q 'class NvidiaEmbeddingProvider' "$MR" \
+    && grep -q 'integrate.api.nvidia.com' "$MR" \
+    && grep -q 'modality' "$MR" \
+    && grep -q 'input_type' "$MR" \
+    && grep -q 'encoding_format' "$MR" \
+    && grep -q 'truncate' "$MR"; then
+  ok "NvidiaEmbeddingProvider present with NVIDIA-specific fields"
+else
+  bad "NvidiaEmbeddingProvider missing or incomplete"
+fi
+if grep -q '\"nvidia\"' "$MC" \
+    && grep -q 'VALID_PROVIDER_TYPES = {\"anthropic\", \"openai\", \"openai_compatible\", \"nvidia\"}' "$MC"; then
+  ok "VALID_PROVIDER_TYPES includes 'nvidia'"
+else
+  bad "VALID_PROVIDER_TYPES does not accept 'nvidia'"
+fi
+if grep -q "'nvidia'" "$ST" \
+    && grep -q 'llama-nemotron-embed-vl-1b-v2' "$ST" \
+    && grep -q 'integrate.api.nvidia.com' "$ST"; then
+  ok "settings page offers NVIDIA provider option + model suggestion + base_url hint"
+else
+  bad "settings page missing NVIDIA provider wiring"
+fi
+if is_runtime; then
+  # Runtime: confirm the API accepts nvidia provider_type on create (negative
+  # test — we expect a 201 or a 400 that is NOT about 'Invalid provider_type').
+  code=$(curl -sS -o /tmp/nvidia_probe.json -w '%{http_code}' "${AUTH[@]}" \
+    -H 'content-type: application/json' -X POST "$BASE/api/model-config/endpoints" \
+    -d '{"name":"nvidia_smoke_probe","provider_type":"nvidia","base_url":"https://integrate.api.nvidia.com/v1","api_key":"sk-dummy","default_model":"nvidia/llama-nemotron-embed-vl-1b-v2","tier":"embedding"}')
+  if [ "$code" = "201" ] || [ "$code" = "200" ]; then
+    eid=$(python3 -c 'import json; print(json.load(open("/tmp/nvidia_probe.json")).get("id",""))' 2>/dev/null)
+    ok "POST /endpoints accepts provider_type=nvidia (created id=${eid:0:8}...)"
+    if [ -n "$eid" ]; then
+      curl -sS -o /dev/null -X DELETE "${AUTH[@]}" "$BASE/api/model-config/endpoints/$eid" || true
+    fi
+  elif [ "$code" = "400" ]; then
+    detail=$(python3 -c 'import json; d=json.load(open("/tmp/nvidia_probe.json")); print(d.get("detail",""))' 2>/dev/null)
+    if ! echo "$detail" | grep -qi 'invalid provider_type'; then
+      ok "POST /endpoints nvidia: 400 but not rejected as invalid provider_type ($detail)"
+    else
+      bad "nvidia provider still rejected: $detail"
+    fi
+  else
+    bad "nvidia endpoint create returned unexpected http=$code"
+  fi
+  rm -f /tmp/nvidia_probe.json
+else
+  skip "nvidia provider create runtime (static-only mode)"
 fi

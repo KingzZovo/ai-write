@@ -22,6 +22,48 @@ from typing import AsyncIterator
 logger = logging.getLogger(__name__)
 
 
+# =========================================================================
+# v1.4 — shared tier routing helpers
+# =========================================================================
+
+VALID_TIERS: frozenset[str] = frozenset(
+    {"flagship", "standard", "small", "distill", "embedding"}
+)
+"""Canonical set of supported LLM tiers (v1.4).
+
+Kept in sync with the DB CHECK constraints defined in alembic revision
+``a1001400`` (``ck_llm_endpoints_tier`` and ``ck_prompt_assets_model_tier``).
+"""
+
+
+def is_valid_tier(tier: str | None) -> bool:
+    """Return True iff ``tier`` is one of the five canonical v1.4 tiers.
+
+    Empty strings and ``None`` are treated as invalid. Comparison is
+    case-sensitive — ``"Flagship"`` is not accepted.
+    """
+    return bool(tier) and tier in VALID_TIERS
+
+
+def compute_effective_tier(
+    prompt_tier: str | None,
+    endpoint_tier: str | None,
+) -> str:
+    """Three-level tier fallback: prompt ≫ endpoint ≫ ``"standard"``.
+
+    The first valid tier wins. Invalid or empty inputs at either level
+    are skipped silently so the result is always a valid tier string
+    (never ``None``). This matches the contract documented in
+    RELEASE_NOTES_v1.4.md and is exercised by
+    ``tests/services/test_model_router_tier.py``.
+    """
+    if is_valid_tier(prompt_tier):
+        return prompt_tier  # type: ignore[return-value]
+    if is_valid_tier(endpoint_tier):
+        return endpoint_tier  # type: ignore[return-value]
+    return "standard"
+
+
 @dataclass
 class TaskRouteConfig:
     provider_key: str
@@ -184,6 +226,111 @@ class EmbeddingProvider:
         return resp.data[0].embedding
 
 
+class NvidiaEmbeddingProvider:
+    """NVIDIA NIM / ``integrate.api.nvidia.com`` embeddings provider (v1.4 chunk-19).
+
+    NVIDIA's embeddings endpoint speaks a superset of the OpenAI schema
+    and requires four extra fields that the OpenAI SDK will not emit:
+
+    - ``input`` — always an *array* of strings (not a plain string)
+    - ``modality`` — e.g. ``["text"]``
+    - ``input_type`` — ``"query"`` or ``"passage"``
+    - ``encoding_format`` — ``"float"`` (base64 also accepted upstream)
+    - ``truncate`` — ``"NONE"`` | ``"START"`` | ``"END"``
+
+    We therefore drop the OpenAI SDK for this provider and POST the request
+    directly via ``httpx``. The response shape matches OpenAI's
+    ``{"data": [{"embedding": [float, ...]}]}`` so downstream callers can
+    treat the returned vector identically.
+
+    Reference (user-supplied curl):
+
+        curl -X POST https://integrate.api.nvidia.com/v1/embeddings \
+          -H "Authorization: Bearer $NVIDIA_API_KEY" \
+          -d '{"input": ["..."], "model": "nvidia/llama-nemotron-embed-vl-1b-v2",
+               "modality": ["text"], "input_type": "query",
+               "encoding_format": "float", "truncate": "NONE"}'
+    """
+
+    DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "",
+        model: str = "nvidia/llama-nemotron-embed-vl-1b-v2",
+        modality: list[str] | None = None,
+        encoding_format: str = "float",
+        truncate: str = "NONE",
+        timeout: float = 30.0,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        self.model = model
+        self.modality = modality or ["text"]
+        self.encoding_format = encoding_format
+        self.truncate = truncate
+        self.timeout = timeout
+
+    async def _post(
+        self, inputs: list[str], input_type: str
+    ) -> dict:
+        import httpx
+
+        if not inputs:
+            return {"data": []}
+        # Soft-clip each input to 8k chars to avoid accidental massive
+        # payloads; NVIDIA will also truncate per ``truncate`` policy.
+        clipped = [s[:8000] for s in inputs]
+        payload = {
+            "input": clipped,
+            "model": self.model,
+            "modality": self.modality,
+            "input_type": input_type,
+            "encoding_format": self.encoding_format,
+            "truncate": self.truncate,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        url = f"{self.base_url}/embeddings"
+        async with httpx.AsyncClient(timeout=self.timeout) as http:
+            resp = await http.post(url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            # Surface the server's error body to the caller — test_endpoint
+            # re-wraps this in TestResult.message for UI visibility.
+            snippet = resp.text[:400]
+            raise RuntimeError(
+                f"NVIDIA embeddings HTTP {resp.status_code}: {snippet}"
+            )
+        return resp.json()
+
+    async def embed_one(
+        self, text: str, *, input_type: str = "query"
+    ) -> list[float]:
+        """Embed a single string and return the raw float vector."""
+        data = await self._post([text], input_type=input_type)
+        rows = data.get("data") or []
+        if not rows:
+            return []
+        return list(rows[0].get("embedding") or [])
+
+    async def embed(self, text: str) -> list[float]:
+        """Compat shim mirroring ``EmbeddingProvider.embed``."""
+        return await self.embed_one(text, input_type="query")
+
+    async def embed_many(
+        self, texts: list[str], *, input_type: str = "passage"
+    ) -> list[list[float]]:
+        """Batch embedding — uses ``input_type="passage"`` by default."""
+        data = await self._post(texts, input_type=input_type)
+        rows = data.get("data") or []
+        return [list(r.get("embedding") or []) for r in rows]
+
+
 class ModelRouter:
     """
     Unified model access layer.
@@ -198,6 +345,10 @@ class ModelRouter:
         self.total_usage = TokenUsage()
         self._db_loaded = False
         self._endpoint_defaults: dict[str, str] = {}  # provider_key -> default_model
+        # v1.4 — endpoint tier registry (provider_key -> tier)
+        self._endpoint_tiers: dict[str, str] = {}
+        # v1.4 — endpoint display names (provider_key -> name)
+        self._endpoint_names: dict[str, str] = {}
 
     def register_provider(self, key: str, provider: BaseProvider) -> None:
         self.providers[key] = provider
@@ -227,6 +378,9 @@ class ModelRouter:
                 for ep in endpoints:
                     key = str(ep.id)
                     self._endpoint_defaults[key] = ep.default_model or ""
+                    # v1.4 — record tier + name per endpoint for tier-aware routing
+                    self._endpoint_tiers[key] = getattr(ep, "tier", "standard") or "standard"
+                    self._endpoint_names[key] = getattr(ep, "name", "") or ""
                     api_key = decrypt_api_key(ep.api_key or "")
                     if ep.provider_type == "anthropic":
                         self.register_provider(key, AnthropicProvider(api_key=api_key))
@@ -283,6 +437,39 @@ class ModelRouter:
                 f"No model configured for '{task_type}'. "
                 "Configure at Settings > Model Configuration.")
         return route
+
+    def _pick_endpoint_by_tier(self, tier: str) -> str | None:
+        """v1.4 — return the first registered provider_key whose endpoint tier matches.
+
+        Returns None if no endpoint for that tier is registered.
+        """
+        if not tier:
+            return None
+        for key, t in self._endpoint_tiers.items():
+            if t == tier and key in self.providers:
+                return key
+        return None
+
+    def list_routes_matrix(self) -> list[dict]:
+        """v1.4 — flat snapshot of task routing + endpoint tier for the matrix UI/API.
+
+        Each row: task_type, endpoint_id, endpoint_name, model, tier,
+        temperature, max_tokens.
+        """
+        rows: list[dict] = []
+        for task_type, route in self.task_routing.items():
+            key = route.provider_key
+            rows.append({
+                "task_type": task_type,
+                "endpoint_id": key,
+                "endpoint_name": self._endpoint_names.get(key, ""),
+                "model": self._resolve_model(route),
+                "tier": self._endpoint_tiers.get(key, "standard"),
+                "temperature": route.temperature,
+                "max_tokens": route.max_tokens,
+            })
+        rows.sort(key=lambda r: (r["tier"], r["task_type"]))
+        return rows
 
     def _get_provider(self, key: str) -> BaseProvider:
         if key in self.providers:
