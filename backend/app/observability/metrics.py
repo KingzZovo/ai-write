@@ -60,6 +60,13 @@ LLM_CALL_DURATION = Histogram(
     registry=REGISTRY,
 )
 
+LLM_CACHE_TOKEN_TOTAL = Counter(
+    "llm_cache_token_total",
+    "Cache-related input tokens by kind (cache_create / cache_read / cache_uncached)",
+    labelnames=("task_type", "provider", "model", "kind"),
+    registry=REGISTRY,
+)
+
 LLM_TOKEN_TOTAL = Counter(
     "llm_token_total",
     "Total tokens consumed by direction (input/output)",
@@ -72,6 +79,28 @@ GENERATION_RUN_PHASE = Counter(
     "generation_run_phase_total",
     "Generation run phase transitions (plan/recall/draft/critic/rewrite/finalize)",
     labelnames=("phase", "status"),
+    registry=REGISTRY,
+)
+
+# -------------------- v1.6.0 X4: scene_mode -------------------
+SCENE_PLAN_FALLBACK_TOTAL = Counter(
+    "scene_plan_fallback_total",
+    "scene_planner fallback invocations (heuristic briefs used)",
+    labelnames=("reason",),  # unparseable | too_few
+    registry=REGISTRY,
+)
+
+SCENE_COUNT_PER_CHAPTER = Histogram(
+    "scene_count_per_chapter",
+    "Number of scenes produced per chapter generation",
+    buckets=(1, 2, 3, 4, 5, 6, 7, 8, 10, 12),
+    registry=REGISTRY,
+)
+
+SCENE_REVISE_ROUND_TOTAL = Counter(
+    "scene_revise_round_total",
+    "Auto-revise round outcomes (per round_idx)",
+    labelnames=("outcome",),  # scored | skipped | revised | timeout | error
     registry=REGISTRY,
 )
 

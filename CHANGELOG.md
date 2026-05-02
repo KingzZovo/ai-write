@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.6.0] - 2026-04-27
+
+v1.6.0 专注于 prompt cache plumbing + scene mode observability，详见 `RELEASE_NOTES_v1.6.0.md`。
+
+### 新增 / 改进
+
+- **Y1 Anthropic prompt cache**：`AnthropicProvider` 在 system 消息长度≥ `ANTHROPIC_CACHE_MIN_CHARS`（4096）时，自动为 system block 加 `cache_control:ephemeral`。env：`ANTHROPIC_PROMPT_CACHE_ENABLED` (默认 true)。
+- **Y2 OpenAI prompt cache key**：`OpenAIProvider` 向 `chat.completions.create` 的 `extra_body` 注入 `prompt_cache_key="{task_type}:{model}"`，最大化 prefix share。env：`OPENAI_PROMPT_CACHE_ENABLED` (默认 true)。
+- **Y3 Cache token Prom counter**：`llm_cache_token_total{task_type, provider, model, kind=cache_create|cache_read|cache_uncached}`。`_record_cache_tokens` best-effort。
+- **Y4 Baseline cache_uncached emit**：即使上游代理不返 `cached_tokens` 字段，只要 `_OPENAI_CACHE_ENABLED` 且 `prompt_tokens>0`，依然 inc `kind=cache_uncached`，保证运维 baseline 可见。`cache_read` 依然不伪造。
+- **X4 Scene mode observability**：新增 `scene_plan_fallback_total{reason}`、`scene_count_per_chapter` (Histogram, buckets 1..12)、`scene_revise_round_total{outcome}` 三类 Prom 指标，注入 `scene_orchestrator.py` + `api/generate.py` revise loop。
+- **X1 v1.5.0 acceptance close-out**：`docs/v1.5.0-acceptance-report.md` 补 Appendix B（chapter 5 端到端 SSE + PG truth）；`docs/v1.5.x-v1.6.0-roadmap.md` 补 Status 列。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900` 与 v1.5.0 相同。
+
+### 测试
+
+- pytest 230 passed（v1.5.0 的 226 + Y1+Y2+Y3 的 4 + X4 的 3 − 重复 4 + Y4 baseline 1）。
+- chapter 6 smoke ✅（scene_count_per_chapter populated）；chapter 7 smoke ✅（`llm_cache_token_total{kind=cache_uncached}` populated）。
+
+### Breaking / 注意
+
+- 无破坏性变更。设 `ANTHROPIC_PROMPT_CACHE_ENABLED=false` 或 `OPENAI_PROMPT_CACHE_ENABLED=false` 可退回 v1.5.0 行为。
+- 上游代理不返 `prompt_tokens_details.cached_tokens` 时 `cache_read` 继续为 0（baseline 限制，代理升级后自动产生命中数据）。
+- `task_type="unknown"` label：scene_orchestrator 调用未传 kwarg，不影响 metric 正确性，归 v1.7。
+
 ## [1.5.0] - 2026-04-27
 
 v1.5.0 在 v1.4 tier routing 上新增 **scene-staged writing + auto-revise loop + prompt cache (双层防死锁) + cascade auto-regenerate** 四大主线，详见 `RELEASE_NOTES_v1.5.0.md` 与 `docs/v1.5.0-acceptance-report.md`。

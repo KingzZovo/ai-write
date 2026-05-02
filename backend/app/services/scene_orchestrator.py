@@ -150,6 +150,25 @@ def _try_parse_scene_array(raw: str) -> list[dict] | None:
     return None
 
 
+
+def _x4_inc_fallback(reason: str) -> None:
+    """v1.6.0 X4: increment scene_plan_fallback_total. Best-effort."""
+    try:
+        from app.observability.metrics import SCENE_PLAN_FALLBACK_TOTAL
+        SCENE_PLAN_FALLBACK_TOTAL.labels(reason=reason).inc()
+    except Exception:
+        pass
+
+
+def _x4_observe_scene_count(n: int) -> None:
+    """v1.6.0 X4: histogram observe scene count per chapter. Best-effort."""
+    try:
+        from app.observability.metrics import SCENE_COUNT_PER_CHAPTER
+        SCENE_COUNT_PER_CHAPTER.observe(n)
+    except Exception:
+        pass
+
+
 def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list[SceneBrief]:
     """Build deterministic scene briefs when the planner LLM fails to JSON.
 
@@ -242,7 +261,7 @@ class SceneOrchestrator:
         parsed = _try_parse_scene_array(raw_text)
         if not parsed:
             logger.warning(
-                "scene_planner returned unparseable output (len=%d); using fallback",
+                "scene_planner returned unparseable output (len=%d); using fallback",  # v1.6.0 X4 metric: planner fallback
                 len(raw_text),
             )
             return _fallback_scene_briefs(target_words, chapter_outline_text)
@@ -257,6 +276,7 @@ class SceneOrchestrator:
                 "scene_planner returned %d briefs (<3); using fallback instead",
                 len(briefs),
             )
+            _x4_inc_fallback("too_few")
             return _fallback_scene_briefs(target_words, chapter_outline_text)
         return briefs
 
@@ -344,6 +364,7 @@ class SceneOrchestrator:
             n_scenes_hint=n_scenes_hint,
             user_instruction=user_instruction,
         )
+        _x4_observe_scene_count(len(briefs))  # v1.6.0 X4 metric: scene count per chapter
         prior_summary_parts: list[str] = []
         for i, scene in enumerate(briefs):
             if on_scene_start is not None:
