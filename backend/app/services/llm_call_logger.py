@@ -100,16 +100,13 @@ async def log_llm_call(
             # admin / quota UI reflects real consumption immediately.
             try:
                 from app.services.usage_service import record_usage
-                from app.middlewares.quota import resolve_user_id_from_context  # noqa: F401
-                _user_id = None
-                try:
-                    # Best effort: pull current user from contextvar set by middleware.
-                    from app.middlewares.quota import _current_user_id_ctx  # type: ignore
-                    _user_id = _current_user_id_ctx.get(None)
-                except Exception:
-                    _user_id = None
-                if not _user_id:
-                    _user_id = "king"  # fallback to default user (single-user dev)
+                # PR-USAGE-FIX-IMPORT: app.middlewares.quota does NOT export
+                # resolve_user_id_from_context or _current_user_id_ctx (verified
+                # via grep). The previous import raised ImportError on every
+                # call and the entire PR-USAGE-SYNC block fell through to the
+                # warning except branch, so usage_quotas stayed at 0. For the
+                # current single-user dev workspace just default to "king".
+                _user_id = "king"
                 _pt = int(ctx.input_tokens or 0)
                 _ct = int(ctx.output_tokens or 0)
                 if _pt or _ct:
