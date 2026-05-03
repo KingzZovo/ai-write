@@ -176,3 +176,52 @@ PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh
 | #16 | `0f79975` | release/v1.7.x（19 commit） |
 | #17 | `b54159d` | release/v1.8.x（8 commit） |
 | #18 | `0a4f9a1` | release/v1.9.0（81 commit, F1=A） |
+
+## feat/outline-batch2 — 7-PR 批次 ✅ 已 push（2026-05-03）
+
+> 分支 `feat/outline-batch2`，HEAD = `f3e9e55`，自 main `1b52952` 起新增 9 个 commit（2 baseline + 7 PR）。
+> 背景：上一轮 E2E PID `310c1f9a` 《狩人账》30 章跡走后朱雀 AI 检测 12.04% 人工 / 42.21% 疑似 / 45.75% AI，六个架构问题取得共识后拆出本批 7 PR 修正。
+
+### Commit 链
+
+| commit | PR | 主题 |
+|---|---|---|
+| `bf1ae1e` | baseline backend | 抢救 PR-OL1~9 backend 工作区改动（12 文件 +942/-16）|
+| `de6d623` | baseline frontend | 抢救 fallback 卡片 / cascade UI / i18n（8 文件 +989/-599）|
+| `70706c9` | **PR-OL10** | 字数→章数→卷数自动推算（默认 4000 字/章、100-200 章/卷）+ prompt 硬约束注入 |
+| `e838cd6` | **PR-OL11** | 分卷大纲 chapter_summaries 强化（60-100 字 + 主线/支线/伏笔/关键场景）+ `extract_chapter_breakdown()` helper |
+| `4b515ba` | **PR-OL12** | 章节大纲调用层补 `previous_chapter_summary` + 本章预规划注入 |
+| `3d07194` | **PR-OL13** | 章节大纲生成后解析 `title` 回写 `Chapter.title`（清除「第N章」占位）|
+| `f6fa9e5` | **PR-OL14** | OutlineTree 三层查看入口（全书/分卷/章节大纲）|
+| `919abab` | **PR-AI1** | 命名与词汇硬约束：`FORBIDDEN_HALLUCINATION_TERMS` + `NAMING_DIRECTIVE` + context_pack 注入 |
+| `f3e9e55` | **PR-STY1** | style v9 5 条节奏/留白/信息密度/句式/在场 directive + context_pack 注入 |
+
+### Verification
+
+- 所有 backend 改动过 `python3 -m py_compile`。
+- 所有 frontend 改动过 `cd frontend && npx tsc --noEmit -p tsconfig.json`。0 错误。0 警告。
+- 行为级 E2E 验证 + 朱雀复测 **延后** 到本批全部落定后一次跑完成，避免每个 PR 都付 SSE 长任务成本。
+
+### 重跑测试预计步骤
+
+1. 则使用 PID `310c1f9a` 清 30 个 Chapter / 30 个 chapter outline / 9 个已生成正文（保留 book outline + 20 个 volume outline 可复用）或新建项目。
+2. POST `/api/projects` `target_word_count: 2000000`，走完全书 outline + 各卷 volume outline + 全 30 章 chapter outline + 30 章正文，验证：
+   - 全书大纲 「七、分卷规划」 应说 「下输出 3-5 卷」（PR-OL10）。
+   - 各 volume_outline.chapter_summaries 每项含 main_progress / side_progress / foreshadow_state / key_scene（PR-OL11）。
+   - 各 chapter outline 调用 应额外携 previous_chapter_summary（PR-OL12，看 backend log）。
+   - Chapter.title 不再是 「第 N 章」（PR-OL13，查 DB）。
+   - 前端侧栏 OutlineTree 顶部能展开 「全书大纲」，每章能展开 「大纲」（PR-OL14）。
+   - 生成的正文 grep 不到 「怎表」/「屃门」/「黄铜怎表」类含词（PR-AI1）。
+   - 生成的正文节奏合理，段落长短交错，周期出现 1-2 句短段（PR-STY1）。
+3. 取 V1 CH2 等价隐藏位置贴朱雀 AI 检测，取人工/疑似/AI 三段比例与 baseline 12.04% / 42.21% / 45.75% 对比。
+
+### Neo4j 状态机扩展状态（不在本批，居后动工）
+
+| 维度 | 现状 | 缺口 |
+|---|---|---|
+| 地点 | ✅ 已实现 `Location` 节点 + `AT_LOCATION` 关系（chapter_start 时序）| 无 |
+| 阵营 | ⚠️ 半：有 `Organization` 节点 + `MEMBER_OF`，没有 「阵营事件」 | 缺 `FactionEvent`（结盟/破盟/开战/休战）|
+| 道具 | ❌ 未实现 | 缺 `Item` 节点、`HAS_ITEM`/`USES_ITEM` 关系、prompt 不抽 `items` |
+| 时间 | ❌ 未实现（仅 chapter_start 隐式时序）| 缺 `Time`/`Era`/`TimeEvent` 节点、`OCCURS_AT` 关系 |
+
+列为下一批 PR-NEO1~NEO4 开新分支 `feat/neo4j-batch1`。

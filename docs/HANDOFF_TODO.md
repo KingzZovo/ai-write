@@ -58,3 +58,17 @@
 - [x] 修复 `chapter_generate_stream` v0.5+ 签名不匹配 → PR #21 (+9/-3) 已提交 ✅
 - [ ] **后续**：章节生成后未自动触发 entity 抽取/cascade/evaluation（`characters=0, foreshadows=0, cascade_tasks=0`）——需手动调 `entities.extract_chapter` celery task，或为 `_run_async_generation_impl` chapter 分支加生成后钩子
 - [ ] **后续**：加 `tests/tasks/test_run_async_generation_chapter.py` mock ChapterGenerator 锁定签名防回归
+
+## feat/outline-batch2 — 7-PR 批次 已 push（2026-05-03）
+
+HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
+
+- [x] PR-OL10 字数→章卷自动推算（`70706c9`）
+- [x] PR-OL11 分卷 chapter_summaries 强化（`e838cd6`）
+- [x] PR-OL12 章节大纲补 prev_summary + 本章预规划（`4b515ba`）
+- [x] PR-OL13 章节大纲回写 Chapter.title（`3d07194`）
+- [x] PR-OL14 OutlineTree 三层查看入口（`f6fa9e5`）
+- [x] PR-AI1 命名与词汇硬约束（`919abab`）
+- [x] PR-STY1 style v9 节奏/留白/信息密度 directives（`f3e9e55`）
+- [ ] **下一步**：则使用 PID `310c1f9a` 清 30 章 + chapter outline 后重跑 30 章全流程，贴朱雀 AI 检测对比 baseline 12.04% / 42.21% / 45.75%。
+- [ ] **后动工**：开分支 `feat/neo4j-batch1` 走 PR-NEO1（道具） / PR-NEO2（阵营事件） / PR-NEO3（时间） / PR-NEO4（context_pack/critic 消费）。
