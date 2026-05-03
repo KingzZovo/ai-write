@@ -104,8 +104,14 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, bookOu
           {bookOpen && (
             <div className="mt-1 px-3 py-2 text-xs whitespace-pre-wrap bg-emerald-50/40 border-l-2 border-emerald-200 rounded-r max-h-96 overflow-y-auto">
               {String(
-                (bookOutline as Record<string, unknown>)['raw_text'] ||
-                  JSON.stringify(bookOutline, null, 2)
+                (() => {
+                  const raw = (bookOutline as Record<string, unknown>)['raw_text']
+                  const text = (typeof raw === 'string' && raw)
+                    ? raw
+                    : JSON.stringify(bookOutline, null, 2)
+                  // PR-OL15-FE: strip <volume-plan>...</volume-plan> tag fallback.
+                  return text.replace(/<volume-plan>[\s\S]+?<\/volume-plan>\s*/g, '')
+                })()
               )}
             </div>
           )}

@@ -939,16 +939,32 @@ async def generate_outline(
                 try:
                     from app.db.session import async_session_factory
                     async with async_session_factory() as save_db:
+                        # PR-OL15: strip <volume-plan>...</volume-plan> from
+                        # raw_text so user-facing & ETL-consumed text is clean.
+                        from app.services.outline_generator import OutlineGenerator as _OG
+                        _vp_for_book = _OG()._extract_volume_plan(full_text)
+                        full_text_clean = _OG._strip_volume_plan_tags(full_text)
                         # PR-OL2: extract volume_plan from text, persist alongside.
-                        _content_json = {"raw_text": full_text}
+                        _content_json = {"raw_text": full_text_clean}
                         if req.level == "book":
                             try:
-                                from app.services.outline_generator import OutlineGenerator as _OG
-                                _vp = _OG()._extract_volume_plan(full_text)
-                                if _vp:
-                                    _content_json["volume_plan"] = _vp
+                                if _vp_for_book:
+                                    _content_json["volume_plan"] = _vp_for_book
                             except Exception:
                                 pass
+                        # PR-FACTS-PARSE-VOL: also try to parse structured
+                        # fields (volume_idx, summary, new_characters,
+                        # chapter_summaries, world_rules) so ETL sees them.
+                        if req.level in ("volume", "chapter"):
+                            try:
+                                _parsed_struct = _OG()._parse_json(full_text_clean)
+                                if isinstance(_parsed_struct, dict) and not _parsed_struct.get("_parse_error"):
+                                    for _k, _v in _parsed_struct.items():
+                                        if _k == "raw_text":
+                                            continue
+                                        _content_json.setdefault(_k, _v)
+                            except Exception as _ps_err:
+                                logger.warning("PR-FACTS-PARSE-VOL parse failed: %s", _ps_err)
                         outline = Outline(
                             project_id=req.project_id,
                             level=req.level,

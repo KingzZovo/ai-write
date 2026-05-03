@@ -84,7 +84,7 @@ export default function MobileWorkspace() {
       const outlines = await apiFetch<Outline[]>(`/api/projects/${p.id}/outlines`)
       const bookOutline = outlines.find(o => o.level === 'book')
       if (bookOutline) {
-        const raw = String((bookOutline.content_json as any)?.raw_text || JSON.stringify(bookOutline.content_json, null, 2))
+        const raw = String((bookOutline.content_json as any)?.raw_text || JSON.stringify(bookOutline.content_json, null, 2)).replace(/<volume-plan>[\s\S]+?<\/volume-plan>\s*/g, '')
         setSavedOutline(raw)
       }
       // Check for running generation tasks

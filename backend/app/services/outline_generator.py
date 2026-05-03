@@ -640,6 +640,15 @@ class OutlineGenerator:
         return out or None
 
     # ------------------------------------------------------------------
+    # PR-OL15 — strip <volume-plan>...</volume-plan> tags from raw text.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _strip_volume_plan_tags(text: str) -> str:
+        if not text:
+            return text
+        return re.sub(r"<volume-plan>.+?</volume-plan>\s*", "", text, flags=re.DOTALL)
+
+    # ------------------------------------------------------------------
     # v1.4.2 Task B — staged book-outline SSE stream
     # ------------------------------------------------------------------
     async def _generate_book_outline_staged_stream(
@@ -808,6 +817,9 @@ class OutlineGenerator:
         )
         # PR-OL1: extract structured volume plan for downstream wizard.
         volume_plan = self._extract_volume_plan(combined)
+        # PR-OL15: strip <volume-plan> tags from combined so the user-visible
+        # raw_text never leaks the LLM-internal control tag.
+        combined = self._strip_volume_plan_tags(combined)
         yield {
             "event": "done",
             "full_outline": combined,
