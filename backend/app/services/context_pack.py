@@ -532,6 +532,15 @@ class ContextPackBuilder:
         warnings = pack.strand_tracker.get_warnings(chapter_idx)
         pack.writing_guidance.extend(warnings)
 
+        # PR-AI1: inject naming/glossary directive so chapter generation
+        # is told upfront what is and is not allowed when coining items
+        # / techniques / titles. Cheap, fail-safe, no DB hits.
+        try:
+            from app.services.checkers.anti_ai_checker import NAMING_DIRECTIVE
+            pack.writing_guidance.append(NAMING_DIRECTIVE)
+        except Exception as _ai1_err:
+            logger.debug("PR-AI1 naming directive injection skipped: %s", _ai1_err)
+
         # v0.9: clear the invalidation flag after a successful rebuild so
         # subsequent builds can hit any downstream cache again.
         if cache_was_invalidated:

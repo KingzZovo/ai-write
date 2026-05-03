@@ -79,6 +79,31 @@ AI_WORD_DENSITY_THRESHOLD = 0.015  # AI words should be < 1.5% of text
 FOUR_CHAR_DENSITY_THRESHOLD = 0.06  # Four-char idioms < 6% of text
 SIMILE_DENSITY_THRESHOLD = 0.005  # Simile markers < 0.5%
 
+# ---------------------------------------------------------------
+# PR-AI1 — forbidden hallucinated compounds + naming directive.
+# ---------------------------------------------------------------
+# Terms observed in E2E runs (PID 310c1f9a V1 CH2) where the LLM
+# manufactured non-words. Update this list as new patterns surface.
+FORBIDDEN_HALLUCINATION_TERMS: list[str] = [
+    "黄铜怎表", "怎表", "屃门", "黑贬表", "黄表",
+    # Generic 'X怎表' / 'X屃X' patterns that are usually nonsense.
+]
+
+# Heuristic: 「[中文单字] + 怎/屃/表/门 」 类似起来像术语但实际不是词的并联体。
+SUSPICIOUS_COMPOUND_PATTERN = re.compile(r"[\u4e00-\u9fff](怎表|屃门|表門|门怎)")
+
+NAMING_DIRECTIVE: str = (
+    "【PR-AI1 命名与词汇硬约束】\n"
+    "· 自创器物/术语/阵营/宗门名须使用现代汉语真实词汇或含义可推测的复合词\n"
+    "  例：「血玉牌」「潮汐罗盘」「谢原宗」。\n"
+    "· 严禁生造单字拼凑且含义不明的「器物」：\n"
+    "  反例：「黄铜怎表」「屃门」「黄表」。\n"
+    "· 主角/配角/门派/地名 统一使用项目 glossary 中已有的名称\n"
+    "  （角色卡 / 世界规则 / outline.character），不可临时重命名。\n"
+    "· 首次出现的全新专有名词须在本章给出一句背景说明，不可裸露使用。\n"
+    "· 同一器物/术语在本章中只用一个正名，不要多名交替。\n"
+)
+
 
 class AntiAIChecker(BaseChecker):
     """AI writing trace detection.
