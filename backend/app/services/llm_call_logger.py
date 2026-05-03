@@ -96,5 +96,31 @@ async def log_llm_call(
             )
             db.add(log)
             await db.flush()
+            # PR-USAGE-SYNC: same-transaction incr of usage_quotas so the
+            # admin / quota UI reflects real consumption immediately.
+            try:
+                from app.services.usage_service import add_usage
+                from app.middlewares.quota import resolve_user_id_from_context  # noqa: F401
+                _user_id = None
+                try:
+                    # Best effort: pull current user from contextvar set by middleware.
+                    from app.middlewares.quota import _current_user_id_ctx  # type: ignore
+                    _user_id = _current_user_id_ctx.get(None)
+                except Exception:
+                    _user_id = None
+                if not _user_id:
+                    _user_id = "king"  # fallback to default user (single-user dev)
+                _pt = int(ctx.input_tokens or 0)
+                _ct = int(ctx.output_tokens or 0)
+                if _pt or _ct:
+                    await add_usage(
+                        db,
+                        user_id=str(_user_id),
+                        prompt_tokens=_pt,
+                        completion_tokens=_ct,
+                        cost_cents=0,
+                    )
+            except Exception as _us_err:
+                logger.warning("PR-USAGE-SYNC: incr usage_quotas failed: %s", _us_err)
         except Exception as log_err:
             logger.warning("Failed to persist LLMCallLog: %s", log_err)
