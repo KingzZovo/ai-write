@@ -12,6 +12,23 @@ interface TokenStats {
   cacheHitRate: number
 }
 
+// PR-FIX-TOKEN-DASH-SHAPE: backend /api/stats/tokens returns nested snake_case
+// (token_usage.{total_input_tokens,...} + cache_stats.{hits,misses,hit_rate}).
+// We map it into the flat camelCase shape the rest of the component uses.
+interface TokenStatsRaw {
+  token_usage?: {
+    total_input_tokens?: number
+    total_output_tokens?: number
+    total_tokens?: number
+    total_calls?: number
+  }
+  cache_stats?: {
+    hits?: number
+    misses?: number
+    hit_rate?: number
+  }
+}
+
 export function TokenDashboard() {
   const [stats, setStats] = useState<TokenStats | null>(null)
   const [loading, setLoading] = useState(false)
@@ -19,8 +36,17 @@ export function TokenDashboard() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const data = await apiFetch<TokenStats>('/api/stats/tokens')
-      setStats(data)
+      const raw = await apiFetch<TokenStatsRaw>('/api/stats/tokens')
+      const tu = raw?.token_usage ?? {}
+      const cs = raw?.cache_stats ?? {}
+      setStats({
+        totalInputTokens: Number(tu.total_input_tokens ?? 0),
+        totalOutputTokens: Number(tu.total_output_tokens ?? 0),
+        totalTokens: Number(tu.total_tokens ?? 0),
+        cacheHits: Number(cs.hits ?? 0),
+        cacheMisses: Number(cs.misses ?? 0),
+        cacheHitRate: Number(cs.hit_rate ?? 0),
+      })
     } catch {
       // ignore - stats endpoint may not be available
     } finally {
