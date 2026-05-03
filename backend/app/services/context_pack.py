@@ -46,10 +46,18 @@ from app.models.project import (
     Chapter,
     CharacterLocation,
     Character,
+    ChapterTimeAnchor,    # PR-NEO4 (v2.0)
+    FactionEvent,         # PR-NEO4 (v2.0)
+    FactionEventOrg,      # PR-NEO4 (v2.0)
+    FactionOpposition,    # PR-NEO4 (v2.0)
     Foreshadow,
+    Item,                 # PR-NEO4 (v2.0)
+    ItemEvent,            # PR-NEO4 (v2.0)
     Location,
+    Organization,         # PR-NEO4 (v2.0)
     Outline,
     Project,
+    TimeAnchor as TimeAnchorRow,  # PR-NEO4 (v2.0): ORM row, distinct from dataclass.
     Volume,
     VolumeSummary,
     WorldRule,
@@ -211,6 +219,10 @@ class ContextPack:
     character_cards: list[CharacterCard] = field(default_factory=list)
     foreshadow_triplets: list[CFPGTriplet] = field(default_factory=list)
     timeline_anchors: list[TimeAnchor] = field(default_factory=list)
+    # PR-NEO4 (v2.0): PG-projected facts.
+    current_items: list[dict] = field(default_factory=list)
+    faction_state: dict = field(default_factory=dict)
+    timeline_anchors_v2: list[dict] = field(default_factory=list)
     contradiction_cache: list[str] = field(default_factory=list)
     strand_tracker: StrandTracker = field(default_factory=StrandTracker)
     # v0.8 ContextPack v3: 4th recall path, scoped to project.genre_profile.
@@ -364,6 +376,67 @@ class ContextPack:
         if self.timeline_anchors:
             tl_text = "\n".join(a.to_prompt() for a in self.timeline_anchors[-10:])
             l2_parts.append(f"【时间线锚点】\n{tl_text}")
+
+        # PR-NEO4 (v2.0): current item ownership.
+        if self.current_items:
+            ci_lines = []
+            for it in self.current_items[:30]:
+                name = it.get("name", "")
+                kind = it.get("kind", "")
+                holder = it.get("holder", "")
+                if not name:
+                    continue
+                line = f"- {name}"
+                if kind:
+                    line += f" [{kind}]"
+                if holder:
+                    line += f" 当前持有:{holder}"
+                ci_lines.append(line)
+            if ci_lines:
+                l2_parts.append("【当前道具持有】\n" + "\n".join(ci_lines))
+
+        # PR-NEO4 (v2.0): faction state.
+        if self.faction_state:
+            fs_lines = []
+            opps = self.faction_state.get("oppositions", []) or []
+            for opp in opps[:20]:
+                src = opp.get("source", "")
+                tgt = opp.get("target", "")
+                start = opp.get("chapter_start")
+                if src and tgt:
+                    fs_lines.append(f"- {src} ↔ {tgt}  (自第{start}章起仍然交恶)")
+            recent_events = self.faction_state.get("recent_events", []) or []
+            for ev in recent_events[:10]:
+                kind = ev.get("kind", "")
+                chapter = ev.get("chapter", "?")
+                summary = ev.get("summary", "")
+                orgs = ev.get("orgs", []) or []
+                org_str = ("/".join(orgs)) if orgs else ""
+                fs_lines.append(f"- 第{chapter}章 [{kind}] {org_str}: {summary}")
+            if fs_lines:
+                l2_parts.append("【阵营动态】\n" + "\n".join(fs_lines))
+
+        # PR-NEO4 (v2.0): structured time anchors v2.
+        if self.timeline_anchors_v2:
+            ta_lines = []
+            for ta in self.timeline_anchors_v2[:15]:
+                cidx = ta.get("chapter_idx", "?")
+                label = ta.get("label", "")
+                kind = ta.get("kind", "")
+                prec = ta.get("precision", "")
+                anchor = ta.get("anchor_label", "")
+                if not label:
+                    continue
+                seg = f"- 第{cidx}章: {label}"
+                if kind:
+                    seg += f" ({kind})"
+                if prec:
+                    seg += f" 精度:{prec}"
+                if anchor:
+                    seg += f" 参考:{anchor}"
+                ta_lines.append(seg)
+            if ta_lines:
+                l2_parts.append("【时间锚点 v2】\n" + "\n".join(ta_lines))
 
         if self.contradiction_cache:
             cc_text = "\n".join(f"- {c}" for c in self.contradiction_cache)
@@ -865,8 +938,123 @@ class ContextPackBuilder:
         except Exception as e:
             logger.warning("Failed to load timeline anchors: %s", e)
 
+        # PR-NEO4 (v2.0): items / faction state / timeline anchors v2.
+        await self._build_pr_neo4_facts(pack, pid, chapter_idx)
+
         # Build strand tracker from recent chapters
         await self._build_strand_tracker(pack, pid, chapter_idx)
+
+    async def _build_pr_neo4_facts(
+        self,
+        pack: ContextPack,
+        project_id: str,
+        chapter_idx: int,
+    ) -> None:
+        """PR-NEO4 (v2.0): load items / faction state / timeline anchors v2 from PG.
+
+        Each block is wrapped in its own try/except: if a table is missing
+        (e.g. migration not yet run on this env) the rest of ContextPack
+        still builds normally.
+        """
+        from sqlalchemy import text as _sql_text
+        db = await self._get_db()
+        pid = str(project_id)
+        cidx = int(chapter_idx)
+
+        # ---- current_items: latest holder per item, derived from item_events ----
+        try:
+            sql = _sql_text("""
+                SELECT i.id::text AS item_id, i.name AS name, i.kind AS kind,
+                       (SELECT ev.actor_name FROM item_events ev
+                        WHERE ev.item_id = i.id AND ev.chapter_idx <= :cidx
+                          AND ev.kind IN ('has','transfer')
+                        ORDER BY ev.chapter_idx DESC, ev.created_at DESC LIMIT 1) AS holder
+                FROM items i
+                WHERE i.project_id = :pid
+                ORDER BY i.name
+            """)
+            res = await db.execute(sql, {"pid": pid, "cidx": cidx})
+            for row in res.all():
+                pack.current_items.append({
+                    "name": row[1] or "",
+                    "kind": row[2] or "",
+                    "holder": row[3] or "",
+                })
+        except Exception as e:
+            logger.debug("PR-NEO4 current_items load skipped: %s", e)
+
+        # ---- faction_state: open oppositions + recent events ----
+        try:
+            opp_sql = _sql_text("""
+                SELECT s.name AS source, t.name AS target, fo.chapter_start, fo.chapter_end
+                FROM faction_oppositions fo
+                JOIN organizations s ON s.id = fo.source_org_id
+                JOIN organizations t ON t.id = fo.target_org_id
+                WHERE fo.project_id = :pid
+                  AND fo.chapter_start <= :cidx
+                  AND (fo.chapter_end IS NULL OR fo.chapter_end >= :cidx)
+                ORDER BY fo.chapter_start ASC
+            """)
+            opp_res = await db.execute(opp_sql, {"pid": pid, "cidx": cidx})
+            oppositions = [
+                {
+                    "source": row[0],
+                    "target": row[1],
+                    "chapter_start": int(row[2]) if row[2] is not None else None,
+                    "chapter_end": int(row[3]) if row[3] is not None else None,
+                }
+                for row in opp_res.all()
+            ]
+
+            ev_sql = _sql_text("""
+                SELECT fe.id::text AS eid, fe.kind, fe.chapter, fe.summary,
+                       array_remove(array_agg(o.name ORDER BY o.name), NULL) AS orgs
+                FROM faction_events fe
+                LEFT JOIN faction_event_orgs feo ON feo.event_id = fe.id
+                LEFT JOIN organizations o ON o.id = feo.organization_id
+                WHERE fe.project_id = :pid AND fe.chapter <= :cidx
+                GROUP BY fe.id, fe.kind, fe.chapter, fe.summary
+                ORDER BY fe.chapter DESC LIMIT 10
+            """)
+            ev_res = await db.execute(ev_sql, {"pid": pid, "cidx": cidx})
+            recent_events = [
+                {
+                    "id": row[0],
+                    "kind": row[1] or "",
+                    "chapter": int(row[2]) if row[2] is not None else None,
+                    "summary": row[3] or "",
+                    "orgs": list(row[4] or []),
+                }
+                for row in ev_res.all()
+            ]
+            pack.faction_state = {
+                "oppositions": oppositions,
+                "recent_events": recent_events,
+            }
+        except Exception as e:
+            logger.debug("PR-NEO4 faction_state load skipped: %s", e)
+
+        # ---- timeline_anchors_v2: chapter -> time anchor with precision ----
+        try:
+            cta_sql = _sql_text("""
+                SELECT cta.chapter_idx, ta.label, ta.kind, cta.precision, cta.offset_value, cta.anchor_label
+                FROM chapter_time_anchors cta
+                JOIN time_anchors ta ON ta.id = cta.time_anchor_id
+                WHERE cta.project_id = :pid AND cta.chapter_idx <= :cidx
+                ORDER BY cta.chapter_idx ASC LIMIT 30
+            """)
+            cta_res = await db.execute(cta_sql, {"pid": pid, "cidx": cidx})
+            for row in cta_res.all():
+                pack.timeline_anchors_v2.append({
+                    "chapter_idx": int(row[0]) if row[0] is not None else None,
+                    "label": row[1] or "",
+                    "kind": row[2] or "",
+                    "precision": row[3] or "",
+                    "offset_value": int(row[4]) if row[4] is not None else None,
+                    "anchor_label": row[5] or "",
+                })
+        except Exception as e:
+            logger.debug("PR-NEO4 timeline_anchors_v2 load skipped: %s", e)
 
     async def _enrich_characters_from_neo4j(
         self,

@@ -207,12 +207,41 @@ async def _phase_critic(
     round_num: int,
 ) -> dict[str, Any]:
     pack_summary = ""
+    # PR-NEO4 (v2.0): pull current item names from PG so the
+    # consistency:item_missing checker has a real allow-list to scan against.
+    item_names: list[str] | None = None
+    try:
+        from app.models.project import Item as _Item
+        from sqlalchemy import select as _select
+        item_rows = await db.execute(
+            _select(_Item.name).where(_Item.project_id == run.project_id)
+        )
+        names = [r[0] for r in item_rows.all() if r[0]]
+        if names:
+            item_names = names
+    except Exception as exc:
+        logger.debug("PR-NEO4 item_names load skipped: %s", exc)
+    chapter_idx_for_critic: int | None = None
+    try:
+        from app.models.project import Chapter as _Chapter
+        from sqlalchemy import select as _select2
+        if run.chapter_id is not None:
+            ch_row = await db.execute(
+                _select2(_Chapter.chapter_idx).where(_Chapter.id == run.chapter_id)
+            )
+            ch = ch_row.scalar_one_or_none()
+            if isinstance(ch, int):
+                chapter_idx_for_critic = int(ch)
+    except Exception as exc:
+        logger.debug("PR-NEO4 chapter_idx lookup for critic skipped: %s", exc)
     critic_out = await run_critic(
         draft=draft_text,
         project_id=str(run.project_id),
         chapter_id=str(run.chapter_id) if run.chapter_id else None,
         db=db,
         pack_summary=pack_summary,
+        chapter_idx=chapter_idx_for_critic,
+        item_names=item_names,
     )
     # Persist critic report row
     report = CriticReport(
