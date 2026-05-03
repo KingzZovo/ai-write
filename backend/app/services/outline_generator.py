@@ -643,7 +643,7 @@ class OutlineGenerator:
     # v1.4.2 Task B — staged book-outline SSE stream
     # ------------------------------------------------------------------
     async def _generate_book_outline_staged_stream(
-        self, user_input: str
+        self, user_input: str, *, scale: dict | None = None
     ):
         """Stream the staged book outline as structured SSE-ready events.
 
@@ -668,8 +668,10 @@ class OutlineGenerator:
             "total": 3,
         }
         a_buf: list[str] = []
+        # PR-OL10: inject hard volume-count directive into skeleton prompt.
+        skeleton_system = self._apply_scale_to_prompt(BOOK_OUTLINE_SKELETON_SYSTEM, scale)
         skeleton_msgs = [
-            {"role": "system", "content": BOOK_OUTLINE_SKELETON_SYSTEM},
+            {"role": "system", "content": skeleton_system},
             {
                 "role": "user",
                 "content": f"创意：\n{user_input}\n\n请生成骨架五段。",
