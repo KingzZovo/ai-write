@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -571,6 +572,68 @@ async def append_relationship_evolution(
     )
     return RelationshipResponse.model_validate(rel)
 
+
+
+
+# ============================================================
+# Character states (read-only timeline)
+# Added: 2026-05-03 -- expose character_states for CharacterCardPanel
+# ============================================================
+
+class CharacterStateResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    character_id: UUID
+    chapter_start: int
+    chapter_end: int | None
+    status_json: dict | str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("status_json", mode="before")
+    @classmethod
+    def _coerce_status_json(cls, v):
+        import json as _json
+        if v is None:
+            return {}
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            try:
+                parsed = _json.loads(v)
+                return parsed if isinstance(parsed, dict) else {"raw": v}
+            except Exception:
+                return {"raw": v}
+        return {}
+
+
+class CharacterStateListResponse(BaseModel):
+    states: list[CharacterStateResponse]
+    total: int
+
+
+@router.get("/character-states", response_model=CharacterStateListResponse)
+async def list_character_states(
+    project_id: str,
+    character_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> CharacterStateListResponse:
+    """List all character_states rows for a project (optionally filter by character_id).
+
+    Returned rows are ordered by character_id then chapter_start ascending.
+    Powers the workspace CharacterCardPanel (人物卡 -> 状态变化).
+    """
+    from app.models.project import CharacterState
+    stmt = select(CharacterState).where(CharacterState.project_id == project_id)
+    if character_id:
+        stmt = stmt.where(CharacterState.character_id == character_id)
+    stmt = stmt.order_by(CharacterState.character_id, CharacterState.chapter_start)
+    rows = (await db.execute(stmt)).scalars().all()
+    return CharacterStateListResponse(
+        states=[CharacterStateResponse.model_validate(r) for r in rows],
+        total=len(rows),
+    )
 
 @router.get(
     "/relationships/as-of/{volume_id}",

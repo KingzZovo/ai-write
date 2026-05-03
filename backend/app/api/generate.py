@@ -805,11 +805,21 @@ async def generate_outline(
                 try:
                     from app.db.session import async_session_factory
                     async with async_session_factory() as save_db:
+                        # PR-OL2: extract volume_plan from text, persist alongside.
+                        _content_json = {"raw_text": full_text}
+                        if req.level == "book":
+                            try:
+                                from app.services.outline_generator import OutlineGenerator as _OG
+                                _vp = _OG()._extract_volume_plan(full_text)
+                                if _vp:
+                                    _content_json["volume_plan"] = _vp
+                            except Exception:
+                                pass
                         outline = Outline(
                             project_id=req.project_id,
                             level=req.level,
                             parent_id=req.parent_outline_id,
-                            content_json={"raw_text": full_text},
+                            content_json=_content_json,
                         )
                         save_db.add(outline)
                         await save_db.commit()

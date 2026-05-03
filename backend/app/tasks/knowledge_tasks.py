@@ -401,13 +401,51 @@ async def _run_async_generation_impl(task_id: str):
                             Outline.level == "book",
                         )
                     )
+                    # PR-OL2: extract <volume-plan> JSON block and persist it
+                    # alongside raw_text so the wizard can prefill volume count
+                    # without re-running the SSE preview.
+                    _vol_plan = None
+                    try:
+                        from app.services.outline_generator import OutlineGenerator as _OG
+                        _vol_plan = _OG()._extract_volume_plan(full_text)
+                    except Exception as _vp_err:
+                        logger.warning("volume_plan extract failed: %s", _vp_err)
+                    _content = {"raw_text": full_text}
+                    if _vol_plan:
+                        _content["volume_plan"] = _vol_plan
                     db.add(
                         Outline(
                             project_id=project_id,
                             level="book",
-                            content_json={"raw_text": full_text},
+                            content_json=_content,
                         )
                     )
+                    # PR-OL2: also create empty Volume rows from the plan so
+                    # the wizard step 2 has a real skeleton to fill in. Skip
+                    # idx that already exists (idempotent on retry).
+                    if _vol_plan:
+                        from sqlalchemy import select as _sql_select
+                        from app.models.project import Volume as _Volume
+                        existing = await db.execute(
+                            _sql_select(_Volume.volume_idx).where(
+                                _Volume.project_id == project_id
+                            )
+                        )
+                        existing_idx = {r[0] for r in existing.all()}
+                        for _v in _vol_plan:
+                            _idx = int(_v.get("idx") or 0)
+                            if _idx <= 0 or _idx in existing_idx:
+                                continue
+                            db.add(_Volume(
+                                project_id=project_id,
+                                volume_idx=_idx,
+                                title=str(_v.get("title") or f"第{_idx}卷"),
+                                summary=str(_v.get("theme") or ""),
+                            ))
+                        logger.info(
+                            "PR-OL2: planned %d volumes from <volume-plan> for project=%s",
+                            len(_vol_plan), project_id,
+                        )
                 else:
                     logger.info(
                         "Skipping auto-save for task_type=%s (handled by dedicated endpoint)",

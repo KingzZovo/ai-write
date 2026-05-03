@@ -219,9 +219,40 @@ class EntityTimelineService:
         chapter_idx: int,
         state_json: dict[str, Any],
     ) -> None:
-        """Create a new CharacterState and close the previous one's chapter_end."""
+        """Create a new CharacterState if state changed; otherwise no-op.
+
+        v1.7.2: Skip writes when the new state_json is byte-equivalent to the
+        currently-open state. Prevents duplicate "状态变化" cards in the UI
+        when LLM extraction echoes back unchanged status for chapters where the
+        character did not actually change.
+        """
+        # Force chapter_idx >= 1; chapter 0 is reserved for genuine pre-story state.
+        if chapter_idx is None or chapter_idx < 0:
+            chapter_idx = 1
+        new_status_str = json.dumps(state_json or {}, ensure_ascii=False, sort_keys=True)
         try:
             async with self.driver.session() as session:
+                # Probe currently-open state for diff
+                cur = await session.run(
+                    "MATCH (c:Character {project_id: $pid, name: $name})"
+                    "-[:HAS_STATE]->(s:CharacterState) "
+                    "WHERE s.chapter_end IS NULL "
+                    "RETURN s.status_json AS status "
+                    "ORDER BY s.chapter_start DESC LIMIT 1",
+                    pid=project_id,
+                    name=name,
+                )
+                rec = await cur.single()
+                if rec is not None:
+                    prev_raw = rec.get("status")
+                    try:
+                        prev_obj = json.loads(prev_raw) if isinstance(prev_raw, str) else (prev_raw or {})
+                    except Exception:
+                        prev_obj = {}
+                    prev_str = json.dumps(prev_obj, ensure_ascii=False, sort_keys=True)
+                    if prev_str == new_status_str:
+                        # No-op: state unchanged. Don't close prev state, don't create new.
+                        return
                 # Close previous open state
                 await session.run(
                     "MATCH (c:Character {project_id: $pid, name: $name})"

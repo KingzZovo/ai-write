@@ -47,12 +47,20 @@ def compile_style(profile: StyleProfile) -> str:
         sections.append("写作时参考以下风格特征（只影响文笔，不影响故事结构和卷数）：")
         for r in style_rules[:8]:
             rule_text = r.get("rule", "")
-            # Clean JSON dicts that snuck into rule text
-            if "{" in rule_text:
-                # Extract just the key value, drop JSON structure
+            # Clean JSON dicts/lists that snuck into rule text
+            if "{" in rule_text or "[" in rule_text:
                 import re
                 rule_text = re.sub(r"\{[^}]*\}", "", rule_text).strip()
                 rule_text = re.sub(r"\[[^\]]*\]", "", rule_text).strip()
+                # Skip rules that became fragmentary after cleanup
+                # (unbalanced brackets, dangling colons, or too short).
+                if (
+                    not rule_text
+                    or rule_text.endswith(("[", "]", "{", "}", ":", "："))
+                    or rule_text.count("[") != rule_text.count("]")
+                    or rule_text.count("{") != rule_text.count("}")
+                ):
+                    continue
             # Remove references to specific books/characters
             for ref in ["龙族", "加图索", "昂热", "恺撒", "路明非", "继承人"]:
                 rule_text = rule_text.replace(ref, "")

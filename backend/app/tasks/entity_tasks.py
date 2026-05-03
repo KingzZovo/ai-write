@@ -333,7 +333,7 @@ async def _materialize_entities_to_postgres(
                         status_str,
                     )
                 )
-            cstates = sorted(set(cstates))
+            cstates = sorted(set(cstates), key=lambda t: (t[0], t[1], t[2] if t[2] is not None else -1, t[3]))
 
         created_chars = 0
         created_rels = 0
@@ -345,6 +345,7 @@ async def _materialize_entities_to_postgres(
         created_atlocs = 0
         created_cstates = 0
         skipped_cstates_missing_character = 0
+        skipped_cstates_unchanged = 0
 
         async with async_session_factory() as db:
             if char_names:
@@ -640,11 +641,35 @@ async def _materialize_entities_to_postgres(
                 )
                 cs_by_name = {c.name: c for c in cs_char_rows.scalars().all()}
 
+                # PR-OL6: pre-fetch each character's most-recent status_json so we can
+                # skip writing duplicates (LLM often echoes "承前" state for unchanged chapters).
+                latest_status_by_char: dict[str, str] = {}
+                if cs_by_name:
+                    char_ids = [str(c.id) for c in cs_by_name.values()]
+                    if char_ids:
+                        from sqlalchemy import text as _sql_text
+                        latest_q = await db.execute(
+                            _sql_text(
+                                "SELECT DISTINCT ON (character_id) character_id, status_json::text "
+                                "FROM character_states WHERE character_id = ANY(:cids) "
+                                "ORDER BY character_id, chapter_start DESC, created_at DESC"
+                            ),
+                            {"cids": char_ids},
+                        )
+                        for row in latest_q.all():
+                            latest_status_by_char[str(row[0])] = str(row[1])
+
                 cs_rows = []
+                skipped_cstates_unchanged = 0
                 for (cname, cs, ce, status_str) in cstates:
                     c = cs_by_name.get(cname)
                     if not c:
                         skipped_cstates_missing_character += 1
+                        continue
+                    # PR-OL6: skip if new status_json equals latest persisted state.
+                    prev = latest_status_by_char.get(str(c.id))
+                    if prev is not None and prev == status_str:
+                        skipped_cstates_unchanged += 1
                         continue
                     cs_rows.append(
                         {

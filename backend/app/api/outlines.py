@@ -109,8 +109,63 @@ async def update_outline(
         outline.is_confirmed = 1 if body.is_confirmed else 0
 
     await db.flush()
+
+    # PR-OL9 cascade: when a volume-level outline is edited, sync each chapter's
+    # outline_json + summary so downstream content generation sees the new plan.
+    cascade_synced_chapters = 0
+    try:
+        if body.content_json is not None and outline.level == "volume":
+            cj = outline.content_json or {}
+            volume_idx = cj.get("volume_idx")
+            chapter_summaries = cj.get("chapter_summaries") or []
+            if volume_idx is not None and isinstance(chapter_summaries, list) and chapter_summaries:
+                from app.models.project import Volume, Chapter
+                from sqlalchemy import select
+                vol_q = await db.execute(
+                    select(Volume).where(
+                        Volume.project_id == project_id,
+                        Volume.volume_idx == int(volume_idx),
+                    )
+                )
+                vol = vol_q.scalar_one_or_none()
+                if vol is not None:
+                    chap_q = await db.execute(
+                        select(Chapter).where(Chapter.volume_id == vol.id)
+                    )
+                    chapters_by_idx = {c.chapter_idx: c for c in chap_q.scalars().all()}
+                    for i, cs in enumerate(chapter_summaries, start=1):
+                        if not isinstance(cs, dict):
+                            continue
+                        ch = chapters_by_idx.get(i)
+                        if ch is None:
+                            continue
+                        ch.outline_json = cs
+                        # PR-OL9: also sync summary text if cs has "summary" / "概要"
+                        new_summary = cs.get("summary") or cs.get("概要") or cs.get("description") or ""
+                        if new_summary and new_summary != ch.summary:
+                            ch.summary = new_summary
+                        cascade_synced_chapters += 1
+                    if cascade_synced_chapters:
+                        await db.flush()
+    except Exception as cascade_err:
+        # Non-fatal: outline saved, cascade is best-effort.
+        import logging
+        logging.getLogger(__name__).warning(
+            "PR-OL9 cascade sync chapter outlines failed: %s", cascade_err,
+        )
+
     await db.refresh(outline)
-    return OutlineResponse.model_validate(outline)
+    resp = OutlineResponse.model_validate(outline)
+    # Surface cascade count via response model_extra (FastAPI will include it).
+    if cascade_synced_chapters:
+        # Pydantic v2 ConfigDict allows extra="allow" but if not, attach in headers won't work.
+        # Simplest: log it; client can ignore.
+        import logging
+        logging.getLogger(__name__).info(
+            "PR-OL9 cascade synced %d chapters for outline %s",
+            cascade_synced_chapters, outline.id,
+        )
+    return resp
 
 
 @router.post("/{outline_id}/confirm")
@@ -128,6 +183,66 @@ async def confirm_outline(
     await db.flush()
     await db.refresh(outline)
     return OutlineResponse.model_validate(outline)
+
+
+class VolumePlanUpdate(BaseModel):
+    volume_plan: list[dict]
+
+
+@router.patch("/{outline_id}/volume-plan")
+async def update_volume_plan(
+    project_id: str,
+    outline_id: str,
+    body: VolumePlanUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """PR-OL3: update volume_plan in content_json + sync Volume.title.
+
+    Front-end edits the AI-suggested volume plan card (title + est_chapters);
+    this endpoint persists the edits and propagates title changes to existing
+    Volume rows so step 3 reads the user-curated names.
+    """
+    from app.models.project import Volume
+    from sqlalchemy import select as _select
+
+    outline = await db.get(Outline, outline_id)
+    if not outline or str(outline.project_id) != project_id:
+        raise HTTPException(status_code=404, detail="Outline not found")
+
+    cleaned: list[dict] = []
+    for i, item in enumerate(body.volume_plan, start=1):
+        if not isinstance(item, dict):
+            continue
+        cleaned.append({
+            "idx": int(item.get("idx") or i),
+            "title": str(item.get("title") or f"第{i}卷")[:500],
+            "theme": str(item.get("theme") or ""),
+            "core_conflict": str(item.get("core_conflict") or ""),
+            "est_chapters": int(item.get("est_chapters") or 10),
+        })
+
+    cj = dict(outline.content_json or {})
+    cj["volume_plan"] = cleaned
+    outline.content_json = cj
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(outline, "content_json")
+
+    # Sync Volume.title for matching idx (don't create new ones here; PR-OL2
+    # already creates them at outline_book completion).
+    vol_rows = (await db.execute(
+        _select(Volume).where(Volume.project_id == project_id)
+    )).scalars().all()
+    by_idx = {v.volume_idx: v for v in vol_rows}
+    for item in cleaned:
+        v = by_idx.get(item["idx"])
+        if v is not None:
+            if item["title"] and v.title != item["title"]:
+                v.title = item["title"]
+            if item["theme"] and not v.summary:
+                v.summary = item["theme"]
+
+    await db.commit()
+    return {"volume_plan": cleaned, "synced_volumes": len([1 for it in cleaned if it["idx"] in by_idx])}
 
 
 @router.delete("/{outline_id}", status_code=204)
