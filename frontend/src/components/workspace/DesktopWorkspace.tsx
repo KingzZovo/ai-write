@@ -1217,7 +1217,21 @@ export default function DesktopWorkspace() {
 
                     <div className="flex gap-3">
                       <button
-                        onClick={() => setActiveView('editor')}
+                        onClick={() => {
+                          // PR-FIX-START-CREATE: 进入 editor 同时选中第一章，避免 editor 退化为“全书大纲”返回页。
+                          if (chapters.length > 0) {
+                            const sorted = [...chapters].sort((a, b) => {
+                              const av = (a as { volume_index?: number }).volume_index ?? 0
+                              const bv = (b as { volume_index?: number }).volume_index ?? 0
+                              if (av !== bv) return av - bv
+                              const ai = (a as { chapter_index?: number; index?: number }).chapter_index ?? (a as { index?: number }).index ?? 0
+                              const bi = (b as { chapter_index?: number; index?: number }).chapter_index ?? (b as { index?: number }).index ?? 0
+                              return ai - bi
+                            })
+                            selectChapter(sorted[0].id)
+                          }
+                          setActiveView('editor')
+                        }}
                         className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-medium"
                       >
                         开始创作
