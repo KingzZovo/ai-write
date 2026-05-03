@@ -212,12 +212,71 @@ async def regenerate_volume(
                 if lines and lines[-1].strip() == "```":
                     lines = lines[:-1]
                 cleaned = "\n".join(lines).strip()
+            # PR-VOL2-PARSE: 2-tier fallback. Tier 1 = strict json.loads.
+            # Tier 2 = largest balanced top-level object scan (handles trailing
+            # log lines / partial chunks). If both fail, log full chunk and
+            # surface a parse_failed SSE event so V3-style orchestrators don't
+            # silently end up with 0-chapter volumes.
+            parsed = None
+            parse_error = None
             try:
                 parsed = json.loads(cleaned)
-            except json.JSONDecodeError:
-                parsed = {"raw_text": full}
+            except json.JSONDecodeError as _je1:
+                parse_error = "tier1_json_loads:" + str(_je1)
+                try:
+                    s = cleaned
+                    n = len(s)
+                    best = None
+                    i = 0
+                    while i < n:
+                        if s[i] == "{":
+                            depth = 0
+                            in_str = False
+                            esc = False
+                            j = i
+                            while j < n:
+                                ch = s[j]
+                                if in_str:
+                                    if esc:
+                                        esc = False
+                                    elif ch == "\\":
+                                        esc = True
+                                    elif ch == '"':
+                                        in_str = False
+                                else:
+                                    if ch == '"':
+                                        in_str = True
+                                    elif ch == "{":
+                                        depth += 1
+                                    elif ch == "}":
+                                        depth -= 1
+                                        if depth == 0:
+                                            if best is None or (j - i) > (best[1] - best[0]):
+                                                best = (i, j + 1)
+                                            break
+                                j += 1
+                            i = (best[1] if best is not None else j + 1)
+                        else:
+                            i += 1
+                    if best is not None:
+                        cand = s[best[0]:best[1]]
+                        try:
+                            parsed = json.loads(cand)
+                            parse_error = "tier1_failed_tier2_recovered_len=" + str(best[1] - best[0])
+                        except Exception as _je2:
+                            parse_error = "tier1+tier2_failed:" + str(_je2)
+                except Exception as _scan_err:
+                    parse_error = "tier2_scan_crashed:" + str(_scan_err)
             if not isinstance(parsed, dict):
-                parsed = {"raw_text": full}
+                _head = cleaned[:600]
+                _tail = cleaned[-600:] if len(cleaned) > 1200 else ""
+                import logging as _lg
+                _lg.getLogger(__name__).error(
+                    "PR-VOL2-PARSE: volume outline JSON parse failed (volume_idx=%s, len=%d, err=%s) head=%r tail=%r",
+                    volume_idx, len(cleaned), parse_error, _head, _tail,
+                )
+                parsed = {"raw_text": full, "_parse_error": parse_error}
+                yield "data: " + json.dumps({"status": "parse_failed", "volume_idx": volume_idx, "error": parse_error}) + "\n\n"
 
             chapters_created = 0
             chapter_word_counts: list[int] = []
