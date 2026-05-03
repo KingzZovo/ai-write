@@ -1,3 +1,5 @@
+> ⚠️ **2026-05-03 12:25 交接**：上一窗口的 outline-batch2 全部交付 + 未完任务清单看 `docs/HANDOFF_2026-05-03_outline-batch2.md`。
+>
 > ⚠️ **2026-05-02 后状态** — main HEAD = `0a4f9a1`（PR #18 合并）。`feature/v1.0-big-bang` 上的 237 commit 已通过 PR #8～#18 全量回收。**本文档记载的历史上下文仍保留**，但新窗口接手请优先看 `docs/PROGRESS.md`（唯一真相源快照）与 `docs/HANDOFF_TODO.md`（现货 P5 部署 checklist）。
 >
 > **现状补丁**：

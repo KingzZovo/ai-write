@@ -1,4 +1,6 @@
-# Handoff TODO（可直接打勾执行）
+# Handoff TODO
+
+> **2026-05-03 12:25 交接**：本交接全貌 看 `docs/HANDOFF_2026-05-03_outline-batch2.md`。（可直接打勾执行）
 
 > 最近一次更新：2026-05-02 晚 — main HEAD = `85aa039` (PR #20)；E2E 全业务验证跑通 + chapter generate_stream 签名 bug 已修复（PR #21）。**所有 P0~P6 + E2E P7 已闭**，详见 `docs/PROGRESS.md` 2026-05-02 晚条目。
 
