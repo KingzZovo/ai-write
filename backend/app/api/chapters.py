@@ -73,6 +73,8 @@ async def list_chapters(
     result = await db.execute(query)
     chapters = result.scalars().all()
     if lightweight:
+        # PR-OUTLINE-BUTTONS: keep outline_json so OutlineTree's per-chapter
+        # "⊶大纲" button can render. Drop only content_text (the heavy field).
         return [
             {
                 "id": str(c.id),
@@ -82,6 +84,8 @@ async def list_chapters(
                 "word_count": c.word_count,
                 "status": c.status,
                 "target_word_count": c.target_word_count,
+                "outline_json": c.outline_json,
+                "summary": c.summary,
             }
             for c in chapters
         ]
