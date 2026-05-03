@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiFetch } from '@/lib/api'
@@ -14,60 +14,35 @@ interface StyleInfo {
   tone_keywords: string[]
 }
 
-// Per-project persisted helpers. Call sites pass the projectId; when none,
-// fall back to a "global" bucket.
-export function getSelectedStyleId(projectId?: string): string | null {
-  if (typeof window === 'undefined') return null
-  const key = projectId ? `gp:style:${projectId}` : 'gp:style:global'
-  return window.localStorage.getItem(key) || null
-}
-export function getSelectedStructureBookId(projectId?: string): string | null {
-  if (typeof window === 'undefined') return null
-  const key = projectId ? `gp:structure:${projectId}` : 'gp:structure:global'
-  return window.localStorage.getItem(key) || null
-}
+// Exported so DesktopWorkspace can read the selected values
+let _selectedStyleId: string | null = null
+let _selectedStructureBookId: string | null = null
+export function getSelectedStyleId(_projectId?: string) { return _selectedStyleId }
+export function getSelectedStructureBookId(_projectId?: string) { return _selectedStructureBookId }
 
-function setSelectedStyleId(projectId: string | undefined, id: string | null) {
-  if (typeof window === 'undefined') return
-  const key = projectId ? `gp:style:${projectId}` : 'gp:style:global'
-  if (id) window.localStorage.setItem(key, id)
-  else window.localStorage.removeItem(key)
-}
-function setSelectedStructureBookId(projectId: string | undefined, id: string | null) {
-  if (typeof window === 'undefined') return
-  const key = projectId ? `gp:structure:${projectId}` : 'gp:structure:global'
-  if (id) window.localStorage.setItem(key, id)
-  else window.localStorage.removeItem(key)
-}
-
-function StyleSelector({ projectId }: { projectId?: string }) {
+function StyleSelector() {
   const [styles, setStyles] = useState<StyleInfo[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string>(
-    () => (typeof window !== 'undefined' ? getSelectedStyleId(projectId) || '' : '')
-  )
+  const [selectedId, setSelectedId] = useState<string>('')
 
   useEffect(() => {
     apiFetch<StyleInfo[]>('/api/styles')
       .then(data => {
         setStyles(data)
-        // Auto-select the first active style only if no stored selection
-        if (!selectedId) {
-          const active = data.find(s => s.is_active)
-          if (active) {
-            setSelectedId(active.id)
-            setSelectedStyleId(projectId, active.id)
-          }
+        // Auto-select the first active style
+        const active = data.find(s => s.is_active)
+        if (active) {
+          setSelectedId(active.id)
+          _selectedStyleId = active.id
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleChange = (id: string) => {
     setSelectedId(id)
-    setSelectedStyleId(projectId, id || null)
+    _selectedStyleId = id || null
   }
 
   const selected = styles.find(s => s.id === selectedId)
@@ -116,9 +91,10 @@ function StyleSelector({ projectId }: { projectId?: string }) {
 }
 
 interface GeneratePanelProps {
+  projectId?: string
   onGenerate?: () => void
   onGenerateOutline?: (level: string) => void
-  projectId?: string
+  onViewOutline?: (level: string) => void
 }
 
 interface EndpointInfo {
@@ -147,11 +123,24 @@ const TASK_LABELS: Record<string, string> = {
   embedding: '向量嵌入',
 }
 
-export function GeneratePanel({ onGenerate, onGenerateOutline, projectId }: GeneratePanelProps) {
+export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onViewOutline }: GeneratePanelProps) {
   const { isGenerating } = useGenerationStore()
   const [endpoints, setEndpoints] = useState<EndpointInfo[]>([])
   const [tasks, setTasks] = useState<TaskConfig[]>([])
   const [loading, setLoading] = useState(true)
+
+  // outline 存在性状态。key: book/volume/chapter
+  const [outlineCounts, setOutlineCounts] = useState<Record<string, number>>({ book: 0, volume: 0, chapter: 0 })
+  const [confirmLevel, setConfirmLevel] = useState<string | null>(null)
+  const refreshOutlineCounts = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const all = await apiFetch<Array<{ level: string }>>(`/api/projects/${projectId}/outlines`)
+      const counts: Record<string, number> = { book: 0, volume: 0, chapter: 0 }
+      ;(all || []).forEach(o => { counts[o.level] = (counts[o.level] || 0) + 1 })
+      setOutlineCounts(counts)
+    } catch { /* ignore */ }
+  }, [projectId])
 
   useEffect(() => {
     Promise.all([
@@ -163,6 +152,8 @@ export function GeneratePanel({ onGenerate, onGenerateOutline, projectId }: Gene
       setLoading(false)
     })
   }, [])
+
+  useEffect(() => { refreshOutlineCounts() }, [refreshOutlineCounts, isGenerating])
 
   const enabledEndpoints = endpoints.filter(e => e.enabled)
   const hasEndpoints = enabledEndpoints.length > 0
@@ -244,45 +235,56 @@ export function GeneratePanel({ onGenerate, onGenerateOutline, projectId }: Gene
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">内容生成</h3>
         <div className="space-y-2">
-          <button onClick={() => onGenerateOutline?.('book')} disabled={isGenerating || !hasEndpoints}
-            className="w-full px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
-            生成全书大纲
-          </button>
-          <button onClick={() => onGenerateOutline?.('volume')} disabled={isGenerating || !hasEndpoints}
-            className="w-full px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-            生成分卷大纲
-          </button>
-          <button onClick={() => onGenerateOutline?.('chapter')} disabled={isGenerating || !hasEndpoints}
-            className="w-full px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-            生成章节大纲
-          </button>
+          <OutlineButtonRow
+            level="book" label="全书大纲" colorClass="bg-purple-600 hover:bg-purple-700"
+            count={outlineCounts.book} disabled={isGenerating || !hasEndpoints}
+            onView={() => onViewOutline?.("book")}
+            onGenerate={() => outlineCounts.book > 0 ? setConfirmLevel("book") : onGenerateOutline?.("book")}
+          />
+          <OutlineButtonRow
+            level="volume" label="分卷大纲" colorClass="bg-indigo-600 hover:bg-indigo-700"
+            count={outlineCounts.volume} disabled={isGenerating || !hasEndpoints}
+            onView={() => onViewOutline?.("volume")}
+            onGenerate={() => outlineCounts.volume > 0 ? setConfirmLevel("volume") : onGenerateOutline?.("volume")}
+          />
+          <OutlineButtonRow
+            level="chapter" label="章节大纲" colorClass="bg-blue-600 hover:bg-blue-700"
+            count={outlineCounts.chapter} disabled={isGenerating || !hasEndpoints}
+            onView={() => onViewOutline?.("chapter")}
+            onGenerate={() => outlineCounts.chapter > 0 ? setConfirmLevel("chapter") : onGenerateOutline?.("chapter")}
+          />
           <button onClick={onGenerate} disabled={isGenerating || !hasEndpoints}
             className="w-full px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-            {isGenerating ? '生成中...' : '生成章节正文'}
+            {isGenerating ? "生成中..." : "生成章节正文"}
           </button>
+          {confirmLevel && (
+            <ConfirmModal
+              level={confirmLevel}
+              onCancel={() => setConfirmLevel(null)}
+              onConfirm={() => { onGenerateOutline?.(confirmLevel); setConfirmLevel(null) }}
+            />
+          )}
         </div>
       </div>
 
       {/* Writing style selector */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">写作风格</h3>
-        <StyleSelector projectId={projectId} />
+        <StyleSelector />
       </div>
 
       {/* Plot structure selector (optional) */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">剧情架构（可选）</h3>
-        <StructureSelector projectId={projectId} />
+        <StructureSelector />
       </div>
     </div>
   )
 }
 
-function StructureSelector({ projectId }: { projectId?: string }) {
+function StructureSelector() {
   const [structures, setStructures] = useState<any[]>([])
-  const [selectedId, setSelectedId] = useState<string>(
-    () => (typeof window !== 'undefined' ? getSelectedStructureBookId(projectId) || '' : '')
-  )
+  const [selectedId, setSelectedId] = useState<string>('')
 
   useEffect(() => {
     apiFetch<any[]>('/api/styles/structures')
@@ -292,7 +294,7 @@ function StructureSelector({ projectId }: { projectId?: string }) {
 
   const handleChange = (id: string) => {
     setSelectedId(id)
-    setSelectedStructureBookId(projectId, id || null)
+    _selectedStructureBookId = id || null
   }
 
   if (structures.length === 0) {
@@ -315,6 +317,50 @@ function StructureSelector({ projectId }: { projectId?: string }) {
           {structures.find((s: any) => s.book_id === selectedId)?.structure_summary || ''}
         </p>
       )}
+    </div>
+  )
+}
+
+function OutlineButtonRow({ level, label, colorClass, count, disabled, onView, onGenerate }: {
+  level: string; label: string; colorClass: string; count: number; disabled: boolean;
+  onView: () => void; onGenerate: () => void
+}) {
+  const _ = level // reserved for analytics later
+  const exists = count > 0
+  if (exists) {
+    return (
+      <div className="flex gap-1.5">
+        <button onClick={onView} disabled={disabled}
+          className={`flex-1 px-3 py-2 text-sm text-white rounded-lg disabled:opacity-50 ${colorClass}`}>
+          📖 查看{label} ({count})
+        </button>
+        <button onClick={onGenerate} disabled={disabled} title="重新生成（需确认）"
+          className="px-2 py-2 text-xs bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300 disabled:opacity-50">
+          ↺
+        </button>
+      </div>
+    )
+  }
+  return (
+    <button onClick={onGenerate} disabled={disabled}
+      className={`w-full px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 ${colorClass}`}>
+      ⚡ 生成{label}
+    </button>
+  )
+}
+
+function ConfirmModal({ level, onCancel, onConfirm }: { level: string; onCancel: () => void; onConfirm: () => void }) {
+  const labels: Record<string, string> = { book: "全书大纲", volume: "分卷大纲", chapter: "章节大纲" }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-3">
+        <h3 className="text-base font-semibold text-stone-900">重新生成{labels[level] || level}？</h3>
+        <p className="text-sm text-stone-600">已存在{labels[level] || level}。重新生成会产生新的版本，原有版本会保留但不再被默认使用。</p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-100 rounded">取消</button>
+          <button onClick={onConfirm} className="px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-700 rounded">确认重新生成</button>
+        </div>
+      </div>
     </div>
   )
 }

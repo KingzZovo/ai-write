@@ -18,7 +18,7 @@ const WritingGuidePanel = dynamic(() => import('@/components/panels/WritingGuide
 const AntiAIPanel = dynamic(() => import('@/components/panels/AntiAIPanel').then(m => ({ default: m.AntiAIPanel })), { ssr: false })
 const VersionPanel = dynamic(() => import('@/components/panels/VersionPanel').then(m => ({ default: m.VersionPanel })), { ssr: false })
 const TokenDashboard = dynamic(() => import('@/components/panels/TokenDashboard').then(m => ({ default: m.TokenDashboard })), { ssr: false })
-const RelationshipGraph = dynamic(() => import('@/components/panels/RelationshipGraph').then(m => ({ default: m.RelationshipGraph })), { ssr: false })
+const CharacterCardPanel = dynamic(() => import('@/components/panels/CharacterCardPanel').then(m => ({ default: m.CharacterCardPanel })), { ssr: false })
 const CascadeTasksPanel = dynamic(() => import('@/components/panels/CascadeTasksPanel').then(m => ({ default: m.CascadeTasksPanel })), { ssr: false })
 import {
   useProjectStore,
@@ -129,6 +129,13 @@ export default function DesktopWorkspace() {
   const [editorContent, setEditorContent] = useState('')
   const [creativeInput, setCreativeInput] = useState('')
   const [outlinePreview, setOutlinePreview] = useState('')
+  // PR-OL1: AI-suggested volume plan parsed from staged SSE done event.
+  const [volumePlan, setVolumePlan] = useState<Array<{idx:number; title:string; theme:string; core_conflict:string; est_chapters:number}> | null>(null)
+  // PR-OL3: edit mode for the volume plan card.
+  const [editingPlan, setEditingPlan] = useState(false)
+  const [savingPlan, setSavingPlan] = useState(false)
+  // PR-OL5: post-save notice prompting to regenerate volumes if any exist.
+  const [planSaveNotice, setPlanSaveNotice] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<'editor' | 'outline' | 'wizard'>(
     'wizard'
   )
@@ -315,6 +322,13 @@ export default function DesktopWorkspace() {
                 // Replace the per-chunk interleaved preview with the
                 // canonical reassembled 9-section outline.
                 setOutlinePreview(full)
+              }
+              // PR-OL1: capture AI-suggested volume plan for step 2 prefill.
+              if (Array.isArray(evt.volume_plan)) {
+                setVolumePlan(evt.volume_plan as typeof volumePlan)
+                if (evt.volume_plan.length > 0) {
+                  setVolumeCountInput(String(evt.volume_plan.length))
+                }
               }
             }
           }
@@ -642,7 +656,7 @@ export default function DesktopWorkspace() {
       {
         project_id: currentProject.id,
         chapter_id: selectedChapterId,
-        style_id: getSelectedStyleId(currentProject.id),
+        style_id: getSelectedStyleId(),
       },
       (text) => {
         appendStreamContent(text)
@@ -721,7 +735,7 @@ export default function DesktopWorkspace() {
             {drawerPanel === 'strand' && <StrandPanel projectId={currentProject.id} />}
             {drawerPanel === 'foreshadow' && <ForeshadowPanel projectId={currentProject.id} />}
             {drawerPanel === 'settings' && <SettingsPanel projectId={currentProject.id} />}
-            {drawerPanel === 'relationship' && <RelationshipGraph projectId={currentProject.id} />}
+            {drawerPanel === 'relationship' && <CharacterCardPanel projectId={currentProject.id} />}
           </div>
         </div>
       </div>
@@ -944,6 +958,127 @@ export default function DesktopWorkspace() {
                       </details>
                     )}
 
+                    {volumePlan && volumePlan.length > 0 && (
+                      <div className="mb-4 border border-blue-200 bg-blue-50 rounded-xl p-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-blue-900">📜 AI 推荐卷规划</span>
+                            <span className="text-xs text-blue-700">共 {volumePlan.length} 卷，共 {volumePlan.reduce((s, v) => s + (v.est_chapters || 0), 0)} 章</span>
+                          </div>
+                          {!editingPlan ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditingPlan(true)}
+                              className="text-xs px-2 py-1 rounded bg-white text-blue-700 border border-blue-300 hover:bg-blue-100"
+                            >✎ 编辑</button>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={savingPlan}
+                                onClick={async () => {
+                                  if (!currentProject || !pendingBookOutlineIdRef.current) {
+                                    setEditingPlan(false)
+                                    return
+                                  }
+                                  setSavingPlan(true)
+                                  try {
+                                    await apiFetch(
+                                      `/api/projects/${currentProject.id}/outlines/${pendingBookOutlineIdRef.current}/volume-plan`,
+                                      { method: "PATCH", body: JSON.stringify({ volume_plan: volumePlan }) },
+                                    )
+                                    setVolumeCountInput(String(volumePlan.length))
+                                    // PR-OL5: post-save notice when stale volume outlines exist.
+                                    if (volumes.length > 0) {
+                                      setPlanSaveNotice(
+                                        `卷规划已保存。检测到已生成 ${volumes.length} 个分卷大纲，如果卷名/章数有变动，请手动在底部列表中删除并点 “生成分卷大纲” 重生。`,
+                                      )
+                                    } else {
+                                      setPlanSaveNotice('卷规划已保存。点 “生成分卷大纲” 开始创建。')
+                                    }
+                                  } catch (err) {
+                                    console.error("保存卷规划失败:", err)
+                                    setPlanSaveNotice('保存失败，请重试。')
+                                  } finally {
+                                    setSavingPlan(false)
+                                    setEditingPlan(false)
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                              >{savingPlan ? "保存中..." : "保存"}</button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingPlan(false)}
+                                className="text-xs px-2 py-1 rounded bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
+                              >取消</button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          {volumePlan.map((v, vi) => (
+                            <div key={v.idx} className="text-xs text-gray-700 bg-white rounded px-2 py-1.5">
+                              {!editingPlan ? (
+                                <>
+                                  <span className="font-semibold text-gray-900">第{v.idx}卷 {v.title}</span>
+                                  <span className="text-gray-500 ml-1">({v.est_chapters}章)</span>
+                                  {v.theme && <span className="text-gray-600"> · {v.theme}</span>}
+                                  {v.core_conflict && <div className="text-gray-500 mt-0.5">冲突: {v.core_conflict}</div>}
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-gray-500">第{v.idx}卷</span>
+                                  <input
+                                    type="text"
+                                    value={v.title}
+                                    onChange={(e) => {
+                                      const next = [...volumePlan]
+                                      next[vi] = { ...v, title: e.target.value }
+                                      setVolumePlan(next)
+                                    }}
+                                    placeholder="卷名"
+                                    className="flex-1 min-w-[100px] px-2 py-0.5 border border-gray-300 rounded text-xs"
+                                  />
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={v.est_chapters}
+                                    onChange={(e) => {
+                                      const next = [...volumePlan]
+                                      next[vi] = { ...v, est_chapters: parseInt(e.target.value || "0", 10) || 0 }
+                                      setVolumePlan(next)
+                                    }}
+                                    className="w-16 px-2 py-0.5 border border-gray-300 rounded text-xs"
+                                  />
+                                  <span className="text-gray-500">章</span>
+                                  {v.theme && <div className="w-full text-gray-600 mt-0.5">主题: {v.theme}</div>}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {planSaveNotice && (
+                      <div className="mb-3 border border-emerald-200 bg-emerald-50 rounded-lg p-2.5 flex items-start justify-between gap-2">
+                        <span className="text-xs text-emerald-900">{planSaveNotice}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPlanSaveNotice(null)}
+                          className="text-xs text-emerald-700 hover:underline"
+                        >关闭</button>
+                      </div>
+                    )}
+                    {(!volumePlan || volumePlan.length === 0) && outlinePreview && (
+                      <div className="mb-4 border border-amber-200 bg-amber-50 rounded-xl p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-amber-900">⚠ AI 未输出结构化卷规划</span>
+                          <span className="text-xs text-amber-700">(探测到 {detectVolumeCount(outlinePreview) || 3} 卷，已作为 fallback)</span>
+                        </div>
+                        <div className="text-xs text-amber-800">
+                          请手动确认 / 调整下方“共 N 卷”，或返回修改大纲 让其明确输出 {"<volume-plan>"} JSON 块。
+                        </div>
+                      </div>
+                    )}
                     <div className="mb-4 flex items-center gap-3 flex-wrap">
                       <label className="text-sm text-gray-700">共</label>
                       <input
@@ -1002,6 +1137,13 @@ export default function DesktopWorkspace() {
                                 data={vo}
                                 projectId={currentProject.id}
                                 onSaved={(updated) => setVolumeOutlines((prev) => ({ ...prev, [vi]: updated }))}
+                                onVolumeChanged={async () => {
+                                  if (!currentProject) return
+                                  try {
+                                    const refreshed = await apiFetch<Volume[]>(`/api/projects/${currentProject.id}/volumes`)
+                                    setVolumes(refreshed)
+                                  } catch {}
+                                }}
                               />
                             )
                           })}
@@ -1425,11 +1567,13 @@ function VolumeOutlineEditor({
   data,
   projectId,
   onSaved,
+  onVolumeChanged,
 }: {
   volume: Volume
   data: Record<string, unknown>
   projectId: string
   onSaved: (data: Record<string, unknown>) => void
+  onVolumeChanged?: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(() => {
@@ -1437,6 +1581,73 @@ function VolumeOutlineEditor({
     return JSON.stringify(data, null, 2)
   })
   const [busy, setBusy] = useState(false)
+  // PR-OL7: inline edit volume title (separate from outline content edit).
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(volume.title || "")
+  const [savingTitle, setSavingTitle] = useState(false)
+
+  const saveTitle = async () => {
+    if (savingTitle || !titleDraft.trim()) return
+    setSavingTitle(true)
+    try {
+      const updated = await apiFetch<{ id: string; title: string }>(
+        `/api/projects/${projectId}/volumes/${volume.id}`,
+        { method: "PUT", body: JSON.stringify({ title: titleDraft.trim() }) },
+      )
+      // Update local volume reference (safe — volume is a prop snapshot, parent re-fetch will eventually update).
+      ;(volume as { title: string }).title = updated.title
+      setEditingTitle(false)
+      onVolumeChanged?.()
+    } catch (err) {
+      console.error("保存卷名失败:", err)
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  // PR-OL8: move (swap volume_idx) and delete.
+  const moveVolume = async (direction: "up" | "down") => {
+    if (!confirm(`确定${direction === "up" ? "上" : "下"}移 《${volume.title}》吗？`)) return
+    try {
+      const allVolumes = await apiFetch<Volume[]>(`/api/projects/${projectId}/volumes`)
+      const sorted = [...allVolumes].sort(
+        (a, b) => (a.volume_idx ?? a.volumeIdx) - (b.volume_idx ?? b.volumeIdx),
+      )
+      const myIdx = volume.volume_idx ?? volume.volumeIdx
+      const targetIdx = direction === "up" ? myIdx - 1 : myIdx + 1
+      const target = sorted.find((v) => (v.volume_idx ?? v.volumeIdx) === targetIdx)
+      if (!target) {
+        alert(direction === "up" ? "已是第一卷" : "已是最后一卷")
+        return
+      }
+      // Swap: 先把当前 改为一个临时卷号，再交换（避免其他 uq冲突，虽然 model 没 uq 但防万一）
+      const TMP = 9999
+      await apiFetch(`/api/projects/${projectId}/volumes/${volume.id}`, {
+        method: "PUT", body: JSON.stringify({ volume_idx: TMP }),
+      })
+      await apiFetch(`/api/projects/${projectId}/volumes/${target.id}`, {
+        method: "PUT", body: JSON.stringify({ volume_idx: myIdx }),
+      })
+      await apiFetch(`/api/projects/${projectId}/volumes/${volume.id}`, {
+        method: "PUT", body: JSON.stringify({ volume_idx: targetIdx }),
+      })
+      onVolumeChanged?.()
+    } catch (err) {
+      console.error("移动卷失败:", err)
+      alert("移动失败，请重试。")
+    }
+  }
+
+  const deleteVolume = async () => {
+    if (!confirm(`确定删除 《${volume.title}》 及其所有章节吗？此操作不可逆。`)) return
+    try {
+      await apiFetch(`/api/projects/${projectId}/volumes/${volume.id}`, { method: "DELETE" })
+      onVolumeChanged?.()
+    } catch (err) {
+      console.error("删除卷失败:", err)
+      alert("删除失败，请重试。")
+    }
+  }
 
   const save = async () => {
     if (busy) return
@@ -1470,13 +1681,60 @@ function VolumeOutlineEditor({
   return (
     <details className="border rounded-xl overflow-hidden">
       <summary className="cursor-pointer px-4 py-2 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between">
-        <span>{volume.title}</span>
-        <button
-          onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
-          className="text-xs text-blue-600 hover:underline"
-        >
-          {editing ? '取消' : '编辑'}
-        </button>
+        <div className="flex-1 flex items-center gap-2" onClick={(e) => editingTitle && e.preventDefault()}>
+          {editingTitle ? (
+            <>
+              <input
+                type="text"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onClick={(e) => e.preventDefault()}
+                className="flex-1 min-w-[120px] px-2 py-0.5 border border-blue-300 rounded text-sm"
+              />
+              <button
+                onClick={(e) => { e.preventDefault(); saveTitle() }}
+                disabled={savingTitle}
+                className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >{savingTitle ? "保存中..." : "保存名"}</button>
+              <button
+                onClick={(e) => { e.preventDefault(); setTitleDraft(volume.title || ""); setEditingTitle(false) }}
+                className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >取消</button>
+            </>
+          ) : (
+            <>
+              <span>{volume.title}</span>
+              <button
+                onClick={(e) => { e.preventDefault(); setTitleDraft(volume.title || ""); setEditingTitle(true) }}
+                className="text-xs text-gray-500 hover:text-blue-600 hover:underline"
+                title="重命名本卷"
+              >✎</button>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.preventDefault(); moveVolume("up") }}
+            className="text-xs px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
+            title="上移"
+          >↑</button>
+          <button
+            onClick={(e) => { e.preventDefault(); moveVolume("down") }}
+            className="text-xs px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
+            title="下移"
+          >↓</button>
+          <button
+            onClick={(e) => { e.preventDefault(); deleteVolume() }}
+            className="text-xs px-1.5 py-0.5 rounded text-red-600 hover:bg-red-50"
+            title="删除本卷"
+          >✖</button>
+          <button
+            onClick={(e) => { e.preventDefault(); setEditing((v) => !v) }}
+            className="text-xs text-blue-600 hover:underline ml-2"
+          >
+            {editing ? '取消编辑' : '编辑大纲'}
+          </button>
+        </div>
       </summary>
       <div className="px-4 py-3 bg-white border-t text-sm">
         {editing ? (

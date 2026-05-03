@@ -125,7 +125,7 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
   if (dismissed) return null
 
   if (loading) {
-    return <p className="text-xs text-gray-400 px-4 py-2">Analyzing cascade impact...</p>
+    return <p className="text-xs text-gray-400 px-4 py-2">正在分析联动影响...</p>
   }
 
   if (!analysis || analysis.affectedChapters.length === 0) {
@@ -135,7 +135,7 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Cascade Regeneration</h3>
+        <h3 className="text-sm font-semibold text-gray-900">联动重生成</h3>
         <button
           onClick={() => setDismissed(true)}
           className="text-xs text-gray-400 hover:text-gray-600"
