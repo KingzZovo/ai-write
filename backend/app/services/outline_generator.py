@@ -415,8 +415,24 @@ def extract_chapter_breakdown(volume_outline: dict | list | None) -> dict[int, d
 class OutlineGenerator:
     """Generates hierarchical outlines: book → volume → chapter."""
 
-    def __init__(self):
+    def __init__(self, project_id: str | None = None):
         self.router = get_model_router()
+        # PR-USAGE-LOGMETA: when caller (api/generate.py) supplies project_id,
+        # every router.generate_stream/generate call below threads _log_meta
+        # so llm_call_logger.log_llm_call writes one row per LLM call AND
+        # llm_call_logger's PR-USAGE-SYNC finally-block bumps usage_quotas.
+        # Without this, outline streams skipped the logger entirely.
+        self.project_id = str(project_id) if project_id else None
+
+    def _log_meta(self, task_type: str) -> dict | None:
+        """PR-USAGE-LOGMETA helper: emit dict for model_router._log_meta.
+
+        Returns None when no project_id is bound, preserving the legacy
+        (no-logging) call path for ad-hoc invocations.
+        """
+        if not self.project_id:
+            return None
+        return {"project_id": self.project_id, "task_type": task_type}
 
 
     @staticmethod
@@ -482,6 +498,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
+                _log_meta=self._log_meta("outline_book"),
             )
 
         if staged:
@@ -490,6 +507,7 @@ class OutlineGenerator:
         result = await self.router.generate(
             task_type="outline",
             messages=messages,
+            _log_meta=self._log_meta("outline_book"),
         )
         return self._parse_json(result.text)
 
@@ -690,6 +708,7 @@ class OutlineGenerator:
             async for delta in self.router.generate_stream(
                 task_type="outline_book",
                 messages=skeleton_msgs,
+                _log_meta=self._log_meta("outline_book_skeleton"),
             ):
                 if not delta:
                     continue
@@ -771,6 +790,7 @@ class OutlineGenerator:
                 async for delta in self.router.generate_stream(
                     task_type="outline_book",
                     messages=stage["msgs"],
+                    _log_meta=self._log_meta(f"outline_book_stage_{code}"),
                 ):
                     if not delta:
                         continue
@@ -858,6 +878,7 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
+                _log_meta=self._log_meta("outline_volume"),
             )
 
         if staged:
@@ -1029,11 +1050,13 @@ class OutlineGenerator:
             return self.router.generate_stream(
                 task_type="outline",
                 messages=messages,
+                _log_meta=self._log_meta("outline_chapter"),
             )
 
         result = await self.router.generate(
             task_type="outline",
             messages=messages,
+            _log_meta=self._log_meta("outline_chapter"),
         )
         return self._parse_json(result.text)
 

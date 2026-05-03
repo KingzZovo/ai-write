@@ -99,7 +99,7 @@ async def log_llm_call(
             # PR-USAGE-SYNC: same-transaction incr of usage_quotas so the
             # admin / quota UI reflects real consumption immediately.
             try:
-                from app.services.usage_service import add_usage
+                from app.services.usage_service import record_usage
                 from app.middlewares.quota import resolve_user_id_from_context  # noqa: F401
                 _user_id = None
                 try:
@@ -113,7 +113,7 @@ async def log_llm_call(
                 _pt = int(ctx.input_tokens or 0)
                 _ct = int(ctx.output_tokens or 0)
                 if _pt or _ct:
-                    await add_usage(
+                    await record_usage(
                         db,
                         user_id=str(_user_id),
                         prompt_tokens=_pt,

@@ -841,7 +841,10 @@ async def generate_outline(
     async def event_stream() -> AsyncGenerator[str, None]:
         collected_text = []
         try:
-            generator = OutlineGenerator()
+            # PR-USAGE-LOGMETA: bind project_id so every router call inside
+            # OutlineGenerator threads _log_meta and lands in llm_call_logs +
+            # usage_quotas (was silently bypassed before).
+            generator = OutlineGenerator(project_id=req.project_id)
 
             yield f"data: {json.dumps({'status': 'generating', 'level': req.level})}\n\n"
 
