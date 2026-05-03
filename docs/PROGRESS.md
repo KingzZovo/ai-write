@@ -181,7 +181,7 @@ PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh
 
 ## feat/outline-batch2 — 7-PR 批次 ✅ 已 push（2026-05-03）
 
-> 分支 `feat/outline-batch2`，HEAD = `f3e9e55`，自 main `1b52952` 起新增 9 个 commit（2 baseline + 7 PR）。
+> 分支 `feat/outline-batch2`，HEAD = `38c4413`，自 main `1b52952` 起新增 11 个 commit（2 baseline + 7 PR + 2 docs）。
 > 背景：上一轮 E2E PID `310c1f9a` 《狩人账》30 章跡走后朱雀 AI 检测 12.04% 人工 / 42.21% 疑似 / 45.75% AI，六个架构问题取得共识后拆出本批 7 PR 修正。
 
 ### Commit 链

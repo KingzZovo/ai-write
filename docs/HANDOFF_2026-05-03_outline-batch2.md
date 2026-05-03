@@ -2,7 +2,7 @@
 
 > **新窗口接手优先看这一份**。看完即可独立推进。
 >
-> 上一窗口（本会话）已把 outline-batch2 的 7 个 PR + 2 个 baseline + 1 个 docs sync 全部 push 到 `origin/feat/outline-batch2`，但**还没跑行为级 E2E 重测**，也**还没启动 Neo4j 扩展批次**。
+> 上一窗口（本会话）已把 outline-batch2 的 7 个 PR + 2 个 baseline + 2 个 docs 全部 push 到 `origin/feat/outline-batch2`，但**还没跑行为级 E2E 重测**，也**还没启动 Neo4j 扩展批次**。
 
 ---
 
@@ -11,9 +11,9 @@
 ```
 仓库：/root/ai-write
 分支：feat/outline-batch2
-HEAD：6e0715d  (本批末点，已 push 到 origin)
+HEAD：38c4413  (本批末点 + 本交接文档本身，已 push 到 origin)
 main：1b52952  (PR #22)
-本批新增 commit 数：10（2 baseline + 7 PR + 1 docs）
+本批新增 commit 数：11（2 baseline + 7 PR + 2 docs）
 GitHub：https://github.com/KingzZovo/ai-write
 Token： /tmp/king_tok   (sub:king, exp:1778335635 — 2026 年未到期)
 项目路径：/root/ai-write
