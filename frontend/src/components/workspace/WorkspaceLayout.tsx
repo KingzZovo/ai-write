@@ -17,8 +17,11 @@ interface WorkspaceLayoutProps {
   projectId?: string
 }
 
-const LS_SIDEBAR_BASE = 'ai-write.workspace.sidebar-collapsed'
-const LS_PANEL_BASE = 'ai-write.workspace.panel-collapsed'
+// PR-FIX-LS-V2: bump LS key suffix to drop sticky-collapsed states accumulated
+// from earlier window-resize / mobile-detection misfires. Old keys are pruned
+// on mount (see migrateOldKeys below).
+const LS_SIDEBAR_BASE = 'ai-write.workspace.sidebar-collapsed.v2'
+const LS_PANEL_BASE = 'ai-write.workspace.panel-collapsed.v2'
 
 /** chunk-23: compose per-project key when projectId is provided. */
 function composeKey(base: string, projectId?: string): string {
@@ -55,9 +58,34 @@ function usePersistedFlag(key: string, defaultValue = false) {
   return [value, set] as const
 }
 
+// PR-FIX-LS-V2: one-time prune of legacy v1 keys (those without `.v2` suffix).
+// Runs on every mount but is cheap; only deletes matching keys once they exist.
+function migrateOldKeys() {
+  if (typeof window === 'undefined') return
+  try {
+    const toDelete: string[] = []
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i)
+      if (!k) continue
+      if (
+        (k.startsWith('ai-write.workspace.sidebar-collapsed') ||
+          k.startsWith('ai-write.workspace.panel-collapsed')) &&
+        !k.includes('.v2')
+      ) {
+        toDelete.push(k)
+      }
+    }
+    toDelete.forEach((k) => window.localStorage.removeItem(k))
+  } catch {
+    /* ignore */
+  }
+}
+
 export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel, projectId }: WorkspaceLayoutProps) {
   const t = useT()
   const [mobileTab, setMobileTab] = useState<'sidebar' | 'editor' | 'panel'>('editor')
+  // Run legacy-key migration on mount.
+  useEffect(() => { migrateOldKeys() }, [])
 
   const sidebarKey = composeKey(LS_SIDEBAR_BASE, projectId)
   const panelKey = composeKey(LS_PANEL_BASE, projectId)
