@@ -13,7 +13,6 @@ from app.services.qdrant_store import QdrantStore
 router = APIRouter(
     prefix="/api/vector-store",
     tags=["vector-store"],
-    dependencies=[Depends(verify_token)],
 )
 
 COLLECTIONS = ["plots", "styles", "chapter_summaries"]

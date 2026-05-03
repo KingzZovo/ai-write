@@ -441,3 +441,8 @@ async def test_endpoint(
             latency_ms=round(elapsed, 1),
             sent_text=probe_text,
         )
+
+@router.get("/tasks")
+async def list_tasks() -> dict:
+    """Stub: per-task model routing config. Returns empty list until task-routing UI is wired."""
+    return {"tasks": []}

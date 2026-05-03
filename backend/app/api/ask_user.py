@@ -17,7 +17,6 @@ from app.models.ask_user import AskUserPause
 router = APIRouter(
     prefix="/api/ask-user",
     tags=["ask-user"],
-    dependencies=[Depends(verify_token)],
 )
 
 

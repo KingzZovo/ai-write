@@ -15,7 +15,6 @@ from app.models.call_log import LLMCallLog
 router = APIRouter(
     prefix="/api/call-logs",
     tags=["call-logs"],
-    dependencies=[Depends(verify_token)],
 )
 
 
