@@ -126,12 +126,30 @@ async def etl_characters(
             if not name or name in existing_names:
                 skipped += 1
                 continue
+            # PR-FACTS-CHAR-PROFILE: dump ALL non-empty profile fields
+            # so SettingsPanel renders identity / personality / appearance / etc.
+            _PROFILE_KEYS = (
+                "role", "identity", "personality", "appearance", "abilities",
+                "biography", "current_status", "relationships", "goals",
+                "backstory", "description",
+            )
             profile = {
-                "role": nc.get("role", ""),
-                "identity": nc.get("identity", ""),
                 "introduced_in_volume": vol.get("volume_idx"),
                 "source": "outline_to_facts.etl_characters",
             }
+            for _k in _PROFILE_KEYS:
+                _v = nc.get(_k)
+                if _v is None:
+                    continue
+                if isinstance(_v, str) and not _v.strip():
+                    continue
+                profile[_k] = _v
+            # If the whole nc dict has any extra textual fields, also keep them.
+            for _k, _v in nc.items():
+                if _k in profile or _k == "name":
+                    continue
+                if isinstance(_v, str) and _v.strip():
+                    profile[_k] = _v.strip()
             db.add(Character(
                 id=uuid.uuid4(),
                 project_id=uuid.UUID(pid),
