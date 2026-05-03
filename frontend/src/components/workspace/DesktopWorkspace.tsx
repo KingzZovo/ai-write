@@ -271,10 +271,13 @@ export default function DesktopWorkspace() {
     }
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PR-FIX-WIZARD-LOCK: 安全纲 - 一旦 volumes 已存在，永远不该停留在 wizard。
-  // 防止旧 chunk JS / 差异 init 分支 / state race 导致错误退回引导。
+  // PR-FIX-WIZARD-LOCK-V2: 只在 volumes 从 0 变为 >0 那一刻保护一次，避免 init race 退回引导。
+  // 不能持续拦截，否则用户主动点“查看分卷/编辑大纲”会被即刻拉回 editor。
+  const prevVolCountRef = useRef(volumes.length)
   useEffect(() => {
-    if (volumes.length > 0 && activeView === 'wizard') {
+    const prev = prevVolCountRef.current
+    prevVolCountRef.current = volumes.length
+    if (prev === 0 && volumes.length > 0 && activeView === 'wizard') {
       setActiveView('editor')
     }
   }, [volumes.length, activeView])
