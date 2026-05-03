@@ -227,3 +227,68 @@ PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh
 | 时间 | ❌ 未实现（仅 chapter_start 隐式时序）| 缺 `Time`/`Era`/`TimeEvent` 节点、`OCCURS_AT` 关系 |
 
 列为下一批 PR-NEO1~NEO4 开新分支 `feat/neo4j-batch1`。
+
+## 2026-05-03 — feat/neo4j-batch1 PR-NEO1~NEO4 v2.0 批次（branched off `38c4413`）
+
+分支：`feat/neo4j-batch1`，HEAD = `fe01405`（4 个 feat commit + 1 个 docs commit）。
+
+```
+fe01405 feat(neo4j): PR-NEO4 wire NEO1-3 PG projections into ContextPack + critic
+6d21591 feat(neo4j): PR-NEO3 add Time anchors + chapter linkage
+932831a feat(neo4j): PR-NEO2 add FactionEvent + opposition windows
+fa82700 feat(neo4j): PR-NEO1 add Item entity + ownership/transfer events
+1834cdb docs(handoff): align HEAD pointer to 38c4413 in outline-batch2 docs
+```
+
+### PR-NEO1 道具
+
+- 新建 alembic `a1001909_v200_items_tables.py`：`items(name/kind/first_owner)` + `item_events(kind ∈ has/use/transfer/break/recover, chapter_idx, actor_name)`，`uq_items_project_name` + `uq_item_events_key`。
+- `models/project.py` append `Item` + `ItemEvent`。
+- `entity_timeline.py`：文档 schema、`ENTITY_EXTRACTION_PROMPT` 加 `items[]` + `item_transfers[]`、`initialize_graph` 加 (:Item) PK + HAS_ITEM uniqueness + Item index、helpers `_ensure_item` / `_set_item_owner` / `_record_item_transfer`、`extract_and_update` 处理 items + transfers。
+- `entity_tasks.py`：imports + Neo4j 读 :Item/HAS_ITEM/TRANSFER_ITEM 块 + 计数器 `created_items` / `created_item_events` + PG upsert（items on_conflict_do_update uq_items_project_name 更新 kind/first_owner，item_events on_conflict_do_nothing uq_item_events_key）+ 返回字典加新字段。
+- diff stat: 3 files +368/-1 + 1 新 alembic 文件，COMPILE_OK。
+
+### PR-NEO2 阵营事件 + 对立窗口
+
+- 新建 alembic `a1001910_v200_faction_events_tables.py`：`faction_events(kind ∈ alliance/break/war_open/war_close/...)` + `faction_event_orgs` 多对多 + `faction_oppositions(source_org_id, target_org_id, chapter_start, chapter_end)`，`uq_faction_event_orgs_key` + `uq_faction_oppositions_key`。
+- `models/project.py` append `FactionEvent` / `FactionEventOrg` / `FactionOpposition`。
+- `entity_timeline.py`：文档 schema 加 (:FactionEvent) + INVOLVED_IN + OPPOSED_BY、ENTITY_EXTRACTION_PROMPT 加 `faction_events[]` + `faction_oppositions[]`、`initialize_graph` 加 (:FactionEvent) PK + OPPOSED_BY uniqueness + FactionEvent index、helpers `_ensure_faction_event` / `_link_org_to_event` / `_set_faction_opposition`（写 chapter_start，下一次 close 时回填 chapter_end）、`extract_and_update` 处理新字段。
+- `entity_tasks.py`：imports + Neo4j 读 :FactionEvent/INVOLVED_IN/OPPOSED_BY 块 + 计数器 `created_faction_events` / `created_faction_event_orgs` / `created_faction_oppositions` + PG upsert + 返回字典加新字段。
+- diff stat: 3 files +384/-0 + 2 新 alembic 文件（`a1001910` + `a1001911`，后者为 NEO3 alembic 文件，提前落入此 commit）。
+
+### PR-NEO3 时间锚点
+
+- alembic `a1001911_v200_time_events_tables.py`（实际在 NEO2 commit 中已建）：`time_anchors(label, kind, abs_value)` + `chapter_time_anchors(chapter_idx, time_anchor_id, precision, offset_value, anchor_label)`，`uq_time_anchors_key(project_id, label, kind)` + `uq_chapter_time_anchors_key(project_id, chapter_idx, time_anchor_id)`。
+- `models/project.py` append `TimeAnchor` + `ChapterTimeAnchor`，imports 加 `BigInteger`。
+- `entity_timeline.py`：文档 schema 加 (:Time) + (:Chapter)-[:OCCURS_AT]->(:Time)、ENTITY_EXTRACTION_PROMPT 加 `time_anchors[]`（label/kind/precision/offset_value/anchor_label）、`initialize_graph` 加 (:Time) PK (project_id,label,kind) + (:Chapter) PK (project_id,chapter_idx) + ()-[r:OCCURS_AT]-() PK + Time index、helpers `_ensure_time_anchor` / `_link_chapter_to_time`、`extract_and_update` 处理 `time_anchors`。
+- `entity_tasks.py`：imports + Neo4j 读 (:Time) 节点 + (:Chapter)-[:OCCURS_AT]->(:Time) 关系 + 计数器 `created_time_anchors` / `created_chapter_time` + PG upsert（time_anchors on_conflict_do_update 更新 abs_value，chapter_time_anchors on_conflict_do_update 更新 precision/offset_value/anchor_label）+ 返回字典加新字段。
+- diff stat: 3 files +302/-0，COMPILE_OK。
+
+### PR-NEO4 消费层（ContextPack + Critic）
+
+- `services/context_pack.py`：
+  - imports 加 `Item / ItemEvent / FactionEvent / FactionEventOrg / FactionOpposition / Organization / TimeAnchor as TimeAnchorRow / ChapterTimeAnchor`。
+  - ContextPack 加三段字段：`current_items: list[dict]` / `faction_state: dict` / `timeline_anchors_v2: list[dict]`。
+  - `to_system_prompt` 在 L2 「时间线锚点」 后渲染三新块：「当前道具持有」 / 「阵营动态」 / 「时间锚点 v2」。
+  - 新私方 `_build_pr_neo4_facts`：
+    - current_items：`items` LEFT JOIN 「最近一次 has/transfer item_event」 取 holder（chapter_idx ≤ 当前章）。
+    - faction_state：oppositions（chapter_start ≤ 当前 AND (chapter_end IS NULL OR chapter_end ≥ 当前)） + 最近 10 条 faction_events 含 org 名。
+    - timeline_anchors_v2：chapter_time_anchors JOIN time_anchors，取 ≤ 当前章前 30 条。
+    - 三块各自 try/except，DB schema 缺失不阻断。
+- `services/generation_runner.py::_phase_critic`：
+  - 加 PG 读 `Item.name` 列表 → `item_names`。
+  - 加 PG 读 chapter `chapter_idx` → `chapter_idx_for_critic`。
+  - 把两值传给 `run_critic`，让 `scan_item_missing` / `scan_time_reversal` / `scan_geo_jump` 拿到真实输入。
+- diff stat: 2 files +217/-0，COMPILE_OK。
+
+### Verification
+
+- 4 个 commit 全部 `python3 -m compileall -q backend/app` → COMPILE_OK。
+- alembic 链：`a1001908` → `a1001909` (NEO1) → `a1001910` (NEO2) → `a1001911` (NEO3)。
+- 行为级 E2E（真实 PG round-trip + LLM 抽 items / faction_events / time_anchors） **延后** 到 task A 30 章 E2E 重跑时一并验证；那里也会贴朱雀 AI 检测对比 baseline 12.04% / 42.21% / 45.75%。
+
+### 留给下一批的 follow-up
+
+- 当 LLM 真正吐出 items / faction_events / time_anchors 后，确认 PG 三对表 row count 不为 0，并且 ContextPack `to_system_prompt` 输出确实包含三新块（直接 print 一次即可）。
+- 三个 checker（`time_reversal` / `geo_jump` / `item_missing`）目前已能拿到 PG / Neo4j 输入；尚未加 critic 端「issue.severity」 校准 + 单测，列入下批 PR-NEO5。
+- alembic head 最高已到 `a1001911`，没消费更高号；如未来需更多 v2.0 表，从 `a1001912` 起编号。

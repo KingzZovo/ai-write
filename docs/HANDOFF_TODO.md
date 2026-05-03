@@ -74,3 +74,19 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 - [x] PR-STY1 style v9 节奏/留白/信息密度 directives（`f3e9e55`）
 - [ ] **下一步**：则使用 PID `310c1f9a` 清 30 章 + chapter outline 后重跑 30 章全流程，贴朱雀 AI 检测对比 baseline 12.04% / 42.21% / 45.75%。
 - [ ] **后动工**：开分支 `feat/neo4j-batch1` 走 PR-NEO1（道具） / PR-NEO2（阵营事件） / PR-NEO3（时间） / PR-NEO4（context_pack/critic 消费）。
+
+## feat/neo4j-batch1 — PR-NEO1~NEO4 v2.0 批次 已 commit（2026-05-03，未 push）
+
+HEAD = `fe01405`。详情看 `docs/PROGRESS.md` 同日条目。
+
+- [x] PR-NEO1 道具节点+持有/转移事件（`fa82700`）
+- [x] PR-NEO2 阵营事件+对立窗口（`932831a`）
+- [x] PR-NEO3 时间锚点+章节绑定（`6d21591`）
+- [x] PR-NEO4 ContextPack 注入+critic item_names/chapter_idx 通线（`fe01405`）
+- [x] alembic 链推进至 `a1001911`，COMPILE_OK 全过
+- [ ] **下一步（任务 A 重跑时一并验证）**：
+  - [ ] 用 PID `310c1f9a` 或新 PID 跑 30 章全流程，确认每章 entity 抽取后 PG 三对新表（`items` / `item_events` / `faction_events` / `faction_event_orgs` / `faction_oppositions` / `time_anchors` / `chapter_time_anchors`）有 row count > 0
+  - [ ] 直接 print 一次 ContextPack.to_system_prompt() 验证三新块（「当前道具持有」 / 「阵营动态」 / 「时间锚点 v2」）出现
+  - [ ] 校验 critic_reports 中 `consistency:item_missing` / `consistency:time_reversal` / `consistency:geo_jump` issue 出现率（>0 即说明 checker 不再 NOOP）
+  - [ ] 朱雀 AI% 与 baseline 12.04% / 42.21% / 45.75% 对比
+- [ ] **后续 PR-NEO5（不在本批）**：三个 checker severity 校准 + 单测；ContextPack 三新块的 token-budget 截断；recent_events 排序优化（按相关性而非纯时间倒序）。
