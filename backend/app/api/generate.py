@@ -923,7 +923,58 @@ async def generate_outline(
                         await save_db.refresh(outline)
                         # v1.8.1: persistence actually committed; record success.
                         _inc_chapter_auto_save("outline", "success", "ok")
-                        yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id)})}\n\n"
+                        # PR-OL13: write back parsed chapter title to Chapter row
+                        # so we replace the "第N章" placeholder with the planned name.
+                        _written_title: str | None = None
+                        if req.level == "chapter" and req.chapter_idx:
+                            try:
+                                from app.services.outline_generator import OutlineGenerator as _OG
+                                _parsed = _OG()._parse_json(full_text)
+                                if isinstance(_parsed, dict) and not _parsed.get("_parse_error"):
+                                    _t = _parsed.get("title")
+                                    if isinstance(_t, str):
+                                        _t = _t.strip()
+                                        # Reject placeholder patterns; require
+                                        # a substantive 2-30 char chinese title.
+                                        import re as _re_pr_ol13
+                                        if (
+                                            2 <= len(_t) <= 30
+                                            and not _re_pr_ol13.fullmatch(r"第\d+章", _t)
+                                            and not _re_pr_ol13.fullmatch(r"\d+", _t)
+                                        ):
+                                            from app.models.project import Volume as _Vol2, Chapter as _Ch2
+                                            _vol_idx2 = None
+                                            if isinstance(volume_outline, dict):
+                                                try:
+                                                    _vol_idx2 = int(volume_outline.get("volume_idx") or 0) or None
+                                                except (TypeError, ValueError):
+                                                    _vol_idx2 = None
+                                            if _vol_idx2:
+                                                _vq = await save_db.execute(
+                                                    select(_Vol2).where(
+                                                        _Vol2.project_id == req.project_id,
+                                                        _Vol2.volume_idx == _vol_idx2,
+                                                    )
+                                                )
+                                                _v2 = _vq.scalar_one_or_none()
+                                                if _v2 is not None:
+                                                    _cq = await save_db.execute(
+                                                        select(_Ch2).where(
+                                                            _Ch2.volume_id == _v2.id,
+                                                            _Ch2.chapter_idx == int(req.chapter_idx),
+                                                        )
+                                                    )
+                                                    _ch2 = _cq.scalar_one_or_none()
+                                                    if _ch2 is not None and (_ch2.title or "").strip() != _t:
+                                                        _ch2.title = _t
+                                                        await save_db.commit()
+                                                        _written_title = _t
+                            except Exception as _title_err:
+                                logger.warning("PR-OL13 chapter title write-back failed: %s", _title_err)
+                        if _written_title:
+                            yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id), 'chapter_title': _written_title}, ensure_ascii=False)}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id)})}\n\n"
                 except Exception as save_err:
                     # v1.8.1 Bug L: do NOT silently swallow (parity with chapter path).
                     logger.error(
