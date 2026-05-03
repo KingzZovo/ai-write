@@ -271,6 +271,14 @@ export default function DesktopWorkspace() {
     }
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // PR-FIX-WIZARD-LOCK: 安全纲 - 一旦 volumes 已存在，永远不该停留在 wizard。
+  // 防止旧 chunk JS / 差异 init 分支 / state race 导致错误退回引导。
+  useEffect(() => {
+    if (volumes.length > 0 && activeView === 'wizard') {
+      setActiveView('editor')
+    }
+  }, [volumes.length, activeView])
+
   // ----------------------------------------------------------------
   // Outline generation (SSE)
   // ----------------------------------------------------------------
