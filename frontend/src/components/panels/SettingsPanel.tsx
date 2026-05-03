@@ -24,7 +24,7 @@ interface WorldRule {
 }
 
 interface CharResp { characters?: Character[]; total?: number }
-interface RuleResp { rules?: WorldRule[]; total?: number }
+interface RuleResp { rules?: WorldRule[]; world_rules?: WorldRule[]; total?: number }
 
 interface SettingsPanelProps { projectId: string }
 
@@ -50,7 +50,7 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
     if (!projectId) return
     try {
       const data = await apiFetch<WorldRule[] | RuleResp>(`/api/projects/${projectId}/world-rules`)
-      const arr = Array.isArray(data) ? data : (data.rules || [])
+      const arr = Array.isArray(data) ? data : (data.world_rules || data.rules || [])
       setWorldRules(arr)
     } catch { setWorldRules([]) }
   }
