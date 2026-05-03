@@ -693,6 +693,31 @@ async def generate_outline(
             if vol_ol:
                 volume_outline = vol_ol.content_json or {}
 
+    # PR-OL10: compute scale (n_volumes / chapters_per_volume / chapter_words)
+    # from the project's target_word_count + settings_json so prompts inject
+    # hard numeric constraints instead of free-form "2-8 卷".
+    project_scale: dict | None = None
+    if req.project_id:
+        try:
+            from app.services.outline_generator import compute_scale
+            from app.models.project import Project as _Project
+            _proj = await db.get(_Project, req.project_id)
+            if _proj is not None:
+                _twc = int(_proj.target_word_count or 0)
+                _settings = _proj.settings_json or {}
+                if not isinstance(_settings, dict):
+                    _settings = {}
+                project_scale = compute_scale(
+                    _twc,
+                    chapter_words=int(_settings.get("target_chapter_words") or 4000),
+                    chapters_per_volume_min=int(_settings.get("chapters_per_volume_min") or 100),
+                    chapters_per_volume_max=int(_settings.get("chapters_per_volume_max") or 200),
+                    chapters_per_volume_target=int(_settings.get("chapters_per_volume_target") or 150),
+                )
+        except Exception as _scale_err:
+            logger.warning("PR-OL10 compute_scale failed: %s", _scale_err)
+            project_scale = None
+
     # Resolve style: explicit style_id > auto-resolve
     style_instruction = ""
     if req.style_id:
@@ -751,6 +776,7 @@ async def generate_outline(
                         user_input=enhanced_input,
                         stream=True,
                         staged=True,
+                        scale=project_scale,  # PR-OL10
                     )
                     async for event in stage_iter:
                         if not isinstance(event, dict):
@@ -773,7 +799,8 @@ async def generate_outline(
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 else:
                     async for chunk in await generator.generate_book_outline(
-                        user_input=enhanced_input, stream=True, staged=False
+                        user_input=enhanced_input, stream=True, staged=False,
+                        scale=project_scale,  # PR-OL10
                     ):
                         collected_text.append(chunk)
                         yield f"data: {json.dumps({'text': chunk})}\n\n"
