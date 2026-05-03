@@ -104,6 +104,25 @@ NAMING_DIRECTIVE: str = (
     "· 同一器物/术语在本章中只用一个正名，不要多名交替。\n"
 )
 
+# ---------------------------------------------------------------
+# PR-STY1 — style v9 节奏 / 留白 / 信息密度 directives.
+# ---------------------------------------------------------------
+# Each entry is rendered as a bullet under 『创作指导』 in the
+# generation prompt. Keep them imperative + measurable so the model
+# can self-check; long prose is wasted tokens.
+STYLE_V9_DIRECTIVES: list[str] = [
+    "【PR-STY1 节奏】本章开头不要检讨上章、不要总起背景；\n"
+    "　　从具体动作、感官鑲点或对话进入，头三句不出现人名可以。",
+    "【PR-STY1 留白】段落长短交错：每 6-8 个长段必须出现一次 1-2 句的短段\n"
+    "　　（如人物心跳、自言自语、外部闪现），避免从头到尾均匀长段带来的 AI 调。",
+    "【PR-STY1 信息密度】每 200-300 字推进一个新 beat（动作、冲突、揭露）；\n"
+    "　　不可连续 3 个段落仅描写心理/环境/类似公式表达。",
+    "【PR-STY1 句式】避免连续三句以上「他/她/主角名 + 动词」平补句型；\n"
+    "　　可穿插环境备忘、人物互动、心理独白。",
+    "【PR-STY1 在场】主角出场必须被环境迫近一次（被看、被听、被接触、被闻到），\n"
+    "　　不要全程以上帝视角描述。",
+]
+
 
 class AntiAIChecker(BaseChecker):
     """AI writing trace detection.

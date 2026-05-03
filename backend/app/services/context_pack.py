@@ -541,6 +541,13 @@ class ContextPackBuilder:
         except Exception as _ai1_err:
             logger.debug("PR-AI1 naming directive injection skipped: %s", _ai1_err)
 
+        # PR-STY1: style v9 节奏/留白/信息密度 directives.
+        try:
+            from app.services.checkers.anti_ai_checker import STYLE_V9_DIRECTIVES
+            pack.writing_guidance.extend(STYLE_V9_DIRECTIVES)
+        except Exception as _sty1_err:
+            logger.debug("PR-STY1 style v9 directive injection skipped: %s", _sty1_err)
+
         # v0.9: clear the invalidation flag after a successful rebuild so
         # subsequent builds can hit any downstream cache again.
         if cache_was_invalidated:
