@@ -13,6 +13,7 @@ Neo4j node types:
 - (:WorldRule {id, project_id, category, text})
 - (:Foreshadow {id, project_id, type, description, planted_chapter, resolve_conditions_json, resolution_blueprint_json, narrative_proximity, status, resolved_chapter})
 - (:Item {id, project_id, name, kind, first_owner})    # PR-NEO1 (v2.0)
+- (:FactionEvent {id, project_id, kind, chapter, summary})  # PR-NEO2 (v2.0)
 
 Relationship types:
 - (:Character)-[:HAS_STATE]->(:CharacterState)
@@ -22,6 +23,8 @@ Relationship types:
 - (:Character)-[:HAS_ITEM {chapter_start, chapter_end}]->(:Item)        # PR-NEO1 (v2.0)
 - (:Character)-[:USES_ITEM {chapter}]->(:Item)                          # PR-NEO1 (v2.0)
 - (:Character)-[:TRANSFER_ITEM {chapter, to_character}]->(:Item)        # PR-NEO1 (v2.0)
+- (:Organization)-[:INVOLVED_IN]->(:FactionEvent)                       # PR-NEO2 (v2.0)
+- (:Organization)-[:OPPOSED_BY {chapter_start, chapter_end}]->(:Organization)  # PR-NEO2 (v2.0)
 """
 
 from __future__ import annotations
@@ -104,6 +107,12 @@ ENTITY_EXTRACTION_PROMPT = """\
   ],
   "item_transfers": [
     {"item": "道具名", "from": "原持有者", "to": "新持有者", "reason": "赠送/夺取/遗失..."}
+  ],
+  "faction_events": [
+    {"kind": "战斗/同盟/联姻/佚裂/驱逐", "orgs": ["势力一", "势力二"], "summary": "事件一句话"}
+  ],
+  "faction_oppositions": [
+    {"source": "势力一", "target": "势力二", "action": "opens|closes", "reason": "可选"}
   ]
 }
 
@@ -188,6 +197,18 @@ class EntityTimelineService:
                 # PR-NEO1 (v2.0): Item index
                 await session.run(
                     "CREATE INDEX IF NOT EXISTS FOR (i:Item) ON (i.project_id)"
+                )
+                # PR-NEO2 (v2.0): FactionEvent + faction relationships.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (fe:FactionEvent) REQUIRE (fe.project_id, fe.id) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:OPPOSED_BY]-() REQUIRE (r.project_id, r.source_org, r.target_org, r.chapter_start) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE INDEX IF NOT EXISTS FOR (fe:FactionEvent) ON (fe.project_id)"
                 )
                 logger.info("Neo4j graph initialized for project %s", project_id)
         except Exception as e:
@@ -730,6 +751,108 @@ class EntityTimelineService:
             )
 
     # ------------------------------------------------------------------
+    # PR-NEO2 (v2.0): Faction event helpers
+    # ------------------------------------------------------------------
+
+    async def _ensure_faction_event(
+        self,
+        project_id: str,
+        kind: str,
+        chapter_idx: int,
+        summary: str,
+    ) -> str | None:
+        """MERGE a (:FactionEvent) keyed by (project_id, kind, chapter, summary).
+
+        Returns the event id, or None on failure / empty inputs.
+        """
+        if not kind or not summary:
+            return None
+        try:
+            eid = str(uuid.uuid4())
+            async with self.driver.session() as session:
+                rec = await session.run(
+                    "MERGE (fe:FactionEvent {"
+                    "  project_id: $pid, kind: $kind, chapter: $cidx, summary: $summary"
+                    "}) "
+                    "ON CREATE SET fe.id = $eid "
+                    "RETURN fe.id AS id",
+                    pid=project_id,
+                    kind=(kind or "").strip(),
+                    cidx=int(chapter_idx),
+                    summary=(summary or "").strip(),
+                    eid=eid,
+                )
+                row = await rec.single()
+                return row["id"] if row else None
+        except Exception as e:
+            logger.warning("Failed to ensure faction event %s: %s", kind, e)
+            return None
+
+    async def _link_org_to_event(
+        self,
+        project_id: str,
+        org_name: str,
+        event_id: str,
+    ) -> None:
+        if not org_name or not event_id:
+            return
+        try:
+            async with self.driver.session() as session:
+                await session.run(
+                    "MERGE (:Organization {project_id: $pid, name: $oname})",
+                    pid=project_id, oname=org_name,
+                )
+                await session.run(
+                    "MATCH (o:Organization {project_id: $pid, name: $oname}), "
+                    "      (fe:FactionEvent {project_id: $pid, id: $eid}) "
+                    "MERGE (o)-[:INVOLVED_IN]->(fe)",
+                    pid=project_id, oname=org_name, eid=event_id,
+                )
+        except Exception as e:
+            logger.warning("Failed to link org %s to event %s: %s", org_name, event_id, e)
+
+    async def _set_faction_opposition(
+        self,
+        project_id: str,
+        source_org: str,
+        target_org: str,
+        chapter_idx: int,
+        action: str = "opens",
+    ) -> None:
+        """Open or close a (:Organization)-[:OPPOSED_BY]->(:Organization) window."""
+        if not source_org or not target_org:
+            return
+        try:
+            async with self.driver.session() as session:
+                # Ensure both orgs exist.
+                for name in (source_org, target_org):
+                    await session.run(
+                        "MERGE (:Organization {project_id: $pid, name: $oname})",
+                        pid=project_id, oname=name,
+                    )
+                if action == "closes":
+                    await session.run(
+                        "MATCH (s:Organization {project_id: $pid, name: $sname})"
+                        "-[r:OPPOSED_BY]->(t:Organization {project_id: $pid, name: $tname}) "
+                        "WHERE r.chapter_end IS NULL "
+                        "SET r.chapter_end = $cidx",
+                        pid=project_id, sname=source_org, tname=target_org, cidx=int(chapter_idx),
+                    )
+                else:
+                    await session.run(
+                        "MATCH (s:Organization {project_id: $pid, name: $sname}), "
+                        "      (t:Organization {project_id: $pid, name: $tname}) "
+                        "MERGE (s)-[r:OPPOSED_BY {project_id: $pid, source_org: $sname, target_org: $tname, chapter_start: $cidx}]->(t) "
+                        "ON CREATE SET r.chapter_end = null",
+                        pid=project_id, sname=source_org, tname=target_org, cidx=int(chapter_idx),
+                    )
+        except Exception as e:
+            logger.warning(
+                "Failed to set faction opposition %s->%s ch=%s action=%s: %s",
+                source_org, target_org, chapter_idx, action, e,
+            )
+
+    # ------------------------------------------------------------------
     # LLM-driven extraction
     # ------------------------------------------------------------------
 
@@ -871,6 +994,31 @@ class EntityTimelineService:
             await self._record_item_transfer(
                 project_id, iname, from_name, to_name, chapter_idx, reason=reason,
             )
+
+        # PR-NEO2 (v2.0): faction events + oppositions.
+        for fev in data.get("faction_events", []):
+            if not isinstance(fev, dict):
+                continue
+            kind = (fev.get("kind") or "").strip()
+            summary = (fev.get("summary") or "").strip()
+            orgs = fev.get("orgs") or []
+            if not kind or not summary:
+                continue
+            eid = await self._ensure_faction_event(project_id, kind, chapter_idx, summary)
+            if not eid:
+                continue
+            for o in orgs:
+                if isinstance(o, str) and o.strip():
+                    await self._link_org_to_event(project_id, o.strip(), eid)
+        for opp in data.get("faction_oppositions", []):
+            if not isinstance(opp, dict):
+                continue
+            src = (opp.get("source") or "").strip()
+            tgt = (opp.get("target") or "").strip()
+            action = (opp.get("action") or "opens").strip().lower()
+            if not src or not tgt:
+                continue
+            await self._set_faction_opposition(project_id, src, tgt, chapter_idx, action=action)
 
         logger.info(
             "Entity extraction complete for project %s chapter %d",

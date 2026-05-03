@@ -698,3 +698,76 @@ class ItemEvent(Base):
     target_name = Column(String(200), default="")
     note = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+# =============================================================================
+# v2.0 (PR-NEO2): Faction events / oppositions (Neo4j -> PG materialization)
+# =============================================================================
+
+
+class FactionEvent(Base):
+    """A faction-level event (battle/treaty/alliance/exile) emitted from Neo4j.
+
+    Multiple organizations can be linked to a single event via FactionEventOrg.
+    """
+
+    __tablename__ = "faction_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # battle / treaty / alliance / exile / merger / split / ...
+    kind = Column(String(20), nullable=False)
+    chapter = Column(Integer, nullable=False)
+    summary = Column(Text, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class FactionEventOrg(Base):
+    """Many-to-many bridge: organizations involved in a faction event."""
+
+    __tablename__ = "faction_event_orgs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("faction_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organization_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class FactionOpposition(Base):
+    """A directed opposition window between two organizations.
+
+    Mirrors Neo4j (:Organization)-[:OPPOSED_BY {chapter_start, chapter_end}]
+    ->(:Organization). chapter_end IS NULL while the opposition is active.
+    """
+
+    __tablename__ = "faction_oppositions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_org_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_org_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)

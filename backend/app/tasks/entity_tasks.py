@@ -73,6 +73,9 @@ async def _materialize_entities_to_postgres(
         CharacterOrganization,
         CharacterState,
         Foreshadow,
+        FactionEvent,        # PR-NEO2 (v2.0)
+        FactionEventOrg,     # PR-NEO2 (v2.0)
+        FactionOpposition,   # PR-NEO2 (v2.0)
         Item,            # PR-NEO1 (v2.0)
         ItemEvent,       # PR-NEO1 (v2.0)
         Location,
@@ -397,6 +400,62 @@ async def _materialize_entities_to_postgres(
                 )
             item_events_neo = sorted(set(item_events_neo))
 
+            # PR-NEO2 (v2.0): faction events + oppositions.
+            fev_result = await session.run(
+                "MATCH (fe:FactionEvent {project_id: $pid}) "
+                "OPTIONAL MATCH (o:Organization)-[:INVOLVED_IN]->(fe) "
+                "RETURN fe.id AS eid, fe.kind AS kind, fe.chapter AS chapter, "
+                "       fe.summary AS summary, collect(DISTINCT o.name) AS orgs",
+                pid=project_id,
+            )
+            faction_events_neo: list[tuple[str, str, int, str, tuple[str, ...]]] = []
+            async for rec in fev_result:
+                if not rec:
+                    continue
+                eid = rec.get("eid")
+                kind = rec.get("kind")
+                chapter = rec.get("chapter")
+                summary = rec.get("summary")
+                orgs = rec.get("orgs") or []
+                if not isinstance(eid, str) or not isinstance(kind, str):
+                    continue
+                if not isinstance(chapter, int):
+                    continue
+                summary_str = summary if isinstance(summary, str) else ""
+                # Validate id is a UUID; skip legacy ones.
+                try:
+                    import uuid as _uuid
+                    eid_norm = str(_uuid.UUID(eid))
+                except Exception:
+                    continue
+                org_tuple = tuple(sorted({o for o in orgs if isinstance(o, str) and o.strip()}))
+                faction_events_neo.append(
+                    (eid_norm, kind.strip(), int(chapter), summary_str.strip(), org_tuple)
+                )
+            faction_events_neo = sorted(set(faction_events_neo))
+
+            opp_result = await session.run(
+                "MATCH (s:Organization {project_id: $pid})-[r:OPPOSED_BY]->(t:Organization {project_id: $pid}) "
+                "RETURN s.name AS sname, t.name AS tname, r.chapter_start AS cs, r.chapter_end AS ce",
+                pid=project_id,
+            )
+            faction_oppositions_neo: list[tuple[str, str, int, int | None]] = []
+            async for rec in opp_result:
+                if not rec:
+                    continue
+                sname = rec.get("sname")
+                tname = rec.get("tname")
+                cs = rec.get("cs")
+                ce = rec.get("ce")
+                if not isinstance(sname, str) or not isinstance(tname, str):
+                    continue
+                if not isinstance(cs, int):
+                    continue
+                faction_oppositions_neo.append(
+                    (sname.strip(), tname.strip(), int(cs), int(ce) if isinstance(ce, int) else None)
+                )
+            faction_oppositions_neo = sorted(set(faction_oppositions_neo))
+
         created_chars = 0
         created_rels = 0
         created_rules = 0
@@ -410,6 +469,9 @@ async def _materialize_entities_to_postgres(
         skipped_cstates_unchanged = 0
         created_items = 0           # PR-NEO1 (v2.0)
         created_item_events = 0     # PR-NEO1 (v2.0)
+        created_faction_events = 0     # PR-NEO2 (v2.0)
+        created_faction_event_orgs = 0 # PR-NEO2 (v2.0)
+        created_faction_oppositions = 0 # PR-NEO2 (v2.0)
 
         async with async_session_factory() as db:
             if char_names:
@@ -810,6 +872,97 @@ async def _materialize_entities_to_postgres(
                     result = await db.execute(stmt)
                     created_item_events += int(getattr(result, "rowcount", 0) or 0)
 
+            # PR-NEO2 (v2.0): faction events + oppositions upsert.
+            if faction_events_neo:
+                fev_rows = []
+                for (eid, kind, chapter, summary, _orgs) in faction_events_neo:
+                    fev_rows.append({
+                        "id": eid,
+                        "project_id": project_id,
+                        "kind": kind,
+                        "chapter": chapter,
+                        "summary": summary,
+                    })
+                stmt = insert(FactionEvent).values(fev_rows)
+                stmt = stmt.on_conflict_do_nothing(
+                    index_elements=[FactionEvent.id],
+                )
+                result = await db.execute(stmt)
+                created_faction_events += int(getattr(result, "rowcount", 0) or 0)
+
+                # Link organizations.
+                org_names_in_events = {
+                    o
+                    for (_eid, _k, _c, _s, orgs) in faction_events_neo
+                    for o in orgs
+                }
+                if org_names_in_events:
+                    org_rows_db = await db.execute(
+                        select(Organization).where(
+                            Organization.project_id == project_id,
+                            Organization.name.in_(list(org_names_in_events)),
+                        )
+                    )
+                    org_id_by_name = {
+                        o.name: str(o.id)
+                        for o in org_rows_db.scalars().all()
+                    }
+                    feo_rows = []
+                    for (eid, _k, _c, _s, orgs) in faction_events_neo:
+                        for oname in orgs:
+                            oid = org_id_by_name.get(oname)
+                            if not oid:
+                                continue
+                            feo_rows.append({
+                                "event_id": eid,
+                                "organization_id": oid,
+                            })
+                    if feo_rows:
+                        stmt = insert(FactionEventOrg).values(feo_rows)
+                        stmt = stmt.on_conflict_do_nothing(constraint="uq_faction_event_orgs_key")
+                        result = await db.execute(stmt)
+                        created_faction_event_orgs += int(getattr(result, "rowcount", 0) or 0)
+
+            if faction_oppositions_neo:
+                opp_org_names = {
+                    n
+                    for (s, t, _cs, _ce) in faction_oppositions_neo
+                    for n in (s, t)
+                }
+                opp_org_rows = await db.execute(
+                    select(Organization).where(
+                        Organization.project_id == project_id,
+                        Organization.name.in_(list(opp_org_names)),
+                    )
+                )
+                opp_org_id_by_name = {
+                    o.name: str(o.id)
+                    for o in opp_org_rows.scalars().all()
+                }
+                opp_rows = []
+                for (sname, tname, cs, ce) in faction_oppositions_neo:
+                    sid = opp_org_id_by_name.get(sname)
+                    tid = opp_org_id_by_name.get(tname)
+                    if not sid or not tid:
+                        continue
+                    opp_rows.append({
+                        "project_id": project_id,
+                        "source_org_id": sid,
+                        "target_org_id": tid,
+                        "chapter_start": cs,
+                        "chapter_end": ce,
+                    })
+                if opp_rows:
+                    stmt = insert(FactionOpposition).values(opp_rows)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_faction_oppositions_key",
+                        set_={
+                            "chapter_end": stmt.excluded.chapter_end,
+                        },
+                    )
+                    result = await db.execute(stmt)
+                    created_faction_oppositions += int(getattr(result, "rowcount", 0) or 0)
+
             try:
                 await db.commit()
             except Exception:
@@ -868,6 +1021,11 @@ async def _materialize_entities_to_postgres(
             "items_seen": len(item_meta),                   # PR-NEO1
             "item_events_created": created_item_events,     # PR-NEO1
             "item_events_seen": len(item_events_neo),       # PR-NEO1
+            "faction_events_created": created_faction_events,            # PR-NEO2
+            "faction_events_seen": len(faction_events_neo),              # PR-NEO2
+            "faction_event_orgs_created": created_faction_event_orgs,    # PR-NEO2
+            "faction_oppositions_created": created_faction_oppositions,  # PR-NEO2
+            "faction_oppositions_seen": len(faction_oppositions_neo),    # PR-NEO2
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
@@ -903,6 +1061,11 @@ async def _materialize_entities_to_postgres(
             "items_seen": 0,                   # PR-NEO1
             "item_events_created": 0,          # PR-NEO1
             "item_events_seen": 0,             # PR-NEO1
+            "faction_events_created": 0,           # PR-NEO2
+            "faction_events_seen": 0,              # PR-NEO2
+            "faction_event_orgs_created": 0,       # PR-NEO2
+            "faction_oppositions_created": 0,      # PR-NEO2
+            "faction_oppositions_seen": 0,         # PR-NEO2
         }
 
 
