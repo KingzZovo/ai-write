@@ -38,12 +38,13 @@ class ChapterResponse(BaseModel):
     volume_id: UUID
     title: str
     chapter_idx: int
-    outline_json: dict
-    content_text: str
-    word_count: int
+    # PR-FIX-CHAPTER-422: tolerate NULL columns (legacy rows from V2 generation)
+    outline_json: dict | None = None
+    content_text: str | None = ""
+    word_count: int | None = 0
     status: str
-    summary: str | None
-    target_word_count: int = 50000
+    summary: str | None = None
+    target_word_count: int | None = 50000
 
     model_config = {"from_attributes": True}
 
