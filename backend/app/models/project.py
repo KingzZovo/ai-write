@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Column,
     DateTime,
     Float,
@@ -770,4 +771,55 @@ class FactionOpposition(Base):
     )
     chapter_start = Column(Integer, nullable=False)
     chapter_end = Column(Integer)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+# =============================================================================
+# v2.0 (PR-NEO3): Time anchors + chapter linkage (Neo4j -> PG materialization)
+# =============================================================================
+
+
+class TimeAnchor(Base):
+    """A reusable time anchor (era / festival / anniversary / day_offset / absolute).
+
+    Mirrors Neo4j (:Time {project_id, label, kind, abs_value}) nodes.
+    """
+
+    __tablename__ = "time_anchors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    label = Column(String(200), nullable=False)
+    # era / festival / anniversary / day_offset / absolute / relative
+    kind = Column(String(40), nullable=False)
+    abs_value = Column(BigInteger)  # optional numeric value (epoch / day-count)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class ChapterTimeAnchor(Base):
+    """Per-chapter linkage between a chapter (by chapter_idx) and a TimeAnchor.
+
+    Mirrors Neo4j (:Chapter)-[:OCCURS_AT {precision, offset_value, anchor_label}]
+    ->(:Time).
+    """
+
+    __tablename__ = "chapter_time_anchors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_idx = Column(Integer, nullable=False)
+    time_anchor_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("time_anchors.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    precision = Column(String(20), default="")  # day / hour / season / vague
+    offset_value = Column(Integer)               # +N days / hours from anchor
+    anchor_label = Column(String(200), default="")
     created_at = Column(DateTime(timezone=True), default=_utcnow)

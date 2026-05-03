@@ -73,6 +73,7 @@ async def _materialize_entities_to_postgres(
         CharacterOrganization,
         CharacterState,
         Foreshadow,
+        ChapterTimeAnchor,   # PR-NEO3 (v2.0)
         FactionEvent,        # PR-NEO2 (v2.0)
         FactionEventOrg,     # PR-NEO2 (v2.0)
         FactionOpposition,   # PR-NEO2 (v2.0)
@@ -81,6 +82,7 @@ async def _materialize_entities_to_postgres(
         Location,
         Organization,
         Relationship,
+        TimeAnchor,          # PR-NEO3 (v2.0)
         WorldRule,
     )
     from app.observability.metrics import ENTITY_PG_MATERIALIZE_TOTAL
@@ -456,6 +458,63 @@ async def _materialize_entities_to_postgres(
                 )
             faction_oppositions_neo = sorted(set(faction_oppositions_neo))
 
+            # PR-NEO3 (v2.0): time anchors + chapter linkages.
+            time_result = await session.run(
+                "MATCH (t:Time {project_id: $pid}) "
+                "RETURN t.id AS tid, t.label AS label, t.kind AS kind, t.abs_value AS abs_value",
+                pid=project_id,
+            )
+            time_anchors_neo: list[tuple[str, str, str, int | None]] = []
+            async for rec in time_result:
+                if not rec:
+                    continue
+                tid = rec.get("tid")
+                label = rec.get("label")
+                kind = rec.get("kind")
+                abs_value = rec.get("abs_value")
+                if not isinstance(tid, str) or not isinstance(label, str) or not isinstance(kind, str):
+                    continue
+                if not label.strip() or not kind.strip():
+                    continue
+                try:
+                    import uuid as _uuid
+                    tid_norm = str(_uuid.UUID(tid))
+                except Exception:
+                    continue
+                av = int(abs_value) if isinstance(abs_value, int) else None
+                time_anchors_neo.append((tid_norm, label.strip(), kind.strip(), av))
+            time_anchors_neo = sorted(set(time_anchors_neo))
+
+            cta_result = await session.run(
+                "MATCH (ch:Chapter {project_id: $pid})-[r:OCCURS_AT]->(t:Time {project_id: $pid}) "
+                "RETURN ch.chapter_idx AS cidx, t.label AS label, t.kind AS kind, "
+                "       r.precision AS prec, r.offset_value AS off, r.anchor_label AS anchor",
+                pid=project_id,
+            )
+            chapter_time_neo: list[tuple[int, str, str, str, int | None, str]] = []
+            async for rec in cta_result:
+                if not rec:
+                    continue
+                cidx = rec.get("cidx")
+                label = rec.get("label")
+                kind = rec.get("kind")
+                prec = rec.get("prec")
+                off = rec.get("off")
+                anchor = rec.get("anchor")
+                if not isinstance(cidx, int) or not isinstance(label, str) or not isinstance(kind, str):
+                    continue
+                chapter_time_neo.append(
+                    (
+                        int(cidx),
+                        label.strip(),
+                        kind.strip(),
+                        prec.strip() if isinstance(prec, str) else "",
+                        int(off) if isinstance(off, int) else None,
+                        anchor.strip() if isinstance(anchor, str) else "",
+                    )
+                )
+            chapter_time_neo = sorted(set(chapter_time_neo))
+
         created_chars = 0
         created_rels = 0
         created_rules = 0
@@ -472,6 +531,8 @@ async def _materialize_entities_to_postgres(
         created_faction_events = 0     # PR-NEO2 (v2.0)
         created_faction_event_orgs = 0 # PR-NEO2 (v2.0)
         created_faction_oppositions = 0 # PR-NEO2 (v2.0)
+        created_time_anchors = 0       # PR-NEO3 (v2.0)
+        created_chapter_time = 0       # PR-NEO3 (v2.0)
 
         async with async_session_factory() as db:
             if char_names:
@@ -963,6 +1024,67 @@ async def _materialize_entities_to_postgres(
                     result = await db.execute(stmt)
                     created_faction_oppositions += int(getattr(result, "rowcount", 0) or 0)
 
+            # PR-NEO3 (v2.0): time anchors upsert.
+            if time_anchors_neo:
+                ta_rows = []
+                for (tid, label, kind, av) in time_anchors_neo:
+                    ta_rows.append({
+                        "id": tid,
+                        "project_id": project_id,
+                        "label": label,
+                        "kind": kind,
+                        "abs_value": av,
+                    })
+                stmt = insert(TimeAnchor).values(ta_rows)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_time_anchors_key",
+                    set_={
+                        "abs_value": stmt.excluded.abs_value,
+                    },
+                )
+                result = await db.execute(stmt)
+                created_time_anchors += int(getattr(result, "rowcount", 0) or 0)
+
+            # Build (label, kind) -> id lookup for chapter linkages.
+            ta_id_by_lk: dict[tuple[str, str], str] = {}
+            if time_anchors_neo:
+                lk_pairs = [(label, kind) for (_tid, label, kind, _av) in time_anchors_neo]
+                ta_db_rows = await db.execute(
+                    select(TimeAnchor).where(
+                        TimeAnchor.project_id == project_id,
+                        TimeAnchor.label.in_([p[0] for p in lk_pairs]),
+                    )
+                )
+                for ta in ta_db_rows.scalars().all():
+                    ta_id_by_lk[(ta.label, ta.kind)] = str(ta.id)
+
+            if chapter_time_neo and ta_id_by_lk:
+                cta_rows = []
+                for (cidx, label, kind, prec, off, anchor_label) in chapter_time_neo:
+                    ta_id = ta_id_by_lk.get((label, kind))
+                    if not ta_id:
+                        continue
+                    cta_rows.append({
+                        "project_id": project_id,
+                        "chapter_idx": cidx,
+                        "time_anchor_id": ta_id,
+                        "precision": prec,
+                        "offset_value": off,
+                        "anchor_label": anchor_label,
+                    })
+                if cta_rows:
+                    stmt = insert(ChapterTimeAnchor).values(cta_rows)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_chapter_time_anchors_key",
+                        set_={
+                            "precision": stmt.excluded.precision,
+                            "offset_value": stmt.excluded.offset_value,
+                            "anchor_label": stmt.excluded.anchor_label,
+                        },
+                    )
+                    result = await db.execute(stmt)
+                    created_chapter_time += int(getattr(result, "rowcount", 0) or 0)
+
             try:
                 await db.commit()
             except Exception:
@@ -1026,6 +1148,10 @@ async def _materialize_entities_to_postgres(
             "faction_event_orgs_created": created_faction_event_orgs,    # PR-NEO2
             "faction_oppositions_created": created_faction_oppositions,  # PR-NEO2
             "faction_oppositions_seen": len(faction_oppositions_neo),    # PR-NEO2
+            "time_anchors_created": created_time_anchors,                # PR-NEO3
+            "time_anchors_seen": len(time_anchors_neo),                  # PR-NEO3
+            "chapter_time_created": created_chapter_time,                # PR-NEO3
+            "chapter_time_seen": len(chapter_time_neo),                  # PR-NEO3
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
@@ -1066,6 +1192,10 @@ async def _materialize_entities_to_postgres(
             "faction_event_orgs_created": 0,       # PR-NEO2
             "faction_oppositions_created": 0,      # PR-NEO2
             "faction_oppositions_seen": 0,         # PR-NEO2
+            "time_anchors_created": 0,             # PR-NEO3
+            "time_anchors_seen": 0,                # PR-NEO3
+            "chapter_time_created": 0,             # PR-NEO3
+            "chapter_time_seen": 0,                # PR-NEO3
         }
 
 

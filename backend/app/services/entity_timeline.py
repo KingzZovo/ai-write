@@ -14,6 +14,8 @@ Neo4j node types:
 - (:Foreshadow {id, project_id, type, description, planted_chapter, resolve_conditions_json, resolution_blueprint_json, narrative_proximity, status, resolved_chapter})
 - (:Item {id, project_id, name, kind, first_owner})    # PR-NEO1 (v2.0)
 - (:FactionEvent {id, project_id, kind, chapter, summary})  # PR-NEO2 (v2.0)
+- (:Time {id, project_id, label, kind, abs_value})           # PR-NEO3 (v2.0)
+- (:Chapter {project_id, chapter_idx})                       # PR-NEO3 (v2.0) (linkage node only)
 
 Relationship types:
 - (:Character)-[:HAS_STATE]->(:CharacterState)
@@ -25,6 +27,7 @@ Relationship types:
 - (:Character)-[:TRANSFER_ITEM {chapter, to_character}]->(:Item)        # PR-NEO1 (v2.0)
 - (:Organization)-[:INVOLVED_IN]->(:FactionEvent)                       # PR-NEO2 (v2.0)
 - (:Organization)-[:OPPOSED_BY {chapter_start, chapter_end}]->(:Organization)  # PR-NEO2 (v2.0)
+- (:Chapter)-[:OCCURS_AT {precision, offset_value, anchor_label}]->(:Time)     # PR-NEO3 (v2.0)
 """
 
 from __future__ import annotations
@@ -113,6 +116,9 @@ ENTITY_EXTRACTION_PROMPT = """\
   ],
   "faction_oppositions": [
     {"source": "势力一", "target": "势力二", "action": "opens|closes", "reason": "可选"}
+  ],
+  "time_anchors": [
+    {"label": "争鸣农历十年二月/中秋/三千年后/纪元一万年", "kind": "era|festival|anniversary|day_offset|absolute|relative", "precision": "day|hour|season|vague", "offset_value": 0, "anchor_label": "可选: 参考错位错"}
   ]
 }
 
@@ -209,6 +215,22 @@ class EntityTimelineService:
                 )
                 await session.run(
                     "CREATE INDEX IF NOT EXISTS FOR (fe:FactionEvent) ON (fe.project_id)"
+                )
+                # PR-NEO3 (v2.0): Time anchors + chapter linkage.
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (t:Time) REQUIRE (t.project_id, t.label, t.kind) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (ch:Chapter) REQUIRE (ch.project_id, ch.chapter_idx) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:OCCURS_AT]-() REQUIRE (r.project_id, r.chapter_idx, r.time_label, r.time_kind) IS UNIQUE"
+                )
+                await session.run(
+                    "CREATE INDEX IF NOT EXISTS FOR (t:Time) ON (t.project_id)"
                 )
                 logger.info("Neo4j graph initialized for project %s", project_id)
         except Exception as e:
@@ -853,6 +875,84 @@ class EntityTimelineService:
             )
 
     # ------------------------------------------------------------------
+    # PR-NEO3 (v2.0): Time anchor helpers
+    # ------------------------------------------------------------------
+
+    async def _ensure_time_anchor(
+        self,
+        project_id: str,
+        label: str,
+        kind: str,
+        abs_value: int | None = None,
+    ) -> str | None:
+        """MERGE a (:Time) anchor by (project_id, label, kind). Returns id."""
+        if not label or not kind:
+            return None
+        try:
+            tid = str(uuid.uuid4())
+            async with self.driver.session() as session:
+                rec = await session.run(
+                    "MERGE (t:Time {project_id: $pid, label: $label, kind: $kind}) "
+                    "ON CREATE SET t.id = $tid, t.abs_value = $abs "
+                    "RETURN t.id AS id",
+                    pid=project_id,
+                    label=(label or "").strip(),
+                    kind=(kind or "").strip(),
+                    abs=abs_value,
+                    tid=tid,
+                )
+                row = await rec.single()
+                return row["id"] if row else None
+        except Exception as e:
+            logger.warning("Failed to ensure time anchor %s/%s: %s", label, kind, e)
+            return None
+
+    async def _link_chapter_to_time(
+        self,
+        project_id: str,
+        chapter_idx: int,
+        time_label: str,
+        time_kind: str,
+        precision: str = "",
+        offset_value: int | None = None,
+        anchor_label: str = "",
+    ) -> None:
+        """MERGE a (:Chapter)-[:OCCURS_AT]->(:Time) edge for the given chapter."""
+        if not time_label or not time_kind:
+            return
+        try:
+            async with self.driver.session() as session:
+                # Ensure both endpoints.
+                await session.run(
+                    "MERGE (:Chapter {project_id: $pid, chapter_idx: $cidx})",
+                    pid=project_id, cidx=int(chapter_idx),
+                )
+                await session.run(
+                    "MERGE (:Time {project_id: $pid, label: $label, kind: $kind})",
+                    pid=project_id, label=time_label, kind=time_kind,
+                )
+                # Open the linkage with stable PK fields on the rel itself.
+                await session.run(
+                    "MATCH (ch:Chapter {project_id: $pid, chapter_idx: $cidx}), "
+                    "      (t:Time     {project_id: $pid, label: $label, kind: $kind}) "
+                    "MERGE (ch)-[r:OCCURS_AT {project_id: $pid, chapter_idx: $cidx, time_label: $label, time_kind: $kind}]->(t) "
+                    "ON CREATE SET r.precision = $prec, r.offset_value = $off, r.anchor_label = $anchor "
+                    "ON MATCH SET r.precision = $prec, r.offset_value = $off, r.anchor_label = $anchor",
+                    pid=project_id,
+                    cidx=int(chapter_idx),
+                    label=time_label,
+                    kind=time_kind,
+                    prec=(precision or ""),
+                    off=offset_value,
+                    anchor=(anchor_label or ""),
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to link chapter %s to time %s/%s: %s",
+                chapter_idx, time_label, time_kind, e,
+            )
+
+    # ------------------------------------------------------------------
     # LLM-driven extraction
     # ------------------------------------------------------------------
 
@@ -1019,6 +1119,26 @@ class EntityTimelineService:
             if not src or not tgt:
                 continue
             await self._set_faction_opposition(project_id, src, tgt, chapter_idx, action=action)
+
+        # PR-NEO3 (v2.0): time anchors.
+        for ta in data.get("time_anchors", []):
+            if not isinstance(ta, dict):
+                continue
+            label = (ta.get("label") or "").strip()
+            kind = (ta.get("kind") or "").strip()
+            if not label or not kind:
+                continue
+            precision = (ta.get("precision") or "").strip()
+            offv = ta.get("offset_value")
+            offset_value = int(offv) if isinstance(offv, int) else None
+            anchor_label = (ta.get("anchor_label") or "").strip()
+            absv = ta.get("abs_value")
+            abs_value = int(absv) if isinstance(absv, int) else None
+            await self._ensure_time_anchor(project_id, label, kind, abs_value=abs_value)
+            await self._link_chapter_to_time(
+                project_id, chapter_idx, label, kind,
+                precision=precision, offset_value=offset_value, anchor_label=anchor_label,
+            )
 
         logger.info(
             "Entity extraction complete for project %s chapter %d",
