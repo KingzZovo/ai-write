@@ -12,12 +12,16 @@ Neo4j node types:
 - (:Organization {id, project_id, name})
 - (:WorldRule {id, project_id, category, text})
 - (:Foreshadow {id, project_id, type, description, planted_chapter, resolve_conditions_json, resolution_blueprint_json, narrative_proximity, status, resolved_chapter})
+- (:Item {id, project_id, name, kind, first_owner})    # PR-NEO1 (v2.0)
 
 Relationship types:
 - (:Character)-[:HAS_STATE]->(:CharacterState)
 - (:Character)-[:RELATES_TO {type, chapter_start, chapter_end}]->(:Character)
 - (:Character)-[:AT_LOCATION {chapter_start, chapter_end}]->(:Location)
 - (:Character)-[:MEMBER_OF {chapter_start, chapter_end}]->(:Organization)
+- (:Character)-[:HAS_ITEM {chapter_start, chapter_end}]->(:Item)        # PR-NEO1 (v2.0)
+- (:Character)-[:USES_ITEM {chapter}]->(:Item)                          # PR-NEO1 (v2.0)
+- (:Character)-[:TRANSFER_ITEM {chapter, to_character}]->(:Item)        # PR-NEO1 (v2.0)
 """
 
 from __future__ import annotations
@@ -94,6 +98,12 @@ ENTITY_EXTRACTION_PROMPT = """\
   ],
   "location_changes": [
     {"character": "角色名", "location": "新地点"}
+  ],
+  "items": [
+    {"name": "道具名", "kind": "法器/兵器/信物/医药", "first_owner": "首次持有者(可选)"}
+  ],
+  "item_transfers": [
+    {"item": "道具名", "from": "原持有者", "to": "新持有者", "reason": "赠送/夺取/遗失..."}
   ]
 }
 
@@ -155,6 +165,16 @@ class EntityTimelineService:
                     "CREATE CONSTRAINT IF NOT EXISTS "
                     "FOR (f:Foreshadow) REQUIRE (f.project_id, f.id) IS UNIQUE"
                 )
+                # PR-NEO1 (v2.0): Item nodes + HAS_ITEM uniqueness
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR (i:Item) REQUIRE (i.project_id, i.name) IS UNIQUE"
+                )
+                # HAS_ITEM uniqueness: one ownership window per (item, char, chapter_start).
+                await session.run(
+                    "CREATE CONSTRAINT IF NOT EXISTS "
+                    "FOR ()-[r:HAS_ITEM]-() REQUIRE (r.project_id, r.item_name, r.character_name, r.chapter_start) IS UNIQUE"
+                )
                 # Indexes for fast lookup
                 await session.run(
                     "CREATE INDEX IF NOT EXISTS FOR (c:Character) ON (c.project_id)"
@@ -164,6 +184,10 @@ class EntityTimelineService:
                 )
                 await session.run(
                     "CREATE INDEX IF NOT EXISTS FOR (w:WorldRule) ON (w.project_id)"
+                )
+                # PR-NEO1 (v2.0): Item index
+                await session.run(
+                    "CREATE INDEX IF NOT EXISTS FOR (i:Item) ON (i.project_id)"
                 )
                 logger.info("Neo4j graph initialized for project %s", project_id)
         except Exception as e:
@@ -582,6 +606,130 @@ class EntityTimelineService:
             )
 
     # ------------------------------------------------------------------
+    # PR-NEO1 (v2.0): Item helpers
+    # ------------------------------------------------------------------
+
+    async def _ensure_item(
+        self,
+        project_id: str,
+        name: str,
+        kind: str | None = None,
+        first_owner: str | None = None,
+    ) -> None:
+        """MERGE an :Item node by (project_id, name); set kind/first_owner on create."""
+        if not name or not name.strip():
+            return
+        try:
+            async with self.driver.session() as session:
+                await session.run(
+                    "MERGE (i:Item {project_id: $pid, name: $name}) "
+                    "ON CREATE SET i.id = $iid, i.kind = $kind, i.first_owner = $owner",
+                    pid=project_id,
+                    name=name.strip(),
+                    iid=str(uuid.uuid4()),
+                    kind=(kind or ""),
+                    owner=(first_owner or ""),
+                )
+        except Exception as e:
+            logger.warning("Failed to ensure item %s: %s", name, e)
+
+    async def _set_item_owner(
+        self,
+        project_id: str,
+        item_name: str,
+        owner_name: str,
+        chapter_idx: int,
+    ) -> None:
+        """Open a HAS_ITEM ownership window from chapter_idx; close any prior open window."""
+        if not item_name or not owner_name:
+            return
+        try:
+            async with self.driver.session() as session:
+                # Close prior open ownership of this item (regardless of owner).
+                await session.run(
+                    "MATCH (:Character {project_id: $pid})"
+                    "-[r:HAS_ITEM]->(i:Item {project_id: $pid, name: $iname}) "
+                    "WHERE r.chapter_end IS NULL "
+                    "SET r.chapter_end = $prev",
+                    pid=project_id,
+                    iname=item_name,
+                    prev=max(0, chapter_idx - 1),
+                )
+                # Ensure character node, then open new ownership.
+                await session.run(
+                    "MERGE (:Character {project_id: $pid, name: $cname})",
+                    pid=project_id,
+                    cname=owner_name,
+                )
+                await session.run(
+                    "MATCH (c:Character {project_id: $pid, name: $cname}), "
+                    "      (i:Item      {project_id: $pid, name: $iname}) "
+                    "MERGE (c)-[r:HAS_ITEM {project_id: $pid, item_name: $iname, character_name: $cname, chapter_start: $start}]->(i) "
+                    "ON CREATE SET r.chapter_end = null",
+                    pid=project_id,
+                    cname=owner_name,
+                    iname=item_name,
+                    start=int(chapter_idx),
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to set item owner %s -> %s ch=%s: %s",
+                item_name, owner_name, chapter_idx, e,
+            )
+
+    async def _record_item_transfer(
+        self,
+        project_id: str,
+        item_name: str,
+        from_name: str,
+        to_name: str,
+        chapter_idx: int,
+        reason: str | None = None,
+    ) -> None:
+        """Record a transfer event + close prev ownership + open new ownership.
+
+        Drops a (:Character {from})-[:TRANSFER_ITEM {chapter, to_character}]->(:Item)
+        edge so we keep a permanent log even after the HAS_ITEM window closes.
+        """
+        if not item_name or not to_name:
+            return
+        try:
+            async with self.driver.session() as session:
+                # Ensure both characters + item exist.
+                if from_name:
+                    await session.run(
+                        "MERGE (:Character {project_id: $pid, name: $name})",
+                        pid=project_id, name=from_name,
+                    )
+                await session.run(
+                    "MERGE (:Character {project_id: $pid, name: $name})",
+                    pid=project_id, name=to_name,
+                )
+                # TRANSFER_ITEM event edge from old owner -> item.
+                if from_name:
+                    await session.run(
+                        "MATCH (c:Character {project_id: $pid, name: $cname}), "
+                        "      (i:Item      {project_id: $pid, name: $iname}) "
+                        "CREATE (c)-[:TRANSFER_ITEM {"
+                        "  project_id: $pid, item_name: $iname, from_name: $cname, "
+                        "  to_character: $tname, chapter: $cidx, reason: $reason"
+                        "}]->(i)",
+                        pid=project_id,
+                        cname=from_name,
+                        iname=item_name,
+                        tname=to_name,
+                        cidx=int(chapter_idx),
+                        reason=(reason or ""),
+                    )
+            # Move ownership window to new holder.
+            await self._set_item_owner(project_id, item_name, to_name, chapter_idx)
+        except Exception as e:
+            logger.warning(
+                "Failed to record item transfer %s %s->%s ch=%s: %s",
+                item_name, from_name, to_name, chapter_idx, e,
+            )
+
+    # ------------------------------------------------------------------
     # LLM-driven extraction
     # ------------------------------------------------------------------
 
@@ -696,6 +844,33 @@ class EntityTimelineService:
                 await self._set_character_location(
                     project_id, character, location, chapter_idx
                 )
+
+        # PR-NEO1 (v2.0): process new items + transfers.
+        for item_info in data.get("items", []):
+            if not isinstance(item_info, dict):
+                continue
+            iname = (item_info.get("name") or "").strip()
+            if not iname:
+                continue
+            kind = (item_info.get("kind") or "").strip()
+            owner = (item_info.get("first_owner") or "").strip()
+            await self._ensure_item(project_id, iname, kind=kind, first_owner=owner)
+            if owner:
+                await self.add_character(project_id, owner)
+                await self._set_item_owner(project_id, iname, owner, chapter_idx)
+        for trans in data.get("item_transfers", []):
+            if not isinstance(trans, dict):
+                continue
+            iname = (trans.get("item") or "").strip()
+            from_name = (trans.get("from") or "").strip()
+            to_name = (trans.get("to") or "").strip()
+            reason = (trans.get("reason") or "").strip()
+            if not iname or not to_name:
+                continue
+            await self._ensure_item(project_id, iname)
+            await self._record_item_transfer(
+                project_id, iname, from_name, to_name, chapter_idx, reason=reason,
+            )
 
         logger.info(
             "Entity extraction complete for project %s chapter %d",

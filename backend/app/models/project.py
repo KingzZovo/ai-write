@@ -640,3 +640,61 @@ class ChapterVariant(Base):
     is_winner = Column(Boolean, default=False)
     selected_by_user = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+# =============================================================================
+# v2.0 (PR-NEO1): Items + item events (Neo4j -> PG materialization)
+# =============================================================================
+
+
+class Item(Base):
+    """A narratively-tracked item (props / weapons / tokens / artifacts).
+
+    Source of truth lives in Neo4j (:Item) nodes. This row is the PG
+    projection used by ContextPack and the consistency:item_missing checker.
+    """
+
+    __tablename__ = "items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    # 主型分类：法器 / 兵器 / 信物 / 医药 / 财货 / 其它
+    kind = Column(String(50), default="")
+    first_owner = Column(String(200), default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class ItemEvent(Base):
+    """Per-chapter item event log (has / use / transfer).
+
+    Mirrors Neo4j edges:
+      kind="has":      (:Character {actor_name})-[:HAS_ITEM]->(:Item)
+      kind="use":      (:Character {actor_name})-[:USES_ITEM]->(:Item)
+      kind="transfer": (:Character {actor_name})-[:TRANSFER_ITEM { to:target_name }]->(:Item)
+
+    Uniqueness key (project_id, item_id, chapter_idx, kind, actor_name,
+    target_name) prevents duplicate rows on re-extraction.
+    """
+
+    __tablename__ = "item_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_idx = Column(Integer, nullable=False)
+    kind = Column(String(20), nullable=False)  # has / use / transfer
+    actor_name = Column(String(200), default="")
+    target_name = Column(String(200), default="")
+    note = Column(Text, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)

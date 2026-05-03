@@ -73,6 +73,8 @@ async def _materialize_entities_to_postgres(
         CharacterOrganization,
         CharacterState,
         Foreshadow,
+        Item,            # PR-NEO1 (v2.0)
+        ItemEvent,       # PR-NEO1 (v2.0)
         Location,
         Organization,
         Relationship,
@@ -335,6 +337,66 @@ async def _materialize_entities_to_postgres(
                 )
             cstates = sorted(set(cstates), key=lambda t: (t[0], t[1], t[2] if t[2] is not None else -1, t[3]))
 
+            # PR-NEO1 (v2.0): items + item events.
+            item_result = await session.run(
+                "MATCH (i:Item {project_id: $pid}) "
+                "RETURN i.name AS name, i.kind AS kind, i.first_owner AS first_owner",
+                pid=project_id,
+            )
+            item_meta: list[tuple[str, str, str]] = []
+            async for rec in item_result:
+                n = rec.get("name") if rec else None
+                k = rec.get("kind") if rec else None
+                fo = rec.get("first_owner") if rec else None
+                if not isinstance(n, str) or not n.strip():
+                    continue
+                item_meta.append((n.strip(), (k or "").strip() if isinstance(k, str) else "", (fo or "").strip() if isinstance(fo, str) else ""))
+            item_meta = sorted(set(item_meta))
+
+            # HAS_ITEM events (kind='has') and TRANSFER_ITEM events (kind='transfer').
+            has_item_result = await session.run(
+                "MATCH (c:Character {project_id: $pid})-[r:HAS_ITEM]->(i:Item {project_id: $pid}) "
+                "RETURN c.name AS cname, i.name AS iname, r.chapter_start AS cs",
+                pid=project_id,
+            )
+            item_events_neo: list[tuple[str, str, str, str, int, str]] = []
+            # tuple shape: (kind, item_name, actor_name, target_name, chapter_idx, note)
+            async for rec in has_item_result:
+                cname = rec.get("cname") if rec else None
+                iname = rec.get("iname") if rec else None
+                cs = rec.get("cs") if rec else None
+                if not isinstance(cname, str) or not isinstance(iname, str):
+                    continue
+                if not cname.strip() or not iname.strip() or not isinstance(cs, int):
+                    continue
+                item_events_neo.append(("has", iname.strip(), cname.strip(), "", int(cs), ""))
+            transfer_result = await session.run(
+                "MATCH (c:Character {project_id: $pid})-[r:TRANSFER_ITEM]->(i:Item {project_id: $pid}) "
+                "RETURN c.name AS fname, i.name AS iname, r.to_character AS tname, r.chapter AS cidx, r.reason AS reason",
+                pid=project_id,
+            )
+            async for rec in transfer_result:
+                fname = rec.get("fname") if rec else None
+                iname = rec.get("iname") if rec else None
+                tname = rec.get("tname") if rec else None
+                cidx = rec.get("cidx") if rec else None
+                reason = rec.get("reason") if rec else None
+                if not isinstance(iname, str) or not iname.strip():
+                    continue
+                if not isinstance(cidx, int):
+                    continue
+                item_events_neo.append(
+                    (
+                        "transfer",
+                        iname.strip(),
+                        (fname or "").strip() if isinstance(fname, str) else "",
+                        (tname or "").strip() if isinstance(tname, str) else "",
+                        int(cidx),
+                        (reason or "").strip() if isinstance(reason, str) else "",
+                    )
+                )
+            item_events_neo = sorted(set(item_events_neo))
+
         created_chars = 0
         created_rels = 0
         created_rules = 0
@@ -346,6 +408,8 @@ async def _materialize_entities_to_postgres(
         created_cstates = 0
         skipped_cstates_missing_character = 0
         skipped_cstates_unchanged = 0
+        created_items = 0           # PR-NEO1 (v2.0)
+        created_item_events = 0     # PR-NEO1 (v2.0)
 
         async with async_session_factory() as db:
             if char_names:
@@ -688,6 +752,64 @@ async def _materialize_entities_to_postgres(
                     result = await db.execute(stmt)
                     created_cstates += int(getattr(result, "rowcount", 0) or 0)
 
+            # PR-NEO1 (v2.0): items + item_events upsert.
+            if item_meta:
+                item_rows_payload = [
+                    {
+                        "project_id": project_id,
+                        "name": n,
+                        "kind": k,
+                        "first_owner": fo,
+                    }
+                    for (n, k, fo) in item_meta
+                ]
+                stmt = insert(Item).values(item_rows_payload)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_items_project_name",
+                    set_={
+                        "kind": stmt.excluded.kind,
+                        "first_owner": stmt.excluded.first_owner,
+                    },
+                )
+                result = await db.execute(stmt)
+                created_items += int(getattr(result, "rowcount", 0) or 0)
+
+            # Map item names -> ids for item_events FK.
+            item_id_by_name: dict[str, str] = {}
+            if item_meta:
+                names_only = [n for (n, _, _) in item_meta]
+                item_db_rows = await db.execute(
+                    select(Item).where(
+                        Item.project_id == project_id,
+                        Item.name.in_(names_only),
+                    )
+                )
+                for it in item_db_rows.scalars().all():
+                    item_id_by_name[it.name] = str(it.id)
+
+            if item_events_neo and item_id_by_name:
+                ev_rows: list[dict[str, object]] = []
+                for (kind, iname, actor, target, cidx, note) in item_events_neo:
+                    iid = item_id_by_name.get(iname)
+                    if not iid:
+                        continue
+                    ev_rows.append(
+                        {
+                            "project_id": project_id,
+                            "item_id": iid,
+                            "chapter_idx": int(cidx),
+                            "kind": kind,
+                            "actor_name": actor,
+                            "target_name": target,
+                            "note": note,
+                        }
+                    )
+                if ev_rows:
+                    stmt = insert(ItemEvent).values(ev_rows)
+                    stmt = stmt.on_conflict_do_nothing(constraint="uq_item_events_key")
+                    result = await db.execute(stmt)
+                    created_item_events += int(getattr(result, "rowcount", 0) or 0)
+
             try:
                 await db.commit()
             except Exception:
@@ -695,7 +817,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d orgs=%d/%d member_of=%d/%d foreshadows=%d/%d atlocs=%d/%d cstates=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d orgs=%d/%d member_of=%d/%d foreshadows=%d/%d atlocs=%d/%d cstates=%d/%d items=%d/%d item_events=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -717,6 +839,10 @@ async def _materialize_entities_to_postgres(
             len(at_locs),
             created_cstates,
             len(cstates),
+            created_items,           # PR-NEO1
+            len(item_meta),          # PR-NEO1
+            created_item_events,     # PR-NEO1
+            len(item_events_neo),    # PR-NEO1
         )
         return {
             "chars_created": created_chars,
@@ -738,6 +864,10 @@ async def _materialize_entities_to_postgres(
             "cstates_created": created_cstates,
             "cstates_seen": len(cstates),
             "cstates_skipped_missing_character": skipped_cstates_missing_character,
+            "items_created": created_items,                 # PR-NEO1
+            "items_seen": len(item_meta),                   # PR-NEO1
+            "item_events_created": created_item_events,     # PR-NEO1
+            "item_events_seen": len(item_events_neo),       # PR-NEO1
         }
     except Exception as e:
         ENTITY_PG_MATERIALIZE_TOTAL.labels("failure", e.__class__.__name__).inc()
@@ -769,6 +899,10 @@ async def _materialize_entities_to_postgres(
             "cstates_created": 0,
             "cstates_seen": 0,
             "cstates_skipped_missing_character": 0,
+            "items_created": 0,                # PR-NEO1
+            "items_seen": 0,                   # PR-NEO1
+            "item_events_created": 0,          # PR-NEO1
+            "item_events_seen": 0,             # PR-NEO1
         }
 
 
