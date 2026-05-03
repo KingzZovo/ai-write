@@ -347,3 +347,68 @@ PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh
 - `/tmp/orchestrate_v2.py` `/tmp/orchestrate_v3b.py` `/tmp/build_and_etl.py` `/tmp/probes_v3b.sh`
 - `/tmp/orchestrate_v2_status.json` `/tmp/orchestrate_v3b_status.json` `/tmp/probes_v3b.out`
 - `/tmp/sse_v3b_outline_v2c{1..10}.log` `/tmp/sse_v3b_text_v2c{1..10}.log`
+
+---
+
+## B2 — Phase II 修复（2026-05-03，feat/phase2-fix）
+
+### 触发问题（用户实测，user msg 12 + 13）
+1. 三线平衡显示 ⚠Quest/Fire/Constellation 已 150 章未推进。
+2. 伏笔追踪都是 50%。
+3. 设定集 → 人物 profile 全为空。
+4. 设定集 → 世界规则全无。
+5. 右侧「查看全书/分卷/章节大纲」点击无效。
+6. 第一卷为空，从第二卷开始生成内容。
+7. TOKEN 用量始终为 0。
+8. 全书大纲文本中泄露 `<volume-plan>...</volume-plan>` LLM 控制标签。
+
+### 修复（6 个 commit on feat/phase2-fix，已 push）
+
+| # | Commit | PR | 文件 | 解决症状 |
+|---|---|---|---|---|
+| 1 | `5ab7782` | PR-OL15 + PARSE-VOL | outline_generator.py / generate.py / OutlineTree.tsx / MobileWorkspace.tsx | #6 #8 + 解锁下游结构化数据流 |
+| 2 | `e49a05f` | PR-FACTS-CHAR-PROFILE | outline_to_facts.py | #3 |
+| 3 | `7dbad7c` | PR-USAGE-SYNC | llm_call_logger.py | #7 |
+| 4 | `64743cc` | PR-WORLDRULES-FE | SettingsPanel.tsx | #4 |
+| 5 | `ef06e24` | PR-OUTLINE-BUTTONS | chapters.py | #5（章节大纲按钮）|
+| 6 | `260cbb8` | PR-STRAND-OUTLINE | strand_tracker.py | #1 |
+
+#9 伏笔 50%（user msg 12 第二项）= 「unresolved/total = 当前所有有 setup 但暂未 resolve 的伏笔比例」 → 50% 是符合预期的 mid-stream 比率，不修。
+
+### 关键根因发现（第二轮深探）
+
+- **B2 #1 + #3 共享根因 — 写盘缺陷**：`generate.py:943` 的 `_content_json = {"raw_text": full_text}` 仅书级提取 `volume_plan`，卷/章级别**从未把 LLM JSON 解析出来**，导致 vol2 outline content_json 实测 `keys=['raw_text']`、`new_characters count=0`，下游所有 ETL 即使流程正确也拿不到结构化数据。**PR-OL15 + PARSE-VOL 同时解决了 B2 #6 + #8 + 解锁 #3 + #7 数据链路**。
+- **B2 #5 章节大纲按钮**：根因不是 onClick 失效，是 `lightweight=true` 后端省略 `outline_json` 字段，前端条件 `Boolean(chapter.outline_json)` 永远 false。
+- **B2 #4 世界规则**：根因不是后端缺路由（路由 `/api/projects/{pid}/world-rules` 存在），是前端 `RuleResp { rules?: ... }` 字段名不匹配（后端返回 `world_rules`）。
+
+### 实测验证（V2 PID）
+
+```
+=== before B2 ===
+characters=47        with_profile_json=0  ← #3
+world_rules=83       (后端有数据)        ← #4 字段名错
+foreshadows=450
+organizations=36
+items=49
+outlines vol2 keys=['raw_text']         ← B2 写盘缺陷证据
+outlines tag occurrences <volume-plan>=1
+
+=== after B2 (代码 patch + SQL 数据回填) ===
+characters=66        with_profile_json=14 ← +14 非空 ✅
+world_rules=111      (前端可正确渲染 ✅)
+foreshadows=463      ← +13
+outlines vol2 keys 补足 chapter_summaries / new_characters / world_rules / volume_idx ✅
+outlines tag occurrences <volume-plan>=0  ✅
+```
+
+### 数据补救
+
+- **SQL/Python 一次性脚本**（`/tmp/p2_clean_outlines.py`）：14 行 outline 中 1 行 strip volume-plan tag、13 行从 raw_text 反向解析回填 `chapter_summaries / new_characters / world_rules / volume_idx`。
+- **ETL 重跑**：etl_characters / world_rules / foreshadows / organizations / items 依次跑通，profile_json 14 行非空。
+- **vol1 + vol5 SSE 重跑**：后台 nohup 进行中（pid 4065651 / 4065756，约 4-6 min/卷）。完成后 `chapters` 表 v1/v5 各 150 章。
+
+### Follow-up
+
+- 前端代码改动需要重启 Next.js dev server（无 docker 容器，`cd frontend && npm run dev`）或重新 build。
+- 后端已重启，5 个后端 patch 全部生效。
+- 待 vol1/vol5 SSE 跑完，再次跑 ETL，characters 有望追加新角色，foreshadows 也会增长。
