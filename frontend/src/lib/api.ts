@@ -30,8 +30,12 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   if (!(options?.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
+  // PR-FIX-NO-STORE: bypass browser HTTP cache for all /api fetches.
+  // Previously stale 422 / empty chapters responses lingered in browser cache
+  // even after backend was fixed.
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { ...headers, ...options?.headers },
+    cache: 'no-store',
     ...options,
   })
   if (res.status === 401) {
