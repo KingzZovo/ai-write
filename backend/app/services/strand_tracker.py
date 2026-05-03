@@ -195,7 +195,7 @@ class StrandTrackerService:
         try:
             # Get recent chapters
             result = await db.execute(
-                select(Chapter.chapter_idx, Chapter.summary, Chapter.content_text)
+                select(Chapter.chapter_idx, Chapter.summary, Chapter.content_text, Chapter.outline_json)
                 .join(Volume, Chapter.volume_id == Volume.id)
                 .where(
                     Volume.project_id == pid,
@@ -212,8 +212,23 @@ class StrandTrackerService:
             # Analyze each chapter
             analyses: list[StrandAnalysis] = []
             for row in chapters:
-                # Prefer summary, fall back to content
-                text = row.summary or (row.content_text or "")[:1000]
+                # PR-STRAND-OUTLINE: when no summary/content, fall back to
+                # outline_json fields (main_progress / side_progress /
+                # foreshadow_state / summary / key_scene) so strand balance
+                # detection works for outline-only chapters too.
+                _oj = row.outline_json or {}
+                if not isinstance(_oj, dict):
+                    _oj = {}
+                _outline_text = " ".join(
+                    str(_oj.get(k) or "").strip()
+                    for k in ("summary", "main_progress", "side_progress",
+                             "foreshadow_state", "key_scene")
+                ).strip()
+                text = (
+                    row.summary
+                    or (row.content_text or "")[:1000]
+                    or _outline_text[:1000]
+                )
                 if not text:
                     continue
                 analysis = self.analyze_text(row.chapter_idx, text)
@@ -262,7 +277,7 @@ class StrandTrackerService:
 
         try:
             query = (
-                select(Chapter.chapter_idx, Chapter.summary, Chapter.content_text)
+                select(Chapter.chapter_idx, Chapter.summary, Chapter.content_text, Chapter.outline_json)
                 .join(Volume, Chapter.volume_id == Volume.id)
                 .where(
                     Volume.project_id == pid,
@@ -279,7 +294,20 @@ class StrandTrackerService:
 
             analyses: list[StrandAnalysis] = []
             for row in chapters:
-                text = row.summary or (row.content_text or "")[:1000]
+                # PR-STRAND-OUTLINE: outline_json fallback
+                _oj = row.outline_json or {}
+                if not isinstance(_oj, dict):
+                    _oj = {}
+                _outline_text = " ".join(
+                    str(_oj.get(k) or "").strip()
+                    for k in ("summary", "main_progress", "side_progress",
+                             "foreshadow_state", "key_scene")
+                ).strip()
+                text = (
+                    row.summary
+                    or (row.content_text or "")[:1000]
+                    or _outline_text[:1000]
+                )
                 analysis = self.analyze_text(row.chapter_idx, text)
                 analyses.append(analysis)
 
