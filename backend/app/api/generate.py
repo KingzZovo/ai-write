@@ -693,6 +693,51 @@ async def generate_outline(
             if vol_ol:
                 volume_outline = vol_ol.content_json or {}
 
+    # PR-OL12: previous-chapter summary + per-chapter breakdown lookup
+    # for the chapter branch only. Both default to empty so existing
+    # behaviour stays intact when DB lookups fail or data is missing.
+    previous_chapter_summary: str = ""
+    chapter_breakdown_entry: dict | None = None
+    if req.level == "chapter" and req.project_id and req.chapter_idx:
+        try:
+            from app.services.outline_generator import extract_chapter_breakdown
+            cbe_map = extract_chapter_breakdown(volume_outline)
+            chapter_breakdown_entry = cbe_map.get(int(req.chapter_idx))
+        except Exception as _cbe_err:
+            logger.warning("PR-OL12 extract_chapter_breakdown failed: %s", _cbe_err)
+        if int(req.chapter_idx) > 1 and req.parent_outline_id:
+            try:
+                # Find the Volume that owns this volume outline so we can
+                # locate Chapter[idx-1] under it. The Outline row does not
+                # FK directly to Volume, so we match by project + idx.
+                from app.models.project import Volume as _Volume, Chapter as _Chapter
+                _vol_idx = None
+                if isinstance(volume_outline, dict):
+                    try:
+                        _vol_idx = int(volume_outline.get("volume_idx") or 0) or None
+                    except (TypeError, ValueError):
+                        _vol_idx = None
+                if _vol_idx:
+                    _vol_q = await db.execute(
+                        select(_Volume).where(
+                            _Volume.project_id == req.project_id,
+                            _Volume.volume_idx == _vol_idx,
+                        )
+                    )
+                    _vol = _vol_q.scalar_one_or_none()
+                    if _vol is not None:
+                        _prev_q = await db.execute(
+                            select(_Chapter).where(
+                                _Chapter.volume_id == _vol.id,
+                                _Chapter.chapter_idx == int(req.chapter_idx) - 1,
+                            )
+                        )
+                        _prev = _prev_q.scalar_one_or_none()
+                        if _prev is not None and (_prev.summary or "").strip():
+                            previous_chapter_summary = _prev.summary.strip()
+            except Exception as _prev_err:
+                logger.warning("PR-OL12 prev chapter lookup failed: %s", _prev_err)
+
     # PR-OL10: compute scale (n_volumes / chapters_per_volume / chapter_words)
     # from the project's target_word_count + settings_json so prompts inject
     # hard numeric constraints instead of free-form "2-8 卷".
@@ -816,11 +861,36 @@ async def generate_outline(
                     yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "chapter":
+                # PR-OL12: enrich user_notes with the per-chapter breakdown
+                # entry from the volume outline so the LLM gets the planned
+                # main_progress / side_progress / foreshadow_state / key_scene
+                # for this exact chapter, not just the whole volume blob.
+                _chapter_user_notes = req.user_input or ""
+                if chapter_breakdown_entry:
+                    try:
+                        import json as _json_pr_ol12
+                        _entry_json = _json_pr_ol12.dumps(
+                            chapter_breakdown_entry, ensure_ascii=False, indent=2
+                        )
+                        _hint = (
+                            "\n\n【本章在分卷大纲里的预规划（PR-OL11/12）】\n"
+                            + _entry_json
+                            + "\n\n请严格以本预规划为骨架生成本章详细大纲，扩充其中的 "
+                            "main_progress/side_progress/foreshadow_state/key_scene \n"
+                            "为具体场景与场次，不可与预规划冲突。"
+                        )
+                        _chapter_user_notes = (_chapter_user_notes + _hint).strip()
+                    except Exception as _hint_err:
+                        logger.warning(
+                            "PR-OL12 breakdown hint serialisation failed: %s",
+                            _hint_err,
+                        )
                 async for chunk in await generator.generate_chapter_outline(
                     book_outline=book_outline,
                     volume_outline=volume_outline,
                     chapter_idx=req.chapter_idx or 1,
-                    user_notes=req.user_input,
+                    previous_chapter_summary=previous_chapter_summary,  # PR-OL12
+                    user_notes=_chapter_user_notes,
                     stream=True,
                 ):
                     collected_text.append(chunk)
