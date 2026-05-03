@@ -412,3 +412,24 @@ outlines tag occurrences <volume-plan>=0  ✅
 - 前端代码改动需要重启 Next.js dev server（无 docker 容器，`cd frontend && npm run dev`）或重新 build。
 - 后端已重启，5 个后端 patch 全部生效。
 - 待 vol1/vol5 SSE 跑完，再次跑 ETL，characters 有望追加新角色，foreshadows 也会增长。
+
+## 2026-05-03 22:25 — 502 修复 + frontend 镜像 rebuild
+
+### 真根因
+- 用户访问 8080 → ai-write-nginx 反代
+- ai-write-nginx 配置 set $frontend_upstream http://frontend:3000 + resolver 127.0.0.11（docker 内部 DNS）
+- nginx error log: frontend could not be resolved (2: Server failure)
+- docker compose ps: frontend 服务 missing（其他 9 容器 Up）
+- 宿主机有个 next-server 进程跑在 *:3000 但不在 docker network 里 → ai-write-nginx 不可达 → 502
+
+### 修复
+1. docker compose up -d frontend → 容器起来，烟测 8080 返回 200（root/login/api/health）
+2. 杀宿主机 stale next-server PID 4088553（释放 *:3000，避免后续混淆）
+3. 发现 ai-write-frontend:latest 镜像是 2026-05-02T22:00Z build，早于 PR-WORLDRULES-FE / PR-OL14 / PR-OL15（2026-05-03 02:54~09:26）
+4. docker compose build frontend → 新镜像 2026-05-03T14:24Z，自动 recreate 容器
+5. 烟测 8080 全部 200，nginx access log 干净
+
+### 认知更正
+- 127.0.0.1:3001 是 grafana docker-proxy（不是 next-server）
+- next-server 之前一直在宿主机 *:3000，但用户看到的是 8080→nginx→docker frontend:3000；所以前端 commit 是否生效取决于 docker 镜像 build 时间，不是宿主机进程
+- user msg 12/15 报的 5 症状之所以"修了还在"，部分原因是新前端代码从未真正进入 ai-write-frontend 镜像
