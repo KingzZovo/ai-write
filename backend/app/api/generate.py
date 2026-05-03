@@ -270,6 +270,43 @@ async def generate_chapter(
                             await save_db.refresh(target_chapter)
                             # v1.8.1: persistence actually committed; record success.
                             _inc_chapter_auto_save("chapter", "success", "ok")
+                            # PR-VER1: write a ChapterVersion row on every AI generation
+                            # so the git-native version tree is non-empty. Deactivate any
+                            # prior active version on the same chapter; mark this one active.
+                            try:
+                                from app.models.project import ChapterVersion
+                                from sqlalchemy import update as _sql_update
+                                await save_db.execute(
+                                    _sql_update(ChapterVersion)
+                                    .where(ChapterVersion.chapter_id == target_chapter.id,
+                                           ChapterVersion.is_active == 1)
+                                    .values(is_active=0)
+                                )
+                                cv = ChapterVersion(
+                                    chapter_id=target_chapter.id,
+                                    parent_id=None,
+                                    branch_name="main",
+                                    content_text=full_text,
+                                    content_diff="",
+                                    word_count=len(full_text),
+                                    is_active=1,
+                                    source="ai_generation",
+                                    metadata_json={
+                                        "caller": "api.generate.stream_generate",
+                                        "chapter_idx": resolved_chapter_idx,
+                                    },
+                                )
+                                save_db.add(cv)
+                                await save_db.commit()
+                                logger.info(
+                                    "PR-VER1: ChapterVersion written chapter_id=%s ver_id=%s",
+                                    target_chapter.id, cv.id,
+                                )
+                            except Exception as _ver_err:
+                                logger.warning(
+                                    "PR-VER1: ChapterVersion write failed chapter_id=%s err=%s",
+                                    target_chapter.id, _ver_err,
+                                )
                             yield f"data: {json.dumps({'status': 'saved', 'chapter_id': str(target_chapter.id), 'word_count': target_chapter.word_count})}\n\n"
                             # B2' (v1.5.0): kick entity-extraction task post-commit.
                             try:
