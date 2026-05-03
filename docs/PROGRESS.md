@@ -227,3 +227,123 @@ PROJECT_ID=... CHAPTER_IDX=... bash scripts/verify_entity_writeback_v19.sh
 | 时间 | ❌ 未实现（仅 chapter_start 隐式时序）| 缺 `Time`/`Era`/`TimeEvent` 节点、`OCCURS_AT` 关系 |
 
 列为下一批 PR-NEO1~NEO4 开新分支 `feat/neo4j-batch1`。
+
+
+---
+
+## 2026-05-03 V2 + V3B 实证报告 + 修订 Plan（**唯一权威 plan**）
+
+> 取代 `FOLLOW_UP_PLAN.md` / `HANDOFF_TODO.md` / `HANDOFF_2026-05-03_outline-batch2.md` 的 PR 排序。后续 plan 演进只在本节追加，不开新文件。
+
+### 1. V2 跑（200 万字、5 卷、staged_stream + 并发卷大纲，PID `20d164ab-232f-4863-8265-452186638d83`）
+
+| 阶段 | 结果 | 备注 |
+|---|---|---|
+| A 建项目 | ✅ 3 s | `target_word_count=2000000` |
+| B 全书大纲 | ✅ 7 m 04 s | book_oid `bf1b3cf1…`，**PR-OL10 仍失效**：volume_plan 输出 5 卷而非 3-5 |
+| C1+C2 建 5 卷壳 | ✅ 4 s | 每卷 `est_chapters=150`、共 750 章 / 2 M 字 ≈ 2 667 字/章 |
+| D 5 卷大纲并发 | ⚠️ **3/5** | vol 2/3/4 OK；vol 1（外滩怀表）/ vol 5（红玉无声）SSE 中断 fail |
+| E `outline_to_facts.run_full_etl` | ❌ | inline `python -c` 内 `async def` 跟在 `;` 后 → SyntaxError |
+| F 自动建章 | ❌ | `volumes.py` SSE handler `json.loads` 失败兜底 `{"raw_text": full}`，下游 `parsed.get("chapter_summaries") = None` → 0 章 |
+
+**关键 bug PR-VOL2-PARSE**：`backend/app/api/volumes.py:217` 的 `try: parsed=json.loads(cleaned) except: parsed={"raw_text":full}` 兜底过宽。dry-run 直接 `python3 json.loads(raw_text)` 三卷全合法、各 150 章。SSE handler 拼 chunk 时附加了某种 trailing/control 字符导致 parse 失败，但兜底吞掉报错让链路静默断。
+
+### 2. V3B 续跑（绕过 PR-VOL2-PARSE，直接从 raw_text 建章）
+
+- **R1 建章** (backend 容器内 SQLAlchemy 直写) — vol 2/3/4 各 INSERT 150 章 = **450 章** ✅
+- **R2 ETL** `run_full_etl(db, PID)` — `world_rules=29` ✅、`characters/foreshadows=0`（这一步只读章纲，没正文）
+- **R3 章细化大纲** vol 2 ch 1-10 顺序 — **10/10 OK**，各 10-31 KB SSE 流，平均 ≈ 20 s/章
+- **R4 章正文** vol 2 ch 1-10 并发 ×4 — **10/10 OK**，平均 ≈ 8 919 字符 / 章（target 3 000 字 ≈ 6 000-9 000 chars，符合），平均 290 s / 章
+
+### 3. 14 项探针实证（V3B 跑完后取）
+
+| # | 维度 | 数值 | 判定 |
+|---|---|---|---|
+| 1 | chapters total/with_outline/with_text | **450 / 450 / 10** | ✅ |
+| 2 | characters | **47** | ✅ chapter 生成时触发 entity extraction |
+| 3 | locations | **40** | ✅ |
+| 4 | world_rules | **29** | ✅ R2 ETL 生效 |
+| 5 | relationships | **51** | ✅ |
+| 6 | character_states | **51** | ✅ |
+| 7 | foreshadows | **0** | ❌ **伏笔提取链路完全断**（核心业务！） |
+| 8 | organizations | **0** | ❌ 组织提取没触发（汇丰、军统、76 号都没建） |
+| 9 | items / item_events | **0 / 0** | ❌ 道具提取没触发（核心道具「外滩怀表」漏掉） |
+| 10 | faction_events / faction_oppositions | **0 / 0** | ❌ 派系事件链路缺失 |
+| 11 | chapter_versions | **0** | ❌ SSE 直写 `chapters.content_text`，没建版本节点 → git-native 主张落空 |
+| 12 | chapter_evaluations | **0** | ⚠️ `auto_revise=False` 业务设计，预期 |
+| 13 | Neo4j (Character 47 / Location 40 / WorldRule 29 / ExtractionMarker 10) | ✅ | 同步写回 |
+| 14 | 三线关键字（主线 / 感情 / 伏笔）grep on vol2 ch1-10 content | **全 0** | ❌ 三线注入到 prompt 但生成的正文没有显式标识，无法量化验证 |
+
+附带 schema 偏差（影响 plan 文档准确性）：
+- `characters` 表只有 `name + profile_json`（之前文档假设的 `role` 列不存在）
+- `chapter_time_anchors.chapter_idx` 而非 `chapter_id`（外键设计偏弱，重命名章节不会更新锚点）
+
+### 4. 修订 Plan — 17 PR 按优先级排序
+
+#### Phase I 「修正不生效」（**最高优先级**，正在跑的项目能直接吃到）
+
+| PR | 内容 | 触点 | 立判 |
+|---|---|---|---|
+| **PR-VOL2-PARSE** ⛔ | `volumes.py:217` 改为 `json.loads` 失败时**显式 raise + log 完整 chunk**；二级 fallback 用 `_extract_largest_json_object()` 分块扫描 | `backend/app/api/volumes.py` | 修后 V2 链路自然恢复，450 章自动建 |
+| **PR-FACTS-FORE** ⛔ | `outline_to_facts.run_full_etl` 增加 `extract_foreshadows_from_volume_outline()`；prompt 把每章 outline_json 的 `foreshadow_state` 字段抽出 | `backend/app/services/outline_to_facts.py` + prompt | 跑完应有 ≥30 伏笔行 |
+| **PR-FACTS-ORG** ⛔ | ETL 同步抽 `organizations`（军统/中统/76号/汇丰/同盟会等）+ `character_organizations` 关联 | 同上 | ≥8 组织 |
+| **PR-FACTS-ITEM** ⛔ | ETL 同步抽 `items` 与 `item_events`（怀表/灰灯/封签等）+ Neo4j `Item` 节点 | 同上 + Neo4j writeback | ≥10 道具 |
+| **PR-VER1** ⛔ | chapter SSE 流写完后**强制建** `chapter_versions` 行 `source="ai_generation" is_active=1`，启用 git-native 版本树 | `backend/app/api/generate.py` chapter post-save | ver count = chapter count |
+| PR-EVAL1 | chapter SSE 完毕后异步触发 `ChapterEvaluator`（不阻塞返回），写 `chapter_evaluations`（即使 `auto_revise=False`） | 同上 + service | eval count ≥ chapter count |
+| PR-SSE-FIX | volume outline SSE 端 600 s+ 心跳 keepalive；客户端断开时不丢已生成内容（vol 1/5 fail 的成因） | `volumes.py` + uvicorn | vol 1/5 重跑 OK |
+| PR-OL10-fix | 修复全书大纲「下输出 5 卷而非 3-5」（再说一次：约束词被忽略，需提到 system prompt 顶部 + 后置校验回退） | `backend/app/services/book_outline.py` | volume_plan ≤ 5 卷 |
+| PR-WIRE1 | 三线（主线/感情线/世界观）注入 prompt 后，**在生成的章节末尾追加 `<!-- strand: main=… love=… world=… -->` 注释**，让正文级量化可验证 | chapter generator template | grep 命中率 ≥ 90 % |
+
+#### Phase II Mem-Forever 借鉴（4 PR，msg 6 决策）
+
+| PR | 内容 | 来源 |
+|---|---|---|
+| PR-MEM1 | 四属性记忆元（who/when/where/what + decay/contradiction/mutation）→ 给 `character_states` 加 `decay_score / mutated_at / contradicts_state_id` 列 | Mem-Forever |
+| PR-MEM3 | git-native 时间线：每个 character_state 变更走 `chapter_versions`-style 版本树 | Mem-Forever |
+| PR-MEM2 | soul-memory：把 `style_profile` 切到「记忆体」结构，章正文写完后增量更新 | Mem-Forever |
+| PR-MEM4 | 审稿/偏好录入 → 强依赖 PR-UI1/2/3 落地后 | Mem-Forever |
+
+#### Phase III UI（3 PR，msg 7 决策，PR-MEM4 阻塞项）
+
+| PR | 内容 |
+|---|---|
+| PR-UI1 | author_profile 录入页（口味、禁词、偏好节奏）|
+| PR-UI2 | 审稿面板（章节级 issue 列表 + 修改建议）|
+| PR-UI3 | 三线进度可视化（每卷一条三色线 = 主线 / 感情 / 世界观，节点 = 章）|
+
+#### Phase IV Neo4j 状态机增强（2 PR，去重之前 NEO1-4 中已实现的 Location）
+
+| PR | 内容 |
+|---|---|
+| PR-NEO5 | Time/Era/TimeEvent + `OCCURS_AT` 关系；用 `chapter_time_anchors` 实证派生 |
+| PR-NEO6 | FactionEvent（结盟/破盟/开战/休战）从 `faction_events` 表派生写回 |
+
+#### Phase V 三线增强（3 PR，msg 6 决策）
+
+| PR | 内容 |
+|---|---|
+| PR-STRAND1 | 章生成 prompt 显式列出当前章应推进的三线节点（来自卷大纲 chapter_summary 的 main_progress / side_progress） |
+| PR-STRAND2 | 章生成完后 strand_tracker 量化每条线推进 + 写 `strand_progress` 表 |
+| PR-STRAND3 | UI 三线 dashboard（接 PR-UI3） |
+
+#### Phase VI 朱雀 V1 CH2 第二轮 reduction（沿用前序 plan）
+
+### 5. 跑通 Phase I 后的复跑验收脚本
+
+复用 `/tmp/build_and_etl.py` + `/tmp/orchestrate_v3b.py`，跑完后预期：
+- chapters 750 / 750 / 750（5 卷 × 150 章全建 + 全有 outline + 全有 text）
+- foreshadows ≥ 200、organizations ≥ 8、items ≥ 30
+- chapter_versions = 750、chapter_evaluations = 750
+- 三线注释 grep 命中率 ≥ 90 %
+
+### 6. 当前未决 / Follow-up
+
+- vol 1（外滩怀表）/ vol 5（红玉无声）卷大纲未落库 → PR-SSE-FIX 修后重跑
+- characters.role 列实际不存在（在 `profile_json.role`）→ 文档校正条目
+- chapter_time_anchors.chapter_idx 而非 chapter_id → 设计偏弱，章节重排会丢锚
+
+### 7. 临时 artefact（不入 git）
+
+- `/tmp/orchestrate_v2.py` `/tmp/orchestrate_v3b.py` `/tmp/build_and_etl.py` `/tmp/probes_v3b.sh`
+- `/tmp/orchestrate_v2_status.json` `/tmp/orchestrate_v3b_status.json` `/tmp/probes_v3b.out`
+- `/tmp/sse_v3b_outline_v2c{1..10}.log` `/tmp/sse_v3b_text_v2c{1..10}.log`
