@@ -13,6 +13,8 @@ interface OutlineTreeProps {
   projectId: string
   onSelectChapter?: (chapterId: string) => void
   volumeOutlines?: Record<number, Record<string, unknown>>
+  // PR-OL14: top-level book outline (content_json) for "全书大纲" view.
+  bookOutline?: Record<string, unknown> | null
   onChanged?: () => void
 }
 
@@ -28,10 +30,21 @@ const statusLabels: Record<string, string> = {
   completed: '完成',
 }
 
-export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChanged }: OutlineTreeProps) {
+export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, bookOutline, onChanged }: OutlineTreeProps) {
   const { volumes, chapters, selectedChapterId, selectChapter } = useProjectStore()
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [outlineOpen, setOutlineOpen] = useState<Set<string>>(new Set())
+  // PR-OL14: top-level (book) toggle + per-chapter outline toggle
+  const [bookOpen, setBookOpen] = useState(false)
+  const [chapterOutlineOpen, setChapterOutlineOpen] = useState<Set<string>>(new Set())
+  const toggleChapterOutline = (id: string) => {
+    setChapterOutlineOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const [renamingVolumeId, setRenamingVolumeId] = useState<string | null>(null)
   const [renameVolumeValue, setRenameVolumeValue] = useState('')
@@ -78,6 +91,26 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
 
   return (
     <div className="text-sm">
+      {/* PR-OL14: top-level book-outline view */}
+      {bookOutline && (
+        <div className="mb-2 px-3">
+          <button
+            onClick={() => setBookOpen((v) => !v)}
+            className="flex items-center w-full py-1 text-xs text-emerald-700 hover:bg-emerald-50 rounded"
+          >
+            <span className="mr-1">{bookOpen ? '▼' : '▶'}</span>
+            <span className="font-medium">全书大纲</span>
+          </button>
+          {bookOpen && (
+            <div className="mt-1 px-3 py-2 text-xs whitespace-pre-wrap bg-emerald-50/40 border-l-2 border-emerald-200 rounded-r max-h-96 overflow-y-auto">
+              {String(
+                (bookOutline as Record<string, unknown>)['raw_text'] ||
+                  JSON.stringify(bookOutline, null, 2)
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {sortedVolumes.map((volume) => {
         const volIdx = volume.volume_idx ?? volume.volumeIdx
         const volOutline = volumeOutlines?.[volIdx]
@@ -189,8 +222,8 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
                   const wc = chapter.word_count ?? chapter.wordCount ?? 0
                   const st = chapter.status || 'draft'
                   return (
+                    <React.Fragment key={chapter.id}>
                     <div
-                      key={chapter.id}
                       className={`flex items-center w-full px-3 py-1 rounded group ${
                         selectedChapterId === chapter.id ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
@@ -248,6 +281,16 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
                           </span>
                         </span>
                       </button>
+                      {/* PR-OL14: per-chapter outline toggle */}
+                      {Boolean(chapter.outline_json || (chapter as unknown as { outlineJson?: unknown }).outlineJson) ? (
+                        <button
+                          title="查看本章大纲"
+                          onClick={(e) => { e.stopPropagation(); toggleChapterOutline(chapter.id) }}
+                          className="text-[10px] text-amber-600 hover:bg-amber-50 px-1 rounded ml-1"
+                        >
+                          {chapterOutlineOpen.has(chapter.id) ? '▼大纲' : '▶大纲'}
+                        </button>
+                      ) : null}
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-1">
                         <RowMenu
                           items={[
@@ -268,6 +311,21 @@ export function OutlineTree({ projectId, onSelectChapter, volumeOutlines, onChan
                         />
                       </div>
                     </div>
+                    {/* PR-OL14: chapter outline panel */}
+                    {chapterOutlineOpen.has(chapter.id) && Boolean(chapter.outline_json || (chapter as unknown as { outlineJson?: unknown }).outlineJson) && (
+                      <div className="ml-8 mb-1 px-3 py-2 text-[11px] whitespace-pre-wrap bg-amber-50/40 border-l-2 border-amber-200 rounded-r max-h-72 overflow-y-auto">
+                        {((): string | null => {
+                          const oj = (chapter.outline_json ?? (chapter as unknown as { outlineJson?: unknown }).outlineJson) as Record<string, unknown> | string | null
+                          if (!oj) return null
+                          if (typeof oj === "string") return oj
+                          if (typeof oj === "object" && oj && "raw_text" in oj && typeof (oj as Record<string, unknown>).raw_text === "string") {
+                            return String((oj as Record<string, unknown>).raw_text)
+                          }
+                          try { return JSON.stringify(oj, null, 2) } catch { return String(oj) }
+                        })()}
+                      </div>
+                    )}
+                    </React.Fragment>
                   )
                 })}
                 {volChapters.length === 0 && (

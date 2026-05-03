@@ -158,6 +158,8 @@ export default function DesktopWorkspace() {
   const [wizardStep, setWizardStep] = useState(1)
   const [wizardProgress, setWizardProgress] = useState('')
   const [confirmedOutlineId, setConfirmedOutlineId] = useState<string | null>(null)
+  // PR-OL14: book outline content_json for top-level OutlineTree section.
+  const [bookOutlineData, setBookOutlineData] = useState<Record<string, unknown> | null>(null)
   // Volume generation config & results
   const [volumeCountInput, setVolumeCountInput] = useState('')
   const [volumeOutlines, setVolumeOutlines] = useState<Record<number, Record<string, unknown>>>({})
@@ -227,9 +229,11 @@ export default function DesktopWorkspace() {
           const raw = String(cj?.raw_text || JSON.stringify(cj, null, 2) || '')
           setOutlinePreview(raw)
           setConfirmedOutlineId(bookOutline.id)
+          setBookOutlineData(cj)  // PR-OL14
         } else {
           setOutlinePreview('')
           setConfirmedOutlineId(null)
+          setBookOutlineData(null)  // PR-OL14
         }
 
         // Index volume outlines by volume_idx (pick the most recent per idx)
@@ -768,6 +772,7 @@ export default function DesktopWorkspace() {
               <OutlineTree
                 projectId={currentProject?.id || ''}
                 volumeOutlines={volumeOutlines}
+                bookOutline={bookOutlineData}
                 onChanged={() => {
                   if (currentProject) loadProjectData(currentProject.id)
                 }}
