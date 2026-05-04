@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
 import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
+import { OutlineEditor, type OutlineEditTarget } from '@/components/outline/OutlineEditor'
 import { GeneratePanel, getSelectedStyleId } from '@/components/panels/GeneratePanel'
 
 // Lazy load heavy panels — only loaded when their CollapsibleSection is opened
@@ -163,6 +164,11 @@ export default function DesktopWorkspace() {
   // Volume generation config & results
   const [volumeCountInput, setVolumeCountInput] = useState('')
   const [volumeOutlines, setVolumeOutlines] = useState<Record<number, Record<string, unknown>>>({})
+  // PR-OUTLINE-CENTER-EDIT (2026-05-04): outline IDs (alongside content_json) so
+  // the centre editor knows which row to PUT.
+  const [bookOutlineId, setBookOutlineId] = useState<string | null>(null)
+  const [volumeOutlineIds, setVolumeOutlineIds] = useState<Record<number, string>>({})
+  const [outlineEditorTarget, setOutlineEditorTarget] = useState<OutlineEditTarget | null>(null)
   // Tracks the backend auto-saved outline id for the current in-progress book outline
   const pendingBookOutlineIdRef = useRef<string | null>(null)
   // Outline inline editing
@@ -230,23 +236,29 @@ export default function DesktopWorkspace() {
           setOutlinePreview(raw)
           setConfirmedOutlineId(bookOutline.id)
           setBookOutlineData(cj)  // PR-OL14
+          setBookOutlineId(bookOutline.id)  // PR-OUTLINE-CENTER-EDIT
         } else {
           setOutlinePreview('')
           setConfirmedOutlineId(null)
           setBookOutlineData(null)  // PR-OL14
+          setBookOutlineId(null)  // PR-OUTLINE-CENTER-EDIT
         }
 
         // Index volume outlines by volume_idx (pick the most recent per idx)
         const volOutlineMap: Record<number, Record<string, unknown>> = {}
+        const volOutlineIdMap: Record<number, string> = {}
         for (const o of outlines) {
           if (o.level !== 'volume') continue
           const cj = (o.content_json as Record<string, unknown>) || {}
           const idx = typeof cj.volume_idx === 'number' ? cj.volume_idx : null
           if (idx !== null) {
             volOutlineMap[idx] = cj
+            // Prefer confirmed; otherwise overwrite with later id (keeps last-loaded).
+            volOutlineIdMap[idx] = o.id
           }
         }
         setVolumeOutlines(volOutlineMap)
+        setVolumeOutlineIds(volOutlineIdMap)  // PR-OUTLINE-CENTER-EDIT
 
         // Route to appropriate view
         if (normalized.length > 0) {
@@ -784,10 +796,27 @@ export default function DesktopWorkspace() {
                 projectId={currentProject?.id || ''}
                 volumeOutlines={volumeOutlines}
                 bookOutline={bookOutlineData}
+                bookOutlineId={bookOutlineId}
+                volumeOutlineIds={volumeOutlineIds}
+                onSelectOutline={(target) => {
+                  // PR-OUTLINE-CENTER-EDIT: switch the centre editor to outline mode.
+                  setOutlineEditorTarget(target)
+                  selectChapter(null)
+                  setActiveView('editor')
+                }}
+                selectedOutlineKey={
+                  outlineEditorTarget
+                    ? (outlineEditorTarget.type === 'chapter'
+                        ? `chapter:${outlineEditorTarget.chapterId}`
+                        : `${outlineEditorTarget.type}:${outlineEditorTarget.outlineId}`)
+                    : null
+                }
                 onChanged={() => {
                   if (currentProject) loadProjectData(currentProject.id)
                 }}
                 onSelectChapter={(chapterId) => {
+                  // PR-OUTLINE-CENTER-EDIT: chapter wins over outline editor.
+                  setOutlineEditorTarget(null)
                   selectChapter(chapterId)
                   setActiveView('editor')
                 }}
@@ -798,6 +827,27 @@ export default function DesktopWorkspace() {
       }
       editor={
         <div className="h-full flex flex-col">
+          {/* PR-OUTLINE-CENTER-EDIT (2026-05-04): outline-in-centre takes priority. */}
+          {outlineEditorTarget && currentProject ? (
+            <OutlineEditor
+              projectId={currentProject.id}
+              target={outlineEditorTarget}
+              onClose={() => setOutlineEditorTarget(null)}
+              onSaved={(t, updatedJson) => {
+                if (t.type === 'book') {
+                  setBookOutlineData(updatedJson)
+                  const rt = (updatedJson as Record<string, unknown>)['raw_text']
+                  if (typeof rt === 'string') setOutlinePreview(rt)
+                } else if (t.type === 'volume' && typeof t.volumeIdx === 'number') {
+                  const idx = t.volumeIdx
+                  setVolumeOutlines((prev) => ({ ...prev, [idx]: updatedJson }))
+                }
+                // chapter outline_json lives on the chapter row in projectStore;
+                // avoid coupling here — reload on next loadProjectData if needed.
+              }}
+            />
+          ) : (
+          <>
           {/* ---- Outline Wizard ---- */}
           {activeView === 'wizard' && currentProject && (
             <div className="flex-1 p-8 overflow-y-auto">
@@ -1367,6 +1417,8 @@ export default function DesktopWorkspace() {
                 />
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
       }
