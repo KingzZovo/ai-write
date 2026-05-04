@@ -17,6 +17,14 @@ from app.services.chapter_generator import ChapterGenerator
 from app.services.outline_generator import OutlineGenerator
 
 logger = logging.getLogger(__name__)
+# PR-OL16: module-level strong reference for outline save bg tasks. The
+# SSE post-stream save body is run as a detached asyncio.create_task and
+# awaited via asyncio.shield(...) so that Starlette BaseHTTPMiddleware
+# cancelling the request task does NOT abort the in-flight asyncpg
+# commit. Without this strong ref, the bg task can be GC'd before commit
+# finishes, leaving outlines table empty even though SSE returned 200.
+_OUTLINE_SAVE_BG_TASKS: set = set()
+
 def _x4_inc_revise(outcome: str) -> None:
     """v1.6.0 X4: increment scene_revise_round_total. Best-effort."""
     try:
@@ -939,35 +947,38 @@ async def generate_outline(
             # Auto-save outline to DB
             full_text = "".join(collected_text)
             if full_text and req.project_id:
-                try:
+                # PR-OL16: run save body as a detached bg task with
+                # asyncio.shield + strong module ref. Starlette
+                # BaseHTTPMiddleware cancel scope was killing the in-flight
+                # asyncpg commit when the SSE pipe finished, leaving
+                # outlines table empty despite a 200 response ("已生成大纲
+                # 但还是显示生成中，并且刷新后就没了"). Bg task continues
+                # commit even when outer is cancelled.
+                async def _persist_outline_now():
+                    saved_outline_id_local: str | None = None
+                    written_title_local: str | None = None
                     from app.db.session import async_session_factory
+                    from app.services.outline_generator import OutlineGenerator as _OG
+                    _vp_for_book = _OG()._extract_volume_plan(full_text)
+                    full_text_clean = _OG._strip_volume_plan_tags(full_text)
+                    _content_json = {"raw_text": full_text_clean}
+                    if req.level == "book":
+                        try:
+                            if _vp_for_book:
+                                _content_json["volume_plan"] = _vp_for_book
+                        except Exception:
+                            pass
+                    if req.level in ("volume", "chapter"):
+                        try:
+                            _parsed_struct = _OG()._parse_json(full_text_clean)
+                            if isinstance(_parsed_struct, dict) and not _parsed_struct.get("_parse_error"):
+                                for _k, _v in _parsed_struct.items():
+                                    if _k == "raw_text":
+                                        continue
+                                    _content_json.setdefault(_k, _v)
+                        except Exception as _ps_err:
+                            logger.warning("PR-FACTS-PARSE-VOL parse failed: %s", _ps_err)
                     async with async_session_factory() as save_db:
-                        # PR-OL15: strip <volume-plan>...</volume-plan> from
-                        # raw_text so user-facing & ETL-consumed text is clean.
-                        from app.services.outline_generator import OutlineGenerator as _OG
-                        _vp_for_book = _OG()._extract_volume_plan(full_text)
-                        full_text_clean = _OG._strip_volume_plan_tags(full_text)
-                        # PR-OL2: extract volume_plan from text, persist alongside.
-                        _content_json = {"raw_text": full_text_clean}
-                        if req.level == "book":
-                            try:
-                                if _vp_for_book:
-                                    _content_json["volume_plan"] = _vp_for_book
-                            except Exception:
-                                pass
-                        # PR-FACTS-PARSE-VOL: also try to parse structured
-                        # fields (volume_idx, summary, new_characters,
-                        # chapter_summaries, world_rules) so ETL sees them.
-                        if req.level in ("volume", "chapter"):
-                            try:
-                                _parsed_struct = _OG()._parse_json(full_text_clean)
-                                if isinstance(_parsed_struct, dict) and not _parsed_struct.get("_parse_error"):
-                                    for _k, _v in _parsed_struct.items():
-                                        if _k == "raw_text":
-                                            continue
-                                        _content_json.setdefault(_k, _v)
-                            except Exception as _ps_err:
-                                logger.warning("PR-FACTS-PARSE-VOL parse failed: %s", _ps_err)
                         outline = Outline(
                             project_id=req.project_id,
                             level=req.level,
@@ -977,21 +988,15 @@ async def generate_outline(
                         save_db.add(outline)
                         await save_db.commit()
                         await save_db.refresh(outline)
-                        # v1.8.1: persistence actually committed; record success.
                         _inc_chapter_auto_save("outline", "success", "ok")
-                        # PR-OL13: write back parsed chapter title to Chapter row
-                        # so we replace the "第N章" placeholder with the planned name.
-                        _written_title: str | None = None
+                        saved_outline_id_local = str(outline.id)
                         if req.level == "chapter" and req.chapter_idx:
                             try:
-                                from app.services.outline_generator import OutlineGenerator as _OG
                                 _parsed = _OG()._parse_json(full_text)
                                 if isinstance(_parsed, dict) and not _parsed.get("_parse_error"):
                                     _t = _parsed.get("title")
                                     if isinstance(_t, str):
                                         _t = _t.strip()
-                                        # Reject placeholder patterns; require
-                                        # a substantive 2-30 char chinese title.
                                         import re as _re_pr_ol13
                                         if (
                                             2 <= len(_t) <= 30
@@ -1024,13 +1029,23 @@ async def generate_outline(
                                                     if _ch2 is not None and (_ch2.title or "").strip() != _t:
                                                         _ch2.title = _t
                                                         await save_db.commit()
-                                                        _written_title = _t
+                                                        written_title_local = _t
                             except Exception as _title_err:
                                 logger.warning("PR-OL13 chapter title write-back failed: %s", _title_err)
-                        if _written_title:
-                            yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id), 'chapter_title': _written_title}, ensure_ascii=False)}\n\n"
-                        else:
-                            yield f"data: {json.dumps({'status': 'saved', 'outline_id': str(outline.id)})}\n\n"
+                    return saved_outline_id_local, written_title_local
+
+                _save_task = asyncio.create_task(_persist_outline_now())
+                _OUTLINE_SAVE_BG_TASKS.add(_save_task)
+                _save_task.add_done_callback(_OUTLINE_SAVE_BG_TASKS.discard)
+                try:
+                    _saved_id, _written_title = await asyncio.shield(_save_task)
+                    if _written_title:
+                        yield f"data: {json.dumps({'status': 'saved', 'outline_id': _saved_id, 'chapter_title': _written_title}, ensure_ascii=False)}\n\n"
+                    elif _saved_id:
+                        yield f"data: {json.dumps({'status': 'saved', 'outline_id': _saved_id})}\n\n"
+                except asyncio.CancelledError:
+                    # SSE pipe cancelled mid-save; bg task continues commit independently.
+                    raise
                 except Exception as save_err:
                     # v1.8.1 Bug L: do NOT silently swallow (parity with chapter path).
                     logger.error(
