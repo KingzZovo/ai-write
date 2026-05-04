@@ -102,14 +102,14 @@ USER_PROMPT_TMPL = """\
 【本章 stub（来自分卷大纲）】
 {stub}
 
-请遵忪以下要求写一份本章的详细大纲，在 stub 基础上扩写，增加跳板资产。不要进入场景化描写 — 仅提供提纲、状态、伏笔、关键事件。
+请在 stub 基础上写一份本章「过程性详细大纲」：summary 必须 300–500 字，去修辞、去环境描写与心理渲染，但过程不能丢：人物进场顺序、关键对话要点、动作与结果、状态转折、到头状态都要讲清楚。key_events / state_changes / foreshadows 是 summary 的结构化索引，不是 summary 本身。不要进入正文描写，但也不要只写关键词清单。
 
 输出 schema (JSON 严格遵守)：
 {{
   "chapter_idx": {chapter_idx},
   "title": "本章标题（8–3 字，不同于卷名）",
-  "summary": "本章主事件 30–70 字（陈述句）",
-  "key_events": ["事件 1", "事件 2", "… 3-6 条。2 条以上。"],
+  "summary": "本章过程性叙事 300–500 字。去修辞但过程完整。含：进入状态·中段关键场景与对话要点·转折·到头状态。例如『A 和 B 结婚』应该写成『九点 A 在礼堂等待…誓词中手微抖…黑帽人递上空白请柬…A 决定夜里独自出去』这种含过程的陈述。\n 表示换行。",
+  "key_events": ["事件 1", "事件 2", "… 3-6 条，作为 summary 的结构索引。"],
   "prev_chapter_threads": ["本章需接住的上章未完样动作 / 冲突 / 悬念 1", "…"],
   "state_changes": {{
     "characters": ["name": "人物名", "change": "本章末尾未该人物状态的变化说明"],
@@ -126,7 +126,8 @@ USER_PROMPT_TMPL = """\
 额外要求：
 - 首章时 prev_chapter_threads 可为 [] 且 prev_outline / prev_text 会为空提示。
 - foreshadows 可以为 [] 但不能缺字段。
-- key_events 与 summary 要可被后续正文生成者直接译为场景。
+- summary 要足够详细（300–500 字）以使后续章节只看 summary 也能复述本章过程。key_events 是 summary 的结构化骨架，不能代替 summary。
+- summary 中不要出现「如上所述」「总之」「本章讲了 X」这类总结性词·直接叙述过程。
 - 不要输出多余说明文字、markdown 标题或代码围栏。
 """
 
