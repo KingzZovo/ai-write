@@ -34,6 +34,8 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
   const [worldRules, setWorldRules] = useState<WorldRule[]>([])
   const [loading, setLoading] = useState(false)
   const [editingChar, setEditingChar] = useState<string | null>(null)
+  // PR-FIX-CHAR-SETTINGS-FE (2026-05-04): inline edit UI for world rules.
+  const [editingRule, setEditingRule] = useState<string | null>(null)
   const [showAddChar, setShowAddChar] = useState(false)
   const [showAddRule, setShowAddRule] = useState(false)
 
@@ -126,9 +128,61 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
             <div key={rule.id} className="bg-white border border-stone-200 rounded-lg p-2.5">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-medium text-blue-600 uppercase">{rule.category}</span>
-                <button onClick={async () => { await apiFetch(`/api/projects/${projectId}/world-rules/${rule.id}`, { method: 'DELETE' }); fetchWorldRules() }} className="text-[10px] text-rose-400 hover:text-rose-500">删除</button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingRule(editingRule === rule.id ? null : rule.id)}
+                    className="text-[10px] text-blue-500 hover:text-blue-600"
+                  >{editingRule === rule.id ? '收起' : '编辑'}</button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`确定删除这条规则吗？\n\n${rule.rule_text.slice(0, 80)}${rule.rule_text.length > 80 ? '…' : ''}`)) return
+                      await apiFetch(`/api/projects/${projectId}/world-rules/${rule.id}`, { method: 'DELETE' })
+                      fetchWorldRules()
+                    }}
+                    className="text-[10px] text-rose-400 hover:text-rose-500"
+                  >删除</button>
+                </div>
               </div>
-              <p className="text-xs text-stone-700 leading-relaxed">{rule.rule_text}</p>
+              {editingRule === rule.id ? (
+                <div className="mt-1.5 space-y-1.5">
+                  <div>
+                    <label className="text-[10px] text-stone-400">分类</label>
+                    <input
+                      type="text"
+                      defaultValue={rule.category}
+                      className="w-full px-2 py-1 text-xs border border-stone-200 rounded"
+                      onBlur={async (e) => {
+                        const newCat = e.target.value.trim()
+                        if (!newCat || newCat === rule.category) return
+                        await apiFetch(`/api/projects/${projectId}/world-rules/${rule.id}`, {
+                          method: 'PUT',
+                          body: JSON.stringify({ category: newCat, rule_text: rule.rule_text }),
+                        })
+                        fetchWorldRules()
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-stone-400">规则描述</label>
+                    <textarea
+                      defaultValue={rule.rule_text}
+                      className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-y min-h-16"
+                      onBlur={async (e) => {
+                        const newText = e.target.value.trim()
+                        if (!newText || newText === rule.rule_text) return
+                        await apiFetch(`/api/projects/${projectId}/world-rules/${rule.id}`, {
+                          method: 'PUT',
+                          body: JSON.stringify({ category: rule.category, rule_text: newText }),
+                        })
+                        fetchWorldRules()
+                      }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-stone-400">失焦自动保存。</p>
+                </div>
+              ) : (
+                <p className="text-xs text-stone-700 leading-relaxed">{rule.rule_text}</p>
+              )}
             </div>
           ))}
           {worldRules.length === 0 && !showAddRule && <p className="text-xs text-gray-400">还没有世界规则。</p>}
