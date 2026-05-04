@@ -305,6 +305,9 @@ export default function DesktopWorkspace() {
       if (level === 'book') {
         pendingBookOutlineIdRef.current = null
         setConfirmedOutlineId(null)
+        // PR-STEP1-EDIT: also clear bookOutlineId so the stale id from the
+        // previous outline does not let the edit button leak across regen.
+        setBookOutlineId(null)
         setActiveView('wizard')
         resetStageStates()
       } else {
@@ -330,6 +333,10 @@ export default function DesktopWorkspace() {
         (evt) => {
           if (level === 'book' && evt.status === 'saved' && typeof evt.outline_id === 'string') {
             pendingBookOutlineIdRef.current = evt.outline_id
+            // PR-STEP1-EDIT: surface the freshly-saved (unconfirmed) outline
+            // id as React state so the「编辑」button appears immediately,
+            // not only after 「确认大纲」is pressed.
+            setBookOutlineId(evt.outline_id)
           }
           // v1.4.2 Task B: structured staged events for book outline.
           if (level === 'book' && typeof evt.event === 'string') {
@@ -911,7 +918,7 @@ export default function DesktopWorkspace() {
                       <div className="mt-6">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-sm font-semibold text-gray-700">大纲预览</h3>
-                          {!isGenerating && confirmedOutlineId && (
+                          {!isGenerating && bookOutlineId && (
                             <button
                               onClick={() => setOutlineEditing((v) => !v)}
                               className="text-xs text-blue-600 hover:underline"
@@ -956,8 +963,12 @@ export default function DesktopWorkspace() {
                             <div className="mt-2 flex gap-2">
                               <button
                                 onClick={async () => {
-                                  if (!currentProject || !confirmedOutlineId) return
-                                  await apiFetch(`/api/projects/${currentProject.id}/outlines/${confirmedOutlineId}`, {
+                                  // PR-STEP1-EDIT: bookOutlineId covers both unconfirmed (just
+                                  // streamed) and confirmed states; confirmedOutlineId would be
+                                  // null while user is still in the review-then-confirm window.
+                                  const targetId = bookOutlineId || confirmedOutlineId
+                                  if (!currentProject || !targetId) return
+                                  await apiFetch(`/api/projects/${currentProject.id}/outlines/${targetId}`, {
                                     method: 'PUT',
                                     body: JSON.stringify({ content_json: { raw_text: outlinePreview } }),
                                   })
