@@ -235,6 +235,81 @@ class ContextPack:
             return text
         return "...(前文已截断)...\n" + text[-char_limit:]
 
+    def _render_chapter_outline_block(self, co: dict) -> str:
+        """PR-OUTLINE-DEEPDIVE Phase 4: render chapter outline_json into a
+        中文分段 prompt block instead of raw JSON dump.
+
+        Schema (after PR-OUTLINE-DEEPDIVE Phase 1):
+          chapter_idx, title, summary, key_events,
+          prev_chapter_threads, state_changes, foreshadows_planted,
+          foreshadows_resolved, next_chapter_hook
+
+        能向后兼容旧 4 字段格式，缺失字段不输出该部分。
+        """
+        if not isinstance(co, dict) or not co:
+            return ""
+        parts: list[str] = []
+        title = co.get("title") or ""
+        cidx = co.get("chapter_idx")
+        if title or cidx:
+            parts.append(f"《第{cidx}章 {title}》".strip())
+        if co.get("summary"):
+            parts.append(f"棗概：{co['summary']}")
+        ke = co.get("key_events") or []
+        if isinstance(ke, list) and ke:
+            parts.append("关键事件：")
+            for i, e in enumerate(ke, 1):
+                parts.append(f"  {i}. {e}")
+        pct = co.get("prev_chapter_threads") or []
+        if isinstance(pct, list) and pct:
+            parts.append("本章需接住的上章余波：")
+            for t in pct:
+                parts.append(f"  - {t}")
+        sc = co.get("state_changes") if isinstance(co.get("state_changes"), dict) else {}
+        if sc:
+            chs = sc.get("characters") or []
+            if isinstance(chs, list) and chs:
+                parts.append("本章末尾人物状态变化：")
+                for c in chs:
+                    if isinstance(c, dict):
+                        parts.append(f"  - {c.get('name','')}：{c.get('change','')}")
+            it = sc.get("items") or []
+            if isinstance(it, list) and it:
+                parts.append("本章末尾道具/物件状态变化：")
+                for x in it:
+                    if isinstance(x, dict):
+                        parts.append(f"  - {x.get('name','')}：{x.get('change','')}")
+            rels = sc.get("relationships") or []
+            if isinstance(rels, list) and rels:
+                parts.append("本章末尾关系变化：")
+                for r in rels:
+                    if isinstance(r, dict):
+                        parts.append(
+                            f"  - {r.get('from','')} → {r.get('to','')}：{r.get('change','')}"
+                        )
+        fp = co.get("foreshadows_planted") or []
+        if isinstance(fp, list) and fp:
+            parts.append("本章需埋下的伏笔（必须体现）：")
+            for f in fp:
+                if isinstance(f, dict):
+                    parts.append(
+                        f"  - {f.get('description','')} 【兑现条件：{f.get('resolve_conditions','')}】"
+                    )
+                elif isinstance(f, str):
+                    parts.append(f"  - {f}")
+        fr = co.get("foreshadows_resolved") or []
+        if isinstance(fr, list) and fr:
+            parts.append("本章可兑现之前伏笔：")
+            for f in fr:
+                parts.append(f"  - {f}")
+        nch = co.get("next_chapter_hook")
+        if nch:
+            parts.append(f"本章末尾交接下章（必须交付）：{nch}")
+        if not parts:
+            # 降级：没有能识别的字段，还有 dict 内容 → fallback dump
+            return json.dumps(co, ensure_ascii=False, indent=2)
+        return "\n".join(parts)
+
     def _render_volume_outline_block(self) -> str:
         """Render volume_outline dict into a readable block for the prompt.
 
@@ -328,7 +403,7 @@ class ContextPack:
             l1_parts.append(f"【本章已有内容】\n{self.current_content}")
 
         if self.current_outline:
-            outline_str = json.dumps(self.current_outline, ensure_ascii=False, indent=2)
+            outline_str = self._render_chapter_outline_block(self.current_outline)
             l1_parts.append(f"【本章大纲】\n{outline_str}")
 
         if self.future_outlines:
