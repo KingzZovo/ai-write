@@ -198,3 +198,38 @@ async def sync_chapter_edit(
         new_text=body.new_text,
     )
     return result
+
+
+@router.post("/{chapter_id}/outline/expand")
+async def expand_chapter_outline_endpoint(
+    project_id: str,
+    chapter_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """PR-OUTLINE-DEEPDIVE Phase 1：调 LLM 为本章生成含跳板资产的详细大纲。
+
+    输出覆盖写入 ``Chapter.outline_json``，返回新的 outline_json 与 LLM 调用提示。
+    同步调用（1–3 秒 LLM 延迟内返回）。Celery 包装推后主提。
+    """
+    chapter = await db.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    from app.services.chapter_outline_expander import (
+        ChapterOutlineExpandError,
+        expand_chapter_outline,
+    )
+
+    try:
+        new_outline = await expand_chapter_outline(
+            project_id=project_id,
+            chapter_id=chapter_id,
+            db=db,
+        )
+    except ChapterOutlineExpandError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await db.commit()
+    return {
+        "chapter_id": chapter_id,
+        "outline_json": new_outline,
+    }
