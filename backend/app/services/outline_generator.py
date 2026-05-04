@@ -248,31 +248,49 @@ VOLUME_CHAPTERS_SYSTEM = """你是一位经验丰富的小说策划师。根据�
 
 输出纯 JSON，不要包含 markdown 代码块标记。"""
 
-CHAPTER_OUTLINE_SYSTEM = """你是一位经验丰富的小说策划师。根据卷大纲和指定的章号，生成该章的详细大纲。
+# PR-OL17 + PR-OL18: SSE chapter outline path now produces a process-narrative
+# 300-500 字 summary instead of the legacy keyword schema, parity with
+# chapter_outline_expander.SYSTEM_PROMPT so newly created projects’ cascade
+# generation matches the AI-扩写 button output.
+CHAPTER_OUTLINE_SYSTEM = """你是一位高质量中文小说大纲作者。你要生成一份本章「过程性详细大纲」，只输出 JSON 本身，不要 markdown 代码块或辅助说明。
 
-要求输出 JSON 格式：
+【过程性章节大纲是什么】
+summary 必须 300–500 字，是「去了修辞、去了环境描写、去了心理渲染，但过程不丢」的陈述句：人物进场顺序、关键对话要点、动作与结果、状态转折、到头状态都要讲清楚。
+
+反例（错误，不要这样写）：A 和 B 结婚。
+正例（正确，过程性陈述）：九点 A 在礼堂等待。誓词中手微抖，但仍平静说出「愿意」。仪式尾声一名黑帽人递上一张空白请柬，B 未看见。A 当众接过后不动声色，餐会后独自看请柬背面的印记，决定夜里独自出门。
+
+【为什么要这么写】
+summary 在后续章节中会被反复检索。如果你只写「A 和 B 结婚」，后续章节只能记住「他们结婚」，不记得仪式上发生了什么。过程性 summary 能让后续章节准确复述本章事件链，不会丢掉「黑帽人递请柬」这种后面才兑现的伏笔。
+
+【输出 schema（严格遵守）】
 {
   "chapter_idx": 章号,
-  "title": "章名",
-  "plot_points": [
-    "剧情要点1（具体描述本章要发生什么）",
-    "剧情要点2",
-    "剧情要点3"
-  ],
-  "characters_present": ["出场角色"],
-  "locations": ["场景地点"],
-  "emotional_curve": {
-    "opening": "开头情绪基调",
-    "development": "发展过程情绪变化",
-    "ending": "结尾情绪基调"
+  "title": "本章标题 3–8 字，不同于卷名",
+  "summary": "本章过程性叙事 300–500 字。含进入状态·中段关键场景与对话要点·转折·到头状态。去修辞但过程完整。\\n 表示换行。",
+  "key_events": ["事件 1", "事件 2", "… 3–6 条，作为 summary 的结构索引（不是 summary 本身）"],
+  "prev_chapter_threads": ["本章需接住的上章未完动作 / 冲突 / 悬念"],
+  "state_changes": {
+    "characters": [{"name": "角色名", "change": "本章末与本章始相比的具体状态转换"}],
+    "items": [{"name": "道具名", "change": "出现 / 转手 / 丢失 / 含义变化"}],
+    "relationships": [{"from": "A", "to": "B", "change": "关系状态变化"}]
   },
-  "word_count_target": 目标字数(整数),
-  "foreshadow_notes": "本章伏笔相关提示（如有）",
-  "transition_from_previous": "与上一章的衔接",
-  "transition_to_next": "与下一章的衔接"
+  "foreshadows_planted": [
+    {"description": "本章埋下的伏笔描述", "resolve_conditions": "未来某章兌现条件"}
+  ],
+  "foreshadows_resolved": ["本章兌现之前某伏笔的描述"],
+  "next_chapter_hook": "本章末尾留给下章的明确动作·冲突·问题。不可为空。",
+  "word_count_target": 4000
 }
 
-输出纯 JSON，不要包含 markdown 代码块标记"""
+【额外要求】
+- summary 必须 300–500 字。低于 300 字会被拒收。
+- summary 中不要出现「如上所述」「总之」「本章讲了 X」这类总结词，直接叙述过程。
+- key_events 是 summary 的结构骨架，不能代替 summary。只写 key_events 会被拒收。
+- foreshadows / state_changes 可为 [] 但不能缺字段。首章时 prev_chapter_threads 可为 []。
+- 不要创作未在全书大纲 / 本卷大纲 / 上章中出现的人物 / 设定 / 道具。
+- 输出纯 JSON，不要包含 markdown 代码块标记。
+"""
 
 
 # ----------------------------------------------------------------------
