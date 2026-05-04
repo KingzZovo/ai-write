@@ -1,6 +1,9 @@
 # 项目当前进展（持续维护）
 
-> **2026-05-04 00:40 交接**：上一窗口的 phase2-fix B1 批次交付 9 commits + B1 剩余 5 项未做，**严格看** `docs/HANDOFF_2026-05-04_phase2-fix.md`。
+> **2026-05-04 14:50 交接**：B1 收尾·C 完成·D 用户补、E 丢弃。**PR-OUTLINE-DEEPDIVE 四阶段全完成**：
+> Phase 1 · chapter_outline_expander LLM 服务 + API；Phase 4 · 本章大纲中文结构化进 prompt；Phase 2 · OutlineEditor AI 扩写按钮；Phase 3 · raw_text 修复脚本（dry-run 烟测通过）。
+> 详看 `docs/HANDOFF_2026-05-04_b1+outline-deepdive-done.md` 与 `docs/PR-OUTLINE-DEEPDIVE_2026-05-04.md`。
+> 上一窗口 banner：phase2-fix B1 批次 9 commits · 看 `docs/HANDOFF_2026-05-04_phase2-fix.md`。
 
 > 目的：让任何新窗口/新同学**只看这一份**就能知道：已经做了什么、现在做到哪、下一步做什么、怎么验收。
 
