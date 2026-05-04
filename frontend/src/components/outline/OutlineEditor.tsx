@@ -51,6 +51,11 @@ export function OutlineEditor({ projectId, target, onClose, onSaved }: Props) {
   const [content, setContent] = useState<string>(initialText)
   const [savedContent, setSavedContent] = useState<string>(initialText)
   const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [expanding, setExpanding] = useState<boolean>(false)
+  const [expandError, setExpandError] = useState<string>('')
+  const [structuredJson, setStructuredJson] = useState<Record<string, unknown> | null>(
+    target.initialJson || null,
+  )
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const key = targetKey(target)
 
@@ -60,6 +65,8 @@ export function OutlineEditor({ projectId, target, onClose, onSaved }: Props) {
     setContent(t)
     setSavedContent(t)
     setSavingState('idle')
+    setStructuredJson(target.initialJson || null)
+    setExpandError('')
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
@@ -103,6 +110,32 @@ export function OutlineEditor({ projectId, target, onClose, onSaved }: Props) {
       saveTimerRef.current = setTimeout(() => { void doSave(value) }, 3000)
     }
   }, [savedContent, doSave])
+
+  // PR-OUTLINE-DEEPDIVE Phase 2: trigger LLM expansion for chapter outline.
+  const expandOutline = useCallback(async () => {
+    if (target.type !== 'chapter') return
+    setExpanding(true)
+    setExpandError('')
+    try {
+      const res = await apiFetch(
+        `/api/projects/${projectId}/chapters/${target.chapterId}/outline/expand`,
+        { method: 'POST' },
+      )
+      const data = (res || {}) as { outline_json?: Record<string, unknown> }
+      const newJson = data.outline_json || {}
+      setStructuredJson(newJson)
+      const newText = extractText(newJson)
+      setContent(newText)
+      setSavedContent(newText)
+      onSaved?.(target, newJson)
+    } catch (err: unknown) {
+      console.error('OutlineEditor expand failed:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      setExpandError(msg || '扩写失败')
+    } finally {
+      setExpanding(false)
+    }
+  }, [projectId, target, onSaved])
 
   // Cleanup pending save timer on unmount.
   useEffect(() => () => {
@@ -149,6 +182,15 @@ export function OutlineEditor({ projectId, target, onClose, onSaved }: Props) {
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <span className={`text-xs ${stateColor}`}>{stateText}</span>
+            {target.type === 'chapter' && (
+              <button
+                type="button"
+                onClick={() => { void expandOutline() }}
+                disabled={expanding || savingState === 'saving'}
+                title="调 LLM 为本章生成含伏笔 / 状态变化 / 下章钩子的详细大纲"
+                className="px-3 py-1 text-xs border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >{expanding ? 'AI 扩写中…' : 'AI 扩写本章大纲'}</button>
+            )}
             <button
               type="button"
               onClick={() => { if (dirty) void doSave(content) }}
@@ -164,6 +206,11 @@ export function OutlineEditor({ projectId, target, onClose, onSaved }: Props) {
         </div>
       </div>
       <div className="max-w-3xl mx-auto py-4 px-6">
+        {expandError && (
+          <div className="mb-3 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+            扩写失败：{expandError}
+          </div>
+        )}
         <textarea
           value={content}
           onChange={(e) => onChange(e.target.value)}
