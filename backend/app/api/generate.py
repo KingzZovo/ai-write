@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # commit. Without this strong ref, the bg task can be GC'd before commit
 # finishes, leaving outlines table empty even though SSE returned 200.
 _OUTLINE_SAVE_BG_TASKS: set = set()
+_CHAPTER_SAVE_BG_TASKS: set = set()  # PR-OL16 + PR-CH-SAVE-RACE
 
 def _x4_inc_revise(outcome: str) -> None:
     """v1.6.0 X4: increment scene_revise_round_total. Best-effort."""
@@ -253,10 +254,18 @@ async def generate_chapter(
                     collected_text.append(chunk)
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
 
-            # Auto-save chapter content to DB (Bug K fix: parity with outline auto-save).
+            # PR-CH-SAVE-RACE: chapter SSE save was racing with Starlette
+            # BaseHTTPMiddleware cancel scope (same root cause as PR-OL16).
+            # nginx logged POST /api/generate/chapter 200 + 229KB while
+            # chapters.content_text stayed empty; backend log showed
+            # CancelledError + asyncpg connection terminating mid-commit.
+            # Fix: run the entire save body as a detached bg task with
+            # asyncio.shield + module-level strong reference so the commit
+            # survives the SSE pipe being torn down.
             full_text = "".join(collected_text)
             if full_text:
-                try:
+                async def _persist_chapter_now():
+                    """Returns (chapter_id_or_none, word_count, no_target_row)."""
                     from app.db.session import async_session_factory
                     async with async_session_factory() as save_db:
                         target_chapter = None
@@ -270,99 +279,99 @@ async def generate_chapter(
                                 )
                             )
                             target_chapter = lookup.scalar_one_or_none()
-                        if target_chapter is not None:
-                            target_chapter.content_text = full_text
-                            target_chapter.word_count = len(full_text)
-                            target_chapter.status = "completed"
-                            await save_db.commit()
-                            await save_db.refresh(target_chapter)
-                            # v1.8.1: persistence actually committed; record success.
-                            _inc_chapter_auto_save("chapter", "success", "ok")
-                            # PR-VER1: write a ChapterVersion row on every AI generation
-                            # so the git-native version tree is non-empty. Deactivate any
-                            # prior active version on the same chapter; mark this one active.
-                            try:
-                                from app.models.project import ChapterVersion
-                                from sqlalchemy import update as _sql_update
-                                await save_db.execute(
-                                    _sql_update(ChapterVersion)
-                                    .where(ChapterVersion.chapter_id == target_chapter.id,
-                                           ChapterVersion.is_active == 1)
-                                    .values(is_active=0)
-                                )
-                                cv = ChapterVersion(
-                                    chapter_id=target_chapter.id,
-                                    parent_id=None,
-                                    branch_name="main",
-                                    content_text=full_text,
-                                    content_diff="",
-                                    word_count=len(full_text),
-                                    is_active=1,
-                                    source="ai_generation",
-                                    metadata_json={
-                                        "caller": "api.generate.stream_generate",
-                                        "chapter_idx": resolved_chapter_idx,
-                                    },
-                                )
-                                save_db.add(cv)
-                                await save_db.commit()
-                                logger.info(
-                                    "PR-VER1: ChapterVersion written chapter_id=%s ver_id=%s",
-                                    target_chapter.id, cv.id,
-                                )
-                            except Exception as _ver_err:
-                                logger.warning(
-                                    "PR-VER1: ChapterVersion write failed chapter_id=%s err=%s",
-                                    target_chapter.id, _ver_err,
-                                )
-                            yield f"data: {json.dumps({'status': 'saved', 'chapter_id': str(target_chapter.id), 'word_count': target_chapter.word_count})}\n\n"
-                            # B2' (v1.5.0): kick entity-extraction task post-commit.
-                            try:
-                                from app.services.entity_dispatch import dispatch_for_chapter
-                                await dispatch_for_chapter(
-                                    target_chapter, save_db,
-                                    caller="api.generate.stream_generate",
-                                )
-                            except Exception as dispatch_err:
-                                logger.warning(
-                                    "Entity dispatch after auto-save failed: %s", dispatch_err
-                                )
-                            # v1.7.4 P0-2: write chapter.summary so the next
-                            # chapter's ContextPack.recent_summaries is non-empty.
-                            try:
-                                from app.services.chapter_summarizer import summarize_and_save_chapter
-                                ok_sum, _sum_text = await summarize_and_save_chapter(
-                                    chapter_id=target_chapter.id, db=save_db,
-                                )
-                                if ok_sum:
-                                    logger.info(
-                                        "Chapter summary written (chapter_id=%s len=%d)",
-                                        target_chapter.id, len(_sum_text),
-                                    )
-                            except Exception as sum_err:
-                                logger.warning(
-                                    "Chapter summarize after auto-save failed: %s", sum_err
-                                )
-                        else:
-                            logger.warning(
-                                "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",
-                                req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                        if target_chapter is None:
+                            return None, 0, True
+                        target_chapter.content_text = full_text
+                        target_chapter.word_count = len(full_text)
+                        target_chapter.status = "completed"
+                        await save_db.commit()
+                        await save_db.refresh(target_chapter)
+                        _inc_chapter_auto_save("chapter", "success", "ok")
+                        # PR-VER1: ChapterVersion row.
+                        try:
+                            from app.models.project import ChapterVersion
+                            from sqlalchemy import update as _sql_update
+                            await save_db.execute(
+                                _sql_update(ChapterVersion)
+                                .where(ChapterVersion.chapter_id == target_chapter.id,
+                                       ChapterVersion.is_active == 1)
+                                .values(is_active=0)
                             )
-                            _inc_chapter_auto_save("chapter", "failure", "no_target_row")
-                            yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
+                            cv = ChapterVersion(
+                                chapter_id=target_chapter.id,
+                                parent_id=None,
+                                branch_name="main",
+                                content_text=full_text,
+                                content_diff="",
+                                word_count=len(full_text),
+                                is_active=1,
+                                source="ai_generation",
+                                metadata_json={
+                                    "caller": "api.generate.stream_generate",
+                                    "chapter_idx": resolved_chapter_idx,
+                                },
+                            )
+                            save_db.add(cv)
+                            await save_db.commit()
+                            logger.info(
+                                "PR-VER1: ChapterVersion written chapter_id=%s ver_id=%s",
+                                target_chapter.id, cv.id,
+                            )
+                        except Exception as _ver_err:
+                            logger.warning(
+                                "PR-VER1: ChapterVersion write failed chapter_id=%s err=%s",
+                                target_chapter.id, _ver_err,
+                            )
+                        # B2' v1.5.0: entity dispatch.
+                        try:
+                            from app.services.entity_dispatch import dispatch_for_chapter
+                            await dispatch_for_chapter(
+                                target_chapter, save_db,
+                                caller="api.generate.stream_generate",
+                            )
+                        except Exception as dispatch_err:
+                            logger.warning(
+                                "Entity dispatch after auto-save failed: %s", dispatch_err
+                            )
+                        # v1.7.4 P0-2: chapter summary.
+                        try:
+                            from app.services.chapter_summarizer import summarize_and_save_chapter
+                            ok_sum, _sum_text = await summarize_and_save_chapter(
+                                chapter_id=target_chapter.id, db=save_db,
+                            )
+                            if ok_sum:
+                                logger.info(
+                                    "Chapter summary written (chapter_id=%s len=%d)",
+                                    target_chapter.id, len(_sum_text),
+                                )
+                        except Exception as sum_err:
+                            logger.warning(
+                                "Chapter summarize after auto-save failed: %s", sum_err
+                            )
+                        return str(target_chapter.id), target_chapter.word_count, False
+
+                _chsave_task = asyncio.create_task(_persist_chapter_now())
+                _CHAPTER_SAVE_BG_TASKS.add(_chsave_task)
+                _chsave_task.add_done_callback(_CHAPTER_SAVE_BG_TASKS.discard)
+                try:
+                    _saved_id, _wc, _no_target = await asyncio.shield(_chsave_task)
+                    if _no_target:
+                        logger.warning(
+                            "Auto-save chapter: no target row (chapter_id=%s vol=%s idx=%s)",
+                            req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                        )
+                        _inc_chapter_auto_save("chapter", "failure", "no_target_row")
+                        yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'status': 'saved', 'chapter_id': _saved_id, 'word_count': _wc})}\n\n"
+                except asyncio.CancelledError:
+                    # SSE pipe cancelled mid-save; bg task continues commit independently.
+                    raise
                 except Exception as save_err:
-                    # v1.8.1 Bug L: do NOT silently swallow. asyncpg connection-closed,
-                    # transaction-already-aborted, etc. used to leave chapters.content_text
-                    # empty while SSE clients had received streamed text. Emit an SSE
-                    # `save_failed` event so the frontend can surface it, log full traceback,
-                    # and increment chapter_auto_save_total{outcome="failure"}.
                     logger.error(
                         "Auto-save chapter FAILED (chapter_id=%s vol=%s idx=%s): %s",
-                        req.chapter_id,
-                        resolved_volume_id,
-                        resolved_chapter_idx,
-                        save_err,
-                        exc_info=True,
+                        req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                        save_err, exc_info=True,
                     )
                     _inc_chapter_auto_save(
                         "chapter", "failure", type(save_err).__name__
@@ -371,8 +380,9 @@ async def generate_chapter(
                         yield (
                             f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'error': str(save_err)[:500], 'error_class': type(save_err).__name__})}\n\n"
                         )
-                    except Exception:  # pragma: no cover - SSE pipe might already be closed
+                    except Exception:
                         pass
+
 
             # ----------------------------------------------------------------
             # v1.5.0 C2: scene-mode auto-revise loop.
