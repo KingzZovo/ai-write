@@ -405,12 +405,24 @@ async def _run_async_generation_impl(task_id: str):
                     # alongside raw_text so the wizard can prefill volume count
                     # without re-running the SSE preview.
                     _vol_plan = None
+                    # PR-FIX-OL15-CELERY-STRIP: the SSE save path in
+                    # backend/app/api/generate.py:945-949 already calls
+                    # _OG._strip_volume_plan_tags(full_text) before persisting,
+                    # but this celery branch (used by outline_book /
+                    # outline_from_reference task_types) was writing the raw LLM
+                    # output verbatim, which leaks <volume-plan>...</volume-plan>
+                    # control tags into user-visible raw_text. Strip them here
+                    # too. Both _extract_volume_plan (instance method) and
+                    # _strip_volume_plan_tags (staticmethod) live on the same
+                    # _OG import, so we do both inside the same try.
+                    full_text_clean = full_text
                     try:
                         from app.services.outline_generator import OutlineGenerator as _OG
                         _vol_plan = _OG()._extract_volume_plan(full_text)
+                        full_text_clean = _OG._strip_volume_plan_tags(full_text)
                     except Exception as _vp_err:
-                        logger.warning("volume_plan extract failed: %s", _vp_err)
-                    _content = {"raw_text": full_text}
+                        logger.warning("volume_plan extract/strip failed: %s", _vp_err)
+                    _content = {"raw_text": full_text_clean}
                     if _vol_plan:
                         _content["volume_plan"] = _vol_plan
                     db.add(
