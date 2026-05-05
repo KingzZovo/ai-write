@@ -1,3 +1,5 @@
+> **⚠️ 2026-05-05 23:30 最新交接**：PR-BOOK-PROFILE-BIND 未完成，详计划看 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md](HANDOFF_2026-05-05_pr-book-profile-bind.md)。本页以下内容为历史。
+
 # 项目当前进展（持续维护）
 
 > **2026-05-04 14:50 交接**：B1 收尾·C 完成·D 用户补、E 丢弃。**PR-OUTLINE-DEEPDIVE 四阶段全完成**：

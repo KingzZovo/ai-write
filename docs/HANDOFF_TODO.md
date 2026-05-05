@@ -1,3 +1,5 @@
+> **⚠️ 2026-05-05 23:30 最新交接**：PR-BOOK-PROFILE-BIND 未完成，详计划看 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md](HANDOFF_2026-05-05_pr-book-profile-bind.md)。本页以下内容为历史。
+
 # Handoff TODO
 
 > **2026-05-03 12:25 交接**：本交接全貌 看 `docs/HANDOFF_2026-05-03_outline-batch2.md`。（可直接打勾执行）
