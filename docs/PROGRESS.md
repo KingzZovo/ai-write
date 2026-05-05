@@ -438,3 +438,24 @@ outlines tag occurrences <volume-plan>=0  ✅
 - 127.0.0.1:3001 是 grafana docker-proxy（不是 next-server）
 - next-server 之前一直在宿主机 *:3000，但用户看到的是 8080→nginx→docker frontend:3000；所以前端 commit 是否生效取决于 docker 镜像 build 时间，不是宿主机进程
 - user msg 12/15 报的 5 症状之所以"修了还在"，部分原因是新前端代码从未真正进入 ai-write-frontend 镜像
+
+---
+
+## 2026-05-06 07:40 仿写验证实测进展与阻塞
+
+- **Stage B ✅**：项目已建 `df6f523e-f903-4644-bcce-636f5ed89c68`，settings_json.style_reference 已绑赤心 profile `b76da43a-...` + reference_book `0a543b1d-...`。
+  - 隐患：POST `/api/projects` 入参 `target_word_count` 被忽略，Project 落默认 3000000。已 PUT 修正为 200000。`backend/app/api/projects.py:58 create_project` 未传 `body.target_word_count` 给 `Project(...)`。
+- **Stage C ⚠️ 阻塞**：book outline `0868f734-6e9c-4210-bbce-e09ac8c5adaa` 已落库，但 `content_json = {"raw_text": "..."}`。
+  - staged_stream 三阶段（A骨架 / B角色 / C世界观）full_text 未被 `OutlineGenerator._parse_json` 解析为 `main_plot / volume_plan / characters / world_setting / chapter_naming_style`。
+  - 下游 volume / chapter outline 依赖 `book_outline.content_json["main_plot"]`（`generate.py:166`）与 `volume_plan` ⇒ 取不到，无法推进。
+  - 根因：`_persist_outline_now`（`generate.py:1060-1090`） 只在 `level=="book"` 调 `_extract_volume_plan`；结构化 `_parse_json` 只走 `level in ("volume","chapter")` 分支。
+- **Stage D / E**：未开始，依赖 Stage C 产出。
+
+### 新 PR 候选：PR-OUTLINE-STAGED-PERSIST-STRUCT
+
+触点 `backend/app/api/generate.py:1060-1090`，修复方向：
+
+- A（轻量）：把 `level in ("volume","chapter")` 分支的 `_parsed_struct = _OG()._parse_json(full_text_clean)` 逻辑同时应用于 `level=="book"`，setdefault 进 `_content_json`。
+- B（严谨）：staged_stream 三阶段各自 `stage_end` 时将其 full_text 解析为 JSON，最后合并（A 出 main_plot+volume_plan、B 出 characters、C 出 world_setting）。推荐。
+- 顺带修 `backend/app/api/projects.py:58 create_project`：加 `target_word_count=body.target_word_count`，POST 与 GET 一致。
+- 验收：重走 Stage B 创项 → Stage C book outline → `SELECT content_json FROM outlines WHERE id=...` 含 `main_plot/volume_plan/characters/world_setting`；volume outline 走通。

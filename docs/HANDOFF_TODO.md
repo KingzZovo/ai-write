@@ -94,3 +94,18 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 - [x] PR-STY1 style v9 节奏/留白/信息密度 directives（`f3e9e55`）
 - [ ] **下一步**：则使用 PID `310c1f9a` 清 30 章 + chapter outline 后重跑 30 章全流程，贴朱雀 AI 检测对比 baseline 12.04% / 42.21% / 45.75%。
 - [ ] **后动工**：开分支 `feat/neo4j-batch1` 走 PR-NEO1（道具） / PR-NEO2（阵营事件） / PR-NEO3（时间） / PR-NEO4（context_pack/critic 消费）。
+
+---
+
+## 本窗口实测进展（2026-05-06 07:40）
+
+- Stage B ✅ 项目 `df6f523e-f903-4644-bcce-636f5ed89c68` 已创建、style_reference 已绑、target_word_count=200000（PUT 修正）。
+- Stage C ⚠️ book outline `0868f734-6e9c-4210-bbce-e09ac8c5adaa` content_json 仅 `raw_text`，缺 `main_plot / volume_plan / characters / world_setting / chapter_naming_style`，下游阻塞。
+- Stage D / E 未开始。
+
+## 下一批次 PR-OUTLINE-STAGED-PERSIST-STRUCT（新 PR，靠上述问题驱动）
+
+- [ ] 修 `backend/app/api/generate.py:1060-1090 _persist_outline_now`：`level=="book"` 也走 `_OG()._parse_json` 抽 `main_plot / characters / world_setting / chapter_naming_style`（或逐阶段解析 + merge）。
+- [ ] 顺带修 `backend/app/api/projects.py:58 create_project`：加 `target_word_count=body.target_word_count`。
+- [ ] 重走 Stage B/C 验收：`outlines.content_json` 含上述键；volume outline 走通。
+- [ ] Stage C 走通后接 Stage D `/api/chapters/bulk-generate` 10 章 + Stage E `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。
