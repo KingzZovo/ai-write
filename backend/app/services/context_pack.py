@@ -1275,6 +1275,53 @@ class ContextPackBuilder:
             if redacted:
                 pack.style_samples.append(redacted)
 
+        # PR-VECTORIZE-PASSAGES: per-passage scene-typed samples filtered by
+        # the upcoming chapter's scene_type (when known). Yields top-2 most
+        # relevant high-quality author passages for the same scene archetype.
+        try:
+            _scene_type: str | None = None
+            _co = pack.current_outline if isinstance(pack.current_outline, dict) else {}
+            if _co:
+                cand = (
+                    _co.get("scene_type")
+                    or _co.get("key_scene_type")
+                    or (isinstance(_co.get("key_scene"), dict) and _co["key_scene"].get("scene_type"))
+                )
+                if isinstance(cand, str) and cand.strip():
+                    _scene_type = cand.strip()
+            _profile_id_hint: str | None = None
+            try:
+                if project_id:
+                    db2 = await self._get_db()
+                    proj2 = await db2.get(Project, project_id)
+                    if proj2 is not None:
+                        sj = proj2.settings_json or {}
+                        _profile_id_hint = ((sj.get("style_reference") or {}).get("profile_id")) or sj.get("default_style_profile_id")
+            except Exception:
+                _profile_id_hint = None
+            scene_hits = await store.search_scene_samples(
+                embedding,
+                scene_type=_scene_type,
+                profile_id=_profile_id_hint,
+                top_k=2,
+            )
+            for h in scene_hits:
+                payload = h.get("payload") or {}
+                txt = payload.get("passage") or payload.get("text")
+                if not txt:
+                    continue
+                tag = payload.get("scene_type") or ""
+                tech = payload.get("technique") or ""
+                header_bits = []
+                if tag:
+                    header_bits.append(f"[{tag}]")
+                if tech:
+                    header_bits.append(f"({tech})")
+                head = " ".join(header_bits) or "[作者范例]"
+                pack.style_samples.append(f"{head} {txt}")
+        except Exception as _ss_err:
+            logger.warning("scene_samples retrieval failed: %s", _ss_err)
+
     async def _load_style_samples(
         self,
         pack: ContextPack,

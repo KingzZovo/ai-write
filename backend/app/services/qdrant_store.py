@@ -501,3 +501,71 @@ class QdrantStore:
         except Exception as exc:
             logger.warning("Search on %s failed: %s", collection, exc)
             return []
+
+    # PR-VECTORIZE-PASSAGES: per-passage style samples keyed by scene_type.
+    SCENE_SAMPLES_COLLECTION = "style_samples_by_scene"
+
+    async def ensure_scene_samples_collection(self, dim: int) -> None:
+        """Create the style_samples_by_scene collection if absent."""
+        try:
+            await self.client.get_collection(self.SCENE_SAMPLES_COLLECTION)
+        except Exception:
+            try:
+                from qdrant_client.models import Distance, VectorParams
+                await self.client.create_collection(
+                    collection_name=self.SCENE_SAMPLES_COLLECTION,
+                    vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+                )
+                logger.info("Created Qdrant collection: %s (dim=%d)", self.SCENE_SAMPLES_COLLECTION, dim)
+            except Exception as exc:
+                logger.warning("Failed to create %s: %s", self.SCENE_SAMPLES_COLLECTION, exc)
+
+    async def store_scene_sample(
+        self,
+        profile_id: str,
+        passage_idx: int,
+        embedding: list[float],
+        payload: dict,
+    ) -> None:
+        """Upsert one style sample point keyed by (profile_id, passage_idx)."""
+        from qdrant_client.models import PointStruct
+        pid = self._deterministic_id(f"{profile_id}:{passage_idx}")
+        await self.client.upsert(
+            collection_name=self.SCENE_SAMPLES_COLLECTION,
+            points=[PointStruct(id=pid, vector=embedding, payload=payload)],
+        )
+
+    async def search_scene_samples(
+        self,
+        embedding: list[float],
+        *,
+        scene_type: str | None = None,
+        profile_id: str | None = None,
+        top_k: int = 2,
+    ) -> list[dict]:
+        """Search style_samples_by_scene optionally filtered by scene_type/profile_id."""
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        must = []
+        if scene_type:
+            must.append(FieldCondition(key="scene_type", match=MatchValue(value=scene_type)))
+        if profile_id:
+            must.append(FieldCondition(key="profile_id", match=MatchValue(value=profile_id)))
+        flt = Filter(must=must) if must else None
+        try:
+            # qdrant-client >=1.10 deprecated .search in favor of .query_points
+            res = await self.client.query_points(
+                collection_name=self.SCENE_SAMPLES_COLLECTION,
+                query=embedding,
+                limit=top_k,
+                query_filter=flt,
+                with_payload=True,
+            )
+            points = getattr(res, "points", res) or []
+            return [
+                {"id": r.id, "score": r.score, "payload": r.payload}
+                for r in points
+            ]
+        except Exception as exc:
+            logger.warning("search_scene_samples failed: %s", exc)
+            return []
+
