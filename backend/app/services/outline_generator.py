@@ -433,8 +433,13 @@ def extract_chapter_breakdown(volume_outline: dict | list | None) -> dict[int, d
 class OutlineGenerator:
     """Generates hierarchical outlines: book → volume → chapter."""
 
-    def __init__(self, project_id: str | None = None):
+    def __init__(self, project_id: str | None = None, chapter_naming_directive: str = ""):
         self.router = get_model_router()
+        # PR-CHAPTER-NAMING: optional directive describing the desired chapter
+        # naming style; appended to volume/chapter outline system prompts when
+        # non-empty. Loaded from style_profile.config_json.chapter_naming_style
+        # by api/generate.py.
+        self.chapter_naming_directive = chapter_naming_directive or ""
         # PR-USAGE-LOGMETA: when caller (api/generate.py) supplies project_id,
         # every router.generate_stream/generate call below threads _log_meta
         # so llm_call_logger.log_llm_call writes one row per LLM call AND
@@ -885,8 +890,11 @@ class OutlineGenerator:
         if user_notes:
             context += f"\n\n用户补充说明：{user_notes}"
 
+        _vol_sys = VOLUME_OUTLINE_SYSTEM
+        if self.chapter_naming_directive:
+            _vol_sys = _vol_sys + "\n\n" + self.chapter_naming_directive
         messages = [
-            {"role": "system", "content": VOLUME_OUTLINE_SYSTEM},
+            {"role": "system", "content": _vol_sys},
             {"role": "user", "content": context},
         ]
 
@@ -944,7 +952,7 @@ class OutlineGenerator:
             meta_result = await self.router.generate(
                 task_type="outline_volume",
                 messages=[
-                    {"role": "system", "content": VOLUME_META_SYSTEM},
+                    {"role": "system", "content": VOLUME_META_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
                     {"role": "user", "content": meta_ctx},
                 ],
             )
@@ -1001,7 +1009,7 @@ class OutlineGenerator:
                 batch_result = await self.router.generate(
                     task_type="outline_volume",
                     messages=[
-                        {"role": "system", "content": VOLUME_CHAPTERS_SYSTEM},
+                        {"role": "system", "content": VOLUME_CHAPTERS_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
                         {"role": "user", "content": batch_ctx},
                     ],
                 )
@@ -1059,8 +1067,11 @@ class OutlineGenerator:
         if user_notes:
             context += f"\n\n用户补充说明：{user_notes}"
 
+        _ch_sys = CHAPTER_OUTLINE_SYSTEM
+        if self.chapter_naming_directive:
+            _ch_sys = _ch_sys + "\n\n" + self.chapter_naming_directive
         messages = [
-            {"role": "system", "content": CHAPTER_OUTLINE_SYSTEM},
+            {"role": "system", "content": _ch_sys},
             {"role": "user", "content": context},
         ]
 
@@ -1092,3 +1103,75 @@ class OutlineGenerator:
         except json.JSONDecodeError:
             logger.warning("Failed to parse outline JSON, returning raw text")
             return {"raw_text": text, "_parse_error": True}
+
+def format_chapter_naming_directive(config_json: dict | None) -> str:
+    """PR-CHAPTER-NAMING: render style_profile.config_json[chapter_naming_style]
+    into a directive block for outline LLM prompts.
+
+    Returns empty string when config_json has no chapter_naming_style.
+    """
+    if not config_json or not isinstance(config_json, dict):
+        return ""
+    cns = config_json.get("chapter_naming_style")
+    if not isinstance(cns, dict):
+        return ""
+    parts: list[str] = ["【参考作者「章节命名风格」】 以下是从参考书学到的命名原则，生成 title 时应严格遵循："]
+    principles = cns.get("overall_principles") or []
+    if isinstance(principles, list) and principles:
+        parts.append("【总则】")
+        for p in principles[:8]:
+            if isinstance(p, str) and p.strip():
+                parts.append(f"· {p.strip()}")
+    patterns = cns.get("naming_patterns") or []
+    if isinstance(patterns, list) and patterns:
+        parts.append("\n【可选命名路径】")
+        for pat in patterns[:6]:
+            if not isinstance(pat, dict):
+                continue
+            name = (pat.get("name") or "").strip()
+            desc = (pat.get("description") or "").strip()
+            samples = pat.get("examples") or pat.get("sample_titles") or []
+            sample_str = "、".join([str(x) for x in samples[:3] if x])
+            line = f"· {name}: {desc}"
+            if sample_str:
+                line += f" （如：{sample_str}）"
+            parts.append(line)
+    relations = cns.get("title_content_relations") or []
+    if isinstance(relations, list) and relations:
+        parts.append("\n【title 与本章内容的关联手法（优先选一种）】")
+        for rel in relations[:5]:
+            if not isinstance(rel, dict):
+                continue
+            name = (rel.get("name") or "").strip()
+            desc = (rel.get("description") or "").strip()
+            parts.append(f"· {name}: {desc}")
+    avoid = cns.get("avoid_patterns") or []
+    if isinstance(avoid, list) and avoid:
+        parts.append("\n【忌论】")
+        for a in avoid[:6]:
+            if isinstance(a, str) and a.strip():
+                parts.append(f"· {a.strip()}")
+    examples = cns.get("example_titles") or []
+    if isinstance(examples, list) and examples:
+        parts.append("\n【高质量范例】")
+        rendered_count = 0
+        for ex in examples:
+            if rendered_count >= 12:
+                break
+            if not isinstance(ex, dict):
+                continue
+            t = (ex.get("title") or "").strip()
+            if not t:
+                continue
+            tech = (ex.get("technique") or "").strip()
+            cs = (ex.get("content_summary") or "").strip()
+            line = f"· 「{t}」"
+            if tech:
+                line += f" [{tech}]"
+            if cs:
+                line += f" — {cs}"
+            parts.append(line)
+            rendered_count += 1
+    parts.append("\n【硬约束】title 不允许为：“第N章” / 纯数字 / 重复卷名 / 存纯抽象名词（如《恍惚》《争锉》这类空词）。优先选“本章主事件的关键具象意象”或“章末状态的诗化意象句”作为章名。")
+    return "\n".join(parts)
+

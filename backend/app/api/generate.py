@@ -933,7 +933,24 @@ async def generate_outline(
             # PR-USAGE-LOGMETA: bind project_id so every router call inside
             # OutlineGenerator threads _log_meta and lands in llm_call_logs +
             # usage_quotas (was silently bypassed before).
-            generator = OutlineGenerator(project_id=req.project_id)
+            # PR-CHAPTER-NAMING: load chapter naming directive from project's style profile
+            _chapter_naming_directive = ""
+            if req.project_id:
+                try:
+                    from app.services.outline_generator import format_chapter_naming_directive as _fmt_naming
+                    from app.models.project import Project as _Project, StyleProfile as _StyleProfile
+                    _proj = await db.get(_Project, req.project_id)
+                    if _proj is not None:
+                        _settings = _proj.settings_json or {}
+                        _style_ref = _settings.get("style_reference") or {}
+                        _profile_id = _style_ref.get("profile_id") or _settings.get("default_style_profile_id")
+                        if _profile_id:
+                            _profile = await db.get(_StyleProfile, _profile_id)
+                            if _profile is not None:
+                                _chapter_naming_directive = _fmt_naming(_profile.config_json) or ""
+                except Exception as _cnd_err:
+                    logger.warning("PR-CHAPTER-NAMING directive load failed: %s", _cnd_err)
+            generator = OutlineGenerator(project_id=req.project_id, chapter_naming_directive=_chapter_naming_directive)
 
             yield f"data: {json.dumps({'status': 'generating', 'level': req.level})}\n\n"
 
