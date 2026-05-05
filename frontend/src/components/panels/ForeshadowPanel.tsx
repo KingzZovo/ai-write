@@ -8,9 +8,9 @@ interface Foreshadow {
   type: string
   description: string
   planted_chapter: number
-  resolve_conditions: string[] | null
-  narrative_proximity: number
-  status: 'planted' | 'ripening' | 'ready' | 'resolved'
+  resolve_conditions_json: any
+  narrative_proximity: number | null
+  status: string
   resolved_chapter: number | null
 }
 
@@ -19,6 +19,7 @@ interface ForeshadowResponse { foreshadows: Foreshadow[]; total: number }
 interface ForeshadowPanelProps { projectId: string }
 
 const STATUS_CFG: Record<string, { color: string; label: string; help: string }> = {
+  pending:  { color: 'bg-stone-100 text-stone-600',     label: '待启动', help: '已抽取但尚未启动状态机。' },
   planted:  { color: 'bg-emerald-100 text-emerald-700', label: '已埋',     help: '伏笔已埋下，距离收束还早。' },
   ripening: { color: 'bg-amber-100 text-amber-700',     label: '酝酿中', help: '剧情在推进，接近可以收的阶段。' },
   ready:    { color: 'bg-rose-100 text-rose-700',       label: '该收了', help: '已足够接近该伏笔的收线点，建议设法呈现。' },
@@ -26,6 +27,11 @@ const STATUS_CFG: Record<string, { color: string; label: string; help: string }>
 }
 
 const TYPE_CFG: Record<string, { label: string; color: string }> = {
+  // 中文分类（LLM 抽取输出）
+  '明伏笔':       { label: '明', color: 'text-amber-700' },
+  '暗伏笔':       { label: '暗', color: 'text-stone-600' },
+  '锻造':           { label: '锻', color: 'text-rose-600' },
+  '伏笔':           { label: '伏', color: 'text-amber-700' },
   // 新分类 (后端抽取实际使用)
   plot:         { label: '主线', color: 'text-amber-600' },
   character:    { label: '人物', color: 'text-rose-600' },
@@ -134,7 +140,7 @@ function Section({ title, items }: { title: string; items: Foreshadow[] }) {
 function ForeshadowCard({ foreshadow: f }: { foreshadow: Foreshadow }) {
   const statusCfg = STATUS_CFG[f.status] || STATUS_CFG.planted
   const typeCfg = TYPE_CFG[f.type] || { label: f.type, color: 'text-stone-500' }
-  const proximity = Number.isFinite(f.narrative_proximity) ? f.narrative_proximity : 0
+  const proximity = (typeof f.narrative_proximity === "number" && Number.isFinite(f.narrative_proximity)) ? f.narrative_proximity : 0
   const proximityWidth = Math.round(proximity * 100)
   return (
     <div className="bg-white border border-stone-200 rounded-lg p-2.5 text-xs">
@@ -144,11 +150,11 @@ function ForeshadowCard({ foreshadow: f }: { foreshadow: Foreshadow }) {
         <span className="text-stone-300 ml-auto">第 {f.planted_chapter} 章</span>
       </div>
       <p className="text-stone-700 leading-relaxed">{f.description}</p>
-      {f.resolve_conditions && f.resolve_conditions.length > 0 && (
+      {(() => { const rc = f.resolve_conditions_json; const list = Array.isArray(rc) ? rc : (rc && typeof rc === "object" ? Object.values(rc).map(v => String(v)) : []); return list.length > 0 && (
         <ul className="mt-1 space-y-0.5 text-[10px] text-stone-500">
-          {f.resolve_conditions.slice(0, 3).map((c, i) => <li key={i}>· {c}</li>)}
+          {list.slice(0, 3).map((c, i) => <li key={i}>· {String(c)}</li>)}
         </ul>
-      )}
+      ) })()}
       {f.status !== 'resolved' && (
         <div className="mt-1.5 flex items-center gap-1.5" title={`叙事接近度 ${proximityWidth}%，指当前剧情走到多近该收线点。`}>
           <span className="text-[10px] text-stone-400 w-12 flex-shrink-0">接近度</span>
