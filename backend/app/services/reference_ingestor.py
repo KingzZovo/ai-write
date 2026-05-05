@@ -449,6 +449,15 @@ async def reprocess_reference_book(
             note=(f"{hard_failed} slices raised exceptions" if hard_failed else None),
         )
         await db.commit()
+        # PR-BOOK-PROFILE-BIND: ensure every reference_book has a bound StyleProfile
+        try:
+            from app.services.style_profile_resolver import get_or_create_book_profile
+            await get_or_create_book_profile(db, str(book.id))
+        except Exception as exc:  # pragma: no cover - never block reprocess
+            import logging
+            logging.getLogger(__name__).warning(
+                "auto profile binding failed for %s: %s", book.id, exc
+            )
 
         return {
             "status": book.status,

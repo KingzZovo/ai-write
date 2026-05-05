@@ -10,9 +10,12 @@ Process:
    and curated example_titles.
 5. Aggregate batches into a single chapter_naming_style structure.
 6. Write to style_profiles.config_json["chapter_naming_style"] for the
-   target style profile (default: 江南综合写法
-   d39058bb-a22c-4511-80f6-3649df8eca12).
+   target style profile.
+
+PR-BOOK-PROFILE-BIND: requires --book; --target-profile auto-resolves to
+the StyleProfile bound to that reference_book (created if missing).
 """
+import argparse
 import asyncio
 import json
 import re
@@ -25,28 +28,23 @@ from sqlalchemy import select, text, update
 from app.db.session import async_session_factory
 from app.models.project import StyleProfile
 from app.services.prompt_registry import run_text_prompt
+from app.services.style_profile_resolver import get_or_create_book_profile
 
-TARGET_PROFILE_ID = os.environ.get("TARGET_PROFILE_ID", "d39058bb-a22c-4511-80f6-3649df8eca12")
-BOOK_IDS = [
-    "24498b6b-2698-4900-b44b-b42806964e1b",  # 龙族
-    "67fe33f9-60e8-459e-9720-8546c828eab7",  # 天之炽
-    "c33c2f19-03b4-46a1-ab0a-ede66175a7fe",  # 天之炽②女武神
-]
 CHAPTER_HEAD_RE = re.compile(r"^第.{1,5}章(?:[\s　]+(.+))?$")
 CONTENT_CHAR_LIMIT = 600
 BATCH_SIZE = 25
 
 
-async def extract_chapter_samples(db) -> list[dict]:
+async def extract_chapter_samples(db, book_id: str) -> list[dict]:
     """Pull 第X章 slices and parse into (chapter_no, chinese_title, english_title, content_sample)."""
     rows = await db.execute(text("""
         SELECT rb.title AS book, rbs.book_id, rbs.sequence_id, rbs.raw_text
         FROM reference_book_slices rbs
         JOIN reference_books rb ON rb.id = rbs.book_id
-        WHERE rbs.book_id::text = ANY(:book_ids)
+        WHERE rbs.book_id::text = :book_id
           AND rbs.raw_text ~ '^第.{1,5}章'
         ORDER BY rbs.book_id, rbs.sequence_id
-    """), {"book_ids": BOOK_IDS})
+    """), {"book_id": str(book_id)})
     headers = list(rows.fetchall())
     print(f"  Found {len(headers)} chapter-header slices")
 
@@ -248,12 +246,20 @@ async def run_aggregation(batches: list[dict], db) -> dict:
             return {}
 
 
-async def main():
+async def main(book_id: str, target_profile_id: str | None):
     print("=== PR-CHAPTER-NAMING extraction ===")
     async with async_session_factory() as db:
+        # PR-BOOK-PROFILE-BIND: auto-resolve target profile from book if not given
+        if not target_profile_id:
+            sp = await get_or_create_book_profile(db, book_id)
+            target_profile_id = str(sp.id)
+            print(f"  auto-resolved target style_profile = {target_profile_id} ({sp.name})")
+        else:
+            print(f"  using target style_profile = {target_profile_id}")
+
         # 1) Extract samples
         print("[1/4] extracting chapter samples from reference_book_slices…")
-        samples = await extract_chapter_samples(db)
+        samples = await extract_chapter_samples(db, book_id)
         if not samples:
             print("NO samples found, abort.")
             return
@@ -299,9 +305,9 @@ async def main():
 
         # 4) Persist into style_profiles.config_json
         print("[4/4] writing chapter_naming_style into style_profile config_json…")
-        prof = await db.get(StyleProfile, TARGET_PROFILE_ID)
+        prof = await db.get(StyleProfile, target_profile_id)
         if not prof:
-            print(f"profile {TARGET_PROFILE_ID} not found")
+            print(f"profile {target_profile_id} not found")
             return
         cfg = dict(prof.config_json or {})
         cfg["chapter_naming_style"] = agg
@@ -322,4 +328,10 @@ async def main():
         Path(out_path).write_text(json.dumps(agg, ensure_ascii=False, indent=2))
         print(f"  also saved to {out_path}")
 
-asyncio.run(main())
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--book", required=True, help="reference_book.id (UUID)")
+    ap.add_argument("--target-profile", default=None,
+                    help="style_profiles.id; if omitted, auto-resolved from --book")
+    args = ap.parse_args()
+    asyncio.run(main(args.book, args.target_profile))

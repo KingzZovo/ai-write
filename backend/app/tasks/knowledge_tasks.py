@@ -687,6 +687,12 @@ async def _process_uploaded_book_async(book_id: str, file_path: str, filename: s
                 book.status = "ready"
 
             await db.commit()
+            # PR-BOOK-PROFILE-BIND: ensure every reference_book has a bound StyleProfile
+            try:
+                from app.services.style_profile_resolver import get_or_create_book_profile
+                await get_or_create_book_profile(db, str(book.id))
+            except Exception as e:
+                logger.warning("auto profile binding failed for %s: %s", book.title, e)
             logger.info("Book processed: %s — %d chapters, %d chars", book.title, book.total_chapters, book.total_words)
 
         except Exception as e:

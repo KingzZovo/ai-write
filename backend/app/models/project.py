@@ -292,6 +292,12 @@ class StyleProfile(Base):
     name = Column(String(200), nullable=False)
     description = Column(Text, default="")
     source_book = Column(String(500))
+    # PR-BOOK-PROFILE-BIND: 1:1 binding to a reference book
+    source_book_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reference_books.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Core style rules
     rules_json = Column(JSON, default=list)         # [{rule, weight, category}]

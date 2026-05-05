@@ -19,10 +19,10 @@ log = logging.getLogger('p2')
 from sqlalchemy import select, text as _sql_text
 from app.db.session import async_session_factory
 from app.services.prompt_registry import run_text_prompt
+from app.services.style_profile_resolver import get_or_create_book_profile
 
 DEFAULT_PROJECT = 'c5480585-78f0-44cd-b41e-c8b8348934d7'
-LONGZU_BOOK_ID = '24498b6b-2698-4900-b44b-b42806964e1b'
-JIANGNAN_STYLE_ID = 'd39058bb-a22c-4511-80f6-3649df8eca12'
+# PR-BOOK-PROFILE-BIND: --book is now required and --style auto-resolves from it
 
 
 def _parse_json_loose(txt: str) -> Any:
@@ -413,7 +413,13 @@ async def main_async(args):
         await extract_foreshadows_per_volume(args.project)
     if args.kind in ('style_v9','all'):
         log.info('### MODE: style_v9 ###')
-        await upgrade_style_v9(args.book, args.style)
+        style_id = args.style
+        if not style_id:
+            async with async_session_factory() as db:
+                sp = await get_or_create_book_profile(db, args.book)
+                style_id = str(sp.id)
+            log.info('auto-resolved style_profile=%s for book=%s', style_id, args.book)
+        await upgrade_style_v9(args.book, style_id)
     if args.kind in ('structure_v2','all'):
         log.info('### MODE: structure_v2 ###')
         await upgrade_structure_v2(args.book)
@@ -423,8 +429,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--kind', choices=['foreshadows','style_v9','structure_v2','all'], required=True)
     ap.add_argument('--project', default=DEFAULT_PROJECT)
-    ap.add_argument('--book', default=LONGZU_BOOK_ID)
-    ap.add_argument('--style', default=JIANGNAN_STYLE_ID)
+    ap.add_argument('--book', required=True,
+                    help='reference_books.id (UUID); required by PR-BOOK-PROFILE-BIND')
+    ap.add_argument('--style', default=None,
+                    help='style_profiles.id; if omitted, auto-resolved from --book')
     args = ap.parse_args()
     asyncio.run(main_async(args))
 
