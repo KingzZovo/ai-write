@@ -314,6 +314,23 @@ async def generate_chapter(
                         target_chapter.word_count = len(full_text)
                         target_chapter.status = "completed"
                         await save_db.commit()
+                        # PR-FORESHADOW-LIFECYCLE: persist foreshadows from chapter outline_json after content saved
+                        try:
+                            if target_chapter.outline_json and isinstance(target_chapter.outline_json, dict):
+                                from app.services.foreshadow_lifecycle import (
+                                    persist_foreshadows_from_chapter_outline,
+                                    chapter_global_idx as _cgi_ch,
+                                )
+                                _vol_for_ch = await save_db.get(__import__("app.models.project", fromlist=["Volume"]).Volume, target_chapter.volume_id)
+                                if _vol_for_ch is not None:
+                                    _gidx = await _cgi_ch(save_db, _vol_for_ch.project_id, _vol_for_ch.volume_idx, target_chapter.chapter_idx)
+                                    await persist_foreshadows_from_chapter_outline(
+                                        save_db, _vol_for_ch.project_id, _gidx, target_chapter.outline_json
+                                    )
+                        except Exception as _fl_ch_err:
+                            logger.warning(
+                                "PR-FORESHADOW-LIFECYCLE chapter content persist failed: %s", _fl_ch_err
+                            )
                         await save_db.refresh(target_chapter)
                         _inc_chapter_auto_save("chapter", "success", "ok")
                         # PR-VER1: ChapterVersion row.
@@ -822,6 +839,31 @@ async def generate_outline(
             except Exception as _prev_err:
                 logger.warning("PR-OL12 prev chapter lookup failed: %s", _prev_err)
 
+    # PR-FORESHADOW-LIFECYCLE: pre-load active foreshadows for prompt injection (volume + chapter outline paths)
+    active_foreshadow_block: str = ""
+    if req.project_id and req.level in ("volume", "chapter"):
+        try:
+            from app.services.foreshadow_lifecycle import (
+                load_active_foreshadows_for_context,
+                format_active_foreshadows_for_prompt,
+                get_volume_first_global_idx,
+            )
+            _upper_idx = None
+            if req.level == "volume" and req.volume_idx:
+                # before generating volume N, load foreshadows planted in vols < N
+                _upper_idx = await get_volume_first_global_idx(db, req.project_id, int(req.volume_idx))
+            elif req.level == "chapter" and req.chapter_idx and isinstance(volume_outline, dict):
+                _vidx_for_load = volume_outline.get("volume_idx")
+                if isinstance(_vidx_for_load, int):
+                    _base = await get_volume_first_global_idx(db, req.project_id, _vidx_for_load)
+                    _upper_idx = _base + int(req.chapter_idx)
+            _af_items = await load_active_foreshadows_for_context(
+                db, req.project_id, _upper_idx, limit=20
+            )
+            active_foreshadow_block = format_active_foreshadows_for_prompt(_af_items)
+        except Exception as _af_err:
+            logger.warning("PR-FORESHADOW-LIFECYCLE load active failed: %s", _af_err)
+
     # PR-OL10: compute scale (n_volumes / chapters_per_volume / chapter_words)
     # from the project's target_word_count + settings_json so prompts inject
     # hard numeric constraints instead of free-form "2-8 卷".
@@ -938,10 +980,13 @@ async def generate_outline(
                         yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             elif req.level == "volume":
+                _vol_user_notes = req.user_input or ""
+                if active_foreshadow_block:
+                    _vol_user_notes = (_vol_user_notes + "\n\n" + active_foreshadow_block).strip()
                 async for chunk in await generator.generate_volume_outline(
                     book_outline=book_outline,
                     volume_idx=req.volume_idx or 1,
-                    user_notes=req.user_input,
+                    user_notes=_vol_user_notes,
                     stream=True,
                 ):
                     collected_text.append(chunk)
@@ -967,6 +1012,8 @@ async def generate_outline(
                             "为具体场景与场次，不可与预规划冲突。"
                         )
                         _chapter_user_notes = (_chapter_user_notes + _hint).strip()
+                if active_foreshadow_block:
+                    _chapter_user_notes = (_chapter_user_notes + "\n\n" + active_foreshadow_block).strip()
                     except Exception as _hint_err:
                         logger.warning(
                             "PR-OL12 breakdown hint serialisation failed: %s",
@@ -1029,6 +1076,40 @@ async def generate_outline(
                         await save_db.refresh(outline)
                         _inc_chapter_auto_save("outline", "success", "ok")
                         saved_outline_id_local = str(outline.id)
+                        # PR-FORESHADOW-LIFECYCLE: persist foreshadows from outline JSON.
+                        try:
+                            from app.services.foreshadow_lifecycle import (
+                                persist_foreshadows_from_volume_outline,
+                                persist_foreshadows_from_chapter_outline,
+                                chapter_global_idx as _cgi,
+                            )
+                            if req.level == "volume":
+                                _vidx = _content_json.get("volume_idx") if isinstance(_content_json, dict) else None
+                                if isinstance(_vidx, int):
+                                    await persist_foreshadows_from_volume_outline(
+                                        save_db, req.project_id, _vidx, _content_json
+                                    )
+                            elif req.level == "chapter" and req.chapter_idx is not None:
+                                _vidx2 = None
+                                if isinstance(volume_outline, dict):
+                                    try:
+                                        _vidx2 = int(volume_outline.get("volume_idx") or 0) or None
+                                    except (TypeError, ValueError):
+                                        _vidx2 = None
+                                if _vidx2:
+                                    _gidx = await _cgi(
+                                        save_db, req.project_id, _vidx2, int(req.chapter_idx)
+                                    )
+                                else:
+                                    _gidx = int(req.chapter_idx)
+                                await persist_foreshadows_from_chapter_outline(
+                                    save_db, req.project_id, _gidx, _content_json
+                                )
+                        except Exception as _fl_err:
+                            logger.warning(
+                                "PR-FORESHADOW-LIFECYCLE outline persist failed: %s",
+                                _fl_err,
+                            )
                         if req.level == "chapter" and req.chapter_idx:
                             try:
                                 _parsed = _OG()._parse_json(full_text)

@@ -210,6 +210,21 @@ async def _gather_context(
         if text:
             prev_text = text[-MAX_PREV_TEXT_CHARS:]
 
+    # PR-FORESHADOW-LIFECYCLE: load active foreshadows for prompt injection
+    active_foreshadows: list[dict] = []
+    try:
+        from app.services.foreshadow_lifecycle import (
+            chapter_global_idx,
+            load_active_foreshadows_for_context,
+        )
+        gidx = await chapter_global_idx(db, project_id, vol.volume_idx, chapter.chapter_idx)
+        active_foreshadows = await load_active_foreshadows_for_context(
+            db, project_id, gidx, limit=20
+        )
+    except Exception as _af_err:
+        import logging as _l
+        _l.getLogger(__name__).warning("active foreshadow load failed: %s", _af_err)
+
     return {
         "book_outline": book_cj,
         "volume_outline": volume_outline_cj,
@@ -217,6 +232,7 @@ async def _gather_context(
         "prev_outline": prev_outline,
         "prev_text": prev_text,
         "project_id": str(project_id),
+        "active_foreshadows": active_foreshadows,
     }
 
 
@@ -228,6 +244,18 @@ def _format_user_prompt(ctx: dict[str, Any], chapter: Chapter) -> str:
             return json.dumps(o, ensure_ascii=False, indent=2)
         except (TypeError, ValueError):
             return str(o)
+    # PR-FORESHADOW-LIFECYCLE: append active foreshadows directive
+    try:
+        af = ctx.get("active_foreshadows") or []
+        if af:
+            from app.services.foreshadow_lifecycle import format_active_foreshadows_for_prompt
+            af_block = format_active_foreshadows_for_prompt(af)
+            if af_block:
+                lines.append("")
+                lines.append(af_block)
+    except Exception:
+        pass
+
     return USER_PROMPT_TMPL.format(
         book_outline=_dump(ctx["book_outline"]),
         volume_outline=_dump(ctx["volume_outline"]),
