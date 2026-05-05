@@ -172,7 +172,7 @@ async def delete_project(
 Run:
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"king","password":"Wt991125"}' | python3 -c "import json,sys;print(json.load(sys.stdin)['token'])"
+  -d '{"username":"<USERNAME>","password":"<PASSWORD>"}' | python3 -c "import json,sys;print(json.load(sys.stdin)['token'])"
 ```
 把 token 存起来（`T=<token>`）。
 

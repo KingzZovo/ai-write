@@ -528,7 +528,7 @@ Run:
 ```bash
 docker compose -f /root/ai-write/docker-compose.yml restart backend
 sleep 3
-T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"king","password":"Wt991125"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"<USERNAME>","password":"<PASSWORD>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 PID=6e331209-056b-4b2b-9798-ac246ee8dd48
 OID=6753e9d0-a4bf-4aa2-8d36-eaea5520e55d
 # 清掉 测试 项目已有的 relationships 让重新提取
@@ -599,7 +599,7 @@ async def list_chapters(
 Run:
 ```bash
 docker compose -f /root/ai-write/docker-compose.yml restart backend; sleep 3
-T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"king","password":"Wt991125"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"<USERNAME>","password":"<PASSWORD>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 PID=6e331209-056b-4b2b-9798-ac246ee8dd48
 echo "--- lightweight ---"
 time curl -s -H "Authorization: Bearer $T" "http://127.0.0.1:8000/api/projects/$PID/chapters?lightweight=true" | wc -c
@@ -774,7 +774,7 @@ async def regenerate_volume(
 Run:
 ```bash
 docker compose -f /root/ai-write/docker-compose.yml restart backend; sleep 3
-T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"king","password":"Wt991125"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"<USERNAME>","password":"<PASSWORD>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $T" "http://127.0.0.1:8000/api/projects/00000000-0000-0000-0000-000000000000/volumes/00000000-0000-0000-0000-000000000000/regenerate"
 ```
 Expected: 404 (Volume not found) — 证明路由注册成功
@@ -1999,7 +1999,7 @@ Expected: 3 个都 200
 - [ ] **Step 3: API 冒烟（relationships 端到端）**
 
 ```bash
-T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"king","password":"Wt991125"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+T=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"<USERNAME>","password":"<PASSWORD>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 PID=6e331209-056b-4b2b-9798-ac246ee8dd48
 curl -s -H "Authorization: Bearer $T" "http://127.0.0.1:8000/api/projects/$PID/relationships" | python3 -c "import sys,json;d=json.load(sys.stdin);print('rels total:', d['total'])"
 ```

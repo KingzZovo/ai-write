@@ -1,5 +1,7 @@
 """Pytest configuration and shared fixtures."""
 
+import os
+
 import asyncio
 import pytest
 import pytest_asyncio
@@ -27,7 +29,7 @@ async def client():
 async def auth_client(client: AsyncClient):
     """Authenticated async client with JWT token."""
     resp = await client.post("/api/auth/login", json={
-        "username": "king", "password": "Wt991125"
+        "username": os.environ.get("AUTH_USERNAME", "admin"), "password": os.environ.get("AUTH_PASSWORD", "admin")
     })
     token = resp.json().get("token", "")
     client.headers["Authorization"] = f"Bearer {token}"

@@ -27,8 +27,8 @@ ensure_token() {
 		return 0
 	fi
 	# Default smoke creds (RUNBOOK §0)
-	local username="${AUTH_USERNAME:-king}"
-	local password="${AUTH_PASSWORD:-Wt991125}"
+	local username="${AUTH_USERNAME:-admin}"
+	local password="${AUTH_PASSWORD:?ERROR: AUTH_PASSWORD env var must be set}"
 	local tok
 	tok=$(curl -sS -X POST "$API_BASE/api/auth/login" \
 		-H 'Content-Type: application/json' \

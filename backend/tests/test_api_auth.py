@@ -1,23 +1,25 @@
 """Auth API integration tests."""
 
+import os
+
 import pytest
 
 
 @pytest.mark.asyncio
 async def test_login_success(client):
     resp = await client.post("/api/auth/login", json={
-        "username": "king", "password": "Wt991125"
+        "username": os.environ.get("AUTH_USERNAME", "admin"), "password": os.environ.get("AUTH_PASSWORD", "admin")
     })
     assert resp.status_code == 200
     data = resp.json()
     assert "token" in data
-    assert data["username"] == "king"
+    assert data["username"] == os.environ.get("AUTH_USERNAME", "admin")
 
 
 @pytest.mark.asyncio
 async def test_login_wrong_password(client):
     resp = await client.post("/api/auth/login", json={
-        "username": "king", "password": "wrong"
+        "username": os.environ.get("AUTH_USERNAME", "admin"), "password": "wrong"
     })
     assert resp.status_code == 401
 

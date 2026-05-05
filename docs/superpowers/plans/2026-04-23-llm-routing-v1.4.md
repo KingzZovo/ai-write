@@ -85,8 +85,8 @@
 - [ ] `apply_patch` `api/llm_endpoints.py`：同上，加上 `tier` 字段。
 - [ ] `run_command`：smoke 片段（局部）：
   ```
-  curl -s -u king:Wt991125 http://localhost:8080/api/llm-endpoints | jq '.[0].tier'
-  curl -s -u king:Wt991125 http://localhost:8080/api/prompts | jq '.[0] | has("model_tier")'
+  curl -s -u <USERNAME>:<PASSWORD> http://localhost:8080/api/llm-endpoints | jq '.[0].tier'
+  curl -s -u <USERNAME>:<PASSWORD> http://localhost:8080/api/prompts | jq '.[0] | has("model_tier")'
   ```
 - [ ] `git_commit`：`chunk-4(v1.4): schema + API tier read/write for endpoints & prompts`
 

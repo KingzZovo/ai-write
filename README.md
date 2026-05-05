@@ -45,7 +45,7 @@ docker compose exec backend alembic upgrade head
 
 ### 3. 访问
 
-- **Web UI:** http://localhost:8080（登录：king / Wt991125）
+- **Web UI:** http://localhost:8080（登录账号从 .env 的 AUTH_USERNAME / AUTH_PASSWORD 读取，默认 admin/admin，上线前务必修改）
 - **API Docs:** http://localhost:8000/docs
 
 ### 4. 配置 LLM 端点
