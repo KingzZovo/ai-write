@@ -128,8 +128,28 @@ async def generate_chapter(
     # PR-FIX-PROJSET-STYLEFALLBACK (2026-05-05): resolve project-bound style/structure from settings_json
     if not req.style_id:
         sid = project_settings.get("style_profile_id")
+        if not sid:
+            sr = project_settings.get("style_reference") or {}
+            if isinstance(sr, dict):
+                sid = sr.get("profile_id")
         if sid:
             req.style_id = sid
+
+    # PR-FIX-PROJSET-STRUCTURE (2026-05-05): resolve plot structure from settings_json.plot_structure.structure_book_id
+    structure_prompt: str = ""
+    try:
+        ps_cfg = project_settings.get("plot_structure") or {}
+        sb_id = ps_cfg.get("structure_book_id") if isinstance(ps_cfg, dict) else None
+        if sb_id:
+            from app.models.project import ReferenceBook
+            from app.services.plot_structure import compile_structure_prompt
+            book = await db.get(ReferenceBook, sb_id)
+            if book and book.metadata_json:
+                ps = (book.metadata_json or {}).get("plot_structure")
+                if ps and isinstance(ps, dict) and "error" not in ps:
+                    structure_prompt = compile_structure_prompt(ps) or ""
+    except Exception as e:
+        logger.warning("Plot structure resolve failed: %s", e)
 
     rules_result = await db.execute(
         select(WorldRule).where(WorldRule.project_id == req.project_id)
@@ -198,6 +218,10 @@ async def generate_chapter(
                 effective_user_instruction = (
                     effective_user_instruction
                     + f"\n\n【本章目标字数】约 {target_words} 字（允许 ±15% 浮动）。"
+                )
+            if structure_prompt:
+                effective_user_instruction = (
+                    effective_user_instruction + "\n\n" + structure_prompt
                 )
 
             # v0.5: ChapterGenerator takes project_id/volume_id/chapter_idx.

@@ -65,9 +65,9 @@ class ForeshadowResponse(BaseModel):
     type: str
     description: str
     planted_chapter: int
-    resolve_conditions_json: list[Any] | None = None
+    resolve_conditions_json: list[Any] | dict[str, Any] | None = None
     resolution_blueprint_json: dict[str, Any] | None = None
-    narrative_proximity: float
+    narrative_proximity: float | None = None
     status: str
     resolved_chapter: int | None = None
     created_at: Any
