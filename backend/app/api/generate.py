@@ -1012,13 +1012,13 @@ async def generate_outline(
                             "为具体场景与场次，不可与预规划冲突。"
                         )
                         _chapter_user_notes = (_chapter_user_notes + _hint).strip()
-                if active_foreshadow_block:
-                    _chapter_user_notes = (_chapter_user_notes + "\n\n" + active_foreshadow_block).strip()
                     except Exception as _hint_err:
                         logger.warning(
                             "PR-OL12 breakdown hint serialisation failed: %s",
                             _hint_err,
                         )
+                if active_foreshadow_block:
+                    _chapter_user_notes = (_chapter_user_notes + "\n\n" + active_foreshadow_block).strip()
                 async for chunk in await generator.generate_chapter_outline(
                     book_outline=book_outline,
                     volume_outline=volume_outline,
