@@ -15,6 +15,7 @@ interface Endpoint {
   provider_type: string
   base_url: string
   api_key_masked: string
+  api_key_2_set?: boolean
   default_model: string
   tier: string
   enabled: number
@@ -218,6 +219,7 @@ function EndpointsSection({
     provider_type: 'anthropic',
     base_url: '',
     api_key: '',
+    api_key_2: '',
     default_model: '',
     tier: 'standard',
   })
@@ -239,7 +241,7 @@ function EndpointsSection({
   })
 
   const resetForm = useCallback(() => {
-    setFormData({ name: '', provider_type: 'anthropic', base_url: '', api_key: '', default_model: '', tier: 'standard' })
+    setFormData({ name: '', provider_type: 'anthropic', base_url: '', api_key: '', api_key_2: '', default_model: '', tier: 'standard' })
     setShowForm(false)
     setEditingId(null)
     setFormError(null)
@@ -251,6 +253,7 @@ function EndpointsSection({
       provider_type: ep.provider_type,
       base_url: ep.base_url,
       api_key: '',
+      api_key_2: '',
       default_model: ep.default_model,
       tier: ep.tier || 'standard',
     })
@@ -273,6 +276,9 @@ function EndpointsSection({
         }
         if (formData.api_key) {
           body.api_key = formData.api_key
+        }
+        if (formData.provider_type === 'nvidia' && formData.api_key_2) {
+          body.api_key_2 = formData.api_key_2
         }
         await apiFetch(`/api/model-config/endpoints/${editingId}`, {
           method: 'PUT',
@@ -427,6 +433,25 @@ function EndpointsSection({
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
+
+            {formData.provider_type === 'nvidia' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  API 密钥 #2 <span className="text-xs text-gray-400">(可选，填写后两个密钥轮询并发)</span>
+                </label>
+                <input
+                  type="password"
+                  value={formData.api_key_2 || ''}
+                  onChange={(e) => setFormData((d) => ({ ...d, api_key_2: e.target.value }))}
+                  placeholder={editingId ? (
+                    endpoints.find((x) => x.id === editingId)?.api_key_2_set
+                      ? '(已设置，留空保持)'
+                      : '输入第二个 NVIDIA 密钥'
+                  ) : '输入第二个 NVIDIA 密钥'}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">默认模型 *</label>

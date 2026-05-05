@@ -43,6 +43,7 @@ class EndpointCreate(BaseModel):
     )
     base_url: str = Field("", max_length=1000)
     api_key: str = Field("", max_length=500)
+    api_key_2: str = Field("", max_length=500, description="Optional 2nd key (NVIDIA only) for round-robin concurrency")
     default_model: str = Field(..., max_length=200)
     # v1.4 — routing tier
     tier: str = Field(
@@ -56,6 +57,7 @@ class EndpointUpdate(BaseModel):
     provider_type: str | None = None
     base_url: str | None = None
     api_key: str | None = None
+    api_key_2: str | None = None
     default_model: str | None = None
     enabled: int | None = None
     # v1.4 — routing tier (optional on update)
@@ -73,6 +75,7 @@ class EndpointResponse(BaseModel):
     provider_type: str
     base_url: str
     api_key_masked: str
+    api_key_2_set: bool = False
     default_model: str
     enabled: int
     # v1.4 — routing tier
@@ -89,6 +92,7 @@ class EndpointResponse(BaseModel):
             provider_type=ep.provider_type,
             base_url=ep.base_url or "",
             api_key_masked=_mask_key(ep.api_key or ""),
+            api_key_2_set=bool((getattr(ep, "api_key_2", "") or "").strip()),
             default_model=ep.default_model,
             enabled=ep.enabled,
             tier=getattr(ep, "tier", "standard") or "standard",
@@ -168,6 +172,7 @@ async def create_endpoint(
         provider_type=body.provider_type,
         base_url=body.base_url,
         api_key=encrypt_api_key(body.api_key),
+        api_key_2=encrypt_api_key(body.api_key_2) if body.api_key_2 else "",
         default_model=body.default_model,
         tier=body.tier,
     )
@@ -202,7 +207,7 @@ async def update_endpoint(
     from app.utils.crypto import encrypt_api_key
 
     for field_name, value in update_data.items():
-        if field_name == "api_key" and value:
+        if field_name in ("api_key", "api_key_2") and value:
             value = encrypt_api_key(value)
         setattr(endpoint, field_name, value)
 

@@ -320,6 +320,7 @@ class LLMEndpoint(Base):
     provider_type = Column(String(50), nullable=False)  # anthropic, openai, openai_compatible
     base_url = Column(String(1000), default="")  # Only for openai_compatible
     api_key = Column(String(500), default="")  # Encrypted in production
+    api_key_2 = Column(String(500), default="", nullable=True)  # PR-NVIDIA-MULTIKEY: optional second key, used for round-robin concurrency
     default_model = Column(String(200), nullable=False)  # e.g. "claude-sonnet-4-20250514", "gpt-4o", "text-embedding-3-small"
     # v1.4 — tiering label for routing matrix
     tier = Column(String(20), nullable=False, default="standard")

@@ -332,21 +332,53 @@ class NvidiaEmbeddingProvider:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | list[str] = "",
         base_url: str = "",
         model: str = "nvidia/llama-nemotron-embed-vl-1b-v2",
         modality: list[str] | None = None,
         encoding_format: str = "float",
         truncate: str = "NONE",
         timeout: float = 30.0,
+        api_keys: list[str] | None = None,
     ) -> None:
-        self.api_key = api_key
+        # PR-NVIDIA-MULTIKEY: accept either a single key (str) or a list of
+        # keys for round-robin concurrent dispatch. Empty/None entries pruned.
+        keys: list[str] = []
+        if api_keys:
+            keys.extend([k for k in api_keys if k])
+        if isinstance(api_key, list):
+            keys.extend([k for k in api_key if k])
+        elif isinstance(api_key, str) and api_key:
+            keys.append(api_key)
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        self.api_keys: list[str] = []
+        for k in keys:
+            if k and k not in seen:
+                seen.add(k)
+                self.api_keys.append(k)
+        # Backwards-compat single-key attribute (used by callers that read it).
+        self.api_key = self.api_keys[0] if self.api_keys else ""
+        self._key_idx = 0
+        import asyncio as _asyncio
+        self._key_lock = _asyncio.Lock()
         self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self.model = model
         self.modality = modality or ["text"]
         self.encoding_format = encoding_format
         self.truncate = truncate
         self.timeout = timeout
+
+    async def _next_key(self) -> str:
+        """Round-robin pick the next API key (thread-safe via asyncio lock)."""
+        if not self.api_keys:
+            return ""
+        if len(self.api_keys) == 1:
+            return self.api_keys[0]
+        async with self._key_lock:
+            k = self.api_keys[self._key_idx % len(self.api_keys)]
+            self._key_idx += 1
+            return k
 
     async def _post(
         self, inputs: list[str], input_type: str
@@ -370,8 +402,10 @@ class NvidiaEmbeddingProvider:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        # PR-NVIDIA-MULTIKEY: pick next key per request
+        active_key = await self._next_key() if hasattr(self, "_next_key") else self.api_key
+        if active_key:
+            headers["Authorization"] = f"Bearer {active_key}"
         url = f"{self.base_url}/embeddings"
         async with httpx.AsyncClient(timeout=self.timeout) as http:
             resp = await http.post(url, json=payload, headers=headers)
@@ -507,13 +541,14 @@ class ModelRouter:
                             # v1.4.2 fix: NVIDIA embeddings require a different
                             # request schema (input=list, input_type, modality,
                             # encoding_format, truncate) and are not speakable
-                            # via the OpenAI SDK. Using the generic OpenAI-style
-                            # EmbeddingProvider here would either leak to
-                            # api.openai.com (when base_url is empty) or be
-                            # rejected by NVIDIA with 400/401. Route NVIDIA
-                            # endpoints to the dedicated httpx-based provider.
+                            # via the OpenAI SDK.
+                            # PR-NVIDIA-MULTIKEY: also forward api_key_2 if set
+                            # so the provider can round-robin across two keys.
+                            _emb_key2_raw = getattr(emb_ep, "api_key_2", "") or ""
+                            _emb_key2 = decrypt_api_key(_emb_key2_raw) if _emb_key2_raw else ""
+                            _key_list = [k for k in (emb_api_key, _emb_key2) if k]
                             self.embedding_provider = NvidiaEmbeddingProvider(
-                                api_key=emb_api_key,
+                                api_keys=_key_list,
                                 base_url=emb_ep.base_url or "",
                                 model=emb_model,
                             )
