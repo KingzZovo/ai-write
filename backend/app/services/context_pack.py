@@ -1266,61 +1266,13 @@ class ContextPackBuilder:
                     f"→ {beat.get('outcome','?')}"
                 )
                 pack.rag_snippets.append(line)
-        # style_samples_redacted: one redacted sample passage for few-shot
-        sample_hits = await store.search_style_samples_redacted(
-            embedding, book_id=ref_book_id, top_k=1
-        )
-        for h in sample_hits:
-            redacted = (h.get("payload") or {}).get("redacted_text")
-            if redacted:
-                pack.style_samples.append(redacted)
+        # PR-NO-RAW-INJECT (2026-05-05): style_samples_redacted disabled.
+        # Injecting reference-book passages (even after entity redaction) is plagiarism territory.
+        # Only abstract style descriptors above are kept.
 
-        # PR-VECTORIZE-PASSAGES: per-passage scene-typed samples filtered by
-        # the upcoming chapter's scene_type (when known). Yields top-2 most
-        # relevant high-quality author passages for the same scene archetype.
-        try:
-            _scene_type: str | None = None
-            _co = pack.current_outline if isinstance(pack.current_outline, dict) else {}
-            if _co:
-                cand = (
-                    _co.get("scene_type")
-                    or _co.get("key_scene_type")
-                    or (isinstance(_co.get("key_scene"), dict) and _co["key_scene"].get("scene_type"))
-                )
-                if isinstance(cand, str) and cand.strip():
-                    _scene_type = cand.strip()
-            _profile_id_hint: str | None = None
-            try:
-                if project_id:
-                    db2 = await self._get_db()
-                    proj2 = await db2.get(Project, project_id)
-                    if proj2 is not None:
-                        sj = proj2.settings_json or {}
-                        _profile_id_hint = ((sj.get("style_reference") or {}).get("profile_id")) or sj.get("default_style_profile_id")
-            except Exception:
-                _profile_id_hint = None
-            scene_hits = await store.search_scene_samples(
-                embedding,
-                scene_type=_scene_type,
-                profile_id=_profile_id_hint,
-                top_k=2,
-            )
-            for h in scene_hits:
-                payload = h.get("payload") or {}
-                txt = payload.get("passage") or payload.get("text")
-                if not txt:
-                    continue
-                tag = payload.get("scene_type") or ""
-                tech = payload.get("technique") or ""
-                header_bits = []
-                if tag:
-                    header_bits.append(f"[{tag}]")
-                if tech:
-                    header_bits.append(f"({tech})")
-                head = " ".join(header_bits) or "[作者范例]"
-                pack.style_samples.append(f"{head} {txt}")
-        except Exception as _ss_err:
-            logger.warning("scene_samples retrieval failed: %s", _ss_err)
+        # PR-NO-RAW-INJECT (2026-05-05): scene_samples passage injection removed.
+        # Vector store still indexed for offline analysis but never injected to prompt.
+        pass
 
     async def _load_style_samples(
         self,
@@ -1428,17 +1380,8 @@ class ContextPackBuilder:
             if tone_str:
                 parts.append("【语气词汇】" + tone_str)
 
-        samples = getattr(profile, "sample_passages", None) or []
-        sample_texts: list[str] = []
-        for s in samples[:3]:
-            if isinstance(s, dict):
-                txt = s.get("text") or s.get("passage")
-                if txt:
-                    sample_texts.append(str(txt)[:300])
-            elif isinstance(s, str) and s.strip():
-                sample_texts.append(s[:300])
-        if sample_texts:
-            parts.append("【示例段落】\n" + "\n---\n".join(sample_texts))
+        # PR-NO-RAW-INJECT (2026-05-05): sample_passages block removed.
+        # Style is learned via abstract rule_lines / dosage_profile / tone_keywords above.
 
         # v8: 渲染 config_json 里的剂量画像（dosage_profile）
         config = getattr(profile, "config_json", None) or {}
