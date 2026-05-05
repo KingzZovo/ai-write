@@ -1,10 +1,15 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+/**
+ * WritingGuidePanel — project-scoped writing guide configuration.
+ *
+ * PR-FIX-PROJSET-WG (2026-05-05): rewrote from localStorage-only to project-scoped
+ * persistence via projects.settings_json.writing_guide. Previously, switching
+ * projects or refreshing reset to default 3 modules because LS_KEY was global.
+ */
 
-// ----------------------------------------------------------------
-// Types & Constants
-// ----------------------------------------------------------------
+import React, { useEffect, useState, useRef } from 'react'
+import { apiFetch } from '@/lib/api'
 
 interface WritingModule {
   key: string
@@ -14,48 +19,13 @@ interface WritingModule {
 }
 
 const WRITING_MODULES: WritingModule[] = [
-  {
-    key: 'show_not_tell',
-    label: '展示而非讲述',
-    description: '用场景和动作代替直白叙述',
-    tooltip: '通过具体场景、对话和行为展现角色性格与情感，避免直接告知读者角色的想法和感受。',
-  },
-  {
-    key: 'scene_immersion',
-    label: '场景沉浸感',
-    description: '五感描写与细节营造临场感',
-    tooltip: '运用视觉、听觉、嗅觉、触觉和味觉描写，让读者身临其境地感受场景。',
-  },
-  {
-    key: 'dialogue_craft',
-    label: '对话技巧',
-    description: '个性化对话与潜台词运用',
-    tooltip: '每个角色说话方式应独特，对话包含潜台词和情感层次，避免说教式信息灌输。',
-  },
-  {
-    key: 'tension_control',
-    label: '张力控制',
-    description: '情节节奏的松紧交替',
-    tooltip: '控制章节内的紧张感起伏，在高潮和舒缓间合理切换，保持读者兴趣。',
-  },
-  {
-    key: 'micro_tension',
-    label: '微观张力',
-    description: '每段落保持阅读牵引力',
-    tooltip: '在段落和句子层面制造小悬念、暗示和未解答的问题，驱动读者继续阅读。',
-  },
-  {
-    key: 'emotional_resonance',
-    label: '情感共鸣',
-    description: '引发读者情感投入与共情',
-    tooltip: '通过角色困境、抉择和成长激发读者情感反应，建立读者与角色的情感连接。',
-  },
-  {
-    key: 'info_weaving',
-    label: '信息编织',
-    description: '设定信息自然融入叙事',
-    tooltip: '将世界观、背景设定等信息有机地编织进故事和对话中，避免信息堆砌。',
-  },
+  { key: 'show_not_tell',       label: '展示而非讲述', description: '用场景和动作代替直白叙述',       tooltip: '通过具体场景、对话和行为展现角色性格与情感，避免直接告知读者角色的想法和感受。' },
+  { key: 'scene_immersion',     label: '场景沉浸感',   description: '五感描写与细节营造临场感',       tooltip: '运用视觉、听觉、嗅觉、触觉和味觉描写，让读者身临其境地感受场景。' },
+  { key: 'dialogue_craft',      label: '对话技巧',     description: '个性化对话与潜台词运用',         tooltip: '每个角色说话方式应独特，对话包含潜台词和情感层次，避免说教式信息灌输。' },
+  { key: 'tension_control',     label: '张力控制',     description: '情节节奏的松紧交替',             tooltip: '控制章节内的紧张感起伏，在高潮和舒缓间合理切换，保持读者兴趣。' },
+  { key: 'micro_tension',       label: '微观张力',     description: '每段落保持阅读牵引力',           tooltip: '在段落和句子层面制造小悬念、暗示和未解答的问题，驱动读者继续阅读。' },
+  { key: 'emotional_resonance', label: '情感共鸣',     description: '引发读者情感投入与共情',         tooltip: '通过角色困境、抉择和成长激发读者情感反应，建立读者与角色的情感连接。' },
+  { key: 'info_weaving',        label: '信息编织',     description: '设定信息自然融入叙事',           tooltip: '将世界观、背景设定等信息有机地编织进故事和对话中，避免信息堆砌。' },
 ]
 
 const PROHIBITIONS = [
@@ -74,37 +44,37 @@ const PROHIBITIONS = [
 ]
 
 const GENRES = [
-  { value: '', label: '选择类型...' },
+  { value: '',         label: '选择类型...' },
   { value: 'xuanhuan', label: '玄幻' },
-  { value: 'xianxia', label: '仙侠' },
-  { value: 'dushi', label: '都市' },
-  { value: 'yanqing', label: '言情' },
-  { value: 'xuanyi', label: '悬疑' },
-  { value: 'kehuan', label: '科幻' },
-  { value: 'lishi', label: '历史' },
+  { value: 'xianxia',  label: '仙侠' },
+  { value: 'dushi',    label: '都市' },
+  { value: 'yanqing',  label: '言情' },
+  { value: 'xuanyi',   label: '悬疑' },
+  { value: 'kehuan',   label: '科幻' },
+  { value: 'lishi',    label: '历史' },
 ]
+// Reverse map for legacy projects that only have Chinese `genre` text
+const CHINESE_TO_CODE: Record<string, string> = {
+  '玄幻': 'xuanhuan',
+  '仙侠': 'xianxia',
+  '都市': 'dushi',
+  '言情': 'yanqing',
+  '悬疑': 'xuanyi',
+  '科幻': 'kehuan',
+  '历史': 'lishi',
+}
 
-// ----------------------------------------------------------------
-// Tooltip component
-// ----------------------------------------------------------------
+const DEFAULT_MODULES = ['show_not_tell', 'micro_tension', 'info_weaving']
 
+// Tooltip
 function Tooltip({ text }: { text: string }) {
   const [show, setShow] = useState(false)
-
   return (
     <span className="relative inline-flex">
-      <button
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        onClick={(e) => {
-          e.stopPropagation()
-          setShow(!show)
-        }}
+      <button onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}
+        onClick={(e) => { e.stopPropagation(); setShow(!show) }}
         className="w-4 h-4 rounded-full bg-stone-200 text-stone-500 text-[9px] font-bold flex items-center justify-center hover:bg-stone-300 transition-colors"
-        type="button"
-      >
-        ?
-      </button>
+        type="button">?</button>
       {show && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 bg-stone-800 text-white text-[10px] leading-relaxed p-2 rounded-lg shadow-lg z-20 pointer-events-none">
           {text}
@@ -115,64 +85,73 @@ function Tooltip({ text }: { text: string }) {
   )
 }
 
-// ----------------------------------------------------------------
-// Persisted preferences
-// ----------------------------------------------------------------
-
-const LS_KEY = 'writing-guide-prefs:v1'
-const DEFAULT_MODULES = ['show_not_tell', 'micro_tension', 'info_weaving']
-
-interface WGPrefs {
-  activeModules: string[]
-  genre: string
+interface ProjectShape {
+  id: string
+  genre?: string | null
+  genre_profile_code?: string | null
+  settings_json?: Record<string, unknown> | null
 }
 
-function loadPrefs(): WGPrefs {
-  if (typeof window === 'undefined') return { activeModules: DEFAULT_MODULES, genre: '' }
-  try {
-    const raw = window.localStorage.getItem(LS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      if (p && Array.isArray(p.activeModules)) return p
-    }
-  } catch {}
-  return { activeModules: DEFAULT_MODULES, genre: '' }
-}
-
-// ----------------------------------------------------------------
-// Component
-// ----------------------------------------------------------------
-
-export function WritingGuidePanel() {
-  const initial = loadPrefs()
-  const [activeModules, setActiveModules] = useState<Set<string>>(new Set(initial.activeModules))
+export function WritingGuidePanel({ projectId }: { projectId?: string | null }) {
+  const [activeModules, setActiveModules] = useState<Set<string>>(new Set(DEFAULT_MODULES))
   const [showProhibitions, setShowProhibitions] = useState(false)
-  const [selectedGenre, setSelectedGenre] = useState(initial.genre)
+  const [selectedGenre, setSelectedGenre] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const projectRef = useRef<ProjectShape | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Load from project.settings_json.writing_guide on mount or projectId change
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const payload: WGPrefs = {
-      activeModules: Array.from(activeModules),
-      genre: selectedGenre,
-    }
-    try { window.localStorage.setItem(LS_KEY, JSON.stringify(payload)) } catch {}
-  }, [activeModules, selectedGenre])
+    if (!projectId) { setLoaded(true); return }
+    setLoaded(false)
+    apiFetch<ProjectShape>(`/api/projects/${projectId}`)
+      .then((p) => {
+        projectRef.current = p
+        const wg = (p.settings_json as Record<string, unknown> | null)?.writing_guide as Record<string, unknown> | undefined
+        const mods = Array.isArray(wg?.active_modules) ? (wg!.active_modules as string[]) : DEFAULT_MODULES
+        setActiveModules(new Set(mods))
+        // genre: prefer settings_json.writing_guide.genre_code, then project.genre_profile_code, then map from project.genre
+        const wgGenre = typeof wg?.genre_code === 'string' ? (wg!.genre_code as string) : ''
+        const projCode = p.genre_profile_code || ''
+        const fromChinese = p.genre ? (CHINESE_TO_CODE[p.genre] || '') : ''
+        setSelectedGenre(wgGenre || projCode || fromChinese)
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true))
+  }, [projectId])
+
+  // Persist to project.settings_json.writing_guide (debounced)
+  useEffect(() => {
+    if (!loaded || !projectId) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      const cur = projectRef.current
+      if (!cur) return
+      const settings = { ...((cur.settings_json as Record<string, unknown>) || {}) }
+      settings.writing_guide = {
+        active_modules: Array.from(activeModules),
+        genre_code: selectedGenre,
+      }
+      apiFetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings_json: settings, genre_profile_code: selectedGenre || null }),
+      })
+        .then((p: unknown) => { projectRef.current = p as ProjectShape })
+        .catch(() => {})
+    }, 600)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [activeModules, selectedGenre, loaded, projectId])
 
   const toggleModule = (key: string) => {
     setActiveModules((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
+      if (next.has(key)) next.delete(key); else next.add(key)
       return next
     })
   }
 
   return (
     <div className="space-y-3">
-      {/* Active count & genre selector */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs text-stone-500">当前激活</span>
@@ -180,56 +159,28 @@ export function WritingGuidePanel() {
             {activeModules.size} / {WRITING_MODULES.length}
           </span>
         </div>
+        {!projectId && <span className="text-[10px] text-orange-500">未选项目，配置不会保存</span>}
       </div>
 
-      {/* Genre selector */}
-      <select
-        value={selectedGenre}
-        onChange={(e) => setSelectedGenre(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-xs border border-stone-200 rounded-lg bg-white text-stone-700 focus:ring-1 focus:ring-stone-300 focus:border-stone-300"
-      >
-        {GENRES.map((g) => (
-          <option key={g.value} value={g.value}>
-            {g.label}
-          </option>
-        ))}
+      <select value={selectedGenre} onChange={(e) => setSelectedGenre(e.target.value)}
+        className="w-full px-2.5 py-1.5 text-xs border border-stone-200 rounded-lg bg-white text-stone-700 focus:ring-1 focus:ring-stone-300 focus:border-stone-300">
+        {GENRES.map((g) => (<option key={g.value} value={g.value}>{g.label}</option>))}
       </select>
 
-      {/* Module toggle cards */}
       <div className="space-y-1.5">
         {WRITING_MODULES.map((mod) => {
           const isActive = activeModules.has(mod.key)
           return (
-            <button
-              key={mod.key}
-              onClick={() => toggleModule(mod.key)}
-              className={`w-full text-left rounded-lg border p-2.5 transition-all ${
-                isActive
-                  ? 'border-stone-400 bg-white shadow-card'
-                  : 'border-stone-150 bg-stone-50/40 hover:bg-white hover:border-stone-200'
-              }`}
-            >
+            <button key={mod.key} onClick={() => toggleModule(mod.key)}
+              className={`w-full text-left rounded-lg border p-2.5 transition-all ${isActive ? 'border-stone-400 bg-white shadow-card' : 'border-stone-150 bg-stone-50/40 hover:bg-white hover:border-stone-200'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {/* Toggle indicator */}
-                  <div
-                    className={`w-7 h-4 rounded-full transition-colors flex-shrink-0 relative ${
-                      isActive ? 'bg-stone-700' : 'bg-stone-200'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
-                        isActive ? 'translate-x-3.5' : 'translate-x-0.5'
-                      }`}
-                    />
+                  <div className={`w-7 h-4 rounded-full transition-colors flex-shrink-0 relative ${isActive ? 'bg-stone-700' : 'bg-stone-200'}`}>
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${isActive ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-medium text-stone-800 truncate">
-                      {mod.label}
-                    </div>
-                    <div className="text-[10px] text-stone-400 truncate">
-                      {mod.description}
-                    </div>
+                    <div className="text-xs font-medium text-stone-800 truncate">{mod.label}</div>
+                    <div className="text-[10px] text-stone-400 truncate">{mod.description}</div>
                   </div>
                 </div>
                 <Tooltip text={mod.tooltip} />
@@ -239,41 +190,19 @@ export function WritingGuidePanel() {
         })}
       </div>
 
-      {/* Prohibitions section */}
       <div className="border-t border-stone-200 pt-2">
-        <button
-          onClick={() => setShowProhibitions(!showProhibitions)}
-          className="w-full flex items-center justify-between text-xs text-stone-600 hover:text-stone-800 transition-colors py-1"
-        >
-          <span className="font-medium">
-            禁忌清单
-            <span className="text-[10px] text-stone-400 ml-1.5">
-              ({PROHIBITIONS.length} 条)
-            </span>
-          </span>
-          <svg
-            className={`w-3.5 h-3.5 text-stone-400 transition-transform ${
-              showProhibitions ? 'rotate-180' : ''
-            }`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
+        <button onClick={() => setShowProhibitions(!showProhibitions)}
+          className="w-full flex items-center justify-between text-xs text-stone-600 hover:text-stone-800 transition-colors py-1">
+          <span className="font-medium">禁忌清单<span className="text-[10px] text-stone-400 ml-1.5">({PROHIBITIONS.length} 条)</span></span>
+          <svg className={`w-3.5 h-3.5 text-stone-400 transition-transform ${showProhibitions ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-
         {showProhibitions && (
           <div className="mt-1.5 space-y-1">
             {PROHIBITIONS.map((rule, idx) => (
-              <div
-                key={idx}
-                className="flex items-start gap-1.5 text-[11px] text-stone-600 bg-red-50/40 rounded px-2 py-1.5"
-              >
-                <span className="text-red-400 flex-shrink-0 mt-px text-[10px]">
-                  {idx + 1}.
-                </span>
+              <div key={idx} className="flex items-start gap-1.5 text-[11px] text-stone-600 bg-red-50/40 rounded px-2 py-1.5">
+                <span className="text-red-400 flex-shrink-0 mt-px text-[10px]">{idx + 1}.</span>
                 <span className="leading-relaxed">{rule}</span>
               </div>
             ))}

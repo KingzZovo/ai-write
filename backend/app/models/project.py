@@ -32,6 +32,8 @@ class Project(Base):
     genre = Column(String(100))
     premise = Column(Text)
     settings_json = Column(JSON, default=dict)
+    # PR-FIX-PROJSET (2026-05-05): genre_profile_code already in DB but was missing from ORM model
+    genre_profile_code = Column(String(64), nullable=True)
     target_word_count = Column(
         Integer, nullable=False, server_default="3000000", default=3000000
     )

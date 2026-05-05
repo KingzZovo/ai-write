@@ -424,7 +424,7 @@ export default function MobileWorkspace() {
             {toolsTab === 'generate' && (
               <GeneratePanel onGenerate={handleGenerateChapter} onGenerateOutline={handleGenerateOutline} />
             )}
-            {toolsTab === 'guide' && <WritingGuidePanel />}
+            {toolsTab === 'guide' && <WritingGuidePanel projectId={urlProjectId} />}
             {toolsTab === 'foreshadow' && currentProject && <ForeshadowPanel projectId={currentProject.id} />}
             {toolsTab === 'settings' && currentProject && <SettingsPanel projectId={currentProject.id} />}
             {toolsTab === 'eval' && selectedChapter && <EvaluationPanel chapterId={selectedChapter.id} />}

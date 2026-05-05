@@ -20,29 +20,60 @@ let _selectedStructureBookId: string | null = null
 export function getSelectedStyleId(_projectId?: string) { return _selectedStyleId }
 export function getSelectedStructureBookId(_projectId?: string) { return _selectedStructureBookId }
 
-function StyleSelector() {
+// PR-FIX-PROJSET-SEL (2026-05-05): StyleSelector now persists selected style_profile_id
+// to projects.settings_json so refresh / reopen restores the binding.
+function StyleSelector({ projectId }: { projectId?: string | null }) {
   const [styles, setStyles] = useState<StyleInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string>('')
+  const projectSettingsRef = React.useRef<Record<string, unknown> | null>(null)
+  const loadedRef = React.useRef(false)
 
   useEffect(() => {
-    apiFetch<StyleInfo[]>('/api/styles')
-      .then(data => {
-        setStyles(data)
-        // Auto-select the first active style
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      apiFetch<StyleInfo[]>('/api/styles').catch(() => [] as StyleInfo[]),
+      projectId
+        ? apiFetch<{ settings_json?: Record<string, unknown> | null }>(`/api/projects/${projectId}`).catch(() => ({} as any))
+        : Promise.resolve({} as any),
+    ]).then(([data, proj]) => {
+      if (cancelled) return
+      setStyles(data)
+      const settings = (proj && proj.settings_json) || {}
+      projectSettingsRef.current = settings
+      const styleRef = (settings.style_reference as Record<string, unknown> | undefined) || {}
+      const persisted = typeof styleRef.profile_id === 'string' ? (styleRef.profile_id as string) : (typeof settings.style_profile_id === 'string' ? (settings.style_profile_id as string) : '')
+      if (persisted && data.find(s => s.id === persisted)) {
+        setSelectedId(persisted)
+        _selectedStyleId = persisted
+      } else {
         const active = data.find(s => s.is_active)
         if (active) {
           setSelectedId(active.id)
           _selectedStyleId = active.id
         }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+      }
+      loadedRef.current = true
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [projectId])
 
   const handleChange = (id: string) => {
     setSelectedId(id)
     _selectedStyleId = id || null
+    if (!projectId || !loadedRef.current) return
+    const settings = { ...(projectSettingsRef.current || {}) }
+    const prevRef = (settings.style_reference as Record<string, unknown> | undefined) || {}
+    settings.style_reference = { ...prevRef, profile_id: id || null }
+    // Also write the legacy flat key for back-compat with older readers
+    settings.style_profile_id = id || null
+    projectSettingsRef.current = settings
+    apiFetch(`/api/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ settings_json: settings }),
+    }).catch(() => {})
   }
 
   const selected = styles.find(s => s.id === selectedId)
@@ -270,31 +301,60 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
       {/* Writing style selector */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">写作风格</h3>
-        <StyleSelector />
+        <StyleSelector projectId={projectId} />
       </div>
 
       {/* Plot structure selector (optional) */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">剧情架构（可选）</h3>
-        <StructureSelector />
+        <StructureSelector projectId={projectId} />
       </div>
     </div>
   )
 }
 
-function StructureSelector() {
+// PR-FIX-PROJSET-SEL (2026-05-05): StructureSelector now persists selected structure_book_id
+// to projects.settings_json.plot_structure so refresh restores the binding.
+function StructureSelector({ projectId }: { projectId?: string | null }) {
   const [structures, setStructures] = useState<any[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
+  const projectSettingsRef = React.useRef<Record<string, unknown> | null>(null)
+  const loadedRef = React.useRef(false)
 
   useEffect(() => {
-    apiFetch<any[]>('/api/styles/structures')
-      .then(setStructures)
-      .catch(() => {})
-  }, [])
+    let cancelled = false
+    Promise.all([
+      apiFetch<any[]>('/api/styles/structures').catch(() => [] as any[]),
+      projectId
+        ? apiFetch<{ settings_json?: Record<string, unknown> | null }>(`/api/projects/${projectId}`).catch(() => ({} as any))
+        : Promise.resolve({} as any),
+    ]).then(([data, proj]) => {
+      if (cancelled) return
+      setStructures(data)
+      const settings = (proj && proj.settings_json) || {}
+      projectSettingsRef.current = settings
+      const ps = (settings.plot_structure as Record<string, unknown> | undefined) || {}
+      const persisted = typeof ps.structure_book_id === 'string' ? (ps.structure_book_id as string) : ''
+      if (persisted && data.find((s: any) => s.book_id === persisted)) {
+        setSelectedId(persisted)
+        _selectedStructureBookId = persisted
+      }
+      loadedRef.current = true
+    })
+    return () => { cancelled = true }
+  }, [projectId])
 
   const handleChange = (id: string) => {
     setSelectedId(id)
     _selectedStructureBookId = id || null
+    if (!projectId || !loadedRef.current) return
+    const settings = { ...(projectSettingsRef.current || {}) }
+    settings.plot_structure = { structure_book_id: id || null }
+    projectSettingsRef.current = settings
+    apiFetch(`/api/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ settings_json: settings }),
+    }).catch(() => {})
   }
 
   if (structures.length === 0) {

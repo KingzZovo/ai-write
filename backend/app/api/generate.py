@@ -125,6 +125,11 @@ async def generate_chapter(
         )
 
     project_settings = project.settings_json or {}
+    # PR-FIX-PROJSET-STYLEFALLBACK (2026-05-05): resolve project-bound style/structure from settings_json
+    if not req.style_id:
+        sid = project_settings.get("style_profile_id")
+        if sid:
+            req.style_id = sid
 
     rules_result = await db.execute(
         select(WorldRule).where(WorldRule.project_id == req.project_id)

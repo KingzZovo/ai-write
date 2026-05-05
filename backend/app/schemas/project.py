@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ProjectCreate(BaseModel):
     title: str = Field(..., max_length=500)
     genre: str | None = Field(None, max_length=100)
+    genre_profile_code: str | None = Field(None, max_length=64)
     premise: str | None = None
     settings_json: dict[str, Any] | None = None
     target_word_count: int | None = None
@@ -24,6 +25,7 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     title: str | None = Field(None, max_length=500)
     genre: str | None = Field(None, max_length=100)
+    genre_profile_code: str | None = Field(None, max_length=64)
     premise: str | None = None
     settings_json: dict[str, Any] | None = None
     target_word_count: int | None = None
@@ -35,6 +37,7 @@ class ProjectResponse(BaseModel):
     id: UUID
     title: str
     genre: str | None = None
+    genre_profile_code: str | None = None
     premise: str | None = None
     settings_json: dict[str, Any] | None = None
     target_word_count: int = 3000000

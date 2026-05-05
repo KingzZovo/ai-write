@@ -1462,7 +1462,7 @@ export default function DesktopWorkspace() {
 
             <CollapsibleSection title="写作指南">
               <div className="px-4">
-                <WritingGuidePanel />
+                <WritingGuidePanel projectId={urlProjectId} />
               </div>
             </CollapsibleSection>
 
