@@ -1,4 +1,4 @@
-> **⚠️ 2026-05-05 23:30 最新交接**：PR-BOOK-PROFILE-BIND 未完成，详计划看 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md](HANDOFF_2026-05-05_pr-book-profile-bind.md)。本页以下内容为历史。
+> **✅ 2026-05-06 07:20 最新交接**：PR-BOOK-PROFILE-BIND **已完成**（commit `f73a74d`，pushed `origin/main` + `origin/feat/phase2-fix`）。完整执行日志 + P0-LOCK 复盘看 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md §12-13](HANDOFF_2026-05-05_pr-book-profile-bind.md)。下一步：Stage B 创建赤心仿写验证项目（绑 `b76da43a-…` profile + `0a543b1d-…` reference_book）→ Stage C 全书/分卷/章节大纲 → Stage D bulk_generate 10 章 → Stage E `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。本页以下内容为历史。
 
 # 项目当前进展（持续维护）
 

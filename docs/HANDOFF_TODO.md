@@ -1,4 +1,22 @@
-> **⚠️ 2026-05-05 23:30 最新交接**：PR-BOOK-PROFILE-BIND 未完成，详计划看 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md](HANDOFF_2026-05-05_pr-book-profile-bind.md)。本页以下内容为历史。
+> **✅ 2026-05-06 07:20 最新交接**：PR-BOOK-PROFILE-BIND **已完成**（`f73a74d`，pushed `origin/main` + `origin/feat/phase2-fix`）。下一步直接进入赤心仿写验证 Stage B/C/D/E（详 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md §5 + §12-13](HANDOFF_2026-05-05_pr-book-profile-bind.md)）。本页以下内容为历史。
+
+## 当前批次 - PR-BOOK-PROFILE-BIND ✅ 已闭环（2026-05-06 07:20）
+- [x] Step 1 DB schema migration + 回填（5 profile 绑定终态：龙族 / 江南 NULL / 赤心 / 天之炽① / 天之炽②）
+- [x] Step 2 Model `StyleProfile.source_book_id`
+- [x] Step 3 Service `style_profile_resolver.get_or_create_book_profile`
+- [x] Step 4 Hook `process_uploaded_book` + `reprocess_reference_book`
+- [x] Step 5 Scripts `extract_chapter_naming_style.py` / `reverse_fill_p2_upgrade.py` 改 `--book` 驱动
+- [ ] Step 6 API endpoint `POST /api/reference-books/{id}/extract`（设计阶段已声明本轮跳过）
+- [x] Step 7 syntax + backend restart + resolver smoke
+- [x] Step 8 commit `f73a74d` + push 双分支
+- [x] P0-LOCK 锁事件已复盘并清理（详 §13）
+
+## 下一批次 - 赤心仿写验证 Stage B/C/D/E
+- [ ] Stage B: POST /api/projects 创建赤心验证项目（绑 `b76da43a-…` + `0a543b1d-…`，target_words=200000）
+- [ ] Stage C: 全书 / 分卷 / 章节大纲生成；验证 chapter_naming_style 注入、plot_structure_v2 反映、foreshadows + character_relations + world_setting 三结构化设定集复用
+- [ ] Stage D: `/api/chapters/bulk-generate` 10 章正文；验证 7 写作模块 + 73 rules + 反 AI 约束 + PR-NO-RAW-INJECT 断面（不能出现任何赤心原文 passage）
+- [ ] Stage E: 写 `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`
+- [ ] 决策：赤心 reprocess celery worker 在 P0-LOCK 期间被中断（约还剩 ~6000 slices 未切），是否要重启 reprocess。短期不影响 A2/A3/A4 已落产物，长期看 Stage C/D 章节质量决定。
 
 # Handoff TODO
 

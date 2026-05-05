@@ -1,15 +1,18 @@
-# HANDOFF 2026-05-05 - PR-BOOK-PROFILE-BIND (未开始)
+# HANDOFF 2026-05-05 - PR-BOOK-PROFILE-BIND ✅ 已完成（2026-05-06 07:20, commit `f73a74d`）
 
 > 上一个窗口在 PR-NO-RAW-INJECT push 后起手赤心全流程验证，发现“style_profile 写错位置”是设计缺陷。用户要求先完成 PR-BOOK-PROFILE-BIND 再跑全流程验证。收尾阶段 MCP 频繁超时，DB migration 未落地，所以这个 PR 完全未开始。
+>
+> **2026-05-06 07:20 更新**：本 PR 已端到端完成并推送。HEAD = `f73a74d`，origin/main + origin/feat/phase2-fix 同步推进。本文档保留作为「PR 计划 → 实际执行」对照。`§12 执行日志 / §13 锁事件复盘`补在尾部。
 
 ## 1. 速览
 
 - 仓库：/root/ai-write，origin = https://github.com/KingzZovo/ai-write.git
 - 分支：main (与 feat/phase2-fix 同步)
-- HEAD：`a136960` PR-NO-RAW-INJECT 已 push
+- HEAD：`f73a74d` PR-BOOK-PROFILE-BIND 已 push（前 HEAD `a136960` PR-NO-RAW-INJECT）
 - 部署：http://127.0.0.1:8080 (king / Wt991125)
 - 凭据文件：/root/ai-write/.env (POSTGRES_PASSWORD)
 - 本窗口未完成任务：PR-BOOK-PROFILE-BIND 全部
+- **2026-05-06 续接窗口**：PR-BOOK-PROFILE-BIND 端到端完成（migration → 模型 → resolver → hook → 脚本 → 烟测 → commit + push）
 
 ## 2. 本批交付物 (上个窗口 + 本窗口)
 
@@ -309,3 +312,55 @@ host 临时文件：
 - docs/HANDOFF_EXECUTION.md (顶部 banner)
 
 ## 11. EOL
+
+## 12. 执行日志（2026-05-06 续接窗口）
+
+实际执行结果（按 §4 step 顺序）：
+
+| Step | 状态 | 实际产物 / 偏差 |
+|---|---|---|
+| 1. DB schema migration + 回填 | ✅ | `source_book_id UUID FK → reference_books(id) ON DELETE SET NULL` 落地；`idx_style_profiles_source_book_id` 创建；3 个旧 profile 回填 + 天之炽①/天之炽② 自动各创空白 profile（`46edb0b7…` / `b79d7953…`）。江南 `d39058bb…` 保持 `source_book_id=NULL`（多书聚合，符合设计）。 |
+| 2. Model: `StyleProfile.source_book_id` | ✅ | `backend/app/models/project.py` line 295 加列；`ForeignKey` 已在原 import。 |
+| 3. Service: `style_profile_resolver.py` | ✅ | 新建，`get_or_create_book_profile(db, book_id)` 返回已绑定 profile，缺则建空 profile（`name = "{book.title} 综合写法"`、`bind_level="book"`、`is_active=1`）。book 不存在时抛 `ValueError`。 |
+| 4. Hook: process_uploaded_book / reprocess | ✅ | 两处 `await db.commit()` 后用 try/except 调 resolver；失败仅 `logger.warning`，不阻塞主链路。 |
+| 5. Scripts | ✅ | `extract_chapter_naming_style.py`：移除 `BOOK_IDS` / `TARGET_PROFILE_ID` 硬编码；`--book` required，`--target-profile` 默认 None 自动 resolve。`reverse_fill_p2_upgrade.py`：移除 `LONGZU_BOOK_ID` / `JIANGNAN_STYLE_ID`；`--book` required，`--style` 默认 None 自动 resolve（`style_v9` / `all` kind）。 |
+| 6. API endpoint | ⏭️ 跳过 | 计划写道「本轮可跳过」；本批未做。 |
+| 7. 验证 + 烟测 | ✅ | py syntax OK（6 文件）；`docker compose restart backend` 后 `/api/health=200`；resolver smoke (`/app/_smoke_resolver.py`) 返回 `id=b76da43a…` `name=赤心巡天 综合写法` `source_book_id=0a543b1d…`，5 行抽样确认 5 profile 正确绑定（江南 None 合理）。原计划的「跑赤心 chapter_naming 烟测」改成 resolver-only smoke，避免再次覆盖赤心已成型的 chapter_naming_style。 |
+| 8. Commit + push | ✅ | `f73a74d` 6 文件 +105 -21；push 到 `origin/main` 和 `origin/feat/phase2-fix`。 |
+
+实际 commit：
+```
+f73a74d PR-BOOK-PROFILE-BIND: 1:1 binding between reference_book and style_profile
+ backend/app/models/project.py                  +6  -0
+ backend/app/services/reference_ingestor.py     +9  -0
+ backend/app/services/style_profile_resolver.py +43 -0  (NEW)
+ backend/app/tasks/knowledge_tasks.py           +6  -0
+ scripts/extract_chapter_naming_style.py        +28 -16
+ scripts/reverse_fill_p2_upgrade.py             +13 -5
+```
+
+5 profile 绑定终态：
+
+| profile id | name | source_book_id | book |
+|---|---|---|---|
+| `36fa0610-…` | 龙族 v8 剂量画像 | `24498b6b-…` | 龙族全套 共七册 |
+| `d39058bb-…` | 江南 综合写法 | `NULL` | (多书聚合) |
+| `b76da43a-…` | 赤心巡天 综合写法 | `0a543b1d-…` | 赤心巡天 |
+| `46edb0b7-…` | 天之炽 综合写法 | `67fe33f9-…` | 天之炽 |
+| `b79d7953-…` | 天之炽②女武神 综合写法 | `c33c2f19-…` | 天之炽②女武神 |
+
+## 13. P0-LOCK 复盘（DB lock incident @ Step 1）
+
+**症状**：第一次跑 §4 step 1.1 `ALTER TABLE style_profiles ADD COLUMN source_book_id ...` 卡死。psql 客户端连续 11 次重发 ALTER 都阻塞，pg_stat_activity 显示队列堆积。
+
+**根因**：postgres 容器里有两个 idle-in-transaction 后端连接（PID `2420407` + `2431160`）持有 `style_profiles` 的 schema lock。来源是上个窗口收尾时若干 MCP run_command 超时（240s 截断），shell 那侧 fork 出去的 psql client 进程被掐掉了，但容器里的 backend session 还停在事务中没 ROLLBACK。
+
+**处理**：
+1. `pg_stat_activity` 找到两个 idle-in-tx PID。
+2. `pg_terminate_backend(2420407)` / `pg_terminate_backend(2431160)` 都返回 `t`。
+3. 队列里 11 个 ALTER retry 自动 drain（其中第 1 个真正生效，后续 10 个变成 `IF NOT EXISTS` no-op）。
+4. 反查 `information_schema.columns` 确认 `source_book_id` 列只 1 份；FK 约束/索引各 1 个。无重复无脏数据。
+
+**附带后果**：本应在后台跑的「赤心 reprocess celery worker（切剩下 ~6000 个 slices）」实际也死在这次锁里。`pg_stat_activity` 清掉之后 worker 是否会 retry 由 celery 自身决定；本窗口未做特殊处理，假设 reprocess 中断不影响赤心已落库的 rules=73 / samples=24 / chapter_naming_style 18 examples（这些都是 A2/A3/A4 阶段产物，Step 1 之前完成）。如果后续 Stage C/D 发现章节质量异常依赖完整 slice 库，再回头看 reprocess 是否需要重启。
+
+**预防**：MCP run_command 跑 psql 时，超时 = 进程被 SIGKILL = 容器侧事务不会 ROLLBACK = 锁会留下来。今后跑 ALTER/UPDATE 大表的 migration，要么走 `docker exec -i postgres psql < file.sql`（短命连接，进程死即 ROLLBACK），要么 `psql --set ON_ERROR_STOP=1 -c "BEGIN;...COMMIT;"` + 显式 timeout。本窗口最终用前者跑通了。
