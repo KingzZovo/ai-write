@@ -109,3 +109,19 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 - [ ] 顺带修 `backend/app/api/projects.py:58 create_project`：加 `target_word_count=body.target_word_count`。
 - [ ] 重走 Stage B/C 验收：`outlines.content_json` 含上述键；volume outline 走通。
 - [ ] Stage C 走通后接 Stage D `/api/chapters/bulk-generate` 10 章 + Stage E `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。
+
+## 2026-05-06 22:02 PR-OUTLINE-STAGED-PERSIST-STRUCT 完成
+
+- [x] 落地 commit `391e053`：outline_generator + generate + projects 三文件修复。
+- [x] 验证：删旧 outline `0868f734-...`，重跑 staged_stream 产新 outline `15a4770c-9230-49a0-a493-700644b32862`，content_json 含 main_plot / characters / world_setting / chapter_naming_style / sections / volume_plan / raw_text 全部 7 键。
+- [x] push origin main + feat/phase2-fix。
+- [x] 顺带 `projects.create_project` 已带 target_word_count + genre_profile_code（不再需要 PUT 修正）。
+- [ ] Stage C remainder：volume outline x1（vol1, est 50 章）→ chapter outline x前3章。
+- [ ] Stage D：`/api/chapters/bulk-generate` 前 10 章。
+- [ ] Stage E：`docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。
+
+### 关键 ID（赤心仿写）
+- project: `df6f523e-f903-4644-bcce-636f5ed89c68`
+- book outline (latest): `15a4770c-9230-49a0-a493-700644b32862`
+- style profile: `b76da43a-a2fa-4fd3-8c54-3912acee6bb0`
+- reference book: `0a543b1d-19fe-4e03-986e-42844feb36ee`

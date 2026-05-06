@@ -459,3 +459,24 @@ outlines tag occurrences <volume-plan>=0  ✅
 - B（严谨）：staged_stream 三阶段各自 `stage_end` 时将其 full_text 解析为 JSON，最后合并（A 出 main_plot+volume_plan、B 出 characters、C 出 world_setting）。推荐。
 - 顺带修 `backend/app/api/projects.py:58 create_project`：加 `target_word_count=body.target_word_count`，POST 与 GET 一致。
 - 验收：重走 Stage B 创项 → Stage C book outline → `SELECT content_json FROM outlines WHERE id=...` 含 `main_plot/volume_plan/characters/world_setting`；volume outline 走通。
+
+## 2026-05-06 22:02 PR-OUTLINE-STAGED-PERSIST-STRUCT 落地 + 验证
+
+### 修复
+- `backend/app/services/outline_generator.py`：`_generate_book_outline_staged_stream` 在 yield done 前用新增的 `_split_book_sections(skeleton, characters, world)` 把三段 buffer 按 `^[一-九]、` 切片，再用 `_build_book_structured(buckets)` 拼出 `{main_plot, characters, world_setting, chapter_naming_style, sections}`，随 `volume_plan` 一并塞进 done event。
+- `backend/app/api/generate.py`：staged_stream 处理新增 `_staged_book_done_payload` 捕获；`_persist_outline_now` 的 `level=="book"` 分支优先用 payload 的 volume_plan，再 fallback `_vp_for_book`，并把 main_plot / characters / world_setting / chapter_naming_style / sections 各 setdefault 进 `_content_json`。失败用 try/except 落 PR-OUTLINE-STAGED-PERSIST-STRUCT promote failed log。
+- `backend/app/api/projects.py:create_project` 顺带补 `target_word_count=body.target_word_count` + `genre_profile_code=body.genre_profile_code`，POST 创项即可一次到位。
+- 提交：`391e053 PR-OUTLINE-STAGED-PERSIST-STRUCT: persist book outline structured fields`，已 push origin main + feat/phase2-fix。
+
+### 验收（赤心仿写项目 `df6f523e-f903-4644-bcce-636f5ed89c68`）
+- 删旧 outline `0868f734-...`，重跑 staged_stream（约 11 min，三阶段流式 OK）。
+- 新 outline `15a4770c-9230-49a0-a493-700644b32862`，`outlines.content_json` 长度 136923 chars。
+- top-level keys = `chapter_naming_style, characters, main_plot, raw_text, sections, volume_plan, world_setting` 全齐。
+  - main_plot 95 / characters 3765 / world_setting 727 / chapter_naming_style 1029 / raw_text 7653。
+  - sections dict 9 个 key（一-九）齐全。
+  - volume_plan = 1 卷，title=`照骨登山`，est_chapters=50，含 idx/theme/core_conflict。
+- 模型选了"50 章 1 卷"结构（不是原计划 5 卷 30 章），下游 volume outline 跑 1 次即可。
+
+### Stage C remainder
+- volume outline x1（vol1，est 50 章）SSE 已起后台。
+- chapter outline x前3章 待 volume done 后启动。
