@@ -74,9 +74,9 @@
 
 | 章 | chapter_id | 字数 | 评分(round 1) | issues | revise | status |
 |---|---|---|---|---|---|---|
-| 1 | `a01873a2-ce69-42c4-b2fa-1e25dc922be3`「账上没有这具尸」 | 14940 | 8.28 | 16 | skipped (≥7.0) | completed |
-| 2 | `9294003b-a221-4b3e-91a7-162dc0b866ae`「你先把手印按下去」 | 16690 | 8.28 | 14 | skipped (≥7.0) | completed |
-| 3 | `75c42b05-91b1-4238-a827-e37e9cc665cd`「三十三声，不是怪癖」 | 13431 | 8.36 | 16 | skipped (≥7.0) | completed |
+| 1 | `a01873a2-ce69-42c4-b2fa-1e25dc922be3`「义庄夜收无名尸」 | 14940 | 8.28 | 16 | skipped (≥7.0) | completed |
+| 2 | `9294003b-a221-4b3e-91a7-162dc0b866ae`「按印者欠命」 | 16690 | 8.28 | 14 | skipped (≥7.0) | completed |
+| 3 | `75c42b05-91b1-4238-a827-e37e9cc665cd`「夜更三十三响」 | 13431 | 8.36 | 16 | skipped (≥7.0) | completed |
 
 - 三章累计 45061 字，约 12K/章目标完成度 100%（ch2 略超出反映 scene_planner 多场景拆分自由度）。
 - 单章端到端耗时 ~8 min（scene_planner 前几分钟 SSE 静默后批量 token 流式）。

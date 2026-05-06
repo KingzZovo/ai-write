@@ -495,9 +495,9 @@ outlines tag occurrences <volume-plan>=0  ✅
 - endpoint：`POST /api/generate/chapter`，use_scene_mode=true、target_words=12000、auto_revise=true、max_revise_rounds=2、revise_threshold=7.0。
 - 均串行（避免 LLM rate limit + DB 争用）。单章端到端 ~8 min，scene_planner 阶段 SSE 静默 ~3 min 后转为 token 流式。
 - 产出：
-  - ch1 row `a01873a2-...` 「账上没有这具尸」 14940 字，score=8.28，issues=16，revise skipped。
-  - ch2 row `9294003b-...` 「你先把手印按下去」 16690 字，score=8.28，issues=14，revise skipped。
-  - ch3 row `75c42b05-...` 「三十三声，不是怪癖」 13431 字，score=8.36，issues=16，revise skipped。
+  - ch1 row `a01873a2-...` 「义庄夜收无名尸」 14940 字，score=8.28，issues=16，revise skipped。
+  - ch2 row `9294003b-...` 「按印者欠命」 16690 字，score=8.28，issues=14，revise skipped。
+  - ch3 row `75c42b05-...` 「夜更三十三响」 13431 字，score=8.36，issues=16，revise skipped。
 - 人工抽检三章 head/tail 与赤心 profile 风格全部匹配：物候五感、短句顿挫、制度神化（账=命/印=债/丁字号=点名）、底层书生气、章末钩子（天亮了 / 钟声从灰里过来 / 先认账）。
 
 ### Stage E
@@ -506,3 +506,36 @@ outlines tag occurrences <volume-plan>=0  ✅
 
 ### 临时资产
 - `/tmp/ch{1,2,3}_full.txt`（三章正文原文，43K/49K/39K）、`/tmp/ch{1,2,3}_gen_sse.log`（SSE 原始事件，351K/388K/314K）、`/tmp/materialize_vol1.py`（同名复制到 backend 容器 :/tmp/，已跑）。
+
+## 2026-05-06 23:55 vol1 章名重写（PR-CHIXIN-VOL1-RENAME）
+
+用户反馈：原 50 章名多处语义/搭配不成立（「山门也该还债」山门是物不能还债、「钟声从灰里过来」应为「传来」、「债会先认账」主谓不通）。重写约束：
+- 字数不齐 OK（不强制上限）
+- 语义/搭配必须成立：物体不施动抽象动作；动词搭配符合汉语习惯
+- 第二人称 “你/你们” 在 50 章里 → 0
+- 禁 “角色名：” 冒号章名结构 → 0
+- 禁现代词（流程/工序/怪癖） → 0
+- 评语式/判词式，参考赤心冷叙述
+
+变更范围：仅改章名，不动正文与 outline summary/key_events 主体。
+- `outlines.content_json.chapter_summaries[i].title` × 50
+- `chapters.title` × 50
+- vol1 outline id ：`803b025e-5347-4eb3-bb18-780169f6a732`
+- vol1 volume id：`ee36b649-ff4d-45ea-a045-f50f01589b5a`
+
+脚本与 SQL（已事务提交）：
+- `/tmp/rename_chapter_titles.py` 生成 `/tmp/rename.sql`（50 条 chapters update + 1 条 outlines update + BEGIN/COMMIT）
+- 执行：`docker exec -e PGPASSWORD=$PW ai-write-postgres-1 psql -v ON_ERROR_STOP=1 -f /tmp/rename.sql` → 全部 UPDATE 1 + COMMIT
+- 注：`outlines` 表无 `updated_at` 列，已从 UPDATE 子句去除
+
+重写后重点对照（选輕）：
+- ch1  账上没有这具尸 → 义庄夜收无名尸
+- ch2  你先把手印按下去 → 按印者欠命
+- ch3  三十三声，不是怪癖 → 夜更三十三响
+- ch12 魏寒灰：先学会给自己留尸身 → 证留三处方能活
+- ch25 裴四衡：山门收人不该只收会跳的 → 裴四衡问，他答认账
+- ch43 三十三声一响，山门就得认账 → 山门外敲三十三响
+- ch50 站得高，就更该还债 → 万人命债倒灌护山阵
+
+遗留事项（未主动处理）：
+- ch1/ch2/ch3 正文里可能还有类似 “钟声从灰里过来” 的拟物句子。如要清理，请点出具体句子/章。
