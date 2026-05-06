@@ -64,8 +64,10 @@ async def create_project(
     project = Project(
         title=body.title,
         genre=body.genre,
+        genre_profile_code=body.genre_profile_code,
         premise=body.premise,
         settings_json=body.settings_json or {},
+        target_word_count=body.target_word_count,
     )
     db.add(project)
     await db.flush()

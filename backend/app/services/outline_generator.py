@@ -626,6 +626,34 @@ class OutlineGenerator:
                 ordered.append(body.strip())
         return "\n\n".join(ordered)
 
+    # PR-OUTLINE-STAGED-PERSIST-STRUCT — derive structured payload from
+    # the staged Markdown so book outlines persist main_plot / characters
+    # / world_setting / sections, not just raw_text.
+    def _split_book_sections(
+        self,
+        skeleton_text: str,
+        characters_text: str,
+        world_text: str,
+    ) -> dict[str, str]:
+        buckets: dict[str, str] = {}
+        for text in (skeleton_text, characters_text, world_text):
+            for num, body in self._iter_sections(text):
+                buckets.setdefault(num, body.strip())
+        return buckets
+
+    def _build_book_structured(self, buckets: dict[str, str]) -> dict:
+        def _join(*nums: str) -> str:
+            parts = [buckets.get(n, "").strip() for n in nums]
+            return "\n\n".join(p for p in parts if p)
+        out = {
+            "main_plot": _join("一", "八", "九"),
+            "characters": _join("二", "三", "四"),
+            "world_setting": _join("五", "六"),
+            "chapter_naming_style": buckets.get("七", "").strip(),
+            "sections": dict(buckets),
+        }
+        return {k: v for k, v in out.items() if v}
+
     def _iter_sections(self, text: str):
         """Yield (section_num, full_section_text) pairs for 一..九 headers."""
         if not text:
@@ -855,6 +883,12 @@ class OutlineGenerator:
 
         characters_text = "".join(buffers["B"]).strip()
         world_text = "".join(buffers["C"]).strip()
+        # PR-OUTLINE-STAGED-PERSIST-STRUCT: split first, then reassemble +
+        # build structured payload so persist_outline_now can promote
+        # main_plot / characters / world_setting / sections to top-level.
+        _book_buckets = self._split_book_sections(
+            skeleton_text, characters_text, world_text
+        )
         combined = self._reassemble_sections(
             skeleton_text, characters_text, world_text
         )
@@ -863,10 +897,12 @@ class OutlineGenerator:
         # PR-OL15: strip <volume-plan> tags from combined so the user-visible
         # raw_text never leaks the LLM-internal control tag.
         combined = self._strip_volume_plan_tags(combined)
+        _structured = self._build_book_structured(_book_buckets)
         yield {
             "event": "done",
             "full_outline": combined,
             "volume_plan": volume_plan,
+            "structured": _structured,
             "_stages": {
                 "skeleton": bool(skeleton_text),
                 "characters": bool(characters_text),

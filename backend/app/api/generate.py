@@ -954,6 +954,10 @@ async def generate_outline(
 
             yield f"data: {json.dumps({'status': 'generating', 'level': req.level})}\n\n"
 
+            # PR-OUTLINE-STAGED-PERSIST-STRUCT: nonlocal-style payload
+            # captured from the staged-stream `done` event.
+            _staged_book_done_payload: dict | None = None
+
             if req.level == "book":
                 # v1.4.2 Task B: opt in to structured staged SSE events.
                 # Body field wins over the query param when explicitly set.
@@ -987,6 +991,13 @@ async def generate_outline(
                                 # canonical reassembled text so auto-save keeps
                                 # the in-order 9-section document.
                                 collected_text = [full]
+                            # PR-OUTLINE-STAGED-PERSIST-STRUCT: capture
+                            # done-event payload so persist_outline_now can
+                            # promote volume_plan / structured to top-level.
+                            _staged_book_done_payload = {
+                                "volume_plan": event.get("volume_plan"),
+                                "structured": event.get("structured") or {},
+                            }
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 else:
                     async for chunk in await generator.generate_book_outline(
@@ -1067,10 +1078,25 @@ async def generate_outline(
                     _content_json = {"raw_text": full_text_clean}
                     if req.level == "book":
                         try:
-                            if _vp_for_book:
+                            # PR-OUTLINE-STAGED-PERSIST-STRUCT: prefer
+                            # the volume_plan + structured payload from
+                            # the staged-stream done event; fall back to
+                            # legacy in-text <volume-plan> extraction.
+                            _payload = _staged_book_done_payload or {}
+                            _vp_payload = _payload.get("volume_plan")
+                            if _vp_payload:
+                                _content_json["volume_plan"] = _vp_payload
+                            elif _vp_for_book:
                                 _content_json["volume_plan"] = _vp_for_book
-                        except Exception:
-                            pass
+                            _struct = _payload.get("structured") or {}
+                            for _sk, _sv in _struct.items():
+                                if _sv:
+                                    _content_json.setdefault(_sk, _sv)
+                        except Exception as _struct_err:
+                            logger.warning(
+                                "PR-OUTLINE-STAGED-PERSIST-STRUCT promote failed: %s",
+                                _struct_err,
+                            )
                     if req.level in ("volume", "chapter"):
                         try:
                             _parsed_struct = _OG()._parse_json(full_text_clean)
