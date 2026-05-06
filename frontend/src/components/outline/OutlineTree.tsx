@@ -296,7 +296,7 @@ export function OutlineTree({
                               const _bm = (globalThis as unknown as { __baseIdxMap?: Map<string, number> }).__baseIdxMap
                               const _base = _bm?.get(volume.id) ?? 0
                               const _localIdx = chapter.chapter_idx ?? chapter.chapterIdx ?? 0
-                              const _global = _base + _localIdx + 1
+                              const _global = _base + _localIdx
                               return `第${_global}章 ${chapter.title}`
                             })()}
                           </span>
