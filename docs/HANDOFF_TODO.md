@@ -175,3 +175,20 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 
 遗留事项（未主动处理）：
 - ch1/ch2/ch3 正文里可能还有类似 “钟声从灰里过来” 的拟物句子。如要清理，请点出具体句子/章。
+
+## PR-OL2 — Auto-materialize chapters from volume outline (2026-05-07)
+
+**Touch point**: `backend/app/api/generate.py` `_persist_outline_now()` — vol-level branch.
+
+**Behavior**: After persisting a `level="volume"` outline via `/api/generate/outline`, the new block walks `_content_json["chapter_summaries"]` and:
+
+1. Looks up `Volume(project_id, volume_idx=_vidx)`. If absent, creates one with `title` from outline (fallback `第{idx}卷`) and `summary` from `core_conflict` / `emotional_arc`.
+2. If the volume already has chapters, **skips** materialization (idempotent; avoids dup rows).
+3. Otherwise inserts one `Chapter` row per summary with `chapter_idx`, `title` (from `cs.title`, fallback `第{idx}章`), `outline_json=cs`. Commits.
+4. Logs `PR-OL2 materialized N chapters under vol_idx=...` or `PR-OL2 skip materialize: ...`.
+
+**Mirrors** `volumes.py` `regenerate_volume` materialize block (line ~300–320). Both paths now produce chapter rows; `/tmp/materialize_vol1.py` becomes a one-off.
+
+**Not changed**: `target_word_count` allocation (only `regenerate_volume` does `allocate_even`). For `/api/generate/outline` flow, chapters use the SQLAlchemy default; existing vol1 was patched manually to 12000.
+
+**Verified**: backend syntax passes (`ast.parse`); container restart clean (`Application startup complete.` x2 workers). E2E exercise pending next vol-outline generation (vol2/3 not yet generated; vol1 already materialized).

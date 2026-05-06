@@ -1132,6 +1132,72 @@ async def generate_outline(
                                     await persist_foreshadows_from_volume_outline(
                                         save_db, req.project_id, _vidx, _content_json
                                     )
+                                # PR-OL2: auto-materialize chapter rows from chapter_summaries.
+                                # Mirrors the logic in volumes.regenerate_volume so that vol-level
+                                # outlines created via /api/generate/outline also get chapters rows.
+                                try:
+                                    from app.models.project import Volume as _Vol3, Chapter as _Ch3
+                                    _chs_ms = _content_json.get("chapter_summaries") if isinstance(_content_json, dict) else None
+                                    if isinstance(_vidx, int) and isinstance(_chs_ms, list) and _chs_ms:
+                                        _vq3 = await save_db.execute(
+                                            select(_Vol3).where(
+                                                _Vol3.project_id == req.project_id,
+                                                _Vol3.volume_idx == _vidx,
+                                            )
+                                        )
+                                        _vol3 = _vq3.scalar_one_or_none()
+                                        if _vol3 is None:
+                                            _vt = _content_json.get("title") if isinstance(_content_json, dict) else None
+                                            _vt = _vt.strip() if isinstance(_vt, str) and _vt.strip() else f"第{_vidx}卷"
+                                            _vsum = _content_json.get("core_conflict") or _content_json.get("emotional_arc") or ""
+                                            _vol3 = _Vol3(
+                                                project_id=req.project_id,
+                                                title=_vt,
+                                                volume_idx=_vidx,
+                                                summary=_vsum if isinstance(_vsum, str) else "",
+                                            )
+                                            save_db.add(_vol3)
+                                            await save_db.flush()
+                                        else:
+                                            # Refresh title/summary from latest outline if missing.
+                                            _vt = _content_json.get("title") if isinstance(_content_json, dict) else None
+                                            if isinstance(_vt, str) and _vt.strip():
+                                                _vol3.title = _vt.strip()
+                                            _vsum = _content_json.get("core_conflict") or _content_json.get("emotional_arc")
+                                            if isinstance(_vsum, str) and _vsum.strip():
+                                                _vol3.summary = _vsum
+                                        # Skip if chapters already present (avoid duplicates).
+                                        _ec = await save_db.execute(
+                                            select(_Ch3).where(_Ch3.volume_id == _vol3.id)
+                                        )
+                                        _existing = _ec.scalars().all()
+                                        if not _existing:
+                                            _created = 0
+                                            for _i, _cs in enumerate(_chs_ms):
+                                                if not isinstance(_cs, dict):
+                                                    continue
+                                                _ci = _cs.get("chapter_idx") if isinstance(_cs.get("chapter_idx"), int) else _i + 1
+                                                _ct = _cs.get("title")
+                                                _ct = _ct.strip() if isinstance(_ct, str) and _ct.strip() else f"第{_ci}章"
+                                                save_db.add(_Ch3(
+                                                    volume_id=_vol3.id,
+                                                    title=_ct,
+                                                    chapter_idx=_ci,
+                                                    outline_json=_cs,
+                                                ))
+                                                _created += 1
+                                            await save_db.commit()
+                                            logger.info(
+                                                "PR-OL2 materialized %d chapters under vol_idx=%s vol_id=%s",
+                                                _created, _vidx, _vol3.id,
+                                            )
+                                        else:
+                                            logger.info(
+                                                "PR-OL2 skip materialize: %d chapters already exist for vol_id=%s",
+                                                len(_existing), _vol3.id,
+                                            )
+                                except Exception as _ol2_err:
+                                    logger.warning("PR-OL2 materialize chapters failed: %s", _ol2_err)
                             elif req.level == "chapter" and req.chapter_idx is not None:
                                 _vidx2 = None
                                 if isinstance(volume_outline, dict):
