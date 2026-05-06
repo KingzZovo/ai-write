@@ -125,3 +125,20 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 - book outline (latest): `15a4770c-9230-49a0-a493-700644b32862`
 - style profile: `b76da43a-a2fa-4fd3-8c54-3912acee6bb0`
 - reference book: `0a543b1d-19fe-4e03-986e-42844feb36ee`
+
+## 2026-05-06 14:45 赤心仿写验证 Stage C/D/E 完成
+
+- [x] vol1 outline `803b025e-5347-4eb3-bb18-780169f6a732` 生成与 confirm（10 chapter_summaries / 12 keys / 86298 chars）。
+- [x] chapter outline x3（ch1 `b0833dd1-...` 17007 / ch2 `92d98208-...` 19204 / ch3 `42837860-...` 16507）。
+- [x] vol1 row `ee36b649-...` + 50 chapters 手动物化（docker exec /tmp/materialize_vol1.py）。
+- [x] Stage D ch1-3 正文（scene_mode + auto_revise threshold=7.0）：ch1 14940/8.28、ch2 16690/8.28、ch3 13431/8.36，均 status=completed，revise skipped。
+- [x] Stage E 报告 `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。
+
+### 还欠（留给下个窗口）
+
+- [ ] PR-OL2 补上 vol staged_stream done 后的 chapter materialize（去除对 `/tmp/materialize_vol1.py` 手动脚本依赖，参考 `volumes.regenerate_volume:143-329`）。
+- [ ] bulk_generate 路径调查：当前未发现 `/api/generate/chapter/batch`；如需 ch4-ch10 拓展实测，先串行单调用 `POST /api/generate/chapter`。
+- [ ] chapter outline 批量 confirm（当前 ch1-3 outline.is_confirmed=0，不影响下游，仅为流程完整性）。
+- [ ] issues 清单（round-1 14-16/章）抽样人工标注，反馈赤心 profile examples/反例。
+- [ ] sections 缺「四」段核查（之前 deferred）。
+- [ ] chixin reprocess celery worker ～6000 slices 活化决策。

@@ -480,3 +480,29 @@ outlines tag occurrences <volume-plan>=0  ✅
 ### Stage C remainder
 - volume outline x1（vol1，est 50 章）SSE 已起后台。
 - chapter outline x前3章 待 volume done 后启动。
+
+## 2026-05-06 14:45 Stage C remainder + Stage D/E 完成（赤心仿写验证闭环）
+
+### Stage C remainder
+- vol1 outline `803b025e-5347-4eb3-bb18-780169f6a732`（level=volume，parent=`15a4770c-...`，86298 chars，12 keys，50 chapter_summaries，已 confirm）。
+- chapter outline x3（均 SSE staged_stream）：
+  - ch1 `b0833dd1-f5ab-4315-be57-f3b346f5bcaa` 17007 chars
+  - ch2 `92d98208-b015-4201-9f91-6c72b3157040` 19204 chars
+  - ch3 `42837860-8983-4c83-8899-1cb1f5cb443d` 16507 chars
+- volume row 物化：走 docker exec `/tmp/materialize_vol1.py` 推夑50 chapters（vol1 row `ee36b649-...`，target=12000/章）。已知限制：PR-OL2 自动物化路径不存在，当前依赖手动脚本；后续候选 PR 补上 vol staged_stream done 后的 materialize（参考 `volumes.regenerate_volume:143-329`）。
+
+### Stage D 三章正文（scene_mode + auto_revise）
+- endpoint：`POST /api/generate/chapter`，use_scene_mode=true、target_words=12000、auto_revise=true、max_revise_rounds=2、revise_threshold=7.0。
+- 均串行（避免 LLM rate limit + DB 争用）。单章端到端 ~8 min，scene_planner 阶段 SSE 静默 ~3 min 后转为 token 流式。
+- 产出：
+  - ch1 row `a01873a2-...` 「账上没有这具尸」 14940 字，score=8.28，issues=16，revise skipped。
+  - ch2 row `9294003b-...` 「你先把手印按下去」 16690 字，score=8.28，issues=14，revise skipped。
+  - ch3 row `75c42b05-...` 「三十三声，不是怪癖」 13431 字，score=8.36，issues=16，revise skipped。
+- 人工抽检三章 head/tail 与赤心 profile 风格全部匹配：物候五感、短句顿挫、制度神化（账=命/印=债/丁字号=点名）、底层书生气、章末钩子（天亮了 / 钟声从灰里过来 / 先认账）。
+
+### Stage E
+- 报告落地：`docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。8 节 + 关键 ID 速查 + commit chain。
+- **综合结论**：赤心仿写链路闭环验证通过。默认参数（threshold=7.0）下不需 revise 即可达到 8.28+ 评分，正文 12-17K 字，风格忠实。
+
+### 临时资产
+- `/tmp/ch{1,2,3}_full.txt`（三章正文原文，43K/49K/39K）、`/tmp/ch{1,2,3}_gen_sse.log`（SSE 原始事件，351K/388K/314K）、`/tmp/materialize_vol1.py`（同名复制到 backend 容器 :/tmp/，已跑）。
