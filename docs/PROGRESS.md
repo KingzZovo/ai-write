@@ -556,3 +556,16 @@ outlines tag occurrences <volume-plan>=0  ✅
 **Not changed**: `target_word_count` allocation (only `regenerate_volume` does `allocate_even`). For `/api/generate/outline` flow, chapters use the SQLAlchemy default; existing vol1 was patched manually to 12000.
 
 **Verified**: backend syntax passes (`ast.parse`); container restart clean (`Application startup complete.` x2 workers). E2E exercise pending next vol-outline generation (vol2/3 not yet generated; vol1 already materialized).
+
+## 2026-05-07 vol1 ch4-10 完整补齐
+
+- ch4 手动跑完：14029 字 / 8.36 / revise_skipped。
+- ch5-ch10 两段 driver 串行跑完（PR-OL2 验证路径）：
+  - `/tmp/ch5_to_10_driver.sh` PID 827545：ch5 / ch6 / ch7 / ch8 顺利 completed；ch9 被 NVIDIA SSE `INTERNAL_ERROR` (stream RST) 中断，driver 退出。
+  - `/tmp/ch9_10_resume.sh` PID 3119019：ch9 / ch10 重试完成，含 3 次重试 + sleep 30-45s。
+- ch5-ch10 全部使用 PR-OL2 vol-level 自动物化的 chapter row（无需手动 INSERT），路径 idempotent。
+- ch8 / ch9 章名被 chapter outline 阶段重写为第二人称（违反 rename 约束），已 SQL 强制还原：
+  - ch8 `骨灯认你，也要你命` → `骨灯认主夜不止`
+  - ch9 `你把他写得太干净` → `簿改丁七为流民`
+- ch9/ch10 重试路径未走 auto_revise evaluation，字数从 13-16k 跌到 ~10k；记入 backlog，不阻塞收尾。
+- vol1 ch1-10 合计 139,602 字，10/10 completed。

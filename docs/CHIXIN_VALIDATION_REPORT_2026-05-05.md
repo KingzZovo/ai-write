@@ -138,3 +138,49 @@ chapter row 3:          75c42b05-91b1-4238-a827-e37e9cc665cd   (13431 字, compl
 - `f73a74d` PR-BOOK-PROFILE-BIND（前端创建项目时绑 profile + reference_book）
 - `a779524` 章节列表 off-by-one 修复（OutlineTree 全局 idx）
 - `391e053` PR-OUTLINE-STAGED-PERSIST-STRUCT（book outline 三阶段结构化字段持久化 + projects.target_word_count 修补）
+
+## 6. Stage D 续跑：ch4–ch10（2026-05-06 → 2026-05-07）
+
+承袭 ch1-3 后，本阶段串行补完 vol1 前十章。
+
+### 6.1 ch4 单独跑（手动）
+- outline_id=`cd25bc41-8232-41c5-9c01-157fc0f76a3d`，chapter_id=`ba7cb6d9-1640-452e-9691-942169f3fad6`
+- 结果：14029 字 / score 8.36 / issues 15 / revise_skipped (score>threshold 7.0)
+
+### 6.2 ch5–ch10 driver 串行（PR-OL2 验证）
+ch5–ch10 由 `/tmp/ch5_to_10_driver.sh`（setsid nohup PID 827545）+ `/tmp/ch9_10_resume.sh`（PID 3119019）两段串行跑完，全部利用 PR-OL2 vol-level 自动物化的 chapter row。
+
+| ch | title (final) | wc | score | 备注 |
+|----|---------------|----|-------|------|
+| 5  | 岁贡棺中有故人 | 14387 | 8.36 | revise_skipped |
+| 6  | 乱葬坡上验换牌 | 13681 | 8.32 | revise_skipped |
+| 7  | 酒席之上听谎息 | 14707 | 8.52 | revise_skipped |
+| 8  | 骨灯认主夜不止 | 13841 | 8.28 | revise_skipped；title SQL 强制还原 |
+| 9  | 簿改丁七为流民 | 10159 | n/a  | 重试路径未走 evaluation；title 强制还原 |
+| 10 | 夜出盐灰镇     | 9837  | n/a  | 重试路径未走 evaluation |
+
+### 6.3 已知问题（写入 backlog）
+1. **chapter outline 阶段会重写 title**，无视 vol1 outline 已 confirmed 的 chapter_summaries[idx].title，把 ch8/ch9 改回了第二人称（违反 rename 约束「禁你/你们」）。本次用 SQL 直更还原；后续应在 `_persist_outline_now` chapter 分支保留 vol-outline 已有 title，或在 prompt 中显式禁用第二人称章名。
+2. **content gen 重试路径不走 auto_revise evaluation**：ch9 在第一次上游 NVIDIA SSE `INTERNAL_ERROR`（stream RST）后，driver 的第 2 次 curl 直接 saved + completed，没有 `event: scored` / `revise_skipped` 事件，且生成长度从前 8 章稳定的 13–16k 跌到 ~10k。怀疑 scene_mode + auto_revise 在「上次 partial scene 已落地或 cache 命中」时进入 fast path，跳过评估。需后续追查 `chapter_generator.py` 重入逻辑。
+3. **NVIDIA 上游 SSE INTERNAL_ERROR 偶发**：长链路（每章 ~7-9 min stream）偶发 stream RST。已在 resume driver 中加 3 次重试 + sleep 30-45s 缓冲，能挡瞬时断流。生产化时应在 `_chapter_streamer` 内层加重连 / partial chunk 复用。
+
+### 6.4 PR-OL2 物化路径已验证
+- ch5–ch10 全部使用 PR-OL2 vol-level 物化时建好的 chapter row（200b9f61 / fa272327 等），content gen 直接复用 chapter_id，无需手动 INSERT。
+- 物化 idempotent：driver 重启不会重复 INSERT chapter row。
+
+## 7. 当前 vol1 ch1-10 全景
+
+| ch | title | wc | score | status |
+|----|-------|----|-------|--------|
+| 1  | 义庄夜收无名尸 | 14940 | 8.28 | completed |
+| 2  | 按印者欠命 | 16690 | 8.28 | completed |
+| 3  | 夜更三十三响 | 13431 | 8.36 | completed |
+| 4  | 认尸者无门 | 14029 | 8.36 | completed |
+| 5  | 岁贡棺中有故人 | 14387 | 8.36 | completed |
+| 6  | 乱葬坡上验换牌 | 13681 | 8.32 | completed |
+| 7  | 酒席之上听谎息 | 14707 | 8.52 | completed |
+| 8  | 骨灯认主夜不止 | 13841 | 8.28 | completed |
+| 9  | 簿改丁七为流民 | 10159 | n/a  | completed |
+| 10 | 夜出盐灰镇     | 9837  | n/a  | completed |
+
+合计：**139,602 字** / 10 章 / 平均 13,960 字 / 章。

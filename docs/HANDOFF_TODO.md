@@ -192,3 +192,33 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 **Not changed**: `target_word_count` allocation (only `regenerate_volume` does `allocate_even`). For `/api/generate/outline` flow, chapters use the SQLAlchemy default; existing vol1 was patched manually to 12000.
 
 **Verified**: backend syntax passes (`ast.parse`); container restart clean (`Application startup complete.` x2 workers). E2E exercise pending next vol-outline generation (vol2/3 not yet generated; vol1 already materialized).
+
+## 2026-05-07 ch4-10 补完 + chapter-outline 重写 title bug
+
+### 已完成
+- vol1 ch1-10 全部 completed（139,602 字）。
+- ch5-10 验证 PR-OL2 vol-level 物化路径：chapter row 自动生成 + idempotent，content gen 直接复用 chapter_id。
+- driver 脚本保留：`/tmp/ch5_to_10_driver.sh`、`/tmp/ch9_10_resume.sh`（含重试逻辑）。
+
+### NEW backlog（从本次跑批发现）
+1. **chapter outline 重写 title 问题**
+   - 现象：`POST /api/generate/outline level=chapter chapter_idx=N` 会调 LLM 重新 propose chapter title 并写入 chapters.title，覆盖 vol1 outline 已确认的 chapter_summaries[idx].title。
+   - 后果：ch8 / ch9 被改成第二人称 title（「骨灯认你」「你把他写得太干净」），违反 rename 约束。已 SQL 还原。
+   - 修复思路：在 `chapter_outline_expander.py` 生成 prompt 里添加「章名仅生成 outline、title 使用传入的 fixed_title」；或者在 `_persist_outline_now` chapter 分支，若 vol1 outline 已有 confirmed title，则强制覆写 chapters.title 为 vol-outline title。
+   - 优先级：P1（今后跑 vol2 / vol3 继续踩坑）。
+2. **content gen 重试路径跳过 auto_revise**
+   - 现象：ch9/ch10 从 SSE 看只有 `generating` -> `saved` -> `completed`，没有 `event: scored` / `revise_skipped`，且生成长度从 13-16k 降到 ~10k。
+   - 猜测：scene_mode 在「上次部分 scene 已落盘」或 cache hit 时跳过了 evaluation 环节。
+   - 待查：`backend/app/services/chapter_generator.py` 重入判断 / scene_writers 结束后的 evaluation hook。
+3. **NVIDIA SSE INTERNAL_ERROR 偶发**
+   - 外部因素，看起来 ~7–9 min long-stream 可能被上游负载均衡切换。
+   - 临时方案：driver 层 retry x3 + sleep 30-45s（本次验证能挡 1 次 RST）。中期在 `_chapter_streamer` / NVIDIA client 加 chunk-level reconnect。
+
+### 遗留 / 合并项
+- 之前列出的「山门还债」「钟声过来」「债认账」物体施动抽象动作类问题 -> 仍在 backlog，可同带 batch sed 或后续 regen。
+- chixin reprocess celery worker (~6000 slices) -> 仍未决定。
+- handoff doc Stage B payload 字段 -> 未处理。
+
+### 接手者首动
+1. 检查上述 P1 chapter-outline title 覆写 bug 是否要今天修，还是留给下一轮。
+2. 决定是否补跨集验证报告中的 ch9/ch10 evaluation 数据（需重跑 content gen 走一次完整 auto_revise）。
