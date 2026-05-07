@@ -226,7 +226,7 @@ VOLUME_CHAPTERS_SYSTEM = """你是一位经验丰富的小说策划师。根据�
   "batch": [
     {
       "chapter_idx": 整数,
-      "title": "章名（4-8 字诗意或概要短词，不可是 第N章 / N 等占位符）",
+      "title": "章名（见下方【章名规则】）",
       "summary": "本章概要（60-100 字）",
       "main_progress": "本章主线推进点（1 句）",
       "side_progress": "本章支线/暗线推进点（1 句，本章无可填 无）",
@@ -238,12 +238,24 @@ VOLUME_CHAPTERS_SYSTEM = """你是一位经验丰富的小说策划师。根据�
   ]
 }
 
-【质量硬约束】
-- title 不可重复本卷卷名，也不可使用 第N章 / N 等占位；4-8 字诗意或概要短词。
+【章名规则·硬约束】
+1) 必须符合普通中文语感与主谓逻辑：
+   - 物体（钟、灯、债、山门、剑、印）不能作为施动者去做需要意识的抽象动作。
+     反例：「债认账」「山门还债」「钟声判罪」「剑悔过」。
+     正例：「认债」「山门点灯」「剑出鞘」「钟声起」「掌灯人来」。
+   - 动宾要可还原成人话：「A 做 B」要能解释成「谁/什么 在做/经历 什么」。
+2) 第二人称「你」允许使用，但必须符合中文语言习惯：
+   - 允许：作为人物对话引语 / 作为本章视角对象的指称，如「你别回头」「你欠的债」「你说的那夜」「认你」。
+   - 不允许：让标题本身像在向读者喊话或解释剧情，如「你把他写得太干净」「你应该知道的那件事」「你一直忽略的真相」。
+3) 不允许：「第N章」/纯数字/重复本卷卷名/纯抽象空词（恐惚/争锄/虚妄/混沌 此类）/中文全角冒号「：」/现代化或工程类词汇（流程/工序/系统/数据/版本/SOP）/生造单字或拼凑不可读词。
+4) 优先选择本章主事件的关键具象意象、关键道具、关键人物动作，或章末状态的诗化短句。
+5) 字数 2-8 字之间，灵活掌握；不要为凑字数而生造。
+
+【其它质量硬约束】
 - summary 严格 60-100 字，必须同时交代 人物+场景+事件+本章末状态。
 - chapter_idx 从用户指定的 start 开始，连续递增到 end，不跳号不超出区间。
 - main_progress / side_progress / foreshadow_state / key_scene 都不可留空；本章未使用可填「无」。
-- 所有自创器物/术语使用现代汉语真实词汇或含义可推测的复合词，禁止生造单字或拼凑不可读词。
+- 所有自创器物/术语使用现代汉语真实词汇或含义可推测的复合词。
 - 同一伏笔 foreshadow_state 在本卷内状态只能是 埋→推→收 递进，不可后退。
 
 输出纯 JSON，不要包含 markdown 代码块标记。"""
@@ -1079,6 +1091,26 @@ class OutlineGenerator:
                 if expected > end:
                     break
 
+        # PR-TITLE-Q1: rule-based title check + batch LLM rewrite for any
+        # violators so the persisted vol outline never carries sloppy
+        # titles. Failure here is non-fatal; original titles survive.
+        try:
+            from app.services.title_quality_checker import (
+                check_and_rewrite_in_place as _tq_check,
+            )
+            _tq_stats = await _tq_check(
+                all_summaries,
+                volume_meta=meta_for_ctx,
+                project_id=self.project_id,
+            )
+            logger.info(
+                "Staged volume outline: title quality check %s", _tq_stats,
+            )
+        except Exception as _tq_err:  # noqa: BLE001
+            logger.warning(
+                "Staged volume outline: title quality check failed: %s",
+                _tq_err,
+            )
         merged = dict(meta_for_ctx)
         merged["chapter_summaries"] = all_summaries
         return merged

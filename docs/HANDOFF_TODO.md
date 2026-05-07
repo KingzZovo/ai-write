@@ -222,3 +222,19 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 ### 接手者首动
 1. 检查上述 P1 chapter-outline title 覆写 bug 是否要今天修，还是留给下一轮。
 2. 决定是否补跨集验证报告中的 ch9/ch10 evaluation 数据（需重跑 content gen 走一次完整 auto_revise）。
+
+---
+
+## 2026-05-07 · PR-TITLE-Q1 + PR-CHGEN-ALIAS 已合入
+
+### 状态变更
+- ~~P1.1 章名生成质量事后人工 SQL 修复~~ → 已代码层修、生成时保证（`title_quality_checker` + VOLUME_CHAPTERS_SYSTEM 重写 + chapter-outline title 冻结）。
+- ~~P1.2 driver `scene_mode` 被 Pydantic 静默忽略~~ → `GenerateChapterRequest` 加 model_validator 容错，`scene_mode` / `scene_mode_on` 均能调起 scene mode + auto_revise。
+- P1.3 NVIDIA SSE chunk-level reconnect：仍保留 driver-层 retry，未实施 chunk 级 reconnect（重复 token / billing 风险）。Backlog。
+
+### 下一个接手者需要做的事
+1. **vol2 outline 生成验证质量门** — 调 POST `/api/generate/outline` `level=volume volume_idx=2`，跑完后看 backend 日志中 `Staged volume outline: title quality check {checked, violations, rewritten, kept}`。`violations==0` 代表生成一次到位；`rewritten>0 kept==0` 代表重写全部补救成功。
+2. **driver 脚本 改 `scene_mode` → `use_scene_mode`** — 这不是为了必须改（已容错），是为了代码与后端 Pydantic 字段名统一。未来可考虑加 deprecation log。
+3. **可选 上走 ch11+** — 验证 SSE 能看到 `event: evaluating` / `event: scored`。
+4. **不动 vol1 ch1-10 已落库数据** — 但注意：下次 chapter-outline 重生不会再被 LLM 改名。
+5. **title_quality_checker 黑名单进一步打磨** — OBJECT_NOUNS / ABSTRACT_VERBS 是初版，遇到漏抓案例加进去即可。

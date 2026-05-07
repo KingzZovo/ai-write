@@ -82,7 +82,8 @@ SYSTEM_PROMPT = (
     "你是一位高质量中文小说大纲作者。你要输出严格符合 schema 的章节大纲扩写，\n"
     "只输出 JSON 本身，不要 markdown 代码块，不要任何辅助说明文本。\n"
     "以中文完成。必要时 \"\\n\" 表示换行。\n"
-    "不要创作未在上下文中出现的人物、设定、道具，除非 stub 中明确提示。"
+    "不要创作未在上下文中出现的人物、设定、道具，除非 stub 中明确提示。\n"
+    "【title 冻结】本章 title 已在分卷大纲阶段按作者命名风格确定并写入 stub.title，请直接原样复制到输出的 title 字段，不要修改、不要润色、不要重新生成。"
 )
 
 
@@ -273,7 +274,11 @@ def _validate_and_normalize(parsed: Any, chapter: Chapter, stub: dict) -> dict[s
 
     out: dict[str, Any] = {}
     out["chapter_idx"] = parsed.get("chapter_idx") or chapter.chapter_idx
-    out["title"] = parsed.get("title") or chapter.title or stub.get("title") or ""
+    # PR-TITLE-Q1: title is frozen at vol-outline stage. chapter.title comes
+    # from chapter_summaries[i].title and must NOT be rewritten by the
+    # chapter-outline LLM. Defense in depth: even if the LLM ignores the
+    # SYSTEM_PROMPT freeze directive, we still ignore parsed.title here.
+    out["title"] = chapter.title or stub.get("title") or parsed.get("title") or ""
     out["summary"] = parsed.get("summary") or stub.get("summary") or ""
     ke = parsed.get("key_events")
     out["key_events"] = ke if isinstance(ke, list) else (stub.get("key_events") or [])

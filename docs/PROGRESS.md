@@ -569,3 +569,15 @@ outlines tag occurrences <volume-plan>=0  ✅
   - ch9 `你把他写得太干净` → `簿改丁七为流民`
 - ch9/ch10 重试路径未走 auto_revise evaluation，字数从 13-16k 跌到 ~10k；记入 backlog，不阻塞收尾。
 - vol1 ch1-10 合计 139,602 字，10/10 completed。
+
+## 2026-05-07 · PR-TITLE-Q1 + PR-CHGEN-ALIAS
+
+应对用户迫切说明「不要以后人工发现又去 SQL 改名，不是禁第二人称，是要符合逻辑和语言习惯」：
+
+- 新增 `backend/app/services/title_quality_checker.py`：规则层（`object_abstract_verb`、`2p_meta_address`、占位/全角冒号/现代词/抽象空词/字数边界）+ LLM 重写层（batch rewrite + 二次校验）。
+- `outline_generator.py` `VOLUME_CHAPTERS_SYSTEM` 重写 + 后置 `check_and_rewrite_in_place` hook；vol-outline 生成后、落库前全量质量门。
+- `chapter_outline_expander.py` SYSTEM_PROMPT 加 title 冻结声明 + `_validate_and_normalize` 中 title 优先级翻转（chapter.title > stub.title > parsed.title）：chapter-outline LLM 不再能覆盖 vol-outline 定下的 title。
+- `api/generate.py` `GenerateChapterRequest` 加 `@model_validator(mode="before")`，容错 `scene_mode` / `scene_mode_on` 两个古别名 → `use_scene_mode`；修复 ch9/ch10 retry 为什么 SSE 没 `event: scored` 的根因（driver payload 字段名不匹配 → 静默走单次 ChapterGenerator）。
+
+单元自测 8/10 PASS；backend 已重启、Application startup complete。
+详见 `docs/PR_TITLE_Q1_2026-05-07.md`。

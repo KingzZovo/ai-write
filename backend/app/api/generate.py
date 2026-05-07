@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,6 +86,21 @@ class GenerateChapterRequest(BaseModel):
     revise_threshold: float = 7.0
     # Hard cap on rewrite rounds to bound LLM cost (3 total writes max at N=2).
     max_revise_rounds: int = 2
+
+    # PR-CHGEN-ALIAS (2026-05-07): tolerate legacy/short payload field names
+    # so a driver script that posts {"scene_mode": true, "auto_revise": true}
+    # still hits scene-mode + auto-revise paths instead of silently falling
+    # back to the single-shot ChapterGenerator (which produced the empty
+    # `event: scored` SSE traces on ch9/ch10 retries 2026-05-07).
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_aliases(cls, data):
+        if isinstance(data, dict):
+            if "scene_mode" in data and "use_scene_mode" not in data:
+                data["use_scene_mode"] = data.get("scene_mode")
+            if "scene_mode_on" in data and "use_scene_mode" not in data:
+                data["use_scene_mode"] = data.get("scene_mode_on")
+        return data
 
 
 class GenerateOutlineRequest(BaseModel):
