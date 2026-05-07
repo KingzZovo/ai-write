@@ -92,10 +92,13 @@ def _looks_like_2p_meta(t: str) -> bool:
 
 
 def _too_long(t: str) -> bool:
+    # PR-TITLE-Q1.1 (2026-05-08): widened per user feedback "字数不齐 OK".
+    # Hard ceiling guards against runaway prose-as-title (e.g. one-sentence summary
+    # accidentally written into title slot), but does NOT enforce a tight 8-char limit.
     chinese_count = sum(1 for c in t.strip() if "\u4e00" <= c <= "\u9fff")
-    if chinese_count > 8:
+    if chinese_count > 14:
         return True
-    return len(t.strip()) > 12
+    return len(t.strip()) > 18
 
 
 def _too_short(t: str) -> bool:
