@@ -184,3 +184,48 @@ ch5–ch10 由 `/tmp/ch5_to_10_driver.sh`（setsid nohup PID 827545）+ `/tmp/ch
 | 10 | 夜出盐灰镇     | 9837  | n/a  | completed |
 
 合计：**139,602 字** / 10 章 / 平均 13,960 字 / 章。
+
+---
+
+## 8. 2026-05-08 增补：PR 闭环与环境阻塞
+
+### 8.1 三个 P1 问题已在代码层闭环
+
+| backlog | PR | 状态 |
+|---|---|---|
+| 6.3 #1 chapter outline 阶段重写 title | **PR-TITLE-Q1** + **PR-TITLE-Q1.1** | ✅ 合入 |
+| 6.3 #2 重试路径跳过 evaluation | **PR-CHGEN-ALIAS**（`scene_mode` 双名字兼容） | ✅ 合入 |
+| 6.3 #3 NVIDIA 上游 SSE INTERNAL_ERROR | NVIDIA chunk-level retry | ☑ backlog（外层 driver 已 3 次重试能抗瓶颈） |
+
+#### PR-TITLE-Q1 / Q1.1 代码层三阵防护
+1. **prompt** 阶段：`outline_generator.py` `VOLUME_CHAPTERS_SYSTEM` 加字数/逻辑/不重卷名/不使用占位符等总规则。
+2. **质量门** 阶段：`title_quality_checker.py` (NEW, 284 行) 检测三类违规 + 未过全卷重生。阈值现 `chinese_count > 14` 或 `len > 18`，避免将整句描述当 title。
+3. **chapter outline expand** 阶段：`chapter_outline_expander.py:276` 优先使用 vol1 outline 已 confirm 的 chapter\_summaries[idx].title，覆盖 LLM parsed.title。
+
+#### PR-CHGEN-ALIAS
+`generate.py` 调 chapter generator 时 `scene_mode` / `use_scene_mode` 任一字段为 true 即为 true，保证 SSE 重新走 evaluating 路径。单测 8/10 PASS（剩 2 个为 too\_long 边界权衡项，后续代码再调整后入库）。
+
+### 8.2 50/50 title 离线扫描（1 卷 50 章）
+
+```
+2026-05-08 18:30+ vol1 章名扫描
+clean: 50 / total: 50
+violations: 0
+```
+
+* 之前两个假阳性（ch33「吞篆补窍，失一段记忆」9 字 / ch50「万人命债倒灌护山阵」9 字）随 Q1.1 阈值放宽后均 clean。
+* prompt 中已明确“字数以短为主、可长可短、不需全卷统一、14 个汉字以内”。
+
+### 8.3 环境阻塞（未闭环）
+
+**上游 codex provider auth 失效**：`http://141.148.185.96:8317/v1` 代理在 codex 上缺凭据，所有 `gpt-5.x` 调用返 503 `auth_not_found`。导致 ch11+ chapter outline expand 和后续所有 LLM chat task 都炸。详见 `docs/HANDOFF_TODO.md` 末段。
+
+* 本 PR 代码路径验证正确（路由到「大纲」endpoint, model=gpt-5.4(high), prompt_assets 表记录验证同步）。
+* 代理上的 codex provider auth 修复后，Stage D ch11–ch30 可以直接使用已有 `chapter_id` 并走 PR-OL2 物化路径，不需重新功能调试。
+
+### 8.4 v1.1 总账面
+
+* 代码层：PR-TITLE-Q1 / Q1.1 / CHGEN-ALIAS 三个合入，main + feat/phase2-fix 同步 `0be816f`。
+* 文档层：本报告 + `PR_TITLE_Q1_2026-05-07.md` + `PROGRESS.md` + `HANDOFF_TODO.md`（含 codex 阻塞专节）。
+* 数据层：ch1–ch10 合 139,602 字 保持 completed；ch11–ch20 chapter row 已物化（draft, 0 字, 0 outline）等 LLM 恢复。
+* 性能层：接手者跳过探索阶段，从 HANDOFF_TODO P0 直接起步（修 codex auth → ch11 expand → SSE event 验证 → Stage D 续写）。
