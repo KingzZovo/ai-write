@@ -283,3 +283,34 @@ curl -sS -X POST 'http://127.0.0.1:8000/api/projects/df6f523e-f903-4644-bcce-636
 2. 走一次 chapter content gen、验证 SSE 返 `event: evaluating` 和 `event: scored`，证明 PR-CHGEN-ALIAS (P1.2) 双名字兼容正常。
 3. Stage D 继写 ch11-ch30（凑 30 章赤心仿写验证量）。
 4. Stage E 写 docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md 终稿（合 30 章数据 + 全部 PR 总结 + 评分表）。
+
+---
+
+## 2026-05-08T16:00Z — codex auth 阻塞解除 ✅
+
+上游代理 `141.148.185.96:8317` 的 codex provider auth 已恢复（由用户运维处理）。验证：
+
+```
+POST /api/projects/.../chapters/3ea75111-.../outline/expand
+=> HTTP 200, latency 80,536ms, key_events=4
+```
+
+之前的 `auth_not_found` 503 / 2.7s 快速失败信号全部消失。这一节仅作历史记录保留，下一个接手者不需再处理。
+
+## 2026-05-08T16:05Z — ch11 完整闭环 + PR-CHGEN-ALIAS 验证 ✅
+
+ch11 《栖乌县城递状难》生成路径 saved 进库：
+
+- POST `/api/generate/chapter` payload 用 PR-CHGEN-ALIAS 的短名：`{"scene_mode": true, "auto_revise": true, "target_words": 14000, "max_tokens": 8000}`
+- SSE event 序列完备：`generating Starting` → [正文流式] → `status: saved word_count=12225` → `event: evaluating round=1` → `event: scored round=1 overall=8.18 issues=15` → `event: revise_skipped reason=score_above_threshold threshold=7.0` → `status: completed` → `[DONE]`
+- 耗时 7:41，word_count=12225，score=8.18 与 ch1-8 同区间（8.28-8.52）
+- 文案质量：开场即冷雾盐霜城墙，陆照藏芝麻蜡片入鞋底；结尾「脚步停在门后 … 下一声问话，可能要命，也可能给路」——与 ch1-10 同手感。
+
+**这证明 PR-CHGEN-ALIAS 修复生效**：`scene_mode → use_scene_mode` alias 走通了 SceneOrchestrator + ChapterEvaluator 路径，2026-05-07 ch9/ch10 重跳时出现的「empty event: scored SSE traces」现象不复现；scored event 现在带完整的 `overall` / `issues` 字段。
+
+## 2026-05-08T16:07Z — Stage D ch12-20 batch 启动
+
+Driver: `scripts/stage_d_batch.sh` （9 章串行跳，预计 ~80 min）
+Log: `/tmp/stage_d_run.log`
+单章产出: `/tmp/sd_ch{IDX}_expand.json` + `/tmp/sd_ch{IDX}.sse`
+Batch pid: 2832166

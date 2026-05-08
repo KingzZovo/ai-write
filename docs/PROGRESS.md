@@ -581,3 +581,22 @@ outlines tag occurrences <volume-plan>=0  ✅
 
 单元自测 8/10 PASS；backend 已重启、Application startup complete。
 详见 `docs/PR_TITLE_Q1_2026-05-07.md`。
+
+---
+
+## 2026-05-08T16:00Z→ codex auth 恢复，Stage D 重启
+
+### 里程碑
+- T+0: 上游 codex provider auth 修复。
+- T+2 min: ch11 outline expand 验证通过（30 min 前还 503）。HTTP 200 / 80.5s / key_events=4。
+- T+10 min: ch11 内容生成 SSE 完整闭环。**word_count=12225, score=8.18, issues=15, revise_skipped, completed**。
+- T+10 min: 启动 Stage D batch driver `scripts/stage_d_batch.sh 12-20`。
+
+### PR-CHGEN-ALIAS 验证证据
+顶不再需要推论：ch11 SSE trace 明确包含 `event: scored round=1 overall=8.18 issues=15` 与 `event: revise_skipped reason=score_above_threshold`；ch9/ch10 retries 时的「empty scored」现象未重现。alias 路径走了 SceneOrchestrator+Evaluator，不是 single-shot fallback。
+
+### Stage D 当前进度
+- vol1 ch1-10: completed (139,602 字，均分 8.28-8.52)
+- vol1 ch11: completed (12,225 字，8.18)
+- vol1 ch12-20: batch 运行中 (pid 2832166)
+- vol1 ch21-30: chapter rows 已物化 (draft)，等 ch12-20 跳完决定是否续跳
