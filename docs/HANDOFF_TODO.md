@@ -238,3 +238,48 @@ HEAD = `f3e9e55`。详情看 `docs/PROGRESS.md` 同日条目。
 3. **可选 上走 ch11+** — 验证 SSE 能看到 `event: evaluating` / `event: scored`。
 4. **不动 vol1 ch1-10 已落库数据** — 但注意：下次 chapter-outline 重生不会再被 LLM 改名。
 5. **title_quality_checker 黑名单进一步打磨** — OBJECT_NOUNS / ABSTRACT_VERBS 是初版，遇到漏抓案例加进去即可。
+
+---
+
+## 2026-05-08 19:14 环境阻塞：上游 codex auth 失效
+
+**现象**：所有 LLM chat task（outline_book / outline_volume / outline_chapter / generation 等）全部返回 503，错误：
+```
+Error code: 503 - auth_not_found: no auth available (providers=codex, model=gpt-5.4(high))
+```
+
+**诊断** (2026-05-08 19:14 交换现场验证)：
+- `prompt_assets.outline_chapter` 路由正确 → endpoint `大纲` (`ac6eb9cd-380d-475f-83e8-b144dbdefe74`) `gpt-5.4(high)`。
+- `大纲` 和 `本地 Qwen` 两个 endpoint **base_url 完全一样** = `http://141.148.185.96:8317/v1`，共用同一上游代理。
+- 代理在 codex provider 上缺凭据，gpt-5.x 系列全部炸：按 model 名路由到 codex provider → codex 没 token → 503。
+- 本 PR 代码路径都正确；这是部署/运维层问题。
+
+**证据**：
+```
+2026-05-08T11:14:57.55Z  POST http://141.148.185.96:8317/v1/chat/completions "HTTP/1.1 503 Service Unavailable"
+2026-05-08T11:14:58.86Z  Unhandled exception on POST /api/projects/.../chapters/.../outline/expand
+  exc_type: InternalServerError
+  exc_msg : Error code: 503 - auth_not_found: no auth available (providers=codex, model=gpt-5.4(high))
+```
+3 次 retry 全 503，后端耗时 2.7s 快速失败，不是间歇性。
+
+**修复选项**（代码以外）：
+1. 修 `141.148.185.96:8317` 代理上 codex provider 的 auth（加上 OPENAI_API_KEY 或 codex 特定凭据）。首选。
+2. 换 endpoint 主机：在 Settings > 模型配置 里把 `大纲` / `本地 Qwen` 的 base_url 改成另一个可用的 OpenAI-compatible 代理。
+3. 增加 endpoint：接上 OpenAI / Anthropic 官方 API，在 `prompt_assets` 里把 `outline_book` / `outline_volume` / `outline_chapter` / `generation` 重新绑到新 endpoint。
+
+修好后验证：
+```
+TOKEN=$(python3 -c 'import json; print(json.load(open("/tmp/login.json"))["token"])')
+curl -sS -X POST 'http://127.0.0.1:8000/api/projects/df6f523e-f903-4644-bcce-636f5ed89c68/chapters/3ea75111-015d-4a97-ae8b-5cdf8d802351/outline/expand' \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --max-time 180 -w 'HTTP=%{http_code}\n'
+```
+预期 HTTP=200，返回 outline_json。
+
+## 下一接手者优先级
+
+0. **修 codex auth**（需用户介入，在代理运维层面）。
+1. 验证 ch11 expand 能返 outline_json（SSE 同步调用，能看到 P1.1 title 冻结生效 + P1.3 重试机制正常）。
+2. 走一次 chapter content gen、验证 SSE 返 `event: evaluating` 和 `event: scored`，证明 PR-CHGEN-ALIAS (P1.2) 双名字兼容正常。
+3. Stage D 继写 ch11-ch30（凑 30 章赤心仿写验证量）。
+4. Stage E 写 docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md 终稿（合 30 章数据 + 全部 PR 总结 + 评分表）。
