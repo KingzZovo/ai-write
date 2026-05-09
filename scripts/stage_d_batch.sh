@@ -46,7 +46,7 @@ JSON
   curl -sS -N -X POST "http://127.0.0.1:8000/api/generate/chapter" \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
     --data-binary "@/tmp/sd_ch${IDX}_payload.json" \
-    --max-time 1500 > "/tmp/sd_ch${IDX}.sse" 2>>"$LOG"
+    --max-time 2400 > "/tmp/sd_ch${IDX}.sse" 2>>"$LOG"
   GEN_RC=$?
   T4=$(date +%s)
 

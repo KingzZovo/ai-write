@@ -600,3 +600,25 @@ outlines tag occurrences <volume-plan>=0  ✅
 - vol1 ch11: completed (12,225 字，8.18)
 - vol1 ch12-20: batch 运行中 (pid 2832166)
 - vol1 ch21-30: chapter rows 已物化 (draft)，等 ch12-20 跳完决定是否续跳
+
+
+### 2026-05-09T12:25Z (北京 5/9 20:25) — Batch B 部分成功 + codex 二度阻塞
+
+**Batch B (pid 1595272, start 11:46:03Z, end 12:24:43Z)**
+- max-time 从 1500 提升至 2400s/章 (针对 batch A ch19/20 1500s curl timeout)
+- ch19 重跑 ✅: 11102 字, score 8.38, revise_skipped (gen 865s)
+- ch20 重跑 ✅: 13694 字, score 8.36, revise_skipped (gen 516s) — 覆盖了 batch A 10108字+无 score 的截断版
+- ch21 ✗: expand 116s OK, gen 652s rc=0 但 word_count=0 (SSE 52KB 半成品, scene_writer 中段 401)
+- ch22-30 ✗: expand HTTP=500 全部 1-2s 内返回 (12:24:31-43 12 秒集中失败)
+
+**根因**: codex 上游 auth.json 于 12:24:29Z 返回 401 (`Your authentication token has been invalidated`)。Backend stream tier-fallback (ep dfd26325 + ac6eb9cd) 两档全部 401, RuntimeError 中断 scene_writer。后续 expand 调用 codex 返 503 `auth_not_found providers=codex`。同 5/8 故障字面值完全一致。
+
+**vol1 现状**:
+- ch1-20 全部 completed = 266,931 字
+- ch11-20 均过 7.0 阈值 (score 7.64 - 8.54), 均 revise_skipped
+- ch21-30 等 codex 恢复
+
+**调整落库**:
+- scripts/stage_d_batch.sh max-time 1500 → 2400 (保留)
+- Batch A 旧日志备份为 /tmp/stage_d_run_b1.log
+- Batch B 日志 /tmp/stage_d_run.log 保留供调法

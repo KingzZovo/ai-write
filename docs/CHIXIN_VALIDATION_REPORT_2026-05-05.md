@@ -229,3 +229,37 @@ violations: 0
 * 文档层：本报告 + `PR_TITLE_Q1_2026-05-07.md` + `PROGRESS.md` + `HANDOFF_TODO.md`（含 codex 阻塞专节）。
 * 数据层：ch1–ch10 合 139,602 字 保持 completed；ch11–ch20 chapter row 已物化（draft, 0 字, 0 outline）等 LLM 恢复。
 * 性能层：接手者跳过探索阶段，从 HANDOFF_TODO P0 直接起步（修 codex auth → ch11 expand → SSE event 验证 → Stage D 续写）。
+
+
+## 8.5 vol1 ch11-20 评分 (v1.2, 2026-05-09)
+
+| ch | 字数 | round-0 score | issues | revise | batch | 备注 |
+|----|------|---------------|--------|--------|-------|------|
+| 11 | 12225 | 8.18 | 15 | skipped | A1 (单跑) | 5/8 验证 PR-CHGEN-ALIAS 走通 SceneOrchestrator |
+| 12 | 13690 | 7.66 | 14 | skipped | A | gen 498s |
+| 13 | 13961 | 8.54 | 16 | skipped | A | gen 511s |
+| 14 | 13038 | 7.64 | 15 | skipped | A | gen 475s |
+| 15 | 14496 | 8.34 | 16 | skipped | A | gen 453s |
+| 16 | 13327 | 7.74 | 14 | skipped | A | gen 443s |
+| 17 | 12793 | 8.12 | 16 | skipped | A | gen 490s |
+| 18 | 12903 | 7.66 | 16 | skipped | A | gen 485s |
+| 19 | 11102 | 8.38 | 11 | skipped | B (重跑) | gen 865s, 覆盖 batch A 11656/6.46 截断版 |
+| 20 | 13694 | 8.36 | 19 | skipped | B (重跑) | gen 516s, 覆盖 batch A 10108/无 score 截断版 |
+
+**小计**: ch11-20 共 131,229 字, 平均 13,123 字/章, score 平均 **8.06**。全部一次过 7.0 阈值 → revise_skipped。
+
+**vol1 总计**: ch1-20 共 **266,931 字** (20/30 章), 平均 13,347 字/章。
+
+**title 质量**: ch11-20 全部通过 PR-TITLE-Q1.2 prompt 约束, 无主谓逻辑错位 / 第二人称向读者喊话 / 占位 / 现代词。
+
+## 8.6 codex 二度阻塞 (2026-05-09)
+
+5/9 12:24:29Z (北京 20:24) codex auth.json 二度失效, 同 5/8 故障字面值完全一致 (`Your authentication token has been invalidated`)。Batch B 于 ch21 gen 中段被中断, ch22-30 expand 全部 503 auth_not_found。
+
+**需贴出**: 如果此问题 24h 内重现二次, codex auth.json 可能存在 24h TTL 过期问题, 需在 host 加 cron 或使用 refresh token 实现自动续期 (接手后 backlog 项)。
+
+**下一窗口 plan**:
+1. host codex login 重新验证 → health check curl 200 OK
+2. 续跑 ch21-30 batch (max-time 2400s/章)
+3. 合并完整 30 章评分 → v1.3
+4. 出 Stage E 总稿

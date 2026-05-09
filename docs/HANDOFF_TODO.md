@@ -314,3 +314,30 @@ Driver: `scripts/stage_d_batch.sh` （9 章串行跳，预计 ~80 min）
 Log: `/tmp/stage_d_run.log`
 单章产出: `/tmp/sd_ch{IDX}_expand.json` + `/tmp/sd_ch{IDX}.sse`
 Batch pid: 2832166
+
+
+## 2026-05-09 (北京 20:25) — Batch B 部分成功 + codex 二度阻塞
+
+### Batch B 结果 (12 章 nohup, scripts/stage_d_batch.sh max-time 升至 2400s/章)
+- ch19 重跑: 11102 字, score 8.38, revise_skipped ✅ (覆盖 batch A 截断版 11656/score=6.46)
+- ch20 重跑: 13694 字, score 8.36, revise_skipped ✅ (覆盖 batch A 截断版 10108/无 score)
+- ch21 半成品: gen 中段 codex auth 401, scene_writer 崩, DB word_count=0 status=draft (SSE 文件 52KB 半段内容废弃)
+- ch22-30: expand HTTP=500 全失败 (12 秒内集中, 503 auth_not_found providers=codex)
+
+### 根因
+codex 上游 auth.json 在 2026-05-09T12:24:29Z 二次失效（同 5/8 故障重现）。
+- 健康检查: `curl http://141.148.185.96:8317/v1/chat/completions` → HTTP 401 "Missing API key"
+- backend log: `"Your authentication token has been invalidated. Please try signing in again."` 同 5/8 完全一致字面值
+
+### 接手第一件事 (恢复 codex 后)
+1. host 端 codex login (用户操作)
+2. 验证 curl: 期望 HTTP 200 + completion 体
+3. 续跑: `nohup bash scripts/stage_d_batch.sh 21 22 23 24 25 26 27 28 29 30 >>/tmp/stage_d_run.log 2>&1 &`
+   - max-time 已是 2400s/章 (PR-CHGEN-MAXTIME)
+4. ETA: 10 章 × ~10 min ≈ 100 min
+5. 跑完后追加 CHIXIN_VALIDATION_REPORT v1.3 (ch21-30 评分)
+
+### 当前 vol1 状态
+- ch1-20 全部 completed = **266,931 字**, 平均 13,347 字/章
+- ch21-30 全部 draft, 等待 codex
+- title 全部 clean (PR-TITLE-Q1.2 锁定)
