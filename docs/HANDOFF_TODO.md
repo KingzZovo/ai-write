@@ -341,3 +341,37 @@ codex 上游 auth.json 在 2026-05-09T12:24:29Z 二次失效（同 5/8 故障重
 - ch1-20 全部 completed = **266,931 字**, 平均 13,347 字/章
 - ch21-30 全部 draft, 等待 codex
 - title 全部 clean (PR-TITLE-Q1.2 锁定)
+
+
+---
+
+## 5/9 PR-CHIXIN-ANTI-AI 复盘 + Stage D 范围澄清（v1.3）
+
+### Stage D 范围更正
+
+交接文档第 4 节 PR-BOOK-PROFILE-BIND 步骤 1-8 + Stage D「bulk_generate 10 章」。**Stage D 范围 = ch1-20（vol1 半卷验证），不是 ch1-30**。前一窗口越界启动了 ch21-30 batch，已 kill 并清理 draft，本窗口不再继续。
+
+### PR-CHIXIN-ANTI-AI（5/9 闭环）
+
+**触发**：用户复查发现赤心 profile（1）`bind_target_id=NULL`（等价 global fallback），（2）`anti_ai_rules=0`。
+
+**根因**：`features_to_rules` 只把源文本检测到的 ai_markers 转 anti_ai，从不读 LLM 的 anti_ai_rules → 干净源文本必然产出 0 条。龙族/江南 anti_ai 是手工填的，不是代码自动产出。
+
+**修复**：
+1. `style_detection.py` LLM_STYLE_PROMPT 加第 16 项 anti_ai_rules（要求 8-12 条书风专属陷阱）。
+2. `features_to_rules` 末尾加 LLM merge 块，去重 + dict/str 兼容。
+3. `styles.py` 加 `POST /api/styles/{style_id}/regenerate-anti-ai` 端点（仅回填 anti_ai_rules，保留其他字段）。
+4. `tests/test_services.py` +2 个测试覆盖新分支。
+
+**数据修复**：
+- SQL 把 5 profile 全部置 `bind_level=book` + 有效 `bind_target_id`。
+- 调新端点回填赤心 anti_ai_rules：0 → **13 条**（2 marker + 11 LLM 书风专属，每条 replacement 是具体改写指引）。
+
+**详细复盘**：见 `CHIXIN_VALIDATION_REPORT_2026-05-05.md` §8.7。
+
+### Backlog（未做）
+
+- vol1 ch1-20 (266,931 字) 是在赤心 anti_n=0 / global fallback 状态下生成的，**是否回炉重写**等用户拍板。
+- 天之炽 2 个 profile (rules_n=0 / samples_n=0) 是早期空 detect 遗留，启用前需调相同 regenerate 端点或 detect-from-book 重抽。
+- `dosage_to_rules.py`（428 行，疑似赤心 73 rules / 24 samples 的来源）后续 audit 是否同样漏 anti_ai_rules 路径。
+- codex auth 24h 失效问题（5/8、5/9 中午两度），可能需 cron / refresh token 自动续期。

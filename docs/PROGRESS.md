@@ -622,3 +622,12 @@ outlines tag occurrences <volume-plan>=0  ✅
 - scripts/stage_d_batch.sh max-time 1500 → 2400 (保留)
 - Batch A 旧日志备份为 /tmp/stage_d_run_b1.log
 - Batch B 日志 /tmp/stage_d_run.log 保留供调法
+
+
+## 2026-05-09 (PR-CHIXIN-ANTI-AI)
+
+- **代码**：`features_to_rules` 加 LLM anti_ai_rules 合并路径；LLM_STYLE_PROMPT 16 维度（+第 16 项 anti_ai_rules，要求书风专属陷阱）；新增 `POST /api/styles/{id}/regenerate-anti-ai` 端点（仅回填 anti_ai_rules）；3 个新单元测试 PASS。
+- **数据**：5 个 style_profile 全部修为 `bind_level=book` + 有效 `bind_target_id`（赤心 → 0a543b1d；天之炽 → 67fe33f9；天之炽②女武神 → c33c2f19）。
+- **回填**：赤心巡天 anti_ai_rules 0 → 13 条（端点调用耗时 528 s，LLM 单次完成）。
+- **Stage D**：范围澄清为 ch1-20，ch21-30 不跑（kill 并清理 draft）。
+- **docs**：CHIXIN_VALIDATION_REPORT §8.7 / HANDOFF_TODO PR-CHIXIN-ANTI-AI 段同步落档。

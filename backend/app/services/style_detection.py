@@ -24,7 +24,7 @@ AI_MARKERS = [
     "不言而喻", "无法自拔", "血液沸腾", "电光火石",
 ]
 
-LLM_STYLE_PROMPT = """你是顶级文学风格分析师。请从以下15个维度全面分析小说文本的写作风格。
+LLM_STYLE_PROMPT = """你是顶级文学风格分析师。请从以下16个维度全面分析小说文本的写作风格。
 
 分析维度（每项必须填写）：
 1. narrative_pov（叙事视角）：第一人称/第三人称有限/第三人称全知/多视角交替
@@ -42,6 +42,7 @@ LLM_STYLE_PROMPT = """你是顶级文学风格分析师。请从以下15个维�
 13. style_labels（风格标签）：5-8个精准概括此文风的标签
 14. strengths（写作优势）：最突出的3个写作特点
 15. writing_rules（写作规则）：基于以上分析，生成5-8条可执行的写作规则，每条规则要具体到可以直接指导AI写作
+16. anti_ai_rules（反 AI 规则）：基于此文风的语言习惯，列出 8-12 条 AI 仿写时最容易暴露 AI 痕迹的语言陷阱（不是源文本里出现的词，而是 AI 仿写本书风格时倾向产出但本书作者不会写的句式/词汇/修辞），每条返回对象 {"pattern": "<要避免的句式或词汇>", "replacement": "<改写指引或目标手法>"}。pattern 优先用具体短语，其次用句式公式（例："X，X更甚"）；不得列出本书原文常见词汇。
 
 输出纯 JSON 格式。
 
@@ -281,5 +282,26 @@ def features_to_rules(features: dict, llm_analysis: dict | None = None) -> tuple
     for marker_str in features.get("ai_markers", []):
         word = marker_str.split("(")[0]
         anti_ai.append({"pattern": word, "replacement": "", "autoRewrite": False})
+
+    # --- Anti-AI rules from LLM analysis (book-specific traps) ---
+    if llm_analysis and "llm_error" not in llm_analysis:
+        seen_patterns = {a["pattern"] for a in anti_ai}
+        llm_anti = llm_analysis.get("anti_ai_rules", [])
+        if isinstance(llm_anti, list):
+            for item in llm_anti[:15]:
+                if isinstance(item, str):
+                    pattern = item.strip()
+                    replacement = ""
+                elif isinstance(item, dict):
+                    pattern = str(item.get("pattern", "")).strip()
+                    replacement = str(item.get("replacement", "") or "").strip()
+                else:
+                    continue
+                if not pattern or pattern in seen_patterns:
+                    continue
+                seen_patterns.add(pattern)
+                anti_ai.append(
+                    {"pattern": pattern[:120], "replacement": replacement[:200], "autoRewrite": False}
+                )
 
     return rules, anti_ai

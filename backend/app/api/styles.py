@@ -205,6 +205,61 @@ async def bind_style(
     return StyleProfileResponse.model_validate(profile)
 
 
+@router.post("/{style_id}/regenerate-anti-ai", response_model=StyleProfileResponse)
+async def regenerate_anti_ai(
+    style_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Regenerate ONLY the anti_ai_rules field of an existing profile.
+
+    Uses profile.sample_passages as the source text and runs the same
+    statistical + LLM pipeline as detect-from-book, then writes only
+    `anti_ai_rules` back. Other fields (rules_json, sample_passages,
+    tone_keywords, bind_level, bind_target_id) are preserved.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.style_detection import (
+        detect_style_features,
+        detect_style_with_llm,
+        features_to_rules,
+    )
+
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    samples = profile.sample_passages or []
+    if not samples:
+        raise HTTPException(
+            status_code=400,
+            detail="该写法没有 sample_passages，无法重生成 anti_ai_rules；请先用 detect-from-book 遇 充充重抽",
+        )
+
+    text_parts: list[str] = []
+    for s in samples:
+        if isinstance(s, str):
+            text_parts.append(s)
+        elif isinstance(s, dict):
+            text_parts.append(str(s.get("text") or s.get("content") or ""))
+    combined = "\n\n".join(t for t in text_parts if t)
+    if len(combined) < 200:
+        raise HTTPException(status_code=400, detail="sample_passages 总长度不足 200 字，无法分析")
+
+    features = detect_style_features(combined)
+    llm_analysis = await detect_style_with_llm(combined[:5000])
+    _, anti_ai = features_to_rules(features, llm_analysis)
+
+    profile.anti_ai_rules = anti_ai
+    flag_modified(profile, "anti_ai_rules")
+    await db.flush()
+    await db.refresh(profile)
+    logger.info(
+        "regenerate_anti_ai: profile=%s anti_count=%d llm_error=%s",
+        profile.id, len(anti_ai), llm_analysis.get("llm_error"),
+    )
+    return StyleProfileResponse.model_validate(profile)
+
+
 @router.post("/detect-from-book/{book_id}", response_model=StyleProfileResponse, status_code=201)
 async def detect_from_book(
     book_id: UUID,

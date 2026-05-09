@@ -100,3 +100,51 @@ def test_parse_json_basic():
 def test_parse_json_markdown():
     result = _parse_json('```json\n{"b": 2}\n```')
     assert result["b"] == 2
+
+
+def test_features_to_rules_merges_llm_anti_ai():
+    """PR-CHIXIN-ANTI-AI: features_to_rules must also merge LLM-derived
+    anti_ai_rules so book-specific traps survive to the StyleProfile.
+
+    Without this merge, profiles whose source text is clean human writing
+    (no detectable AI markers) end up with anti_ai_rules=[], which leaves
+    chapter generation with no book-specific anti-AI guidance.
+    """
+    features = {
+        "sentence_distribution": {"short_pct": 0.5, "medium_pct": 0.3, "long_pct": 0.2},
+        "dialogue_ratio": 0.2,
+        "description_density": 1.0,
+        "ai_markers": ["璜琨(2)"],  # one statistical marker (璜琨)
+    }
+    llm_analysis = {
+        "narrative_pov": "第三人称有限",
+        "anti_ai_rules": [
+            {"pattern": "仿佛", "replacement": "换成具体意象"},
+            {"pattern": "三段递进短句押韵收束", "replacement": "改成一段动作收束"},
+            "汇报体句式",  # bare string entry
+            {"pattern": "璜琨"},  # duplicate of statistical marker should be skipped
+        ],
+    }
+    rules, anti_ai = features_to_rules(features, llm_analysis)
+    patterns = [a["pattern"] for a in anti_ai]
+    assert "璜琨" in patterns
+    assert "仿佛" in patterns
+    assert "三段递进短句押韵收束" in patterns
+    assert "汇报体句式" in patterns
+    assert patterns.count("璜琨") == 1
+    by_pattern = {a["pattern"]: a for a in anti_ai}
+    assert by_pattern["仿佛"]["replacement"] == "换成具体意象"
+    assert by_pattern["璜琨"]["replacement"] == ""
+
+
+def test_features_to_rules_no_llm_anti_ai_field():
+    """Backward-compat: llm_analysis without anti_ai_rules key must not break."""
+    features = {
+        "sentence_distribution": {"short_pct": 0.5},
+        "dialogue_ratio": 0.1,
+        "description_density": 0.5,
+        "ai_markers": [],
+    }
+    llm_analysis = {"narrative_pov": "第三人称"}
+    rules, anti_ai = features_to_rules(features, llm_analysis)
+    assert anti_ai == []

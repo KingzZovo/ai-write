@@ -263,3 +263,72 @@ violations: 0
 2. 续跑 ch21-30 batch (max-time 2400s/章)
 3. 合并完整 30 章评分 → v1.3
 4. 出 Stage E 总稿
+
+
+## 8.7 PR-CHIXIN-ANTI-AI 完全修复 (v1.3, 2026-05-09)
+
+### 8.7.1 用户叫停 + 三问诊断
+
+用户在 batch C (ch21-30) 启动 ~30s 后叫停，三问：
+1. 全流程的时候不是只让你跑 10 章吗？→ Stage D 范围只有 ch1-20 (vol1 半卷验证)，越界扩到 ch21-30 是错读交接文档第 4 节。
+2. 写法只要应用全书，不需要全局？→ 但 5 个 profile 中，**赤心**和 2 个**天之炽**bind_target_id 都是 NULL（`bind_level=book` 但 target 缺失），等价 global fallback。
+3. 赤心巡天 anti_ai_rules 怎么是 0 条？→ 龙族 11 / 江南 8，赤心 0，明显异常。
+
+### 8.7.2 根因（代码层）
+
+**`features_to_rules(features, llm_analysis)`** 在 `ai_markers` 路径只把**源文本检测到的**统计 marker（如 `璀璨`、`仿佛`、`不禁`）转成 anti_ai 条目；从不读取 `llm_analysis` 里的 anti-AI 信息。
+
+两个推论：
+- 当源文本是干净的人写小说，几乎不会触发统计 marker → `anti_n=0`。
+- 龙族/江南的 anti_ai_rules **都是手工填的语义规则**（替换指引非空），代码层从来没生成过这种结构。
+
+### 8.7.3 代码层修复（3 处）
+
+1. **`backend/app/services/style_detection.py` LLM_STYLE_PROMPT**：从 15 项扩到 16 项，新增第 16 项 `anti_ai_rules`，要求 LLM 输出 8-12 条**针对该书风格**的 AI 仿写陷阱（pattern + replacement，明确「不要列原文常见词」）。
+2. **`features_to_rules`**：在原 marker 循环后追加合并块——读取 `llm_analysis["anti_ai_rules"]`，去重（按 pattern）+ 长度截断（pattern 120 / replacement 200）+ 同时支持 `dict` 和 `str` 两种入参形态。
+3. **`backend/app/api/styles.py`**：新增 `POST /api/styles/{style_id}/regenerate-anti-ai` 端点，用现有 `profile.sample_passages` 作源文本（< 200 字 400），跑 detect_style_features → detect_style_with_llm → features_to_rules，**仅 UPDATE `anti_ai_rules` 字段**（rules_json / sample_passages / bind 等保留），`flag_modified` 触发 JSONB 写。
+
+### 8.7.4 单元测试（3 个，全 PASS）
+
+`backend/tests/test_services.py` 末尾追加：
+- `test_features_to_rules_merges_llm_anti_ai`：验证 LLM 来源的 anti_ai 合并 + 去重 + dict/str 兼容 + replacement 字段保留。
+- `test_features_to_rules_no_llm_anti_ai_field`：向后兼容，llm_analysis 不带 anti_ai_rules 字段不能 break。
+- 原有 `test_features_to_rules`（marker-only 路径）不受影响。
+
+离线跑：3/3 PASS。
+
+### 8.7.5 数据修复（赤心回填 + 5 profile bind）
+
+**SQL**：3 条 UPDATE 把 5 profile 全部置成 `bind_level=book` + 有效 `bind_target_id`：
+- 赤心 `b76da43a-...` → `0a543b1d-...` (赤心巡天)
+- 天之炽 `46edb0b7-...` → `67fe33f9-...`
+- 天之炽②女武神 `b79d7953-...` → `c33c2f19-...`
+
+**API 调用** `POST /api/styles/b76da43a-.../regenerate-anti-ai`：响应 200，耗时 528.8 s（LLM 一次完成）。结果：anti_ai_rules 从 0 → **13 条**（2 条统计 marker：璀璨/仿佛；11 条 LLM 生成的书风专属陷阱：在这个瞬间 / 毫无疑问 / 从某种意义上说 / 眼中闪过一丝复杂 / 一股强大的力量 / 空气瞬间凝固 / 命运的齿轮开始转动 / 让人不禁 / 一种说不出的 / 这不仅仅是...更是... / 他内心深处），每条 replacement 是具体改写指引（如「直接切到动作结果或感官变化，删掉时间套语」）。
+
+### 8.7.6 修复后 5 profile 终态
+
+| profile | bind_level | bind_target_id | rules_n | anti_n | samples_n |
+|---|---|---|---|---|---|
+| 龙族 v8 剂量画像 | book | 24498b6b-... | 13 | 11 | 8 |
+| 江南 综合写法 | book | 24498b6b-... | 75 | 8 | 37 |
+| **赤心巡天 综合写法** | **book** ✅ | **0a543b1d-...** ✅ | 73 | **13** ✅ | 24 |
+| 天之炽 综合写法 | book | 67fe33f9-... ✅ | 0 | 0 | 0 |
+| 天之炽②女武神 综合写法 | book | c33c2f19-... ✅ | 0 | 0 | 0 |
+
+（天之炽两个 profile rules_n=0 / samples_n=0 是早期空 detect 的遗留，本 PR 不处理；后续如要启用，调相同 regenerate 端点或 detect-from-book 重抽即可。）
+
+### 8.7.7 已知事实（不在本 PR 修复）
+
+- vol1 ch1-20 (266,931 字) 是在「赤心 anti_n=0 + bind_level=global fallback」状态下生成的，**没用到本 PR 修出的 anti-AI 规则**。是否回炉重写需用户拍板，本 PR 不动既有产物。
+- ch21-30 不再跑（用户叫停 Stage D 范围只到 ch20）。
+- `dosage_to_rules.py`（428 行，疑似赤心 73 rules + 24 samples 的来源）后续可 audit 是否同样漏 anti_ai_rules 路径。
+
+### 8.7.8 Commit 范围
+
+- `backend/app/services/style_detection.py`（prompt +1 项 / features_to_rules +21 行）
+- `backend/app/api/styles.py`（+regenerate-anti-ai 端点 55 行）
+- `backend/tests/test_services.py`（+2 个测试）
+- `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`（本节 8.7）
+- `docs/HANDOFF_TODO.md`（PR-CHIXIN-ANTI-AI 复盘 + Stage D 范围澄清）
+- `docs/PROGRESS.md`（5/9 修复条目）
