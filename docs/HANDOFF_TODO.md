@@ -375,3 +375,46 @@ codex 上游 auth.json 在 2026-05-09T12:24:29Z 二次失效（同 5/8 故障重
 - 天之炽 2 个 profile (rules_n=0 / samples_n=0) 是早期空 detect 遗留，启用前需调相同 regenerate 端点或 detect-from-book 重抽。
 - `dosage_to_rules.py`（428 行，疑似赤心 73 rules / 24 samples 的来源）后续 audit 是否同样漏 anti_ai_rules 路径。
 - codex auth 24h 失效问题（5/8、5/9 中午两度），可能需 cron / refresh token 自动续期。
+
+
+## 2026-05-09 PR-CHIXIN-REGEN-V2 回炉驱动修复（根因 + 根治）
+
+**背景**：赤心 anti_ai_rules 从 0→13 后用 stage_d_batch.sh 对 vol1 ch1-20 回炉，跑到 ch4 时发现：
+- ch1=18min/1070s完成, score 7.94 skipped
+- ch2 curl rc=28 (2400s) 脱序，score 5.64 进入 revising 后被切
+- ch3=37min/2199s, score 7.30 skipped (不应该这么慢)
+- ch4 在 evaluating 进行中
+
+### 根因三层
+
+1. **LLM 真实推理时间** (不是 bug)：initial gen≈18 min, evaluate≈5 min, revise≈15 min。`max_revise_rounds=2` 最坏 3×eval + 2×revise + 1×initial ≈ 65 min/章。代码层无法加速。
+
+2. **ch2 split-brain (真 bug)**：stage_d_batch.sh 用 `--max-time 2400` (40 min)。backend 内 revise 单轮硬上限 900s (`generate.py:565 asyncio.timeout(900)`)，**不受 client curl 切断影响**。实测：ch2 在 14:16:26 已写入 13226 字 revise 后版本（`chapters.updated_at`），curl 在 14:22:38 才被 2400s 切 → **ch2 实际成功，脚本误判为失败**。
+
+3. **章节间并发污染 (次 bug)**：ch2 revise 在 backend 还跑时脚本已切到 ch3 启 expand，两个 LLM 调用争上游 → ch3 逻辑无错但总时 37 min（比 ch1 多 1 倍）。
+
+### 根治修复 (不打断当前 batch)
+
+- **A. `scripts/stage_d_batch_v2.sh` (3305 bytes)**
+  - `--max-time 2400` → `--max-time 5400`（90 min，覆盖 initial+2revise+3eval）
+  - 章节间 `sleep 90s` 让 backend revise loop 排干净
+  - 成败以 **DB 真值**判定：`status='completed' AND word_count≥8000`，不再看 SSE markers
+  - 额外拉 latest `chapter_evaluations.overall` 入日志
+
+- **B. `scripts/stage_d_repair.sh` (2372 bytes)**
+  - 扫 1-20 章 (可调 RANGE_LO/HI)，判定三条量：status≠completed / wc<MIN_WORDS / latest overall<MIN_SCORE
+  - 不达标章 → reset 为 draft 后调 v2 入口重跑
+  - 幂等：没差章时什么也不动
+
+- **C. backlog (不动当前 batch)**
+  - `backend/app/api/generate.py` SSE close 改进：`chapter saved` 后立即 yield `chapter_finalized` final event 并 close stream，把 evaluate/revise loop 改为 `asyncio.create_task` fire-and-forget。要 restart backend，等 batch 跑完再做。
+
+### 运行计划
+
+1. 当前 batch v1 让它跑完 (ETA ~6-8h，ch5-20)。完成后从 nohup PID 1843380 退出。
+2. 调 `nohup bash scripts/stage_d_repair.sh >>/tmp/stage_d_repair.log 2>&1 &` 扫 20 章，差章自动重跑。
+3. 全 PASS 后进 Stage E（CHIXIN_VALIDATION_REPORT 终稿）。
+
+### 备份
+- `/tmp/chixin_vol1_ch1-20_backup_v1.2_20260509_132143.sql` (305906 行, full chapters table dump)
+- `/tmp/chixin_vol1_ch1-20_subset_20260509_132144.json` (899 KB, ch1-20 子集 JSON)

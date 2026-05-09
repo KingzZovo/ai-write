@@ -631,3 +631,13 @@ outlines tag occurrences <volume-plan>=0  ✅
 - **回填**：赤心巡天 anti_ai_rules 0 → 13 条（端点调用耗时 528 s，LLM 单次完成）。
 - **Stage D**：范围澄清为 ch1-20，ch21-30 不跑（kill 并清理 draft）。
 - **docs**：CHIXIN_VALIDATION_REPORT §8.7 / HANDOFF_TODO PR-CHIXIN-ANTI-AI 段同步落档。
+
+
+## 2026-05-09 (PR-CHIXIN-REGEN-V2 根因+根治脚本落档)
+
+- 在跑 batch ch1-20 中查明 ch2 split-brain 三层根因（LLM 真实推理时间 / curl 2400s 不够 / 章间并发污染）
+- 新增 `scripts/stage_d_batch_v2.sh` (5400s + 90s cooldown + DB-truth verdict)
+- 新增 `scripts/stage_d_repair.sh` (扫描差章自动重跑)
+- 备份 v1.2 ch1-20：/tmp/chixin_vol1_ch1-20_backup_v1.2_*.sql + .json
+- 不打断当前 batch (PID 1843380)，跑完后用 repair 头扫补差章
+- backend SSE close 改进进 backlog (不动当前 batch)
