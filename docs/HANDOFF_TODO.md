@@ -418,3 +418,34 @@ codex 上游 auth.json 在 2026-05-09T12:24:29Z 二次失效（同 5/8 故障重
 ### 备份
 - `/tmp/chixin_vol1_ch1-20_backup_v1.2_20260509_132143.sql` (305906 行, full chapters table dump)
 - `/tmp/chixin_vol1_ch1-20_subset_20260509_132144.json` (899 KB, ch1-20 子集 JSON)
+
+
+## PR-CHAPTER-PROTECT-V1 (未开始 / 2026-05-10 09:18 列入 backlog)
+
+**背景**：5/10 09:09-09:10、流程测试2 ch21 (e6d3fec8 《无名尸失踪》 6447字) 与 ch22 (b011bc41 《馆里有人嗂狗》 7505字) 在前端“点正文准备复制”时被误清空。后端日志确认 king 账号发了两次 `PUT /api/projects/{project_id}/chapters/{chapter_id}` (200 OK / 8–9ms / `content_text=""`)。已从 chapter_versions 里 5/4 19:23 初稿恢复。备份：/tmp/recover_lct2/versions_backup.json + chapters_before_recovery.json。
+
+**三项后续 (用户 5/10 09:18 明确“后续再做”)**
+
+1. **后端防护** (推荐优先)
+   - `backend/app/api/chapters.py` 的 PUT 入口加 guard：请求中 `content_text` 为空/极短 (例<200字) 且 DB 现状 length>=2000 时，不覆盖、返回 409 + 错误码 `content_truncate_blocked`
+   - 覆写前自动充一条 chapter_versions snapshot (source='pre_overwrite_guard')
+   - audit log 记 user_id / before_len / req_len / decision
+
+2. **前端定位**
+   - grep frontend src 里调 `PUT /api/projects/.../chapters/...` 的代码路径
+   - 需重点看：富文本/阅读器组件的 onMount/onBlur/clipboard 事件可能在 state 未 hydrate 时拿着空 `content_text` 发 PUT 的 race
+
+3. **chapter_versions 自动 snapshot**
+   - 现状： chapters 的 update 路径 不会新增 chapter_versions (5/4 后 ch21/22 只有1条初稿)
+   - 改造：所有写 chapters.content_text 的路径 (api/chapters PUT 、generate.py 保存分支、auto-revise 完成点) 都调 helper `snapshot_chapter_version(chapter, source=...)`
+   - 增个轻量去重：如果上一条同一 chapter_id 的版2分钟内且 hash 相同则跳过
+
+**恢复 SQL (已执行，记录留存)**
+```sql
+BEGIN;
+UPDATE chapters c SET content_text=cv.content_text, word_count=cv.word_count, status='completed', updated_at=NOW()
+  FROM chapter_versions cv WHERE cv.id='319e6cf4-9969-417d-a971-9f7ec65945ef' AND c.id='e6d3fec8-e7e3-40c4-aec0-3f5b70782b54';
+UPDATE chapters c SET content_text=cv.content_text, word_count=cv.word_count, status='completed', updated_at=NOW()
+  FROM chapter_versions cv WHERE cv.id='acfdf724-8d30-4ffe-84f1-ad27a616fbf8' AND c.id='b011bc41-eca5-4c03-9981-20baf667678c';
+COMMIT;
+```

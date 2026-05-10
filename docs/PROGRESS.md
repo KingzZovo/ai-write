@@ -641,3 +641,12 @@ outlines tag occurrences <volume-plan>=0  ✅
 - 备份 v1.2 ch1-20：/tmp/chixin_vol1_ch1-20_backup_v1.2_*.sql + .json
 - 不打断当前 batch (PID 1843380)，跑完后用 repair 头扫补差章
 - backend SSE close 改进进 backlog (不动当前 batch)
+
+
+## 2026-05-10 09:09-09:18 插入故障：流程测试2 ch21/22 误清空 + 恢复
+
+- 09:09 user 报告：点正文准备复制时内容被误删
+- 根因：后端 log 确认 5/10 01:09:10 + 01:10:01 两次 `PUT /api/projects/project_id/chapters/chapter_id`、king 账号、`content_text=""` 覆盖
+- 备份：/tmp/recover_lct2/versions_backup.json (41 KB) + chapters_before_recovery.json (18 KB)
+- 恢复：从 chapter_versions 里 5/4 19:23 初稿 UPDATE chapters。ch21 《无名尸失踪》 6447字、ch22 《馆里有人嗂狗》 7505字全部回魂
+- backlog 列入 PR-CHAPTER-PROTECT-V1 三项（后端 guard / 前端定位 / versions 自动 snapshot）——用户 09:18 明确“后续再做，现在回赤心巡天”
