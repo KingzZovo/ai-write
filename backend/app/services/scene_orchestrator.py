@@ -237,8 +237,24 @@ class SceneOrchestrator:
             if user_instruction and user_instruction.strip()
             else ""
         )
+        # PR-GEN-REVISE-DEDUP: hard mutex constraint on scene boundaries.
+        # Without this block scene_planner happily emits the same key_action
+        # (e.g. one meeting / one verification / one entry-into-hall) across
+        # two adjacent scenes, which then makes scene_writer narrate that
+        # event twice. Observed on chixin ch8/10/12 (batch 5/9-5/10).
+        mutex_block = (
+            "【场景互斥硬约束（最高优先级，违反即失败）】\n"
+            "- 各场景的 location / time_cue / key_action 必须互不重复；"
+            "同一情节（一次会面、一次验证、一次入廊、一次表态）"
+            "只允许在 1 个 scene 中推进，禁止跨 scene 复述或回拨。\n"
+            "- 当某事件在 scene N 已结束，scene N+1 起不得再写「再次进入」「重新开始」"
+            "「回到刚才」「补做一遍」等动作；只能向前推进到下一阶段。\n"
+            "- 若同一线索需分阶段呈现，必须以可辨别的状态切片（前置铺垫 / 当下推进 / 后续余响），"
+            "且 brief 中不得出现与前一 scene 相同的「动词 + 受事」组合。\n\n"
+        )
         user_content = (
             f"{instr_block}"
+            f"{mutex_block}"
             f"本章目标字数：约 {target_words} 字\n"
             f"{hint_line}"
             f"请按系统提示输出严格 JSON。"
@@ -307,8 +323,17 @@ class SceneOrchestrator:
         """Stream prose for a single scene through scene_writer."""
         background = pack.to_system_prompt()
         ctx_block = scene.to_writer_user_content()
+        # PR-GEN-REVISE-DEDUP: prior_block becomes a hard "do not redo"
+        # constraint instead of mere context. Pre-fix observation: scene_writer
+        # treated the summary as background, then redid the prior scene's
+        # action under a different framing (chixin ch8 verify-twice, ch10
+        # meeting-thrice, ch12 verify-then-rewind).
         prior_block = (
-            f"\n\n【已写场景凝缩】\n{prior_scenes_summary}"
+            f"\n\n【已发生场景（禁止重写、禁止回拨、禁止再演）】\n"
+            f"以下凝缩中描述的动作、对白、地点切换、状态变化均已在前序场景完成："
+            f"本场禁止重写、禁止改述、禁止让人物再次进入这些动作或场景，"
+            f"只能从凝缩末尾的状态向前推进到本场的 key_action。\n"
+            f"{prior_scenes_summary}"
             if prior_scenes_summary
             else "\n\n【已写场景】本场为本章首场，请从本章开场起手。"
         )
