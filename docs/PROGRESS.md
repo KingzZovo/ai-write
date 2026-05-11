@@ -650,3 +650,25 @@ outlines tag occurrences <volume-plan>=0  ✅
 - 备份：/tmp/recover_lct2/versions_backup.json (41 KB) + chapters_before_recovery.json (18 KB)
 - 恢复：从 chapter_versions 里 5/4 19:23 初稿 UPDATE chapters。ch21 《无名尸失踪》 6447字、ch22 《馆里有人嗂狗》 7505字全部回魂
 - backlog 列入 PR-CHAPTER-PROTECT-V1 三项（后端 guard / 前端定位 / versions 自动 snapshot）——用户 09:18 明确“后续再做，现在回赤心巡天”
+
+---
+
+## 2026-05-12 — PR-GEN-REVISE-DEDUP 完工 / Vol1 20/20 PASS
+
+**背景**：Stage D 初跨后 6 章低于 7.0，issues_json 共性 = scene 重复推进 / 场景回拨。
+
+**代码**：同名分支 `feat/pr-gen-revise-dedup` 已合 main。patch 点：scene_orchestrator.plan_scenes 注入「场景互斥硬约束」 / write_scene_stream prior_block 改为「已发生禁重写」。DB prompt_assets `scene_planner` 647→911 / `scene_writer` 443→632。
+
+**验证结果**：
+| ch | baseline | new |
+|---|---|---|
+| 2 | 5.64 | **7.18** |
+| 8 | 6.90 | **7.86** |
+| 10 | 6.54 | **8.42** |
+| 12 | 4.80 | **7.62** |
+| 15 | 5.82 | 8.28 (旧评) |
+| 16 | 7.02 | **7.86** |
+
+**Vol1 终态**：20/20 ≥ 7.0，均分 7.97，总 223,167 字。Stage E 验证报告 `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。
+
+**Backlog 上提**：PR-CHAPTER-PROTECT-V1 (PUT guard / 前端定位 / 自动 snapshot) / PR-GEN-SSE-FINALIZE (ch10/12/15 silent-skip 同根)。
