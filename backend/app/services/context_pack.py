@@ -78,6 +78,14 @@ class CharacterCard:
     relationships: dict[str, str] = field(default_factory=dict)
     mental_state: str = ""  # Theory of Mind (ToM)
     recent_actions: list[str] = field(default_factory=list)
+    # PR-STATE-WIRING-AUDIT (2026-05-12): extended state slots absorbed from
+    # the running_state design. Populated from status_json keys produced by
+    # entity_extraction; fully optional and backward-compatible.
+    inventory: list[str] = field(default_factory=list)            # 持物
+    knows_recent: list[str] = field(default_factory=list)         # 知识边界（本章新知）
+    appellations: dict[str, str] = field(default_factory=dict)    # 称谓表 {对方: 怎么被称呼}
+    pending_items: list[str] = field(default_factory=list)        # 未决项/开放线索
+    physical_state: str = ""                                       # 生理状态（受伤/疲劳/伪装等）
 
     def to_prompt(self) -> str:
         parts = [f"[{self.name}]"]
@@ -90,6 +98,17 @@ class CharacterCard:
             parts.append(f"关系:{rels}")
         if self.mental_state:
             parts.append(f"心理:{self.mental_state}")
+        if self.physical_state:
+            parts.append(f"生理:{self.physical_state}")
+        if self.inventory:
+            parts.append(f"持物:{','.join(self.inventory[:5])}")
+        if self.knows_recent:
+            parts.append(f"新知:{'; '.join(self.knows_recent[:3])}")
+        if self.appellations:
+            apps = ", ".join(f"{k}唤{v}" for k, v in list(self.appellations.items())[:3])
+            parts.append(f"称谓:{apps}")
+        if self.pending_items:
+            parts.append(f"未决:{'; '.join(self.pending_items[:3])}")
         if self.recent_actions:
             parts.append(f"近期:{'; '.join(self.recent_actions[-3:])}")
         return " | ".join(parts)
@@ -992,6 +1011,33 @@ class ContextPackBuilder:
                             "mental_state",
                             status.get("情绪", status.get("状态", "")),
                         )
+                    # PR-STATE-WIRING-AUDIT: hydrate extended slots when present
+                    if not card.physical_state:
+                        card.physical_state = status.get(
+                            "physical_state", status.get("生理", "")
+                        )
+                    if not card.inventory:
+                        inv = status.get("inventory", status.get("持物", []))
+                        if isinstance(inv, list):
+                            card.inventory = [str(x) for x in inv if x]
+                        elif isinstance(inv, str) and inv.strip():
+                            card.inventory = [inv.strip()]
+                    if not card.knows_recent:
+                        kn = status.get("knows_recent", status.get("知识边界", []))
+                        if isinstance(kn, list):
+                            card.knows_recent = [str(x) for x in kn if x]
+                        elif isinstance(kn, str) and kn.strip():
+                            card.knows_recent = [kn.strip()]
+                    if not card.appellations:
+                        ap = status.get("appellations", status.get("称谓", {}))
+                        if isinstance(ap, dict):
+                            card.appellations = {str(k): str(v) for k, v in ap.items() if v}
+                    if not card.pending_items:
+                        pi = status.get("pending_items", status.get("未决项", []))
+                        if isinstance(pi, list):
+                            card.pending_items = [str(x) for x in pi if x]
+                        elif isinstance(pi, str) and pi.strip():
+                            card.pending_items = [pi.strip()]
                     # Merge relationships
                     if snap.name in rel_lookup:
                         for target, rtype in rel_lookup[snap.name].items():
@@ -1012,6 +1058,22 @@ class ContextPackBuilder:
                         ),
                         relationships=rel_lookup.get(snap.name, {}),
                     )
+                    # PR-STATE-WIRING-AUDIT: populate extended slots on new card
+                    card.physical_state = status.get(
+                        "physical_state", status.get("生理", "")
+                    ) or ""
+                    _inv = status.get("inventory", status.get("持物", []))
+                    if isinstance(_inv, list):
+                        card.inventory = [str(x) for x in _inv if x]
+                    _kn = status.get("knows_recent", status.get("知识边界", []))
+                    if isinstance(_kn, list):
+                        card.knows_recent = [str(x) for x in _kn if x]
+                    _ap = status.get("appellations", status.get("称谓", {}))
+                    if isinstance(_ap, dict):
+                        card.appellations = {str(k): str(v) for k, v in _ap.items() if v}
+                    _pi = status.get("pending_items", status.get("未决项", []))
+                    if isinstance(_pi, list):
+                        card.pending_items = [str(x) for x in _pi if x]
                     pack.character_cards.append(card)
 
         except (RuntimeError, ImportError):
