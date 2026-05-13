@@ -61,11 +61,26 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
 ) -> ProjectResponse:
     """Create a new writing project."""
+    # PR-C-PREMISE-STRUCTURED (2026-05-13): auto-compose premise + core_seed
+    # from structured input. Explicit user fields always win; missing fields
+    # are filled from the deterministic composer.
+    from app.services.premise_composer import merge_premise_fields
+
+    structured_dump = (
+        body.premise_structured.model_dump(exclude_unset=False)
+        if body.premise_structured is not None
+        else None
+    )
+    final_premise, final_core_seed, final_structured = merge_premise_fields(
+        structured_dump, body.premise, body.core_seed
+    )
     project = Project(
         title=body.title,
         genre=body.genre,
         genre_profile_code=body.genre_profile_code,
-        premise=body.premise,
+        premise=final_premise,
+        premise_structured=final_structured,
+        core_seed=final_core_seed,
         settings_json=body.settings_json or {},
         target_word_count=body.target_word_count,
     )
@@ -124,6 +139,31 @@ async def update_project(
 
     update_data = body.model_dump(exclude_unset=True)
     old_total = int(project.target_word_count or 0)
+    # PR-C-PREMISE-STRUCTURED (2026-05-13): when the client touches any of
+    # ``premise_structured`` / ``premise`` / ``core_seed`` we re-run the
+    # composer so the three columns stay in sync. Explicit user-supplied
+    # fields still win; the composer only fills what the user omitted.
+    if any(k in update_data for k in ("premise", "premise_structured", "core_seed")):
+        from app.services.premise_composer import merge_premise_fields
+
+        structured_in = update_data.get("premise_structured", project.premise_structured)
+        premise_in = update_data.get("premise", project.premise)
+        seed_in = update_data.get("core_seed", project.core_seed)
+        # If the caller passed structured fields, prefer composer-derived
+        # values for any field they did not explicitly set in *this* call.
+        if "premise_structured" in update_data:
+            user_premise = update_data.get("premise")
+            user_seed = update_data.get("core_seed")
+            final_premise, final_seed, final_struct = merge_premise_fields(
+                structured_in, user_premise, user_seed
+            )
+            update_data["premise"] = final_premise
+            update_data["core_seed"] = final_seed
+            update_data["premise_structured"] = final_struct
+        else:
+            # Legacy path: client only updated free-form premise/core_seed.
+            update_data["premise"] = premise_in
+            update_data["core_seed"] = seed_in
     for field, value in update_data.items():
         setattr(project, field, value)
 

@@ -202,6 +202,13 @@ class HierarchicalMemory:
             )
             project = proj_result.scalar_one_or_none()
             if project:
+                # PR-C-PREMISE-STRUCTURED (2026-05-13): surface core_seed first.
+                # The 1-2 sentence distillation is the primary anti-homogenization
+                # anchor for the LLM; the longer ``premise`` paragraph follows as
+                # back-compat detail when present.
+                core_seed = getattr(project, "core_seed", None)
+                if core_seed:
+                    parts.append(f"作品核心种子：{core_seed}")
                 if project.premise:
                     parts.append(f"作品前提：{project.premise}")
                 if project.genre:

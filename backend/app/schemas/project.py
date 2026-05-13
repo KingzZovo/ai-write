@@ -13,11 +13,39 @@ from pydantic import BaseModel, ConfigDict, Field
 # Project
 # ---------------------------------------------------------------------------
 
+# PR-C-PREMISE-STRUCTURED (2026-05-13): structured premise schema.
+# Every field is optional so partial fills are valid; the composer in
+# ``app.services.premise_composer`` ignores empty entries when synthesizing
+# the narrative paragraph and the 1-2 sentence ``core_seed``.
+class PremiseStructured(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    # Who is the protagonist; surfacing both situation and signature flaw
+    # helps the LLM avoid generic "chosen-one" templates.
+    protagonist: str | None = Field(None, max_length=500)
+    # The single central conflict driving the work (e.g. "复仇与谅解\"\”).
+    central_conflict: str | None = Field(None, max_length=500)
+    # World premise / setting that distinguishes this story from neighbors.
+    world_premise: str | None = Field(None, max_length=1000)
+    # Thematic spine — short label, e.g. "底层逆袭".
+    theme: str | None = Field(None, max_length=200)
+    # Tonal register — short label, e.g. "冷峻 / 蚻涌".
+    tone: str | None = Field(None, max_length=200)
+    # Specific differentiating hooks: 0-5 short phrases.
+    unique_hooks: list[str] | None = None
+    # Patterns to actively avoid — the strongest anti-homogenization signal.
+    anti_patterns: list[str] | None = None
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(..., max_length=500)
     genre: str | None = Field(None, max_length=100)
     genre_profile_code: str | None = Field(None, max_length=64)
     premise: str | None = None
+    # PR-C: when set, the composer auto-derives ``premise`` (if missing) and
+    # ``core_seed``. Either field alone is accepted for back-compat.
+    premise_structured: PremiseStructured | None = None
+    core_seed: str | None = Field(None, max_length=1000)
     settings_json: dict[str, Any] | None = None
     target_word_count: int | None = None
 
@@ -27,6 +55,8 @@ class ProjectUpdate(BaseModel):
     genre: str | None = Field(None, max_length=100)
     genre_profile_code: str | None = Field(None, max_length=64)
     premise: str | None = None
+    premise_structured: PremiseStructured | None = None
+    core_seed: str | None = Field(None, max_length=1000)
     settings_json: dict[str, Any] | None = None
     target_word_count: int | None = None
 
@@ -39,6 +69,8 @@ class ProjectResponse(BaseModel):
     genre: str | None = None
     genre_profile_code: str | None = None
     premise: str | None = None
+    premise_structured: dict[str, Any] | None = None
+    core_seed: str | None = None
     settings_json: dict[str, Any] | None = None
     target_word_count: int = 3000000
     created_at: datetime

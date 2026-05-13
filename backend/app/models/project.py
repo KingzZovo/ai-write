@@ -31,6 +31,13 @@ class Project(Base):
     title = Column(String(500), nullable=False)
     genre = Column(String(100))
     premise = Column(Text)
+    # PR-C-PREMISE-STRUCTURED (2026-05-13): structured premise + distilled core seed
+    # for anti-homogenization. ``premise`` stays as the human-readable narrative
+    # paragraph (back-compat); ``premise_structured`` is the source of truth
+    # for the composer; ``core_seed`` is the 1-2 sentence distillation that
+    # every prompt receives as the primary anchor.
+    premise_structured = Column(JSON, nullable=True)
+    core_seed = Column(Text, nullable=True)
     settings_json = Column(JSON, default=dict)
     # PR-FIX-PROJSET (2026-05-05): genre_profile_code already in DB but was missing from ORM model
     genre_profile_code = Column(String(64), nullable=True)
