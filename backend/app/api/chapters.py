@@ -26,6 +26,9 @@ class ChapterUpdate(BaseModel):
     outline_json: dict | None = None
     status: str | None = None
     target_word_count: int | None = None
+    # PR-CHAPTER-PROTECT-V1: bypass the empty / shrink guards when the
+    # caller really does mean to wipe or drastically reduce the chapter.
+    force: bool | None = False
 
 
 class ChapterSyncRequest(BaseModel):
@@ -137,16 +140,58 @@ async def update_chapter(
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
 
+    # ----- PR-CHAPTER-PROTECT-V1 guards -----
+    # The chapter body is the single most expensive artifact in this app.
+    # An accidental PUT with an empty / shrunk body has wiped real content
+    # in production (lct2 ch21/22 incident). Block destructive writes
+    # unless the caller explicitly opts in by sending ``force: true`` in
+    # the JSON body alongside ``content_text``.
+    data = body.model_dump(exclude_unset=True)
+
     if body.title is not None:
         chapter.title = body.title
-    if body.content_text is not None:
+    if body.content_text is not None and "content_text" in data:
+        existing = chapter.content_text or ""
+        new_text = body.content_text or ""
+        force_flag = bool(data.get("force") or False)
+        if not force_flag:
+            stripped_new = new_text.strip()
+            if not stripped_new and len(existing.strip()) >= 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "chapter_protect_empty_content",
+                        "message": (
+                            "Refusing to overwrite a non-empty chapter "
+                            "(>=200 chars) with empty content. Pass "
+                            "force=true in the body to override."
+                        ),
+                        "existing_chars": len(existing),
+                    },
+                )
+            if (
+                len(existing.strip()) >= 1000
+                and len(stripped_new) > 0
+                and len(stripped_new) < len(existing.strip()) * 0.4
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "chapter_protect_shrink",
+                        "message": (
+                            "Refusing to shrink chapter body by more than "
+                            "60%. Pass force=true in the body to override."
+                        ),
+                        "existing_chars": len(existing),
+                        "new_chars": len(new_text),
+                    },
+                )
         chapter.content_text = body.content_text
         chapter.word_count = len(body.content_text)
     if body.outline_json is not None:
         chapter.outline_json = body.outline_json
     if body.status is not None:
         chapter.status = body.status
-    data = body.model_dump(exclude_unset=True)
     if "target_word_count" in data and body.target_word_count is not None:
         chapter.target_word_count = body.target_word_count
 
