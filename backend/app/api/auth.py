@@ -25,7 +25,32 @@ _PASSWORD_HASH = os.environ.get(
 )
 
 _JWT_ALGORITHM = "HS256"
-_JWT_EXPIRY_DAYS = 7
+# PR-AUTH-TTL (2026-05-13): make JWT lifetime overridable via env without a rebuild.
+# - AUTH_JWT_EXPIRY_DAYS preferred (integer days).
+# - AUTH_JWT_EXPIRY_HOURS optional finer-grain override (wins when set).
+# - Falls back to the historical 7 day default if neither is set or both are malformed.
+def _parse_int_env(name: str) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        val = int(raw.strip())
+    except ValueError:
+        return None
+    return val if val > 0 else None
+
+
+_JWT_EXPIRY_DAYS = _parse_int_env("AUTH_JWT_EXPIRY_DAYS") or 7
+
+
+def _token_lifetime() -> timedelta:
+    """Resolve JWT lifetime at issue-time so env tweaks don't need a restart."""
+    hours_override = _parse_int_env("AUTH_JWT_EXPIRY_HOURS")
+    if hours_override is not None:
+        return timedelta(hours=hours_override)
+    days = _parse_int_env("AUTH_JWT_EXPIRY_DAYS")
+    return timedelta(days=days if days is not None else _JWT_EXPIRY_DAYS)
+
 
 # Legacy sha256 hash for backward compatibility
 _LEGACY_SHA256_HASH = "ab7be174ff6743f20255f4f81415eaae7cfb5ca5aaab9238272dcb983437c364"
@@ -62,7 +87,7 @@ def _verify_password(password: str, stored_hash: str) -> bool:
 def _create_token(username: str) -> str:
     payload = {
         "sub": username,
-        "exp": datetime.now(timezone.utc) + timedelta(days=_JWT_EXPIRY_DAYS),
+        "exp": datetime.now(timezone.utc) + _token_lifetime(),
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=_JWT_ALGORITHM)
 
