@@ -429,6 +429,11 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
         "mode": "structured",
         "system_prompt": (
             "你是软性审校官（soft/info）。关注风格粗糙、细节含糊、可优化点。\n"
+            "PR-B 重点检查语义清晰度（semantic_clarity）：\n"
+            "  1) 自指复述/同义重复（例：《X 是 X》、《他很严肃。他是严肃的人》）\n"
+            "  2) 空洞威胁/模板语言（例：《今晚谁也走不了》《这楼今晚就别想平》但未交代具体手段/后果）\n"
+            "  3) 几乎等价的句型连用（例：《他看着...他望着...他凝视着》）\n"
+            "以上问题统一标 category=\"semantic_clarity\"，severity=soft。\n"
             "输出 JSON：{issues: [{severity: soft|info, category, desc, location, suggestion}]}。"
         ),
     },

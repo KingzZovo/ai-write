@@ -201,6 +201,17 @@ async def run_critic(
     except Exception as exc:
         logger.warning("critic anti_ai scan failed: %s", exc)
 
+    # 2.1) PR-B-CRITIC-SEMANTIC-CLARITY (2026-05-13):
+    # Deterministic detector for self-referential paraphrase, vague threat
+    # templates (bug #7 in lct2 audit: "这楼今晚就别想平"), and tautology.
+    # Cheap (regex only, no DB / LLM) so we run it unconditionally.
+    try:
+        from app.services.checkers.semantic_clarity import scan_semantic_clarity
+
+        issues.extend(scan_semantic_clarity(draft))
+    except Exception as exc:
+        logger.warning("critic semantic_clarity scan failed: %s", exc)
+
     # 2.5) v1.0 ConStory v1 consistency checks (best-effort, Neo4j-backed)
     try:
         from app.db.neo4j import get_neo4j
