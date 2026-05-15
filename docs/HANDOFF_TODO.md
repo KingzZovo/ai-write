@@ -1,3 +1,5 @@
+> **⚠️ 2026-05-15 23:31 最新交接**：PR-A-GEN-PIPELINE-FIX 已 push 到 `feat/pr-a-gen-pipeline-fix`（`cd77b5c` + `8583910`）**但尚未合 main**。Bug A/B/C 三连修：batch_generator 签名发送 / chapters 表持久化 / PUT empty-content protect guard。接手看 [docs/HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md](HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md)。本页以下内容为历史。
+
 > **✅ 2026-05-06 07:20 最新交接**：PR-BOOK-PROFILE-BIND **已完成**（`f73a74d`，pushed `origin/main` + `origin/feat/phase2-fix`）。下一步直接进入赤心仿写验证 Stage B/C/D/E（详 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md §5 + §12-13](HANDOFF_2026-05-05_pr-book-profile-bind.md)）。本页以下内容为历史。
 
 ## 当前批次 - PR-BOOK-PROFILE-BIND ✅ 已闭环（2026-05-06 07:20）

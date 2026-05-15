@@ -760,3 +760,45 @@ python3 -m compileall -q backend/app
 ```
 
 如本次没改 docs/RUNBOOK，就在 Docs updated 写明"无需改"，并说明原因。
+
+## 8. 批量生成与章节保护（PR-A 上线后表现）
+
+> 2026-05-15 PR-A-GEN-PIPELINE-FIX 上线后的运维表现。本节详见 [docs/HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md](HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md)。
+
+### 8.1 `/api/generate/batch` 已真走通
+
+- `batch_generator.generate_batch` 现接上 `ChapterGenerator.generate` 的 keyword-only 新签名（`project_id / volume_id / chapter_idx / db / chapter_id / user_instruction`）。
+- 生成后文本会被写回 `chapters.content_text / word_count / status='completed'`，同时调用 post-hook（best-effort，失败不阻断进度）。
+- SSE 进度事件现走 `asyncio.Queue`，客户端看到的是逐章实时进度而不是批末一次性 dump。
+- `rewrite.batch_generate` endpoint 拥有自己的 `AsyncSession`，不再依赖 endpoint 协程里被 GC 掉的 session。
+
+### 8.2 章节 PUT 保护 guard
+
+`PUT /api/projects/{pid}/chapters/{cid}` 现默认拒绝两种破坏性写：
+
+| 场景 | 拒绝条件 | 错误 code |
+|---|---|---|
+| 用 empty body 覆盖章节 | 原文本 stripped 后 ≥ 200 字符 | `chapter_protect_empty_content` |
+| 大幅缩减 | 原文本 ≥ 1000 字符 且 新文本 < 原长度 × 40% | `chapter_protect_shrink_too_much` |
+
+逃生：JSON body 里传 `force: true`。使用场景：手动清空章节、重生覆盖。脚本中取消保护传 `force=true` 即可。
+
+### 8.3 验证脚本
+
+- `backend/scripts/_pr_a_verify.py` — **stub 回归**（5 s），不依赖 LLM 配置。验证 wiring + 持久化 + protect guard。反复可跑。
+  ```bash
+  docker exec ai-write-backend-1 python /app/scripts/_pr_a_verify.py
+  # 期望最后一行：RESULT: PASS
+  ```
+- `backend/scripts/_pr_a_verify_live_llm.py` — **live LLM e2e**（2-4 min/章），跟真实 《大纲》 endpoint 走一次。只在环境变动后手动跑。
+  ```bash
+  docker exec -d ai-write-backend-1 sh -c 'python -u /app/scripts/_pr_a_verify_live_llm.py > /tmp/llm_e2e.log 2>&1'
+  sleep 240 && docker exec ai-write-backend-1 tail -20 /tmp/llm_e2e.log
+  ```
+
+### 8.4 LLM 路由事实（2026-05-15 验证）
+
+- `model_router.task_routing` 含 26 项，包括 `generation / scene_writer / scene_planner / outline_* / polishing / extraction / critic_* / characters_extraction / ...`。
+- `task_routing['generation']` → endpoint `ac6eb9cd 大纲`。来源亍 `prompt_assets` 里 active 的「小说正文生成」 prompt 绑定了该 endpoint，而不是 `model_configs` 表（它仅有 extraction 一行）。
+- 即使两张表都漏配，`_get_route` 会 fallback 到第一个非 embedding endpoint；只有在**零 chat-capable endpoint** 时才会 `raise ValueError("No model configured for ...")`。现环境不可能撞上。
+
