@@ -55,20 +55,6 @@ class ProjectListResponse(BaseModel):
 # Volume
 # ---------------------------------------------------------------------------
 
-class VolumeCreate(BaseModel):
-    title: str = Field(..., max_length=500)
-    volume_idx: int
-    summary: str | None = None
-    target_word_count: int | None = None
-
-
-class VolumeUpdate(BaseModel):
-    title: str | None = Field(None, max_length=500)
-    volume_idx: int | None = None
-    summary: str | None = None
-    target_word_count: int | None = None
-
-
 class VolumeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -84,26 +70,6 @@ class VolumeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Chapter
 # ---------------------------------------------------------------------------
-
-class ChapterCreate(BaseModel):
-    title: str = Field(..., max_length=500)
-    chapter_idx: int
-    outline_json: dict[str, Any] | None = None
-    content_text: str | None = None
-    status: str | None = Field("draft", max_length=20)
-    summary: str | None = None
-
-
-class ChapterUpdate(BaseModel):
-    title: str | None = Field(None, max_length=500)
-    chapter_idx: int | None = None
-    outline_json: dict[str, Any] | None = None
-    content_text: str | None = None
-    word_count: int | None = None
-    status: str | None = Field(None, max_length=20)
-    summary: str | None = None
-    target_word_count: int | None = None
-
 
 class ChapterResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -125,22 +91,6 @@ class ChapterResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Outline
 # ---------------------------------------------------------------------------
-
-class OutlineCreate(BaseModel):
-    level: str = Field(..., max_length=20)
-    parent_id: UUID | None = None
-    content_json: dict[str, Any] | None = None
-    version: int | None = 1
-    is_confirmed: int | None = 0
-
-
-class OutlineUpdate(BaseModel):
-    level: str | None = Field(None, max_length=20)
-    parent_id: UUID | None = None
-    content_json: dict[str, Any] | None = None
-    version: int | None = None
-    is_confirmed: int | None = None
-
 
 class OutlineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -206,18 +156,6 @@ class WorldRuleResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # StyleProfile
 # ---------------------------------------------------------------------------
-
-class StyleProfileCreate(BaseModel):
-    name: str = Field(..., max_length=200)
-    source_book: str | None = Field(None, max_length=500)
-    config_json: dict[str, Any] | None = None
-
-
-class StyleProfileUpdate(BaseModel):
-    name: str | None = Field(None, max_length=200)
-    source_book: str | None = Field(None, max_length=500)
-    config_json: dict[str, Any] | None = None
-
 
 class StyleProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

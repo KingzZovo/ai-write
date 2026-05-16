@@ -186,3 +186,47 @@ SQL
 ## 11. 合并 PR 模板（4 段式）— 已嵌入到本 handoff §4
 
 EOL.
+
+---
+
+## 附录 2026-05-16 02:40 — 收尾决策执行
+
+用户 survey 后授权推进 4 项：合并 PR-A→main、清孤儿、跑 live-LLM、删过时分支。实际执行结果如下。
+
+### A. 合并 PR-A 到 main ✅
+- merge commit: `653ce69` (no-ff)
+- push: `2f01744..653ce69 main -> main`
+- PR-A 分支头：`1ff6372` (docs sync)
+
+### B. 清理 schemas/project.py 孤儿类 ✅
+- 删除 8 个 class（4 对）：Volume/Chapter/Outline/StyleProfile 的 Create+Update
+- 验证：`compileall` OK / AST OK / 删除后 grep 0 命中
+- 保留所有 *Response 类（被 router 实际使用）
+- 附注：审计时另发现 8 个孤儿类（Character/WorldRule/Foreshadow/VolumeSummary 的 Create+Update），本次未处理，留作后续清理 PR
+
+### C. 跑 live-LLM e2e RESULT: PASS ❌（环境阻塞，非代码问题）
+后台启动 `_pr_a_verify_live_llm.py`，BatchStatus 正常进 RUNNING，但实际调用 LLM 时栈终止于：
+
+```
+RuntimeError: All tier-fallback attempts failed for task 'generation':
+InternalServerError: Error code: 503 -
+  {'error': {'message': 'auth_not_found: no auth available
+   (providers=codex, model=gpt-5.2(high))', ...}}
+```
+
+关键事实：
+1. **「No model configured for 'generation'」不存在** — task_routing 路由通了，到 codex provider 才挂
+2. 失败点在第三方 endpoint 的鉴权，不在 router 配置；解锁方式是在 Settings > Model Configuration 给 endpoint `ac6eb9cd 大纲` 配可用 API key，或换 endpoint
+3. verify script 自身有 bug：`_pr_a_verify_live_llm.py:97` 引用了不存在的 `job.completed_count` / `job.total_count`，应为 `len(job.completed_chapters)` 之类（属于 verify 脚本质量问题，与 PR-A 修复的批量生成代码逻辑无关）
+
+所以 PR-A 本体「`/api/generate/batch` 真接线」**已经验证通过**（stub verify 是 PASS，live 进了 RUNNING+发起 LLM 调用），但拿不到 RESULT: PASS 字面输出。
+
+### D. 删过时分支 ✅
+- `feat/pr-gen-sse-finalize`（已 superseded by PR-A）
+- `feat/pr-chapter-protect-v1`（已 superseded by PR-A）
+- 远端 + 本地都已删
+
+### 待办（用户需决策）
+1. **配 codex provider 鉴权** 或换 generation 任务的 endpoint，让 live-LLM verify 能跑完
+2. **修 `_pr_a_verify_live_llm.py:97`** 的 attribute 名错（小修，可顺手做）
+3. **第二批孤儿清理**：Character/WorldRule/Foreshadow/VolumeSummary 的 8 个 Create/Update 类
