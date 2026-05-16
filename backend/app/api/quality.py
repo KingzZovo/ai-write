@@ -43,6 +43,7 @@ async def check_quality(
 
     # Try to build context pack if possible
     context = None
+    builder = None
     try:
         from app.services.context_pack import ContextPackBuilder
         from app.models.project import Volume
@@ -62,6 +63,14 @@ async def check_quality(
         )
     except Exception as e:
         logger.warning("Could not build context pack for checking: %s", e)
+    finally:
+        # v1.10: release any session ``ContextPackBuilder`` self-created
+        # so the underlying connection does not stay ``idle in transaction``.
+        if builder is not None:
+            try:
+                await builder.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     result = await mgr.run_all(text, context)
 

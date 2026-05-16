@@ -551,9 +551,23 @@ class ContextPackBuilder:
         return self._db
 
     async def close(self) -> None:
+        """Release a self-created session (no-op if caller injected ``db``).
+
+        v1.10: rollback any pending transaction before closing so the
+        connection does not end up stuck in ``idle in transaction`` state
+        when callers forget to commit (e.g. analytics-only reads).
+        """
         if self._owns_db and self._db is not None:
-            await self._db.close()
+            try:
+                await self._db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                await self._db.close()
+            except Exception:  # noqa: BLE001
+                pass
             self._db = None
+            self._owns_db = False
 
     async def build(
         self,

@@ -517,6 +517,18 @@ class HookManager:
         if chapter:
             chapter.summary = summary_text
             await db.flush()
+            # v1.10: commit the summary so it survives ``aclose``'s defensive
+            # rollback at end-of-batch. Without this commit the chapter row
+            # ends up with a NULL ``summary`` even though the LLM call
+            # succeeded and was logged in ``llm_call_logs``.
+            try:
+                await db.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Failed to commit chapter summary for project=%s chapter=%d",
+                    project_id,
+                    chapter_idx,
+                )
             logger.info(
                 "Generated summary for project=%s chapter=%d",
                 project_id, chapter_idx,
