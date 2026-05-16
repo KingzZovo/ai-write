@@ -94,7 +94,7 @@ async def _main() -> int:
             style_instruction='请控制在200-400字，独立成段，不要完结。',
             on_progress=on_progress,
         )
-        print('job.status:', job.status, ' completed:', job.completed_count, '/', job.total_count, flush=True)
+        print('job.status:', job.status, ' completed:', job.completed_chapters, '/', job.total_chapters, flush=True)
 
     # Re-open session: read chapter back
     async with async_session_factory() as db:

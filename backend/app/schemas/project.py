@@ -109,16 +109,6 @@ class OutlineResponse(BaseModel):
 # Character
 # ---------------------------------------------------------------------------
 
-class CharacterCreate(BaseModel):
-    name: str = Field(..., max_length=200)
-    profile_json: dict[str, Any] | None = None
-
-
-class CharacterUpdate(BaseModel):
-    name: str | None = Field(None, max_length=200)
-    profile_json: dict[str, Any] | None = None
-
-
 class CharacterResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -132,16 +122,6 @@ class CharacterResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # WorldRule
 # ---------------------------------------------------------------------------
-
-class WorldRuleCreate(BaseModel):
-    category: str = Field(..., max_length=100)
-    rule_text: str
-
-
-class WorldRuleUpdate(BaseModel):
-    category: str | None = Field(None, max_length=100)
-    rule_text: str | None = None
-
 
 class WorldRuleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -171,27 +151,6 @@ class StyleProfileResponse(BaseModel):
 # Foreshadow
 # ---------------------------------------------------------------------------
 
-class ForeshadowCreate(BaseModel):
-    type: str = Field(..., max_length=20)
-    description: str
-    planted_chapter: int
-    resolve_conditions_json: list[Any] | None = None
-    resolution_blueprint_json: dict[str, Any] | None = None
-    narrative_proximity: float | None = 0.0
-    status: str | None = Field("planted", max_length=20)
-
-
-class ForeshadowUpdate(BaseModel):
-    type: str | None = Field(None, max_length=20)
-    description: str | None = None
-    planted_chapter: int | None = None
-    resolve_conditions_json: list[Any] | None = None
-    resolution_blueprint_json: dict[str, Any] | None = None
-    narrative_proximity: float | None = None
-    status: str | None = Field(None, max_length=20)
-    resolved_chapter: int | None = None
-
-
 class ForeshadowResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -211,19 +170,6 @@ class ForeshadowResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # VolumeSummary
 # ---------------------------------------------------------------------------
-
-class VolumeSummaryCreate(BaseModel):
-    volume_id: UUID
-    summary_text: str
-    character_snapshot_json: dict[str, Any] | None = None
-    plot_progress_json: dict[str, Any] | None = None
-
-
-class VolumeSummaryUpdate(BaseModel):
-    summary_text: str | None = None
-    character_snapshot_json: dict[str, Any] | None = None
-    plot_progress_json: dict[str, Any] | None = None
-
 
 class VolumeSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -230,3 +230,55 @@ InternalServerError: Error code: 503 -
 1. **配 codex provider 鉴权** 或换 generation 任务的 endpoint，让 live-LLM verify 能跑完
 2. **修 `_pr_a_verify_live_llm.py:97`** 的 attribute 名错（小修，可顺手做）
 3. **第二批孤儿清理**：Character/WorldRule/Foreshadow/VolumeSummary 的 8 个 Create/Update 类
+
+
+---
+
+## 附录 2026-05-16 18:10 — 第二轮交付
+
+### 代码修改
+1. **第二批 orphan 清理**：schemas/project.py 另动 8 个未使用类（Character/WorldRule/Foreshadow/VolumeSummary 的 Create+Update）。加上上一轮的 8 个，该文件 16 个孤儿 Create/Update 类全部清除，仅保留 *Response 和真正使用的 ProjectCreate/Update + RelationshipCreate/Update。
+2. **verify script bug 修复**：`_pr_a_verify_live_llm.py:97` 的 `job.completed_count`/`total_count` 改为正确的 `completed_chapters`/`total_chapters`。
+
+### 远端分支清理
+本轮另删除 4 个已合并的 stale 远端分支：
+- `feat/outline-batch2`
+- `feat/phase1-fix`
+- `feat/phase2-fix`
+- `docs/p7-e2e-validation`
+
+### 剩余 13 个未合并 feat 分支状态（需用户判断）
+| 分支 | 最近 commit | 状态推断 |
+|------|----------|---------|
+| feat/pr-profile-seed-rules | 2026-05-13 | 代码已隐含于 main? 需对比 |
+| feat/pr-dosage-audit | 2026-05-13 | 审计脚本，可按需保留 |
+| feat/pr-auth-ttl | 2026-05-13 | JWT TTL env-overridable |
+| feat/pr-b-critic-semantic-clarity | 2026-05-13 | C2 分支 |
+| feat/pr-c-premise-structured | 2026-05-13 | core_seed 改造 |
+| feat/pr-state-wiring-audit | 2026-05-11 | status_json 6 个新 slot |
+| feat/neo4j-batch1 | 2026-05-03 | NEO1→NEO4 |
+| feat/styles-ui-source-metric | 2026-05-02 | UI 改造 |
+| feat/chapter-postgen-pipeline-hooks | 2026-05-02 | post-gen pipeline |
+| feat/dosage-recompile-backfill | 2026-05-02 | 回填脚本 |
+| feat/neo4j-materialize-trigger | 2026-05-02 | materialize endpoint |
+| feat/settings-aggregate-api-impl | 2026-05-02 | settings 聚合接口 |
+| feat/style-compiler-dosage-fallback | 2026-05-02 | runtime fallback |
+| feat/dosage-to-rules-deriver | 2026-05-02 | dosage->rules |
+
+### 路由完整性 audit
+- **37 个 router 全部 mount** ✅
+- 37 个 `backend/app/api/*.py` 文件每个都被 `main.py` import 且 `include_router`。零漏挂。
+- API 路由总览：auth / projects / outlines / chapters / generate / knowledge / foreshadows / settings / neo4j_settings / versions / rewrite / lora / volumes / model_config / quality / filter_words / styles / prompts / pipeline / vector_store / call_logs / ask_user / llm_routing / decompile / generation_runs / writing_engine / version / metrics / debug / variants / run_bus / admin_usage / admin_entities / export / evaluate / cascade / changelog
+
+### 代码质量扫描
+- `TODO/FIXME/XXX/HACK` in `api/`：**0 命中**
+- `def f(.., db: Session, ..)` （sync DB in async handler）：**0 命中**（全部 async）
+- pyflakes 在 audit 环境不可用，待后续在 backend 容器里跑。
+
+### live-LLM verify 现状
+后台 retry中，BatchStatus.RUNNING。Codex provider 鉴权状态不在代码层可控，需用户在 `141.148.185.96:8317` 代理端重新登录 codex。两个在用 chat endpoint（大纲 / 本地 Qwen）都指向同一代理，所以换 endpoint 也不能绕开。
+
+### 后续优化候选（待用户拍板）
+1. 带孤儿 connection 警告（SQLAlchemy gc cleanup）表明未显式 close 会话，可考虑用 contextmanager 重构 service 层 db 使用。
+2. 13 个未合并分支逐一评估合并 / superseded / drop。
+3. codex 代理端鉴权恢复后重跑 verify 拿 RESULT: PASS。
