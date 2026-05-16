@@ -35,6 +35,7 @@ from qdrant_client import AsyncQdrantClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.db.session import async_session_factory
@@ -144,6 +145,17 @@ async def _style_branch(
             ))
             await bdb.commit()
             return True
+        except IntegrityError as exc:
+            # v1.14: concurrent retry waves can race on the same slice.
+            # The unique (book_id, slice_id) constraint means a parallel run
+            # already persisted the card; treat as success so we do not bump
+            # the failure counter or trigger an extra retry wave.
+            await bdb.rollback()
+            logger.info(
+                "slice %s style branch already persisted by concurrent run",
+                slice_id,
+            )
+            return True
         except Exception as exc:
             logger.warning("slice %s style branch failed: %s", slice_id, exc)
             await bdb.rollback()
@@ -179,6 +191,14 @@ async def _beat_branch(
                 qdrant_point_id=str(point_id),
             ))
             await bdb.commit()
+            return True
+        except IntegrityError as exc:
+            # v1.14: see _style_branch for rationale.
+            await bdb.rollback()
+            logger.info(
+                "slice %s beat branch already persisted by concurrent run",
+                slice_id,
+            )
             return True
         except Exception as exc:
             logger.warning("slice %s beat branch failed: %s", slice_id, exc)
