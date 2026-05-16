@@ -51,12 +51,32 @@ class ForeshadowManager:
 
     def __init__(self, db: AsyncSession | None = None) -> None:
         self._db = db
+        self._owns_db = False
 
     async def _get_db(self) -> AsyncSession:
         """Return the injected session or create a new one."""
         if self._db is not None:
             return self._db
-        return async_session_factory()
+        # Cache the session we create so it can be closed via ``aclose``.
+        # Returning a new session per call without storing it leaked one
+        # ``idle in transaction`` connection per foreshadow hook invocation.
+        self._db = async_session_factory()
+        self._owns_db = True
+        return self._db
+
+    async def aclose(self) -> None:
+        """Release the DB session if this manager created it."""
+        if self._owns_db and self._db is not None:
+            try:
+                await self._db.rollback()
+            except Exception:
+                pass
+            try:
+                await self._db.close()
+            except Exception:
+                pass
+            self._db = None
+            self._owns_db = False
 
     # ------------------------------------------------------------------
     # CRUD

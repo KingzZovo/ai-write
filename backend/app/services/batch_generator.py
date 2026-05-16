@@ -251,6 +251,22 @@ class BatchGenerator:
             else:
                 job.status = BatchStatus.COMPLETED
 
+        # Release any DB session the hook manager grabbed during this batch.
+        # Without this, ``HookManager._db`` (set lazily on first ``_get_db``
+        # call) lived on the BatchGenerator singleton between requests and
+        # leaked one ``idle in transaction`` connection per batch run — in
+        # production we observed a leaked session that survived 1d21h before
+        # manual termination, which then blocked all subsequent UPDATEs on
+        # ``chapters`` for the next batch.
+        try:
+            await self.hook_manager.aclose()
+        except Exception:
+            logger.exception("hook_manager.aclose failed at end of batch")
+        # Recreate for the next batch so the attribute remains a live manager
+        # (test fixtures monkey-patch ``batch_generator.hook_manager`` and
+        # expect a non-None value between calls).
+        self.hook_manager = HookManager()
+
         return job
 
     def pause_job(self, job_id: str) -> None:

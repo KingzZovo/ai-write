@@ -109,11 +109,28 @@ class StrandTrackerService:
 
     def __init__(self, db: AsyncSession | None = None) -> None:
         self._db = db
+        self._owns_db = False
 
     async def _get_db(self) -> AsyncSession:
         if self._db is not None:
             return self._db
-        return async_session_factory()
+        self._db = async_session_factory()
+        self._owns_db = True
+        return self._db
+
+    async def aclose(self) -> None:
+        """Release the DB session if this tracker created it."""
+        if self._owns_db and self._db is not None:
+            try:
+                await self._db.rollback()
+            except Exception:
+                pass
+            try:
+                await self._db.close()
+            except Exception:
+                pass
+            self._db = None
+            self._owns_db = False
 
     def analyze_text(self, chapter_idx: int, text: str) -> StrandAnalysis:
         """Analyze a single chapter's text for strand presence.

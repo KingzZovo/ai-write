@@ -69,6 +69,7 @@ class HookManager:
 
     def __init__(self, db: AsyncSession | None = None) -> None:
         self._db = db
+        self._owns_db = False
         self._foreshadow_mgr: ForeshadowManager | None = None
 
     async def _get_db(self) -> AsyncSession:
@@ -76,6 +77,7 @@ class HookManager:
             return self._db
         # Create a new session — caller must commit/close
         self._db = async_session_factory()
+        self._owns_db = True
         return self._db
 
     async def _commit_if_own_session(self) -> None:
@@ -86,6 +88,36 @@ class HookManager:
             except Exception:
                 await self._db.rollback()
                 raise
+
+    async def aclose(self) -> None:
+        """Release every DB session this manager (and its sub-services) owns.
+
+        Sessions held on ``self._db`` were leaking permanently as
+        ``idle in transaction`` connections (one of them lived 1d21h in prod
+        before being killed manually). Always call this in a ``finally``
+        from any caller that constructs HookManager without passing ``db``.
+        """
+        # Foreshadow sub-service may have acquired its own session
+        if self._foreshadow_mgr is not None:
+            try:
+                await self._foreshadow_mgr.aclose()
+            except Exception:
+                logger.exception("foreshadow_mgr.aclose failed")
+            self._foreshadow_mgr = None
+        if self._owns_db and self._db is not None:
+            try:
+                # Defensive rollback: closing a session that is still
+                # ``idle in transaction`` would leave the txn open in the
+                # backend until the connection is recycled.
+                await self._db.rollback()
+            except Exception:
+                pass
+            try:
+                await self._db.close()
+            except Exception:
+                logger.exception("hook_manager session close failed")
+            self._db = None
+            self._owns_db = False
 
     @property
     def foreshadow_mgr(self) -> ForeshadowManager:
