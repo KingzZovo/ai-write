@@ -15,6 +15,7 @@ Post-generate hooks run AFTER chapter generation:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -181,33 +182,45 @@ class HookManager:
             chapter_idx: Index of the generated chapter.
             chapter_text: Full text of the generated chapter.
         """
-        # 1. Entity extraction
-        try:
-            await self._update_entities(project_id, chapter_idx, chapter_text)
-        except Exception:
-            logger.exception("Post-hook _update_entities failed")
+        # Per-step hard timeouts. A single hung step (e.g. LLM provider hang,
+        # cooldown wait, infinite reasoning loop) used to block the entire
+        # BatchGenerator pipeline indefinitely, leaving the chapter row
+        # uncommitted -- the worst possible failure mode for the user.
+        async def _run_step(name: str, coro, timeout: float) -> None:
+            try:
+                await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.error(
+                    "Post-hook %s exceeded %.0fs timeout (project=%s chapter=%d) -- skipping",
+                    name, timeout, project_id, chapter_idx,
+                )
+            except Exception:
+                logger.exception("Post-hook %s failed", name)
 
-        # 2. Chapter summary
-        try:
-            await self._generate_summary(project_id, chapter_idx, chapter_text)
-        except Exception:
-            logger.exception("Post-hook _generate_summary failed")
-
-        # 3. Foreshadow resolution check
-        try:
-            await self._check_foreshadow_resolution(
-                project_id, chapter_idx, chapter_text
-            )
-        except Exception:
-            logger.exception("Post-hook _check_foreshadow_resolution failed")
-
-        # 4. Register new foreshadows
-        try:
-            await self._register_new_foreshadows(
-                project_id, chapter_idx, chapter_text
-            )
-        except Exception:
-            logger.exception("Post-hook _register_new_foreshadows failed")
+        # 1. Entity extraction (Celery dispatch -- fast)
+        await _run_step(
+            "_update_entities",
+            self._update_entities(project_id, chapter_idx, chapter_text),
+            timeout=30.0,
+        )
+        # 2. Chapter summary (1 LLM call)
+        await _run_step(
+            "_generate_summary",
+            self._generate_summary(project_id, chapter_idx, chapter_text),
+            timeout=180.0,
+        )
+        # 3. Foreshadow resolution check (N LLM calls -- one per active foreshadow)
+        await _run_step(
+            "_check_foreshadow_resolution",
+            self._check_foreshadow_resolution(project_id, chapter_idx, chapter_text),
+            timeout=300.0,
+        )
+        # 4. Register new foreshadows (1 LLM extraction call)
+        await _run_step(
+            "_register_new_foreshadows",
+            self._register_new_foreshadows(project_id, chapter_idx, chapter_text),
+            timeout=180.0,
+        )
 
         logger.info(
             "Post-hooks completed for project=%s chapter=%d",

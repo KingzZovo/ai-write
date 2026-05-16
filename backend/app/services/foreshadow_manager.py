@@ -463,7 +463,7 @@ class ForeshadowManager:
                 task_type="extraction",
                 messages=messages,
                 temperature=0.3,
-                max_tokens=1024,
+                max_tokens=512,
             )
             foreshadows_data = self._parse_foreshadow_list(result.text)
         except Exception:
