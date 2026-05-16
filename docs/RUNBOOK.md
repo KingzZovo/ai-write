@@ -13,16 +13,20 @@
 
 背景：`retry_reference_book_missing_branches` 在《赤心巡天》补全期间出现同一本书 4 个 retry task 并发活跃，根因是单波在 provider cooldown + 多次 LLM retry 下超过 Redis broker `visibility_timeout=7200`，导致未 ack 消息被 redeliver。
 
+2026-05-17 04:00 巡检补充：01:00 的 single-flight 修复后，任务在 03:29 左右因 `asyncpg.exceptions.InterfaceError: connection is closed` 中断且 Redis `celery` 队列为空。根因是 retry 波在 LLM/Qdrant 长耗时期间仍持有最初用于快照缺失 slices 的 AsyncSession；Postgres `idle_in_transaction_session_timeout=10min` 会关闭该连接，尾部 `db.refresh(book)` 失败，导致下一波没有被调度。当前修复是在批次快照完成后关闭该 session，分支写入继续使用短生命周期 session，最终对账/metadata 更新用 fresh session 重开。
+
 当前机制：
 - `DECOMPILE_RETRY_WAVE_BATCH` 默认从 `250` 降到 `50`，降低单波耗时。
 - Celery retry task 使用 Redis key `decompile_retry:lock:{book_id}` 做同书 single-flight；默认 TTL `DECOMPILE_RETRY_LOCK_TTL=10800` 秒。
 - 锁命中任务直接返回 `locked=true`，不再继续处理，也不自调度下一波。
+- `retry_missing_branches` 不再跨整波持有 snapshot AsyncSession；最终 `_refresh_book_status` 使用新 session，避免 idle timeout 后无法自调度。
 
 验证命令：
 ```bash
 docker exec -e PYTHONPATH=/app ai-write-celery-worker-1 python -m py_compile /app/app/tasks/__init__.py /app/app/services/reference_ingestor.py
 docker exec ai-write-celery-worker-1 celery -A app.tasks.celery_app inspect active reserved scheduled
 docker logs --tail 4000 ai-write-celery-worker-1 2>&1 | grep -E 'retry_reference_book_missing_branches\[|locked|style_filled|beat_filled|connection is closed' | tail -40
+docker exec ai-write-redis-1 redis-cli llen celery
 ```
 
 对账 SQL：

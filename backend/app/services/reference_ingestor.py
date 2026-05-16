@@ -552,6 +552,19 @@ async def retry_missing_branches(
             missing_style_rows = missing_style_rows[:_RETRY_WAVE_BATCH]
             missing_beat_rows = missing_beat_rows[:_RETRY_WAVE_BATCH]
 
+        # v1.16: do not keep the snapshot session open while the wave does
+        # long-running LLM/Qdrant work. Postgres has
+        # idle_in_transaction_session_timeout=10min in this environment; a
+        # 50+50 retry wave under provider cooldown can exceed that window, so
+        # the final db.refresh(book) would fail with asyncpg "connection is
+        # closed" and the Celery task would not schedule the next wave.
+        # Branch writers below use their own short-lived sessions, so this
+        # session is only needed again for the final authoritative recount.
+        if owns:
+            await db.rollback()
+            await db.close()
+            db = None
+
         client = await _qdrant_client()
         store = QdrantStore(client)
         await store.ensure_collections()
@@ -585,13 +598,24 @@ async def retry_missing_branches(
         style_filled = sum(r for r in style_results if isinstance(r, int))
         beat_filled = sum(r for r in beat_results if isinstance(r, int))
 
-        # Detached `book` may now be stale; reload before refresh.
-        await db.refresh(book)
-        retry_state = await _refresh_book_status(
-            db, book, attempt=int(attempt),
-            note=f"retry attempt {attempt} filled style={style_filled}, beat={beat_filled}",
-        )
-        await db.commit()
+        # Re-open a fresh session for the final recount/status update. This
+        # avoids reusing a connection that may have been closed while the wave
+        # was doing long-running branch work.
+        final_db = async_session_factory() if owns else db
+        assert final_db is not None
+        try:
+            book = await final_db.get(ReferenceBook, book_id)
+            if book is None:
+                return {"status": "error", "error": "book not found after retry wave"}
+            retry_state = await _refresh_book_status(
+                final_db, book, attempt=int(attempt),
+                note=f"retry attempt {attempt} filled style={style_filled}, beat={beat_filled}",
+            )
+            await final_db.commit()
+        finally:
+            if owns:
+                await final_db.close()
+                db = None
 
         return {
             "status": book.status,
@@ -607,7 +631,7 @@ async def retry_missing_branches(
                 await client.close()
             except Exception:
                 pass
-        if owns:
+        if owns and db is not None:
             await db.close()
 
 

@@ -1,3 +1,5 @@
+> **⚠️ 2026-05-17 04:00 巡检修复**：`retry_reference_book_missing_branches` 在 single-flight 后又因长波持有 snapshot AsyncSession 触发 Postgres idle timeout（`connection is closed`），导致队列为空、补全停止；已改为波前关闭 snapshot session、波尾 fresh session 对账并补发 retry。详见 [docs/HANDOFF_2026-05-17_retry-session-reopen.md](HANDOFF_2026-05-17_retry-session-reopen.md) 与 RUNBOOK §0.1。
+
 > **⚠️ 2026-05-17 01:00 巡检修复**：`retry_reference_book_missing_branches` 出现同书 4 个 redelivered 并发任务；已加 Redis single-flight lock（`decompile_retry:lock:{book_id}`）并把默认 `DECOMPILE_RETRY_WAVE_BATCH` 从 250 降到 50。详见 [docs/HANDOFF_2026-05-17_retry-singleflight.md](HANDOFF_2026-05-17_retry-singleflight.md) 与 RUNBOOK §0.1。
 
 > **⚠️ 2026-05-15 23:31 最新交接**：PR-A-GEN-PIPELINE-FIX 已 push 到 `feat/pr-a-gen-pipeline-fix`（`cd77b5c` + `8583910`）**但尚未合 main**。Bug A/B/C 三连修：batch_generator 签名发送 / chapters 表持久化 / PUT empty-content protect guard。接手看 [docs/HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md](HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md)。本页以下内容为历史。
