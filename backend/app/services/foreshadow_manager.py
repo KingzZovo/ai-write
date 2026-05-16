@@ -328,11 +328,12 @@ class ForeshadowManager:
             ]
 
             try:
-                gen_result = await router.generate(
+                gen_result = await router.generate_with_tier_fallback(
                     task_type="extraction",
                     messages=messages,
                     temperature=0.2,
                     max_tokens=64,
+                    fallback_tiers=["small", "distill", "standard", "flagship"],
                 )
                 is_resolved = self._parse_resolved(gen_result.text)
             except Exception:
@@ -459,11 +460,12 @@ class ForeshadowManager:
         ]
 
         try:
-            result = await router.generate(
+            result = await router.generate_with_tier_fallback(
                 task_type="extraction",
                 messages=messages,
                 temperature=0.3,
                 max_tokens=512,
+                fallback_tiers=["small", "distill", "standard", "flagship"],
             )
             foreshadows_data = self._parse_foreshadow_list(result.text)
         except Exception:
