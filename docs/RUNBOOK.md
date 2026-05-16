@@ -9,6 +9,32 @@
 - **禁止 PG 直写**：避免 drift。
 - 例外（待决策）：`foreshadows` 当前仍走 PG ORM 直写，详见 §3 与 docs/PROGRESS.md。
 
+## 0.1 参考书 retry 巡检与单飞锁（2026-05-17）
+
+背景：`retry_reference_book_missing_branches` 在《赤心巡天》补全期间出现同一本书 4 个 retry task 并发活跃，根因是单波在 provider cooldown + 多次 LLM retry 下超过 Redis broker `visibility_timeout=7200`，导致未 ack 消息被 redeliver。
+
+当前机制：
+- `DECOMPILE_RETRY_WAVE_BATCH` 默认从 `250` 降到 `50`，降低单波耗时。
+- Celery retry task 使用 Redis key `decompile_retry:lock:{book_id}` 做同书 single-flight；默认 TTL `DECOMPILE_RETRY_LOCK_TTL=10800` 秒。
+- 锁命中任务直接返回 `locked=true`，不再继续处理，也不自调度下一波。
+
+验证命令：
+```bash
+docker exec -e PYTHONPATH=/app ai-write-celery-worker-1 python -m py_compile /app/app/tasks/__init__.py /app/app/services/reference_ingestor.py
+docker exec ai-write-celery-worker-1 celery -A app.tasks.celery_app inspect active reserved scheduled
+docker logs --tail 4000 ai-write-celery-worker-1 2>&1 | grep -E 'retry_reference_book_missing_branches\[|locked|style_filled|beat_filled|connection is closed' | tail -40
+```
+
+对账 SQL：
+```sql
+SELECT (SELECT count(*) FROM style_profile_cards WHERE book_id='0a543b1d-19fe-4e03-986e-42844feb36ee') AS style,
+       (SELECT count(*) FROM beat_sheet_cards WHERE book_id='0a543b1d-19fe-4e03-986e-42844feb36ee') AS beat,
+       22941 AS total;
+SELECT status, metadata_json::jsonb #>> '{decompile_retry}'
+FROM reference_books
+WHERE id='0a543b1d-19fe-4e03-986e-42844feb36ee';
+```
+
 ## 1. 正确写入路径（推荐入口）
 
 ### 1.1 当前 main 上的实际写入口（事实）

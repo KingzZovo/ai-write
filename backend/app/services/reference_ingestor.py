@@ -61,10 +61,11 @@ _RETRY_BACKOFF_FACTOR = float(os.getenv("DECOMPILE_RETRY_BACKOFF_FACTOR", "2.0")
 # v1.14 — cap how many slices one retry wave processes. With 20k-slice
 # books a single wave would take ~28h to drain at semaphore=3, which
 # exceeds celery ``visibility_timeout=7200`` and causes the worker to
-# silently re-enqueue the same task. A 250-slice wave at semaphore=3
-# lasts ~20–40 min, well under the visibility window; the task
-# self-reschedules until drained.
-_RETRY_WAVE_BATCH = int(os.getenv("DECOMPILE_RETRY_WAVE_BATCH", "250"))
+# silently re-enqueue the same task. Keep the default deliberately small:
+# under LLM credential cooldown, each branch can burn through multi-attempt
+# retries, so a 250+250 wave may still overrun the visibility window and be
+# redelivered. Operators can raise this once provider latency/cooldown clears.
+_RETRY_WAVE_BATCH = int(os.getenv("DECOMPILE_RETRY_WAVE_BATCH", "50"))
 
 
 async def _qdrant_client() -> AsyncQdrantClient:

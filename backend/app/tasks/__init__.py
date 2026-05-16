@@ -178,16 +178,58 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
     safe to invoke manually from the frontend (see
     ``POST /api/reference-books/{id}/retry-missing``).
     """
+    # v1.15: single-flight by book. When a retry wave overruns Redis broker
+    # visibility_timeout, Redis can redeliver the same logical wave while the
+    # original process is still running. Prevent duplicate same-book waves from
+    # piling up and consuming all worker slots. The TTL is intentionally longer
+    # than visibility_timeout; if the worker dies, Redis releases it eventually.
+    lock_key = f"decompile_retry:lock:{book_id}"
+    lock_token = str(getattr(getattr(self, "request", None), "id", None) or "unknown")
+    lock_client = None
+    lock_acquired = False
+    try:
+        import os as _os
+        import redis
+
+        lock_ttl = int(_os.getenv("DECOMPILE_RETRY_LOCK_TTL", "10800"))
+        lock_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        lock_acquired = bool(lock_client.set(lock_key, lock_token, nx=True, ex=lock_ttl))
+    except Exception:
+        # Redis lock failure must not block the retry mechanism; fall back to
+        # normal execution and let task idempotency protect rows.
+        lock_client = None
+        lock_acquired = True
+
+    if not lock_acquired:
+        return {
+            "status": "partial",
+            "style_filled": 0,
+            "beat_filled": 0,
+            "locked": True,
+            "lock_key": lock_key,
+        }
+
     from app.services.reference_ingestor import (
         compute_retry_delay,
         max_auto_retries,
         retry_missing_branches as _retry,
     )
 
-    result = _run_async_safe(_retry(book_id=book_id, attempt=attempt))
+    try:
+        result = _run_async_safe(_retry(book_id=book_id, attempt=attempt))
+    finally:
+        if lock_client is not None and lock_acquired:
+            try:
+                if lock_client.get(lock_key) == lock_token:
+                    lock_client.delete(lock_key)
+                lock_client.close()
+            except Exception:
+                pass
 
     try:
         status = result.get("status") if isinstance(result, dict) else None
+        if isinstance(result, dict) and result.get("locked"):
+            return result
         # v1.14: progress-aware rescheduling. The legacy contract used a
         # bounded exponential backoff (300s, 600s, 1200s, ... capped at
         # ``max_auto_retries`` waves) which is correct when nothing is
