@@ -282,3 +282,73 @@ InternalServerError: Error code: 503 -
 1. 带孤儿 connection 警告（SQLAlchemy gc cleanup）表明未显式 close 会话，可考虑用 contextmanager 重构 service 层 db 使用。
 2. 13 个未合并分支逐一评估合并 / superseded / drop。
 3. codex 代理端鉴权恢复后重跑 verify 拿 RESULT: PASS。
+
+
+---
+
+## 附录 2026-05-16 18:20 — 全项目代码审 + 优化扫描
+
+### 已修复的真 bug
+1. **`chapter_outline_expander._format_user_prompt`**：`lines.append()` 使用未定义的 `lines`，包裹在 `try: ... except Exception: pass` 中、NameError 被默默吞掉 → **PR-FORESHADOW-LIFECYCLE 生产上一直失效**，章节大纲 prompt 从不包含 active-foreshadows 块。已改为先 `.format()` 到 `base` 字符串、再拼接 af_block。
+
+### 路由生效验收
+- `backend/app/main.py` include_router 调用 = **37**
+- `backend/app/api/*.py` 实体文件 = **37**
+- 每个文件都被 import 且 router 被挂载。**零漏挂**。
+- API 路由总览（按 main.py 顺序）：auth / projects / outlines / chapters / generate / knowledge / foreshadows / settings / neo4j_settings / versions / rewrite / lora / volumes / model_config / quality / filter_words / styles / prompts / pipeline / vector_store / call_logs / ask_user / llm_routing / decompile / generation_runs / writing_engine / version / metrics / debug / variants / run_bus / admin_usage / admin_entities / export / evaluate / cascade / changelog
+
+### 代码质量扫描结果
+| 检测项 | 周边 | 结论 |
+|------|------|------|
+| sync DB session in async handler | `backend/app/api/` | **0 命中**（全 async）|
+| TODO/FIXME/XXX/HACK | `backend/app/api/` | **0 命中** |
+| AsyncSession 未 close （`db = async_session_factory()` 裸赋值）| services/ | 3 处，**但都有 `finally: if owns: await db.close()`**—不是泄漏 |
+| 未定义名称 (NameError) | services/ | 1 处（chapter_outline_expander）—已修 |
+| 未使用 import | services/ | **30+ 处**，低优先纯干净项 |
+| 未使用局部变量 | services/checkers/, style_clustering.py, pacing_checker.py | 5+ 处，部分可能是未完成的指标计算，保留 |
+
+### 连接泄漏警告追查
+在 verify 脚本输出中反复出现的 `SAWarning: garbage collector is trying to clean up non-checked-in connection` 来自 **verify 脚本本身的 seed 代码或 batch_generator 内部路径**，不是 services/ 层的结构问题。已检查的 3 处 `async_session_factory()` 裸贃用都正确包裹于 `try/finally: await db.close()`。
+
+### 30+ 未使用 import 清单（待后续合并到一个 chore commit）
+services/:
+- pipeline_service.py:18 `sqlalchemy.update`
+- prompt_registry.py:25 `model_router.get_model_router` + L721/L912 `log_llm_call`
+- version_control.py:18 `datetime.datetime`,`timezone`
+- hook_manager.py:18 `json`, :27 `Foreshadow`
+- lora_manager.py:26 `os`
+- context_pack.py:38 `typing.Any`
+- foreshadow_manager.py:18 `sqlalchemy.update`
+- foreshadow_lifecycle.py:24 `sqlalchemy.select`
+- qdrant_store.py:30 `generate_embedding`
+- batch_generator.py:22 `typing.Awaitable`
+- feature_extractor.py:16 `math`
+- cascade_planner.py:58 `Chapter`
+- incremental_sync.py:16 `get_model_router`
+- memory.py:17 `dataclasses.field`, :18 `typing.Any`
+- scene_orchestrator.py:31 `math`, :33 `field`
+- model_router.py:19 `dataclasses.field`
+- style_detection.py:14 `Counter`
+- strand_tracker.py:22 `json`, :24 `re`, :26 `Any`
+- agents/style_agent.py:11 `json`
+- checkers/time_reversal.py:12 `re`
+- checkers/pacing_checker.py:13 `Counter`
+- checkers/item_missing.py:18 `re`
+
+### F-string 缺 placeholder（隐藏日志 bug可能）
+- `hook_manager.py:127` 、`context_pack.py:471` f-string 里没有 `{...}` 表达式，表示原本可能是要插入变量但漏了。建议手工复阅。
+
+### 分支卷面现状（本轮交付后）
+- main 顶端：待 commit（本 turn 又增 fix commit）
+- 已删：4 个合并分支（outline-batch2 / phase1-fix / phase2-fix / docs/p7-e2e-validation）
+- 剩 13 个未合并 feat 分支，需用户逐一拍板
+
+### live-LLM verify 现状
+脚本 bug 修复后重跑，进到 `progress: BatchStatus.RUNNING` 后挂在 codex 代理 auth_not_found。该问题仅能在代理端 `141.148.185.96:8317` 重新 codex 登录解决，代码层无可作为（两个 chat endpoint 共享同一 base_url）。
+
+### 未作的优化（需用户拍板）
+1. 合并 30+ 未使用 import 到一个 chore commit。
+2. 逐个复阅 13 个剩余 feat/* 分支，cherry-pick 有价值的 / drop 剩余。
+3. f-string 缺 placeholder 两处重新检查。
+4. 在 backend 容器里报表式跑一轮 mypy / ruff 拿完整静态警告表。
+5. codex 代理端鉴权恢复后重跑 verify 拿 RESULT: PASS。

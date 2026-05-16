@@ -245,19 +245,8 @@ def _format_user_prompt(ctx: dict[str, Any], chapter: Chapter) -> str:
             return json.dumps(o, ensure_ascii=False, indent=2)
         except (TypeError, ValueError):
             return str(o)
-    # PR-FORESHADOW-LIFECYCLE: append active foreshadows directive
-    try:
-        af = ctx.get("active_foreshadows") or []
-        if af:
-            from app.services.foreshadow_lifecycle import format_active_foreshadows_for_prompt
-            af_block = format_active_foreshadows_for_prompt(af)
-            if af_block:
-                lines.append("")
-                lines.append(af_block)
-    except Exception:
-        pass
 
-    return USER_PROMPT_TMPL.format(
+    base = USER_PROMPT_TMPL.format(
         book_outline=_dump(ctx["book_outline"]),
         volume_outline=_dump(ctx["volume_outline"]),
         prev_outline=_dump(ctx["prev_outline"]),
@@ -265,6 +254,21 @@ def _format_user_prompt(ctx: dict[str, Any], chapter: Chapter) -> str:
         stub=_dump(ctx["stub"]),
         chapter_idx=chapter.chapter_idx,
     )
+    # PR-FORESHADOW-LIFECYCLE: append active foreshadows directive.
+    # NOTE: prior implementation appended into an undefined ``lines`` list
+    # whose NameError was silently swallowed by the broad except — so the
+    # foreshadow block never reached the prompt. Fixed: append to the
+    # rendered string instead.
+    try:
+        af = ctx.get("active_foreshadows") or []
+        if af:
+            from app.services.foreshadow_lifecycle import format_active_foreshadows_for_prompt
+            af_block = format_active_foreshadows_for_prompt(af)
+            if af_block:
+                base = base + "\n\n" + af_block
+    except Exception:
+        pass
+    return base
 
 
 def _validate_and_normalize(parsed: Any, chapter: Chapter, stub: dict) -> dict[str, Any]:
