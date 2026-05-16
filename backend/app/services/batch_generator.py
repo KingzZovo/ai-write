@@ -190,6 +190,21 @@ class BatchGenerator:
                         chapter.word_count = len(text)
                         chapter.status = "completed"
                         await db.flush()
+                        # v1.5.x: commit per chapter so a downstream failure
+                        # (post-hook exception, next-chapter generation error,
+                        # process restart) never loses a successfully
+                        # generated chapter. Previously the only db.commit()
+                        # was at the very end of the batch loop, so any
+                        # interruption between chapters silently rolled back
+                        # every persisted row in the batch.
+                        try:
+                            await db.commit()
+                        except Exception:
+                            logger.exception(
+                                "batch_generator: per-chapter commit failed for %s",
+                                cid,
+                            )
+                            await db.rollback()
 
                 job.results[i].status = "completed"
                 job.results[i].word_count = len(text)
