@@ -228,38 +228,49 @@ class OpenAIProvider(BaseProvider):
                        temperature=0.7, max_tokens=8192, **kw) -> GenerationResult:
         # Some API proxies only return content via streaming.
         # Use stream mode and collect chunks for reliability.
-        chunks: list[str] = []
         # v1.6.0 Y2: prompt_cache_key boosts hit-rate on long stable prefixes
-        extra_body = {}
+        extra_body: dict = {}
         task_type = kw.get("task_type", "unknown")
         if _OPENAI_CACHE_ENABLED:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
-        stream = await self.client.chat.completions.create(
-            model=model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens,
-            stream=True, stream_options={"include_usage": True},
-            extra_body=extra_body or None)
-        usage = TokenUsage()
-        cached_tokens = 0
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                chunks.append(chunk.choices[0].delta.content)
-            if hasattr(chunk, 'usage') and chunk.usage:
-                u = chunk.usage
-                usage = TokenUsage(
-                    getattr(u, 'prompt_tokens', 0) or 0,
-                    getattr(u, 'completion_tokens', 0) or 0,
-                    getattr(u, 'total_tokens', 0) or 0)
-                ptd = getattr(u, 'prompt_tokens_details', None)
-                if ptd is not None:
-                    cached_tokens = getattr(ptd, 'cached_tokens', 0) or 0
-        # v1.6.0 Y4: always emit baseline cache_uncached when cache key was sent and we have token info,
-        # so Prometheus has visibility even if upstream proxy returns no cached_tokens field.
-        if _OPENAI_CACHE_ENABLED and usage.input_tokens:
-            uncached = max(usage.input_tokens - cached_tokens, 0)
-            _record_cache_tokens(task_type, self.name, model, read=cached_tokens, uncached=uncached)
-        text = "".join(chunks)
-        return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
+
+        # v1.14: wrap the streaming chat call with bounded retries for
+        # transient transport blips (httpx ConnectError, ReadTimeout,
+        # openai APIConnectionError / RateLimitError / 5xx). A failed
+        # attempt discards its partial chunks and starts fresh next try.
+        from app.services.llm_retry import call_with_retry
+
+        async def _one_attempt() -> GenerationResult:
+            chunks: list[str] = []
+            stream = await self.client.chat.completions.create(
+                model=model, messages=messages,
+                temperature=temperature, max_tokens=max_tokens,
+                stream=True, stream_options={"include_usage": True},
+                extra_body=extra_body or None)
+            usage = TokenUsage()
+            cached_tokens = 0
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    chunks.append(chunk.choices[0].delta.content)
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    u = chunk.usage
+                    usage = TokenUsage(
+                        getattr(u, 'prompt_tokens', 0) or 0,
+                        getattr(u, 'completion_tokens', 0) or 0,
+                        getattr(u, 'total_tokens', 0) or 0)
+                    ptd = getattr(u, 'prompt_tokens_details', None)
+                    if ptd is not None:
+                        cached_tokens = getattr(ptd, 'cached_tokens', 0) or 0
+            if _OPENAI_CACHE_ENABLED and usage.input_tokens:
+                uncached = max(usage.input_tokens - cached_tokens, 0)
+                _record_cache_tokens(task_type, self.name, model,
+                                     read=cached_tokens, uncached=uncached)
+            text = "".join(chunks)
+            return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
+
+        return await call_with_retry(
+            _one_attempt, label=f"openai_chat[{task_type}:{model}]"
+        )
 
     async def generate_stream(self, messages, model="gpt-4o",
                               temperature=0.7, max_tokens=8192, **kw):
@@ -297,9 +308,16 @@ class EmbeddingProvider:
         return self._client
 
     async def embed(self, text: str) -> list[float]:
-        resp = await self.client.embeddings.create(
-            model=self.model, input=text[:8000])
-        return resp.data[0].embedding
+        from app.services.llm_retry import call_with_retry
+
+        async def _one_attempt() -> list[float]:
+            resp = await self.client.embeddings.create(
+                model=self.model, input=text[:8000])
+            return resp.data[0].embedding
+
+        return await call_with_retry(
+            _one_attempt, label=f"openai_embed[{self.model}]"
+        )
 
 
 class NvidiaEmbeddingProvider:
@@ -402,21 +420,37 @@ class NvidiaEmbeddingProvider:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        # PR-NVIDIA-MULTIKEY: pick next key per request
-        active_key = await self._next_key() if hasattr(self, "_next_key") else self.api_key
-        if active_key:
-            headers["Authorization"] = f"Bearer {active_key}"
         url = f"{self.base_url}/embeddings"
-        async with httpx.AsyncClient(timeout=self.timeout) as http:
-            resp = await http.post(url, json=payload, headers=headers)
-        if resp.status_code >= 400:
-            # Surface the server's error body to the caller — test_endpoint
-            # re-wraps this in TestResult.message for UI visibility.
-            snippet = resp.text[:400]
-            raise RuntimeError(
-                f"NVIDIA embeddings HTTP {resp.status_code}: {snippet}"
+
+        # v1.14: wrap a single NVIDIA POST with bounded retries for transient
+        # transport blips. 5xx and 429 raise as ``RuntimeError"... HTTP 5xx/429"``
+        # which the shared llm_retry helper recognizes; 4xx (validation/auth)
+        # raises immediately and short-circuits the retry loop.
+        from app.services.llm_retry import call_with_retry
+
+        async def _one_attempt() -> dict:
+            # PR-NVIDIA-MULTIKEY: pick next key per request (per-attempt:
+            # if key A is rate-limited, the next attempt round-robins to B).
+            active_key = (
+                await self._next_key() if hasattr(self, "_next_key") else self.api_key
             )
-        return resp.json()
+            attempt_headers = dict(headers)
+            if active_key:
+                attempt_headers["Authorization"] = f"Bearer {active_key}"
+            async with httpx.AsyncClient(timeout=self.timeout) as http:
+                resp = await http.post(url, json=payload, headers=attempt_headers)
+            if resp.status_code >= 400:
+                # Surface the server's error body to the caller —
+                # test_endpoint re-wraps this in TestResult.message for UI.
+                snippet = resp.text[:400]
+                raise RuntimeError(
+                    f"NVIDIA embeddings HTTP {resp.status_code}: {snippet}"
+                )
+            return resp.json()
+
+        return await call_with_retry(
+            _one_attempt, label=f"nvidia_embed[{self.model}]"
+        )
 
     async def embed_one(
         self, text: str, *, input_type: str = "query"

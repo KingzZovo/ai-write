@@ -188,14 +188,41 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
 
     try:
         status = result.get("status") if isinstance(result, dict) else None
-        if status == "partial" and int(attempt) < max_auto_retries():
-            next_attempt = int(attempt) + 1
-            delay = compute_retry_delay(next_attempt)
-            celery_app.send_task(
-                "retry_reference_book_missing_branches",
-                args=[book_id, next_attempt],
-                countdown=delay,
-            )
+        # v1.14: progress-aware rescheduling. The legacy contract used a
+        # bounded exponential backoff (300s, 600s, 1200s, ... capped at
+        # ``max_auto_retries`` waves) which is correct when nothing is
+        # happening but counterproductive when the wave is actually
+        # draining slices steadily. New behaviour:
+        #   * If this wave filled >0 cards AND the book is still partial,
+        #     fire the next wave on a SHORT fixed delay (default 30s) and
+        #     RESET ``attempt`` to 1 so the backoff clock starts fresh next
+        #     time we actually stall. This lets a 20k-slice book drain
+        #     batch-by-batch without artificial pauses.
+        #   * If this wave filled 0 cards (true stall) and the book is
+        #     still partial, fall back to the original exponential backoff
+        #     and respect ``max_auto_retries`` so we don't spin forever.
+        if status == "partial":
+            style_filled = int(result.get("style_filled", 0) or 0)
+            beat_filled = int(result.get("beat_filled", 0) or 0)
+            made_progress = (style_filled + beat_filled) > 0
+            if made_progress:
+                # Short fixed delay; reset attempt so backoff restarts only
+                # when progress later stops.
+                import os as _os
+                fast_delay = int(_os.getenv("DECOMPILE_RETRY_FAST_DELAY", "30"))
+                celery_app.send_task(
+                    "retry_reference_book_missing_branches",
+                    args=[book_id, 1],
+                    countdown=fast_delay,
+                )
+            elif int(attempt) < max_auto_retries():
+                next_attempt = int(attempt) + 1
+                delay = compute_retry_delay(next_attempt)
+                celery_app.send_task(
+                    "retry_reference_book_missing_branches",
+                    args=[book_id, next_attempt],
+                    countdown=delay,
+                )
     except Exception:  # pragma: no cover
         import logging
         logging.getLogger(__name__).exception(

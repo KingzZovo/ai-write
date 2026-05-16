@@ -58,6 +58,13 @@ _CONCURRENCY = int(os.getenv("REFERENCE_INGEST_CONCURRENCY", "3"))
 _MAX_AUTO_RETRIES = int(os.getenv("DECOMPILE_MAX_AUTO_RETRIES", "5"))
 _RETRY_INITIAL_DELAY = int(os.getenv("DECOMPILE_RETRY_INITIAL_DELAY", "300"))
 _RETRY_BACKOFF_FACTOR = float(os.getenv("DECOMPILE_RETRY_BACKOFF_FACTOR", "2.0"))
+# v1.14 — cap how many slices one retry wave processes. With 20k-slice
+# books a single wave would take ~28h to drain at semaphore=3, which
+# exceeds celery ``visibility_timeout=7200`` and causes the worker to
+# silently re-enqueue the same task. A 250-slice wave at semaphore=3
+# lasts ~20–40 min, well under the visibility window; the task
+# self-reschedules until drained.
+_RETRY_WAVE_BATCH = int(os.getenv("DECOMPILE_RETRY_WAVE_BATCH", "250"))
 
 
 async def _qdrant_client() -> AsyncQdrantClient:
@@ -535,6 +542,14 @@ async def retry_missing_branches(
                 "beat_filled": 0,
                 "retry": retry_state,
             }
+
+        # v1.14: per-wave batch cap. Without this a 20k-slice book would run
+        # ~28h in one wave (semaphore=3) and breach celery visibility_timeout.
+        total_missing_style_before_batch = len(missing_style_rows)
+        total_missing_beat_before_batch = len(missing_beat_rows)
+        if _RETRY_WAVE_BATCH > 0:
+            missing_style_rows = missing_style_rows[:_RETRY_WAVE_BATCH]
+            missing_beat_rows = missing_beat_rows[:_RETRY_WAVE_BATCH]
 
         client = await _qdrant_client()
         store = QdrantStore(client)
