@@ -16,7 +16,6 @@ Post-generate hooks run AFTER chapter generation:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -25,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_factory
-from app.models.project import Chapter, Foreshadow, Volume
+from app.models.project import Chapter, Volume
 from app.services.foreshadow_manager import ForeshadowManager
 from app.services.model_router import get_model_router_async
 from app.services.entity_dispatch import dispatch_entity_extraction

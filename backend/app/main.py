@@ -21,7 +21,6 @@ from app.middlewares.request_logging import RequestLoggingMiddleware
 from app.db.neo4j import close_neo4j, init_neo4j
 from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
-from app.db.session import engine
 from app.observability.logging import setup_logging
 from app.observability.sentry_init import init_sentry
 
@@ -73,7 +72,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from sqlalchemy import select as sel
         async with engine.connect() as conn:
             from sqlalchemy.ext.asyncio import AsyncSession as _AS
-            from sqlalchemy.orm import Session as _S
             async with _AS(bind=conn) as migration_db:
                 result = await migration_db.execute(sel(LLMEndpoint))
                 migrated = 0

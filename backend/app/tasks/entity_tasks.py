@@ -861,7 +861,7 @@ async def _extract_chapter_async(
     chapter_id: str | None = None,
 ) -> dict[str, Any]:
     """Core async work: marker -> initialize_graph -> extract_and_update."""
-    from app.db.neo4j import init_neo4j, _driver as _existing_driver
+    from app.db.neo4j import init_neo4j
     from app.services.entity_timeline import EntityTimelineService
 
     # Ensure driver is initialised in this celery loop. ``init_neo4j``

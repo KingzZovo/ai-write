@@ -15,7 +15,6 @@ import difflib
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession

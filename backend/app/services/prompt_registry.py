@@ -22,7 +22,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.prompt import PromptAsset
-from app.services.model_router import get_model_router, get_model_router_async, GenerationResult
+from app.services.model_router import get_model_router_async, GenerationResult
 
 # v1.12 L1: tolerant JSON parser fallback. ``json_repair.loads`` will
 # attempt to repair LLM output that is truncated, missing closing braces,
@@ -718,7 +718,6 @@ async def run_text_prompt(
     If `messages` is provided, it is used directly (skip system/user build).
     Otherwise build `[system, user_content]` from the prompt's system + extra_system.
     """
-    from app.services.llm_call_logger import log_llm_call
     from app.services import prompt_cache
 
     # v1.5.0 C3: one cached lookup yields both the RouteSpec and the
@@ -909,7 +908,6 @@ async def stream_text_prompt(
     If `messages` is provided, use directly (ContextPack path). Otherwise
     build messages from the prompt's system + user_content.
     """
-    from app.services.llm_call_logger import log_llm_call
 
     # v1.5.0 C3: cached resolver (collapses the two SELECT prompt_assets).
     route, preferred_tier = await _resolve_route_and_tier_cached(task_type, db)

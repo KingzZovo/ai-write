@@ -19,7 +19,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Awaitable, Callable
+from typing import Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

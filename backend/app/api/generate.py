@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.project import Project, Chapter, Volume, Outline, WorldRule
+from app.models.project import Project, Chapter, Outline, WorldRule
 from app.services.chapter_generator import ChapterGenerator
 from app.services.outline_generator import OutlineGenerator
 

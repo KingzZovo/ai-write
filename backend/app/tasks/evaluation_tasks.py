@@ -41,7 +41,6 @@ async def _run_evaluate_task_async(
     caller: str,
 ) -> dict[str, Any]:
     """Core async work: load chapter, run evaluator, persist result."""
-    from sqlalchemy import select
     from app.db.session import async_session_factory
     from app.models.project import Chapter, EvaluateTask
     from app.services.chapter_evaluator import ChapterEvaluator

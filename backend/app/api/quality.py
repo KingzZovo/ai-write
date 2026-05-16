@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.project import Chapter, Project, Foreshadow
+from app.models.project import Chapter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["quality"])

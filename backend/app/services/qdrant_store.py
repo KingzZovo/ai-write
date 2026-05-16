@@ -27,7 +27,6 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from app.services.feature_extractor import generate_embedding
 
 logger = logging.getLogger(__name__)
 

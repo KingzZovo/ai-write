@@ -653,7 +653,7 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
 ) -> ReferenceBookResponse:
     """Upload a file for style learning. Processing runs in background."""
-    import os, tempfile
+    import os
 
     content = await file.read()
     filename = file.filename or "unknown.txt"

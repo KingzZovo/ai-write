@@ -15,7 +15,7 @@ import json
 import logging
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from neo4j import AsyncDriver

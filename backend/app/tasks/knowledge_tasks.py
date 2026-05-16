@@ -10,7 +10,6 @@ Celery tasks for knowledge base operations.
 
 import asyncio
 import logging
-from uuid import UUID
 
 from app.tasks import celery_app
 
@@ -798,11 +797,10 @@ def crawl_book(self, task_id: str):
 
 
 async def _crawl_book_async(task, task_id: str):
-    from sqlalchemy import select
     from app.db.session import async_session_factory
     from app.models.project import CrawlTask, BookSource, ReferenceBook, TextChunk
     from app.services.book_source_engine import BookSourceEngine
-    from app.services.text_pipeline import _strip_noise, _detect_chapters, slice_chapters_to_blocks, ChapterData
+    from app.services.text_pipeline import _strip_noise, slice_chapters_to_blocks, ChapterData
 
     engine = BookSourceEngine()
 

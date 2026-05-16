@@ -13,7 +13,6 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Chapter
-from app.services.model_router import get_model_router
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.pipeline import PipelineRun, PipelineChapterStatus
+from app.models.pipeline import PipelineRun
 from app.services import pipeline_service
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])

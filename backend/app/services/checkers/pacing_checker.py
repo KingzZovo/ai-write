@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import math
 import re
-from collections import Counter
 
 from app.services.checkers.base import BaseChecker, CheckResult
 from app.services.context_pack import ContextPack

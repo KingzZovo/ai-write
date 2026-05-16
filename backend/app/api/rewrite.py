@@ -160,7 +160,7 @@ async def get_token_stats(
       since_hours: optional time window (e.g. 24, 168). Default = all-time.
     """
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import select, func, text as _text
+    from sqlalchemy import select, func
     from app.models.call_log import LLMCallLog as LlmCallLog
     from app.services.model_router import get_model_router
     from app.services.semantic_cache import SemanticCache

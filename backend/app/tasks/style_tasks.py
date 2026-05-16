@@ -4,7 +4,6 @@ Celery tasks for style-related periodic processing.
 - Periodic DBSCAN clustering on extracted style features
 """
 
-import asyncio
 import logging
 
 from app.tasks import celery_app

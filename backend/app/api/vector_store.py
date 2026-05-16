@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
-from app.api.auth import verify_token
 from app.config import settings
 from app.services.qdrant_store import QdrantStore
 

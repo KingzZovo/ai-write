@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import verify_token
 from app.db.session import get_db
 from app.models.call_log import LLMCallLog
 

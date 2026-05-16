@@ -35,7 +35,6 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -1286,7 +1285,6 @@ class ContextPackBuilder:
 
         # PR-NO-RAW-INJECT (2026-05-05): scene_samples passage injection removed.
         # Vector store still indexed for offline analysis but never injected to prompt.
-        pass
 
     async def _load_style_samples(
         self,

@@ -76,8 +76,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Iterable, Sequence
-from uuid import UUID
+from typing import Any, Sequence
 
 from app.tasks import celery_app
 

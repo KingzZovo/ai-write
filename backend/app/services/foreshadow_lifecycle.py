@@ -21,7 +21,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
