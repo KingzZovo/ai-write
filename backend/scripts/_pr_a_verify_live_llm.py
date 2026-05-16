@@ -101,6 +101,7 @@ async def _main() -> int:
         row = (await db.execute(select(Chapter).where(Chapter.id == ch.id))).scalar_one()
         text = row.content_text or ''
         print(f'chapter row: status={row.status} word_count={row.word_count} content_len={len(text)}')
+        print(f"summary_present={bool(row.summary)} summary_len={len(row.summary or chr(0))}")
         print('--- HEAD ---')
         print(text[:300])
         print('--- /HEAD ---')
