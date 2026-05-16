@@ -1,3 +1,5 @@
+> **⚠️ 2026-05-15 23:31 最新交接**：PR-A-GEN-PIPELINE-FIX 已 push 到 `feat/pr-a-gen-pipeline-fix`（`cd77b5c` + `8583910`）**但尚未合 main**。Bug A/B/C 三连修：batch_generator 签名发送 / chapters 表持久化 / PUT empty-content protect guard。接手看 [docs/HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md](HANDOFF_2026-05-15_pr-a-gen-pipeline-fix.md)。本页以下内容为历史。
+
 > **✅ 2026-05-06 07:20 最新交接**：PR-BOOK-PROFILE-BIND **已完成**（commit `f73a74d`，pushed `origin/main` + `origin/feat/phase2-fix`）。`style_profiles.source_book_id UUID FK → reference_books(id)` 已落地；`get_or_create_book_profile(db, book_id)` 服务已上线，并被 process_uploaded_book / reprocess_reference_book hook 调用；两个抽取脚本统一改 `--book` 驱动。完整执行日志 + P0-LOCK 复盘看 [docs/HANDOFF_2026-05-05_pr-book-profile-bind.md §12-13](HANDOFF_2026-05-05_pr-book-profile-bind.md)。下一步进入赤心仿写验证 Stage B/C/D/E。本页以下内容为历史。
 
 > ⚠️ **2026-05-03 12:25 交接**：上一窗口的 outline-batch2 全部交付 + 未完任务清单看 `docs/HANDOFF_2026-05-03_outline-batch2.md`。

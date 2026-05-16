@@ -1,5 +1,6 @@
 """Text rewrite and batch generation endpoints."""
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -9,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import async_session_factory, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["rewrite"])
@@ -75,7 +76,6 @@ async def rewrite_text(req: RewriteRequest) -> StreamingResponse:
 @router.post("/generate/batch")
 async def batch_generate(
     req: BatchGenerateRequest,
-    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Batch generate multiple chapters with progress via SSE."""
 
@@ -83,23 +83,54 @@ async def batch_generate(
         from app.services.batch_generator import BatchGenerator
         generator = BatchGenerator()
 
+        # The SSE generator must own its own DB session: ``Depends(get_db)``
+        # binds the session lifetime to the endpoint coroutine, which
+        # returns as soon as StreamingResponse is built. Background work
+        # (chapter generation + persistence) then races against the
+        # session being closed and asyncpg connections get GC'd.
         try:
-            yield f"data: {json.dumps({'status': 'starting', 'total': len(req.chapter_configs)})}\n\n"
+            async with async_session_factory() as db:
+                yield f"data: {json.dumps({'status': 'starting', 'total': len(req.chapter_configs)})}\n\n"
 
-            def on_progress(job):
-                pass  # Progress sent via SSE below
+                # Stream progress events as they happen.
+                queue: asyncio.Queue = asyncio.Queue()
+                seen_terminal: set[int] = set()
 
-            job = await generator.generate_batch(
-                project_id=req.project_id,
-                chapter_configs=req.chapter_configs,
-                style_instruction=req.style_instruction,
-            )
+                def on_progress(job) -> None:
+                    for result in job.results:
+                        if result.status in ("completed", "error") and result.chapter_idx not in seen_terminal:
+                            seen_terminal.add(result.chapter_idx)
+                            queue.put_nowait({
+                                "chapter": result.chapter_idx,
+                                "status": result.status,
+                                "word_count": result.word_count,
+                                "error": result.error,
+                            })
 
-            for result in job.results:
-                yield f"data: {json.dumps({'chapter': result.chapter_idx, 'status': result.status, 'word_count': result.word_count, 'error': result.error})}\n\n"
+                task = asyncio.create_task(
+                    generator.generate_batch(
+                        project_id=req.project_id,
+                        chapter_configs=req.chapter_configs,
+                        db=db,
+                        style_instruction=req.style_instruction,
+                        on_progress=on_progress,
+                    )
+                )
 
-            yield f"data: {json.dumps({'status': 'completed', 'total': job.total_chapters, 'completed': job.completed_chapters})}\n\n"
-            yield "data: [DONE]\n\n"
+                while not task.done() or not queue.empty():
+                    try:
+                        ev = await asyncio.wait_for(queue.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+                job = await task
+                while not queue.empty():
+                    ev = queue.get_nowait()
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+                yield f"data: {json.dumps({'status': 'completed', 'total': job.total_chapters, 'completed': job.completed_chapters})}\n\n"
+                yield "data: [DONE]\n\n"
 
         except Exception as e:
             logger.exception("Batch generation failed")
