@@ -259,11 +259,16 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
                 )
             elif int(attempt) < max_auto_retries():
                 next_attempt = int(attempt) + 1
-                delay = compute_retry_delay(next_attempt)
+                # Upstream LLM outages are usually transient/intermittent.
+                # If a wave fills 0 cards, retry soon instead of waiting for
+                # long exponential backoff; the single-flight lock prevents
+                # duplicate same-book waves from piling up.
+                import os as _os
+                stall_delay = int(_os.getenv("DECOMPILE_RETRY_STALL_DELAY", "60"))
                 celery_app.send_task(
                     "retry_reference_book_missing_branches",
                     args=[book_id, next_attempt],
-                    countdown=delay,
+                    countdown=stall_delay,
                 )
     except Exception:  # pragma: no cover
         import logging

@@ -19,6 +19,7 @@
 - `DECOMPILE_RETRY_WAVE_BATCH` 默认从 `250` 降到 `50`，降低单波耗时。
 - `REFERENCE_INGEST_CONCURRENCY` 控制 retry wave 内部 LLM/Qdrant 分支并发；2026-05-17 09:30 从 `3` 小步调到 `4` 做吞吐试验；2026-05-17 12:00 巡检确认 4 并发下最近 4 波稳定完成后，把 `.env` 预调到 `5`。Celery worker `--concurrency=4` 暂不调整；为避免中断活跃 retry wave，不因单次调参强制重启 worker，等安全维护窗口或自然重启后生效。
 - Celery retry task 使用 Redis key `decompile_retry:lock:{book_id}` 做同书 single-flight；默认 TTL `DECOMPILE_RETRY_LOCK_TTL=10800` 秒。
+- 0 增量 retry wave 默认按 `DECOMPILE_RETRY_STALL_DELAY=60` 秒短延迟继续重试，用于应对上游 LLM 间歇性 429/503/auth 故障；single-flight lock 负责防止同书重复 wave 堆积。
 - 锁命中任务直接返回 `locked=true`，不再继续处理，也不自调度下一波。
 - `retry_missing_branches` 不再跨整波持有 snapshot AsyncSession；最终 `_refresh_book_status` 使用新 session，避免 idle timeout 后无法自调度。
 
