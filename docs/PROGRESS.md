@@ -1,3 +1,5 @@
+> **⚙️ 2026-05-17 09:30 动态提速**：按 King 指示开始小步上调《赤心巡天》补全吞吐：`REFERENCE_INGEST_CONCURRENCY` 从 `3` 调到 `4`（Celery worker concurrency 暂不动，仍依赖同书 single-flight）。后续每小时巡检观察 wave 耗时、`style_filled/beat_filled`、APIError / cooldown / auth 失败率；若失败率没有大幅增加则继续小幅上调（优先 4→5，再评估 `DECOMPILE_RETRY_WAVE_BATCH` 50→75），若失败显著增加或 wave 接近/超过 visibility window 则回退。
+
 > **⚠️ 2026-05-17 04:00 巡检修复**：`retry_reference_book_missing_branches` 在 single-flight 后又因长波持有 snapshot AsyncSession 触发 Postgres idle timeout（`connection is closed`），导致队列为空、补全停止；已改为波前关闭 snapshot session、波尾 fresh session 对账并补发 retry。详见 [docs/HANDOFF_2026-05-17_retry-session-reopen.md](HANDOFF_2026-05-17_retry-session-reopen.md) 与 RUNBOOK §0.1。
 
 > **⚠️ 2026-05-17 01:00 巡检修复**：`retry_reference_book_missing_branches` 出现同书 4 个 redelivered 并发任务；已加 Redis single-flight lock（`decompile_retry:lock:{book_id}`）并把默认 `DECOMPILE_RETRY_WAVE_BATCH` 从 250 降到 50。详见 [docs/HANDOFF_2026-05-17_retry-singleflight.md](HANDOFF_2026-05-17_retry-singleflight.md) 与 RUNBOOK §0.1。

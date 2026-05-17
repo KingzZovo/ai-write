@@ -40,6 +40,8 @@ docker logs --tail 4000 ai-write-celery-worker-1 2>&1 \
 
 继续按小时巡检进度，不要因 codex `model_cooldown` / `auth_not_found` 调整 provider 配置。
 
+2026-05-17 09:30 起按 King 指示做动态吞吐调优：`REFERENCE_INGEST_CONCURRENCY=4` 是第一档。每小时观察最近 wave 耗时、`style_filled/beat_filled` 和 APIError/cooldown/auth 失败率；若失败率没有大幅增加且自调度稳定，则下一档优先调到 `5`，再考虑 `DECOMPILE_RETRY_WAVE_BATCH=75`。若失败率明显升高、wave 接近 visibility window、出现 duplicate/redelivery/lock 挤压或进度停滞，回退到上一稳定档。
+
 ## 6. 关键 ID / endpoint / schema 速查
 
 - Redis queue: `celery`

@@ -17,9 +17,15 @@
 
 当前机制：
 - `DECOMPILE_RETRY_WAVE_BATCH` 默认从 `250` 降到 `50`，降低单波耗时。
+- `REFERENCE_INGEST_CONCURRENCY` 控制 retry wave 内部 LLM/Qdrant 分支并发；2026-05-17 09:30 从 `3` 小步调到 `4` 做吞吐试验，Celery worker `--concurrency=4` 暂不调整。
 - Celery retry task 使用 Redis key `decompile_retry:lock:{book_id}` 做同书 single-flight；默认 TTL `DECOMPILE_RETRY_LOCK_TTL=10800` 秒。
 - 锁命中任务直接返回 `locked=true`，不再继续处理，也不自调度下一波。
 - `retry_missing_branches` 不再跨整波持有 snapshot AsyncSession；最终 `_refresh_book_status` 使用新 session，避免 idle timeout 后无法自调度。
+
+动态调参规则：
+- 每小时巡检记录当前 style/beat 计数、最近 2–3 个 retry wave 的耗时、`style_filled/beat_filled`、以及 worker 日志中的 APIError / model_cooldown / auth 失败情况。
+- 如果并发 4 下失败率没有大幅增加、wave 仍稳定完成并继续自调度，可小步上调到 `REFERENCE_INGEST_CONCURRENCY=5`；再稳定后才考虑把 `DECOMPILE_RETRY_WAVE_BATCH` 从 `50` 调到 `75`。
+- 如果失败率明显上升、单波耗时接近 Redis visibility window、出现 duplicate/redelivery/lock 挤压、或进度停滞，则立即回退到上一个稳定值，并汇报原因。
 
 验证命令：
 ```bash
