@@ -62,7 +62,32 @@ interface OutlineRes {
   content_json: Record<string, unknown>
   version: number
   is_confirmed: number
-}// ----------------------------------------------------------------
+}
+
+interface OutlineFromReferenceTaskRes {
+  task_id: string
+  status: string
+  char_count?: number
+  result_text?: string
+  polished_text?: string
+  error_message?: string | null
+  reference_book?: Record<string, unknown> | null
+  sketch_line_count?: number | null
+}
+
+function getReferenceBookId(project: Project | null): string | null {
+  const settings = project?.settings_json
+  const styleReference = settings?.style_reference
+  if (!styleReference || typeof styleReference !== 'object') return null
+  const id = (styleReference as Record<string, unknown>).reference_book_id
+  return typeof id === 'string' && id.trim() ? id.trim() : null
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// ----------------------------------------------------------------
 // CollapsibleSection (unchanged from original)
 // ----------------------------------------------------------------
 
@@ -312,6 +337,74 @@ export default function DesktopWorkspace() {
         resetStageStates()
       } else {
         setActiveView('outline')
+      }
+
+      const referenceBookId = level === 'book' ? getReferenceBookId(currentProject) : null
+      if (level === 'book' && currentProject && referenceBookId) {
+        ;(async () => {
+          try {
+            setWizardProgress('已绑定参考书，正在用反编译节奏卡生成全书大纲...')
+            const start = await apiFetch<{ task_id: string; status: string }>(
+              '/api/outlines/from-reference/start',
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  project_id: currentProject.id,
+                  reference_book_id: referenceBookId,
+                  intent: creativeInput || currentProject.premise || currentProject.title,
+                  style_hint: getSelectedStyleId(currentProject.id) || '',
+                  target_volumes: 5,
+                  target_chapters_per_volume: 30,
+                }),
+              }
+            )
+
+            for (let i = 0; i < 720; i++) {
+              await sleep(5000)
+              const task = await apiFetch<OutlineFromReferenceTaskRes>(
+                `/api/outlines/from-reference/tasks/${start.task_id}`
+              )
+              const text = task.result_text || task.polished_text || ''
+              if (text) setOutlinePreview(text)
+              setWizardProgress(
+                `参考书大纲生成中... ${task.char_count || text.length || 0} 字${
+                  task.sketch_line_count ? `，已读取 ${task.sketch_line_count} 条节奏线` : ''
+                }`
+              )
+
+              if (task.status === 'completed') {
+                const outlines = await apiFetch<OutlineRes[]>(
+                  `/api/projects/${currentProject.id}/outlines?level=book`
+                )
+                const latest = [...outlines]
+                  .filter((o) => o.level === 'book')
+                  .sort((a, b) => (a.id < b.id ? 1 : -1))[0]
+                if (latest) {
+                  pendingBookOutlineIdRef.current = latest.id
+                  setBookOutlineId(latest.id)
+                  const raw = String(latest.content_json?.raw_text || text || '')
+                  setOutlinePreview(raw)
+                  if (Array.isArray(latest.content_json?.volume_plan)) {
+                    setVolumePlan(latest.content_json.volume_plan as typeof volumePlan)
+                    setVolumeCountInput(String(latest.content_json.volume_plan.length))
+                  }
+                }
+                setWizardProgress('参考书大纲已生成，请审阅后确认。')
+                return
+              }
+              if (task.status === 'failed') {
+                throw new Error(task.error_message || '参考书大纲生成失败')
+              }
+            }
+            throw new Error('参考书大纲生成超时')
+          } catch (err) {
+            console.error('Failed to generate outline from reference:', err)
+            setWizardProgress('参考书大纲生成失败：' + (err instanceof Error ? err.message : String(err)))
+          } finally {
+            setIsGenerating(false)
+          }
+        })()
+        return
       }
 
       apiSSE(

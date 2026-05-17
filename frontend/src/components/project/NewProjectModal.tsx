@@ -27,8 +27,15 @@ const MODULES = [
 
 const DEFAULT_MODULES = ['show_not_tell', 'micro_tension', 'info_weaving']
 
-interface StyleInfo { id: string; name: string; rules_json?: any[]; is_active?: boolean }
+interface StyleInfo { id: string; name: string; rules_json?: Record<string, unknown>[]; is_active?: boolean }
 interface StructureInfo { book_id: string; book_title: string; arc_pattern?: string; structure_summary?: string }
+interface ReferenceBookInfo {
+  id: string
+  title: string
+  author?: string | null
+  status: string
+  metadata_json?: Record<string, unknown>
+}
 
 export function NewProjectModal({
   onClose,
@@ -42,9 +49,11 @@ export function NewProjectModal({
   const [genreCode, setGenreCode] = useState<string>(GENRES[0].code)
   const [premise, setPremise] = useState('')
   const [styleId, setStyleId] = useState<string>('')
+  const [referenceBookId, setReferenceBookId] = useState<string>('')
   const [structureBookId, setStructureBookId] = useState<string>('')
   const [activeModules, setActiveModules] = useState<string[]>([...DEFAULT_MODULES])
   const [styles, setStyles] = useState<StyleInfo[]>([])
+  const [referenceBooks, setReferenceBooks] = useState<ReferenceBookInfo[]>([])
   const [structures, setStructures] = useState<StructureInfo[]>([])
   const [busy, setBusy] = useState(false)
 
@@ -52,10 +61,12 @@ export function NewProjectModal({
     let cancelled = false
     Promise.all([
       apiFetch<StyleInfo[]>('/api/styles').catch(() => [] as StyleInfo[]),
+      apiFetch<ReferenceBookInfo[]>('/api/knowledge/books').catch(() => [] as ReferenceBookInfo[]),
       apiFetch<StructureInfo[]>('/api/styles/structures').catch(() => [] as StructureInfo[]),
-    ]).then(([s, st]) => {
+    ]).then(([s, books, st]) => {
       if (cancelled) return
       setStyles(s)
+      setReferenceBooks(books.filter((b) => ['ready', 'partial'].includes(b.status)))
       setStructures(st)
       const active = s.find(x => x.is_active)
       if (active) setStyleId(active.id)
@@ -73,7 +84,7 @@ export function NewProjectModal({
     try {
       const settings_json: Record<string, unknown> = {
         writing_guide: { active_modules: activeModules, genre_code: genreCode || null },
-        style_reference: { profile_id: styleId || null, reference_book_id: null },
+        style_reference: { profile_id: styleId || null, reference_book_id: referenceBookId || null },
         style_profile_id: styleId || null,
         plot_structure: { structure_book_id: structureBookId || null },
       }
@@ -154,6 +165,29 @@ export function NewProjectModal({
             </select>
             {styles.length === 0 && (
               <p className="text-[11px] text-gray-400 mt-1">暂无写法档案，可在「写法管理」页面创建</p>
+            )}
+          </div>
+          {/* 参考书仿写 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">参考书仿写</label>
+            <select
+              value={referenceBookId}
+              onChange={(e) => setReferenceBookId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+              disabled={referenceBooks.length === 0}
+            >
+              <option value="">不绑定参考书</option>
+              {referenceBooks.map(b => (
+                <option key={b.id} value={b.id}>
+                  {b.title}{b.author ? ` — ${b.author}` : ''}{b.status !== 'ready' ? ` (${b.status})` : ''}
+                </option>
+              ))}
+            </select>
+            {referenceBooks.length === 0 && (
+              <p className="text-[11px] text-gray-400 mt-1">暂无可用参考书，可先在「知识库」导入并反编译</p>
+            )}
+            {referenceBookId && (
+              <p className="text-[11px] text-blue-600 mt-1">创建后首轮全书大纲会优先使用参考书反编译的节奏卡与风格上下文</p>
             )}
           </div>
           {/* 剧情架构 */}
