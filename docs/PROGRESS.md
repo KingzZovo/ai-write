@@ -1,3 +1,5 @@
+> **⚙️ 2026-05-17 17:05 动态提速**：runtime=5 重建后连续多个 retry wave 正常完成并保持 `style_filled=50`、`beat_filled=50`，wave 耗时从约 20.7min 降至 13.8–22.8min，未见新的 redelivery / connection closed；按 King 规则将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `5` 上调到 `6`，并安排当前活跃 wave 完成后安全重建 Celery worker。
+
 > **⚙️ 2026-05-17 15:25 retry 策略调整**：按 King 纠偏，LLM 上游 429/503/auth 短暂故障不再按长指数退避处理；`retry_reference_book_missing_branches` 在 0 增量 wave 后改为 `DECOMPILE_RETRY_STALL_DELAY` 短延迟（默认 60s）继续重试，仍保留同书 Redis single-flight lock，避免重复 wave 堆积。
 
 > **✅ 2026-05-17 15:00 创建链路纠偏**：确认项目链路应选择并调用“写作风格 StyleProfile + 剧情架构 plot_structure”，而不是在新建项目直接选择参考书，也不是把全书大纲路由改到 `/api/outlines/from-reference/start`。已撤回错误的直接参考书入口，并补齐 `/api/generate/outline` / `/api/generate/async` 及异步 worker 对 `settings_json.style_reference.profile_id` 与 `settings_json.plot_structure.structure_book_id` 的后端兜底解析，剧情架构优先使用已抽取的 `metadata_json.plot_structure`；创建项目只保存 `style_reference.profile_id`、`style_profile_id`、`plot_structure.structure_book_id`。
