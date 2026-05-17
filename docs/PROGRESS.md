@@ -1,3 +1,5 @@
+> **⚙️ 2026-05-17 22:40 动态提速**：runtime=8 已生效超过 1 小时，期间队列无堆积、未见 redelivery / connection closed，`赤心巡天` 进度继续上涨；19:32→22:38 beat 从 `11079` 到 `11779`，约 `+700`，折算约 `220+/h`，较先前 runtime=5/6 观察值有提升。按 King 指令将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `8` 上调到 `10`，并安排当前活跃 wave 完成后安全重建 Celery worker。
+
 > **⚙️ 2026-05-17 19:35 动态提速**：runtime=6 生效后，除一波受 codex/auth 上游影响只有部分增量外，后续连续多波恢复 `50/50`，未见 redelivery / connection closed / 队列堆积；按 King 要求将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `6` 直接上调到 `8`，并安排当前活跃 wave 完成后安全重建 Celery worker。
 
 > **⚙️ 2026-05-17 17:05 动态提速**：runtime=5 重建后连续多个 retry wave 正常完成并保持 `style_filled=50`、`beat_filled=50`，wave 耗时从约 20.7min 降至 13.8–22.8min，未见新的 redelivery / connection closed；按 King 规则将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `5` 上调到 `6`，并安排当前活跃 wave 完成后安全重建 Celery worker。
