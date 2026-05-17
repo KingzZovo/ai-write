@@ -1,3 +1,5 @@
+> **✅ 2026-05-17 15:00 创建链路纠偏**：确认项目链路应选择并调用“写作风格 StyleProfile + 剧情架构 plot_structure”，而不是在新建项目直接选择参考书，也不是把全书大纲路由改到 `/api/outlines/from-reference/start`。已撤回错误的直接参考书入口，并补齐 `/api/generate/outline` / `/api/generate/async` 及异步 worker 对 `settings_json.style_reference.profile_id` 与 `settings_json.plot_structure.structure_book_id` 的后端兜底解析，剧情架构优先使用已抽取的 `metadata_json.plot_structure`；创建项目只保存 `style_reference.profile_id`、`style_profile_id`、`plot_structure.structure_book_id`。
+
 > **⚙️ 2026-05-17 12:00 动态提速**：小时巡检显示并发 `4` 下最近 4 个 retry wave 均稳定完成（约 1403–2002s/波），每波 `style_filled=50`、`beat_filled=50`，未见 visibility/redelivery/duplicate/lock 挤压；按规则把 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 小步上调到 `5`。注意：运行中的 Celery worker 当前仍显示 env=4；为避免打断当前活跃 retry wave，本次不强制重启，等下次安全维护窗口/自然重启后生效；下一小时继续观察失败率与 wave 耗时。
 
 > **⚙️ 2026-05-17 09:30 动态提速**：按 King 指示开始小步上调《赤心巡天》补全吞吐：`REFERENCE_INGEST_CONCURRENCY` 从 `3` 调到 `4`（Celery worker concurrency 暂不动，仍依赖同书 single-flight）。后续每小时巡检观察 wave 耗时、`style_filled/beat_filled`、APIError / cooldown / auth 失败率；若失败率没有大幅增加则继续小幅上调（优先 4→5，再评估 `DECOMPILE_RETRY_WAVE_BATCH` 50→75），若失败显著增加或 wave 接近/超过 visibility window 则回退。

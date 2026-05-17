@@ -116,6 +116,23 @@ class GenerateOutlineRequest(BaseModel):
     staged_stream: bool | None = None
 
 
+def _settings_style_profile_id(settings: dict) -> str | None:
+    sid = settings.get("style_profile_id")
+    if not sid:
+        style_ref = settings.get("style_reference") or {}
+        if isinstance(style_ref, dict):
+            sid = style_ref.get("profile_id")
+    return sid if isinstance(sid, str) and sid.strip() else None
+
+
+def _settings_structure_book_id(settings: dict) -> str | None:
+    plot_structure = settings.get("plot_structure") or {}
+    if not isinstance(plot_structure, dict):
+        return None
+    sid = plot_structure.get("structure_book_id")
+    return sid if isinstance(sid, str) and sid.strip() else None
+
+
 SSE_HEADERS = {
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
@@ -777,6 +794,14 @@ async def generate_outline(
     # Pre-fetch all DB data before creating the generator (same pattern as generate_chapter)
     book_outline: dict = {}
     volume_outline: dict = {}
+    project_settings: dict = {}
+    if req.project_id:
+        try:
+            project = await db.get(Project, req.project_id)
+            if project and isinstance(project.settings_json, dict):
+                project_settings = project.settings_json
+        except Exception as _proj_settings_err:
+            logger.warning("Outline project settings load failed: %s", _proj_settings_err)
 
     if req.level == "volume":
         if req.parent_outline_id:
@@ -904,8 +929,10 @@ async def generate_outline(
             logger.warning("PR-OL10 compute_scale failed: %s", _scale_err)
             project_scale = None
 
-    # Resolve style: explicit style_id > auto-resolve
+    # Resolve style: explicit style_id > project settings > auto-resolve
     style_instruction = ""
+    if not req.style_id and project_settings:
+        req.style_id = _settings_style_profile_id(project_settings)
     if req.style_id:
         try:
             from app.models.project import StyleProfile
@@ -921,6 +948,21 @@ async def generate_outline(
             style_instruction = await resolve_style_prompt(db, req.project_id) or ""
         except Exception:
             pass
+
+    # Resolve extracted plot structure from project settings. Do not route project
+    # creation or normal outline generation directly through a reference book.
+    structure_instruction = ""
+    structure_book_id = _settings_structure_book_id(project_settings) if project_settings else None
+    if structure_book_id:
+        try:
+            from app.models.project import ReferenceBook
+            from app.services.plot_structure import compile_structure_prompt
+            structure_book = await db.get(ReferenceBook, structure_book_id)
+            plot_structure = (structure_book.metadata_json or {}).get("plot_structure") if structure_book else None
+            if isinstance(plot_structure, dict) and "error" not in plot_structure:
+                structure_instruction = compile_structure_prompt(plot_structure) or ""
+        except Exception as _structure_err:
+            logger.warning("Outline plot structure resolve failed: %s", _structure_err)
 
     # Build Anti-AI instruction from filter words
     anti_ai_instruction = ""
@@ -939,6 +981,8 @@ async def generate_outline(
     enhanced_input = req.user_input
     if style_instruction:
         enhanced_input = f"{style_instruction}\n\n---\n\n用户创意：{req.user_input}"
+    if structure_instruction:
+        enhanced_input = f"{enhanced_input}\n\n{structure_instruction}"
     if anti_ai_instruction:
         enhanced_input += anti_ai_instruction
 
@@ -1347,6 +1391,10 @@ async def start_async_generation(
 ) -> dict:
     """Start a background generation task. Returns task_id for polling."""
     from app.models.generation_task import GenerationTask
+    project = await db.get(Project, req.project_id)
+    project_settings = project.settings_json if project and isinstance(project.settings_json, dict) else {}
+    style_id = req.style_id or _settings_style_profile_id(project_settings)
+    structure_book_id = req.structure_book_id or _settings_structure_book_id(project_settings)
 
     task = GenerationTask(
         project_id=req.project_id,
@@ -1354,8 +1402,8 @@ async def start_async_generation(
         status="pending",
         params_json={
             "user_input": req.user_input,
-            "style_id": req.style_id,
-            "structure_book_id": req.structure_book_id,
+            "style_id": style_id,
+            "structure_book_id": structure_book_id,
             "enable_polish": req.enable_polish,
             "chapter_id": req.chapter_id,
             "volume_idx": req.volume_idx,

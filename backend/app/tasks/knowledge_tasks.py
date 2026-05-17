@@ -125,11 +125,34 @@ async def _run_async_generation_impl(task_id: str):
         params = task.params_json or {}
         user_input = params.get("user_input", "")
         project_id = str(task.project_id)
+        project_settings = {}
+        try:
+            from app.models.project import Project as _Project
+            project = await db.get(_Project, project_id)
+            if project and isinstance(project.settings_json, dict):
+                project_settings = project.settings_json
+        except Exception as _settings_err:
+            logger.warning("Async generation project settings load failed: %s", _settings_err)
+
+        def _settings_style_profile_id(settings: dict) -> str | None:
+            sid = settings.get("style_profile_id")
+            if not sid:
+                style_ref = settings.get("style_reference") or {}
+                if isinstance(style_ref, dict):
+                    sid = style_ref.get("profile_id")
+            return sid if isinstance(sid, str) and sid.strip() else None
+
+        def _settings_structure_book_id(settings: dict) -> str | None:
+            plot_structure = settings.get("plot_structure") or {}
+            if not isinstance(plot_structure, dict):
+                return None
+            sid = plot_structure.get("structure_book_id")
+            return sid if isinstance(sid, str) and sid.strip() else None
 
         try:
-            # Resolve style
+            # Resolve style: explicit task param > project settings > style runtime fallback.
             style_text = ""
-            style_id = params.get("style_id")
+            style_id = params.get("style_id") or _settings_style_profile_id(project_settings)
             if style_id:
                 from app.models.project import StyleProfile
                 from app.services.style_compiler import compile_style
@@ -140,25 +163,35 @@ async def _run_async_generation_impl(task_id: str):
                 from app.services.style_runtime import resolve_style_prompt
                 style_text = await resolve_style_prompt(db, project_id) or ""
 
-            # Optional: extract plot structure from reference book
+            # Optional: compile selected extracted plot structure. Prefer the stored
+            # ReferenceBook.metadata_json.plot_structure produced by decompile; only
+            # fall back to re-extracting chunks when that profile is missing.
             structure_text = ""
-            structure_book_id = params.get("structure_book_id")
+            structure_book_id = params.get("structure_book_id") or _settings_structure_book_id(project_settings)
             if structure_book_id:
                 try:
-                    from app.models.project import TextChunk as _TC
+                    from app.models.project import ReferenceBook as _ReferenceBook, TextChunk as _TC
                     from app.services.plot_structure import extract_plot_structure, compile_structure_prompt
                     from sqlalchemy import select as _sel
-                    tc_result = await db.execute(
-                        _sel(_TC).where(_TC.book_id == structure_book_id).order_by(_TC.sequence_id)
-                    )
-                    tc_chunks = list(tc_result.scalars().all())
-                    if tc_chunks:
-                        n = len(tc_chunks)
-                        tc_samples = [tc_chunks[i].content for i in range(0, n, max(1, n // 6))][:6]
-                        ps = await extract_plot_structure("\n\n".join(tc_samples))
+                    ps = None
+                    ref_book = await db.get(_ReferenceBook, structure_book_id)
+                    if ref_book and isinstance(ref_book.metadata_json, dict):
+                        stored = ref_book.metadata_json.get("plot_structure")
+                        if isinstance(stored, dict) and "error" not in stored:
+                            ps = stored
+                    if ps is None:
+                        tc_result = await db.execute(
+                            _sel(_TC).where(_TC.book_id == structure_book_id).order_by(_TC.sequence_id)
+                        )
+                        tc_chunks = list(tc_result.scalars().all())
+                        if tc_chunks:
+                            n = len(tc_chunks)
+                            tc_samples = [tc_chunks[i].content for i in range(0, n, max(1, n // 6))][:6]
+                            ps = await extract_plot_structure("\n\n".join(tc_samples))
+                    if isinstance(ps, dict) and "error" not in ps:
                         structure_text = compile_structure_prompt(ps)
                 except Exception as e:
-                    logger.warning("Plot structure extraction failed: %s", e)
+                    logger.warning("Plot structure compile failed: %s", e)
 
             # Build enhanced input
             enhanced = user_input
