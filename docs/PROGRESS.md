@@ -1,3 +1,4 @@
+> **⚙️ 2026-05-18 15:05 动态提速**：`赤心巡天` style 已补齐，当前只剩 beat 分支；按 King 指令将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `10` 上调到 `15`。保留 Celery 同书 single-flight，等待当前活跃 wave 完成后安全重建 worker，避免中断正在推进的补齐任务。
 > **⚙️ 2026-05-18 11:45 retry 保活修复**：按 King 要求，`retry_reference_book_missing_branches` 在 0 增量 wave 连续失败时不再到 `max_auto_retries` 后停止；改为短延迟继续重试，并将 attempt 作为观测计数循环回 1。single-flight lock 仍防止同书重复 wave 堆积，确保上游 429/503/auth 故障期间也持续探测直到 `ready`。
 > **⚙️ 2026-05-17 22:40 动态提速**：runtime=8 已生效超过 1 小时，期间队列无堆积、未见 redelivery / connection closed，`赤心巡天` 进度继续上涨；19:32→22:38 beat 从 `11079` 到 `11779`，约 `+700`，折算约 `220+/h`，较先前 runtime=5/6 观察值有提升。按 King 指令将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `8` 上调到 `10`，并安排当前活跃 wave 完成后安全重建 Celery worker。
 
