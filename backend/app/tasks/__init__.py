@@ -241,8 +241,11 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
         #     time we actually stall. This lets a 20k-slice book drain
         #     batch-by-batch without artificial pauses.
         #   * If this wave filled 0 cards (true stall) and the book is
-        #     still partial, fall back to the original exponential backoff
-        #     and respect ``max_auto_retries`` so we don't spin forever.
+        #     still partial, retry on a short fixed delay as well. The
+        #     ``attempt`` counter is kept only as observable metadata and is
+        #     wrapped back to 1 after ``max_auto_retries`` instead of stopping:
+        #     upstream LLM outages can last for hours, but the missing-card
+        #     backfill must keep probing until the book reaches ready.
         if status == "partial":
             style_filled = int(result.get("style_filled", 0) or 0)
             beat_filled = int(result.get("beat_filled", 0) or 0)
@@ -257,11 +260,12 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
                     args=[book_id, 1],
                     countdown=fast_delay,
                 )
-            elif int(attempt) < max_auto_retries():
-                next_attempt = int(attempt) + 1
+            else:
+                max_attempts = max(1, int(max_auto_retries() or 1))
+                next_attempt = int(attempt) + 1 if int(attempt) < max_attempts else 1
                 # Upstream LLM outages are usually transient/intermittent.
-                # If a wave fills 0 cards, retry soon instead of waiting for
-                # long exponential backoff; the single-flight lock prevents
+                # If a wave fills 0 cards, retry soon and do not stop at the
+                # historical attempt cap; the single-flight lock prevents
                 # duplicate same-book waves from piling up.
                 import os as _os
                 stall_delay = int(_os.getenv("DECOMPILE_RETRY_STALL_DELAY", "60"))
