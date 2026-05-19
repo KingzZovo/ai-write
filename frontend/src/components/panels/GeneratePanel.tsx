@@ -14,11 +14,22 @@ interface StyleInfo {
   tone_keywords: string[]
 }
 
+interface ProjectSettingsResponse {
+  settings_json?: Record<string, unknown> | null
+}
+
+interface StructureInfo {
+  book_id: string
+  book_title: string
+  arc_pattern?: string | null
+  structure_summary?: string | null
+}
+
 // Exported so DesktopWorkspace can read the selected values
 let _selectedStyleId: string | null = null
 let _selectedStructureBookId: string | null = null
-export function getSelectedStyleId(_projectId?: string) { return _selectedStyleId }
-export function getSelectedStructureBookId(_projectId?: string) { return _selectedStructureBookId }
+export function getSelectedStyleId() { return _selectedStyleId }
+export function getSelectedStructureBookId() { return _selectedStructureBookId }
 
 // PR-FIX-PROJSET-SEL (2026-05-05): StyleSelector now persists selected style_profile_id
 // to projects.settings_json so refresh / reopen restores the binding.
@@ -31,12 +42,11 @@ function StyleSelector({ projectId }: { projectId?: string | null }) {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     Promise.all([
       apiFetch<StyleInfo[]>('/api/styles').catch(() => [] as StyleInfo[]),
       projectId
-        ? apiFetch<{ settings_json?: Record<string, unknown> | null }>(`/api/projects/${projectId}`).catch(() => ({} as any))
-        : Promise.resolve({} as any),
+        ? apiFetch<ProjectSettingsResponse>(`/api/projects/${projectId}`).catch(() => ({} as ProjectSettingsResponse))
+        : Promise.resolve({} as ProjectSettingsResponse),
     ]).then(([data, proj]) => {
       if (cancelled) return
       setStyles(data)
@@ -184,7 +194,9 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
     })
   }, [])
 
-  useEffect(() => { refreshOutlineCounts() }, [refreshOutlineCounts, isGenerating])
+  useEffect(() => {
+    queueMicrotask(() => { void refreshOutlineCounts() })
+  }, [refreshOutlineCounts, isGenerating])
 
   const enabledEndpoints = endpoints.filter(e => e.enabled)
   const hasEndpoints = enabledEndpoints.length > 0
@@ -267,19 +279,19 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
         <h3 className="text-sm font-semibold text-gray-900 mb-3">内容生成</h3>
         <div className="space-y-2">
           <OutlineButtonRow
-            level="book" label="全书大纲" colorClass="bg-purple-600 hover:bg-purple-700"
+            label="全书大纲" colorClass="bg-purple-600 hover:bg-purple-700"
             count={outlineCounts.book} disabled={isGenerating || !hasEndpoints}
             onView={() => onViewOutline?.("book")}
             onGenerate={() => outlineCounts.book > 0 ? setConfirmLevel("book") : onGenerateOutline?.("book")}
           />
           <OutlineButtonRow
-            level="volume" label="分卷大纲" colorClass="bg-indigo-600 hover:bg-indigo-700"
+            label="分卷大纲" colorClass="bg-indigo-600 hover:bg-indigo-700"
             count={outlineCounts.volume} disabled={isGenerating || !hasEndpoints}
             onView={() => onViewOutline?.("volume")}
             onGenerate={() => outlineCounts.volume > 0 ? setConfirmLevel("volume") : onGenerateOutline?.("volume")}
           />
           <OutlineButtonRow
-            level="chapter" label="章节大纲" colorClass="bg-blue-600 hover:bg-blue-700"
+            label="章节大纲" colorClass="bg-blue-600 hover:bg-blue-700"
             count={outlineCounts.chapter} disabled={isGenerating || !hasEndpoints}
             onView={() => onViewOutline?.("chapter")}
             onGenerate={() => outlineCounts.chapter > 0 ? setConfirmLevel("chapter") : onGenerateOutline?.("chapter")}
@@ -316,7 +328,7 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
 // PR-FIX-PROJSET-SEL (2026-05-05): StructureSelector now persists selected structure_book_id
 // to projects.settings_json.plot_structure so refresh restores the binding.
 function StructureSelector({ projectId }: { projectId?: string | null }) {
-  const [structures, setStructures] = useState<any[]>([])
+  const [structures, setStructures] = useState<StructureInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const projectSettingsRef = React.useRef<Record<string, unknown> | null>(null)
   const loadedRef = React.useRef(false)
@@ -324,10 +336,10 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      apiFetch<any[]>('/api/styles/structures').catch(() => [] as any[]),
+      apiFetch<StructureInfo[]>('/api/styles/structures').catch(() => [] as StructureInfo[]),
       projectId
-        ? apiFetch<{ settings_json?: Record<string, unknown> | null }>(`/api/projects/${projectId}`).catch(() => ({} as any))
-        : Promise.resolve({} as any),
+        ? apiFetch<ProjectSettingsResponse>(`/api/projects/${projectId}`).catch(() => ({} as ProjectSettingsResponse))
+        : Promise.resolve({} as ProjectSettingsResponse),
     ]).then(([data, proj]) => {
       if (cancelled) return
       setStructures(data)
@@ -335,7 +347,7 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
       projectSettingsRef.current = settings
       const ps = (settings.plot_structure as Record<string, unknown> | undefined) || {}
       const persisted = typeof ps.structure_book_id === 'string' ? (ps.structure_book_id as string) : ''
-      if (persisted && data.find((s: any) => s.book_id === persisted)) {
+      if (persisted && data.find((s) => s.book_id === persisted)) {
         setSelectedId(persisted)
         _selectedStructureBookId = persisted
       }
@@ -358,7 +370,7 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
   }
 
   if (structures.length === 0) {
-    return <p className="text-xs text-gray-400">暂无架构数据，请先在参考书库中"提取架构"</p>
+    return <p className="text-xs text-gray-400">暂无架构数据，请先在参考书库中“提取架构”</p>
   }
 
   return (
@@ -366,7 +378,7 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
       <select value={selectedId} onChange={e => handleChange(e.target.value)}
         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
         <option value="">不使用剧情架构</option>
-        {structures.map((s: any) => (
+        {structures.map((s) => (
           <option key={s.book_id} value={s.book_id}>
             {s.book_title} — {s.arc_pattern || ''}
           </option>
@@ -374,18 +386,17 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
       </select>
       {selectedId && (
         <p className="text-[10px] text-orange-500">
-          {structures.find((s: any) => s.book_id === selectedId)?.structure_summary || ''}
+          {structures.find((s) => s.book_id === selectedId)?.structure_summary || ''}
         </p>
       )}
     </div>
   )
 }
 
-function OutlineButtonRow({ level, label, colorClass, count, disabled, onView, onGenerate }: {
-  level: string; label: string; colorClass: string; count: number; disabled: boolean;
+function OutlineButtonRow({ label, colorClass, count, disabled, onView, onGenerate }: {
+  label: string; colorClass: string; count: number; disabled: boolean;
   onView: () => void; onGenerate: () => void
 }) {
-  const _ = level // reserved for analytics later
   const exists = count > 0
   if (exists) {
     return (
