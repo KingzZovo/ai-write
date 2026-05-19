@@ -1,3 +1,4 @@
+> **✅ 2026-05-19 08:42 参考书补齐**：按 King 指令补齐《天之炽》《天之炽②女武神》的 `plot_structure` / `plot_structure_v2`，并用 style_v9 补强两本单书综合写法画像；随后验证江南三本（龙族、天之炽、女武神）卡片覆盖、结构字段、画像规则数与 prompt 编译。
 > **⚙️ 2026-05-18 18:58 动态提速**：runtime=15 下 beat 仍在推进但受上游 `auth_not_found` 波动拖慢；按 King 指令将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `15` 上调到 `20`。继续保留同书 single-flight 与 retry 保活机制，等待无 active wave 的窗口重建 worker 并自动补派。
 > **⚙️ 2026-05-18 15:05 动态提速**：`赤心巡天` style 已补齐，当前只剩 beat 分支；按 King 指令将 `.env` 的 `REFERENCE_INGEST_CONCURRENCY` 从 `10` 上调到 `15`。保留 Celery 同书 single-flight，等待当前活跃 wave 完成后安全重建 worker，避免中断正在推进的补齐任务。
 > **⚙️ 2026-05-18 11:45 retry 保活修复**：按 King 要求，`retry_reference_book_missing_branches` 在 0 增量 wave 连续失败时不再到 `max_auto_retries` 后停止；改为短延迟继续重试，并将 attempt 作为观测计数循环回 1。single-flight lock 仍防止同书重复 wave 堆积，确保上游 429/503/auth 故障期间也持续探测直到 `ready`。
