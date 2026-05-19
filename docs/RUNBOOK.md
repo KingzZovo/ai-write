@@ -46,6 +46,32 @@ FROM reference_books
 WHERE id='0a543b1d-19fe-4e03-986e-42844feb36ee';
 ```
 
+
+### 0.2 参考书卡片 JSON 包装规整（2026-05-19）
+
+背景：巡检《赤心巡天》完成态时发现少量 `style_profile_cards.profile_json` / `beat_sheet_cards.beat_json` 为 LLM 包装形态（如 `items` / `scenes` 数组），下游按顶层字段读取时会退化为 `?` / `unknown`。
+
+当前机制：
+- `style_abstractor.abstract_style` 会把 `items` / `profiles` / `styles` 包装折叠为第一个 dict。
+- `beat_extractor.extract_beat` 会把 `beats` / `items` / `scenes` / `beat_sheet` / `chapter_beats` 包装折叠为第一个 dict。
+- 参考书 decompile 仍保持一 slice 一张 style card、一张 beat card。
+
+验证命令：
+```bash
+docker exec -e PYTHONPATH=/app ai-write-backend-1 \
+  bash -c 'cd /app && python -m pytest tests/test_v173_p0_unit_coverage.py -q'
+```
+
+对账 SQL：
+```sql
+SELECT count(*) FROM style_profile_cards
+WHERE book_id = '0a543b1d-19fe-4e03-986e-42844feb36ee'
+  AND NOT (profile_json::jsonb ?& array['pov','tense','sentence_rhythm','dialogue_style','sensory_mix','pacing','emotional_register','vocab_tone','forbidden_tells','signature_moves']);
+SELECT count(*) FROM beat_sheet_cards
+WHERE book_id = '0a543b1d-19fe-4e03-986e-42844feb36ee'
+  AND NOT (beat_json::jsonb ?& array['scene_type','subject','goal','stakes','obstacle','turn','outcome','emotional_arc','foreshadow','reusable_pattern']);
+```
+
 ## 1. 正确写入路径（推荐入口）
 
 ### 1.1 当前 main 上的实际写入口（事实）

@@ -32,9 +32,17 @@ async def extract_beat(raw_text: str, db: AsyncSession) -> dict:
         #   A) {"scene_type": ..., "subject": ..., ...}   (flat dict)
         #   B) {"beats": [{...}, {...}]}                  (wrapper)
         #   C) {"items": [{...}]}                         (post-Layer1 list)
+        #   D) {"scenes": [{...}]}                        (multi-scene slice)
+        #   E) {"beat_sheet": [{...}]} / {"chapter_beats": [{...}]}
         # v1.4 ingest writes one beat card per slice, so collapse arrays
-        # to their first element when we get shape B or C.
-        beats_arr = result.get("beats") or result.get("items")
+        # to their first element when we get a wrapped array shape.
+        beats_arr = (
+            result.get("beats")
+            or result.get("items")
+            or result.get("scenes")
+            or result.get("beat_sheet")
+            or result.get("chapter_beats")
+        )
         if isinstance(beats_arr, list) and beats_arr:
             first = beats_arr[0]
             if isinstance(first, dict):

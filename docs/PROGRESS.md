@@ -1,3 +1,5 @@
+> **✅ 2026-05-19 21:05 赤心巡天完成巡检**：定时巡检确认《赤心巡天》decompile retry 已到 `ready`，style/beat 均 `22941/22941`，缺失与重复为 0；抽样内容非空且无乱码/截断。同步修复少量 LLM `items` / `scenes` 包装 JSON 对下游顶层字段读取的影响，并补回归测试与 RUNBOOK 对账 SQL。
+
 > **✅ 2026-05-19 10:48 代码巡检优化**：按 King 指令巡检项目代码与创建/生成链路；确认前端已无错误参考书路由残留，后端 compile 与 `/api/health` 正常。顺手修掉 `GeneratePanel` 写法/架构选择器的 TS/ESLint 问题：去掉无用参数与 `any`，补齐结构类型，避免 effect 内同步 setState 报错，并同步移动端调用签名，确保 `npm run build` 通过。
 
 > **✅ 2026-05-19 08:42 参考书补齐**：按 King 指令补齐《天之炽》《天之炽②女武神》的 `plot_structure` / `plot_structure_v2`，并用 style_v9 补强两本单书综合写法画像；随后验证江南三本（龙族、天之炽、女武神）卡片覆盖、结构字段、画像规则数与 prompt 编译。
