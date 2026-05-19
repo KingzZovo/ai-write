@@ -203,6 +203,10 @@ async def _run_async_generation_impl(task_id: str):
             # Generate based on task_type
             generator = OutlineGenerator()
             collected = []
+            generated_chapter = None
+            generated_chapter_outline: dict = {}
+            generated_chapter_user_instr = ""
+            generated_chapter_target_words: int | None = None
 
             if task.task_type == "outline_from_reference":
                 # v1.5.0 D-2: async outline-from-reference. Wraps the
@@ -282,34 +286,32 @@ async def _run_async_generation_impl(task_id: str):
                         await db.commit()
 
             elif task.task_type == "chapter":
-                from app.services.chapter_generator import ChapterGenerator
                 from app.models.project import Chapter
                 ch = await db.get(Chapter, params.get("chapter_id", ""))
                 if not ch:
                     raise ValueError("章节不存在")
-                gen = ChapterGenerator()
-                # v0.5+ ChapterGenerator: ContextPack + PromptRegistry build context;
-                # style/world_rules/prev_chapter are pulled from db, not passed in.
+                from app.services.scene_orchestrator import SceneOrchestrator
+
+                generated_chapter = ch
+                generated_chapter_outline = ch.outline_json or {}
+                generated_chapter_target_words = params.get("target_words") or ch.target_word_count
                 user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
-                async for chunk in gen.generate_stream(
+                generated_chapter_user_instr = user_instr
+                orchestrator = SceneOrchestrator()
+                async for chunk in orchestrator.orchestrate_chapter_stream(
                     project_id=project_id,
-                    volume_id=ch.volume_id,
+                    volume_id=str(ch.volume_id),
                     chapter_idx=ch.chapter_idx,
                     db=db,
                     chapter_id=ch.id,
                     user_instruction=user_instr,
+                    target_words=generated_chapter_target_words,
                 ):
                     collected.append(chunk)
                     if len(collected) % 5 == 0:
                         task.progress_text = "".join(collected)
                         task.char_count = len(task.progress_text)
                         await db.commit()
-
-                # Save chapter content
-                if collected:
-                    ch.content_text = "".join(collected)
-                    ch.word_count = len(ch.content_text)
-                    ch.status = "completed"
 
             full_text = "".join(collected)
 
@@ -365,6 +367,148 @@ async def _run_async_generation_impl(task_id: str):
                 humanized.append(line)
 
             full_text = '\n'.join(humanized).strip()
+
+            # Auto evaluation + regeneration for project/background chapter generation.
+            # This mirrors the SSE /api/generate auto_revise path so chapters created
+            # from the project workflow no longer require manual intervention.
+            if generated_chapter is not None and full_text:
+                from app.models.project import ChapterEvaluation, ChapterVersion, Volume
+                from app.services.auto_revise import (
+                    issues_to_revise_instruction,
+                    merge_revise_into_user_instruction,
+                    should_revise,
+                    DEFAULT_REVISE_THRESHOLD,
+                    DEFAULT_MAX_REVISE_ROUNDS,
+                )
+                from app.services.chapter_evaluator import ChapterEvaluator
+                from app.services.chapter_summarizer import summarize_and_save_chapter
+                from app.services.scene_orchestrator import SceneOrchestrator
+                from sqlalchemy import select as _sql_select, update as _sql_update
+
+                threshold = float(params.get("revise_threshold") or DEFAULT_REVISE_THRESHOLD)
+                max_rounds = int(params.get("max_revise_rounds") or DEFAULT_MAX_REVISE_ROUNDS)
+                auto_revise_enabled = bool(params.get("auto_revise", True))
+                ch = generated_chapter
+                volume = await db.get(Volume, ch.volume_id)
+                prev_context = ""
+                if volume is not None:
+                    prev_result = await db.execute(
+                        _sql_select(type(ch)).where(
+                            type(ch).volume_id == ch.volume_id,
+                            type(ch).chapter_idx == ch.chapter_idx - 1,
+                        )
+                    )
+                    prev_ch = prev_result.scalar_one_or_none()
+                    if prev_ch:
+                        prev_context = "\n\n".join(
+                            part for part in [
+                                "【跨章节评估硬要求】必须结合前章检查剧情衔接，重点识别失忆、幻觉、莫名新增人物/道具/地点、规则临时变更、伏笔突兀回收、空间跳跃。",
+                                f"【上一章摘要】\n{prev_ch.summary}" if prev_ch.summary else "",
+                                f"【上一章正文节选】\n{(prev_ch.content_text or '')[-3500:]}" if prev_ch.content_text else "",
+                            ] if part
+                        )
+
+                current_text = full_text
+                final_eval = None
+                for round_idx in range(1, max_rounds + 2):
+                    task.status = "evaluating"
+                    task.progress_text = current_text
+                    task.char_count = len(current_text)
+                    await db.commit()
+
+                    evaluator = ChapterEvaluator()
+                    eval_result = await evaluator.evaluate(
+                        chapter_text=current_text,
+                        chapter_outline=generated_chapter_outline,
+                        previous_summary=prev_context,
+                        style_profile=style_text,
+                    )
+                    final_eval = eval_result
+                    db.add(ChapterEvaluation(
+                        chapter_id=ch.id,
+                        plot_coherence=eval_result.plot_coherence,
+                        character_consistency=eval_result.character_consistency,
+                        style_adherence=eval_result.style_adherence,
+                        narrative_pacing=eval_result.narrative_pacing,
+                        foreshadow_handling=eval_result.foreshadow_handling,
+                        overall=eval_result.overall,
+                        issues_json=eval_result.issues,
+                    ))
+                    await db.commit()
+
+                    logger.info(
+                        "Auto chapter evaluation: chapter_id=%s round=%d overall=%.2f threshold=%.2f issues=%d",
+                        ch.id, round_idx, eval_result.overall, threshold, len(eval_result.issues),
+                    )
+                    if not should_revise(eval_result, threshold=threshold) or not auto_revise_enabled:
+                        break
+                    if round_idx > max_rounds:
+                        logger.warning(
+                            "Auto chapter evaluation did not pass after %d regenerate rounds: chapter_id=%s overall=%.2f threshold=%.2f issues=%s",
+                            max_rounds, ch.id, eval_result.overall, threshold, eval_result.issues[:5],
+                        )
+                        break
+
+                    task.status = "regenerating"
+                    await db.commit()
+                    revise_instr = issues_to_revise_instruction(eval_result, round_idx=round_idx)
+                    merged_instruction = merge_revise_into_user_instruction(
+                        generated_chapter_user_instr,
+                        revise_instr,
+                    )
+                    regen_chunks: list[str] = []
+                    orchestrator = SceneOrchestrator()
+                    async for chunk in orchestrator.orchestrate_chapter_stream(
+                        project_id=project_id,
+                        volume_id=str(ch.volume_id),
+                        chapter_idx=ch.chapter_idx,
+                        db=db,
+                        chapter_id=ch.id,
+                        user_instruction=merged_instruction,
+                        target_words=generated_chapter_target_words,
+                    ):
+                        regen_chunks.append(chunk)
+                        if len(regen_chunks) % 5 == 0:
+                            task.progress_text = "".join(regen_chunks)
+                            task.char_count = len(task.progress_text)
+                            await db.commit()
+                    regenerated = "".join(regen_chunks).strip()
+                    if not regenerated:
+                        logger.warning("Auto chapter regeneration returned empty text: chapter_id=%s round=%d", ch.id, round_idx)
+                        break
+                    current_text = regenerated
+
+                full_text = current_text
+                ch.content_text = full_text
+                ch.word_count = len(full_text)
+                ch.status = "completed" if (not final_eval or final_eval.overall >= threshold) else "needs_review"
+                await db.execute(
+                    _sql_update(ChapterVersion)
+                    .where(ChapterVersion.chapter_id == ch.id, ChapterVersion.is_active == 1)
+                    .values(is_active=0)
+                )
+                db.add(ChapterVersion(
+                    chapter_id=ch.id,
+                    parent_id=None,
+                    branch_name="main",
+                    content_text=full_text,
+                    content_diff="",
+                    word_count=len(full_text),
+                    is_active=1,
+                    source="ai_generation",
+                    metadata_json={
+                        "caller": "tasks.run_async_generation",
+                        "auto_evaluated": True,
+                        "revise_threshold": threshold,
+                        "final_overall": getattr(final_eval, "overall", None),
+                        "issue_count": len(getattr(final_eval, "issues", []) or []),
+                    },
+                ))
+                await db.commit()
+                try:
+                    await summarize_and_save_chapter(chapter_id=str(ch.id), db=db, overwrite=True)
+                except Exception as sum_err:
+                    logger.warning("Auto chapter summarize failed after evaluation: %s", sum_err)
 
             task.result_text = full_text
 

@@ -70,7 +70,7 @@ class GenerateChapterRequest(BaseModel):
     # When true, the chapter is generated via scene_planner -> per-scene
     # scene_writer streams (each 800-1200 chars), giving more coherent
     # pacing and easier per-scene rewrite hooks downstream (C2).
-    use_scene_mode: bool = False
+    use_scene_mode: bool = True
     # Hint for scene_planner; clamped to 3..6 by SceneOrchestrator. None = auto.
     n_scenes_hint: int | None = None
     # Override the chapter target word count for scene-mode planning.
@@ -81,11 +81,11 @@ class GenerateChapterRequest(BaseModel):
     # issues fed back as a revise instruction (up to max_revise_rounds).
     # Only effective when use_scene_mode=True (single-shot ChapterGenerator
     # cannot consume per-issue feedback meaningfully).
-    auto_revise: bool = False
-    # On the 0-10 evaluator scale (B1' baseline ~7.98). Below threshold = revise.
-    revise_threshold: float = 7.0
-    # Hard cap on rewrite rounds to bound LLM cost (3 total writes max at N=2).
-    max_revise_rounds: int = 2
+    auto_revise: bool = True
+    # On the 0-10 evaluator scale. Below threshold = regenerate/rewrite.
+    revise_threshold: float = 8.2
+    # Hard cap on rewrite rounds to bound LLM cost (4 total writes max at N=3).
+    max_revise_rounds: int = 3
 
     # PR-CHGEN-ALIAS (2026-05-07): tolerate legacy/short payload field names
     # so a driver script that posts {"scene_mode": true, "auto_revise": true}
@@ -199,6 +199,9 @@ async def generate_chapter(
 
     chapter_outline: dict = {}
     previous_text = ""
+    previous_summary_for_eval = ""
+    next_text_for_eval = ""
+    next_summary_for_eval = ""
     current_text = ""
     target_words: int | None = None
 
@@ -217,6 +220,17 @@ async def generate_chapter(
             prev_chapter = prev_result.scalar_one_or_none()
             if prev_chapter:
                 previous_text = prev_chapter.content_text or ""
+                previous_summary_for_eval = prev_chapter.summary or ""
+            next_result = await db.execute(
+                select(Chapter).where(
+                    Chapter.volume_id == chapter.volume_id,
+                    Chapter.chapter_idx == chapter.chapter_idx + 1,
+                )
+            )
+            next_chapter = next_result.scalar_one_or_none()
+            if next_chapter:
+                next_text_for_eval = next_chapter.content_text or ""
+                next_summary_for_eval = next_chapter.summary or ""
 
     # Fall back to project default for target_words
     if target_words is None and isinstance(project_settings.get("target_chapter_words"), int):
@@ -255,6 +269,18 @@ async def generate_chapter(
                 effective_user_instruction = (
                     effective_user_instruction + "\n\n" + structure_prompt
                 )
+
+            evaluation_context = "\n\n".join(
+                part
+                for part in [
+                    "【跨章节评估硬要求】必须结合前后章节检查剧情衔接，重点识别失忆、幻觉、莫名新增人物/道具/地点、规则临时变更、伏笔突兀回收、空间跳跃。",
+                    f"【上一章摘要】\n{previous_summary_for_eval}" if previous_summary_for_eval else "",
+                    f"【上一章正文节选】\n{previous_text[-3500:]}" if previous_text else "",
+                    f"【下一章摘要】\n{next_summary_for_eval}" if next_summary_for_eval else "",
+                    f"【下一章正文节选】\n{next_text_for_eval[:3500]}" if next_text_for_eval else "",
+                ]
+                if part
+            )
 
             # v0.5: ChapterGenerator takes project_id/volume_id/chapter_idx.
             # Resolve them — prefer loaded `chapter` above, fall back to request fields.
@@ -517,6 +543,8 @@ async def generate_chapter(
                         eval_result = await evaluator.evaluate(
                             chapter_text=current_text,
                             chapter_outline=revise_outline,
+                            previous_summary=evaluation_context,
+                            style_profile=resolved_style,
                         )
                         _x4_inc_revise("scored")  # v1.6.0 X4 metric: revise round outcome
                         scored_payload = json.dumps({
@@ -654,6 +682,8 @@ async def generate_chapter(
                             final_eval = await evaluator.evaluate(
                                 chapter_text=current_text,
                                 chapter_outline=revise_outline,
+                                previous_summary=evaluation_context,
+                                style_profile=resolved_style,
                             )
                             final_payload = json.dumps({
                                 "event": "scored",

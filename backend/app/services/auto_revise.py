@@ -6,9 +6,10 @@ Chinese revise instruction that can be appended to the next writer pass
 (SceneOrchestrator.orchestrate_chapter_stream's user_instruction).
 
 Design notes:
-- Threshold defaults to 7.0 (B1' baseline overall ≈ 7.98 — anything below
-  7.0 is a clear quality regression worth retrying).
-- Maximum revise rounds defaults to 2 to bound LLM cost (3 total writes).
+- Threshold defaults to 8.2 so project generation only accepts chapters that
+  pass the same quality bar used in manual验收.
+- Maximum revise rounds defaults to 3 to bound LLM cost while allowing
+  convergence on continuity / hallucination defects.
 - We cap issues per dimension to 5 to avoid prompt explosion when the LLM
   evaluator returns a long flat list.
 - This module has zero DB / LLM / IO side effects — pure helpers, easy to
@@ -20,8 +21,8 @@ from dataclasses import dataclass
 from typing import Any
 
 # Tunable defaults; overridable via GenerateChapterRequest fields.
-DEFAULT_REVISE_THRESHOLD: float = 7.0
-DEFAULT_MAX_REVISE_ROUNDS: int = 2
+DEFAULT_REVISE_THRESHOLD: float = 8.2
+DEFAULT_MAX_REVISE_ROUNDS: int = 3
 MAX_ISSUES_PER_DIMENSION: int = 5
 
 _DIMENSION_LABELS: dict[str, str] = {
@@ -153,6 +154,11 @@ def issues_to_revise_instruction(
     lines.append(
         "请重写本章：保留原情节主线与关键成果，在上述问题维度上明显提升。"
         "不要重复原文句式，不要插入元评论。"
+    )
+    lines.append(
+        "硬约束：必须逐条修复低分问题；必须与前后章节摘要、人物已知状态、道具来源、地点空间关系保持一致；"
+        "禁止临时新增未铺垫人物、道具、能力和设定；禁止让角色忘记上一章已经知道的事实；"
+        "禁止用突然自曝、机械巧合、全知视角一次性解释来补洞；伏笔只能自然推进，不能过早讲完。"
     )
     return "\n".join(lines)
 

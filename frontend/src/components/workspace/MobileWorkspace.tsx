@@ -287,8 +287,7 @@ export default function MobileWorkspace() {
                       {outlinePreview && <span className="text-xs text-gray-400">{outlinePreview.length} 字</span>}
                     </div>
                     {outlinePreview ? (
-                      <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-100 max-h-[50vh] overflow-y-auto leading-relaxed"
-                        style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                      <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-100 max-h-[50vh] overflow-y-auto leading-relaxed">
                         {outlinePreview}
                       </pre>
                     ) : (
@@ -319,8 +318,7 @@ export default function MobileWorkspace() {
                         </div>
                       )}
                     </div>
-                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border max-h-[60vh] overflow-y-auto leading-relaxed"
-                      style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border max-h-[60vh] overflow-y-auto leading-relaxed">
                       {outlineVersion === 'polished' && polishedOutline ? polishedOutline : (savedOutline || outlinePreview)}
                     </pre>
                   </div>
