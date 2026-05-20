@@ -363,6 +363,14 @@ async def expand_chapter_outline(
 
     user_prompt = _format_user_prompt(ctx, chapter)
 
+    # Do not hold the request transaction open while the LLM call runs.
+    # Chapter outline expansion can take several minutes; Postgres kills
+    # idle-in-transaction connections before the model returns, so the later
+    # UPDATE used to fail with "underlying connection is closed". Release the
+    # read transaction after context assembly, then open a fresh transaction
+    # only for the final write.
+    await db.rollback()
+
     # 须在函数内延迟导入，避免 backend 启动时交叉依赖。
     from app.services.model_router import get_model_router
     from app.services.outline_generator import OutlineGenerator
@@ -381,6 +389,9 @@ async def expand_chapter_outline(
 
     # 复用 outline_generator 的宽松 JSON 解析（除 markdown / 其他顶层控制字符）。
     parsed = OutlineGenerator()._parse_json(raw_text)
+    chapter = await db.get(Chapter, chapter_id)
+    if chapter is None:
+        raise ChapterOutlineExpandError(f"chapter {chapter_id} 不存在")
     normalized = _validate_and_normalize(parsed, chapter, ctx["stub"])
 
     # 写回 DB。

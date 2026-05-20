@@ -1,3 +1,5 @@
+> **⚠️ 2026-05-20 22:48 章节大纲长事务修复**：第 3 章大纲扩写在 LLM 返回后写库时触发 Postgres `idle-in-transaction timeout`，根因是章节大纲扩写 API 在等待上游模型期间一直持有读事务。已改为上下文读取完成后先释放事务，模型返回后重新取 fresh chapter 再写入，避免长时间 LLM 调用导致连接被数据库关闭。
+
 > **⚙️ 2026-05-20 22:20 大纲链路上移世界逻辑合同**：确认章节偏离不是正文单点问题，已把题材无关 World Logic Contract 前移到全文大纲、分卷大纲、章节摘要和章节大纲扩写；章节大纲新增 start/end state、time_delta、location_path、entity_transfers、information_state、power_resource_map、mechanism_limits、result_strength、handoff_to_next 等可执行状态字段。ContextPack 显式渲染卷/章合同字段，cascade planner 对 time/space/power/information/mechanism/result-strength 违规优先回写 chapter.outline_json；无 outlines 行时不再跳过，而是落到章节大纲修复。
 
 > **✅ 2026-05-20 13:45 世界逻辑合同改造**：按 King 纠偏，不再把约束写死到某章、某本书或某个题材；新增题材无关的 World Logic Contract，要求生成前先从项目题材/设定/大纲/已生成章节推导时间、空间、权力/资源、信息、能力/机制、结果强度六类规则。ContextPack 全局注入该合同，scene_planner 输出场景合同字段，scene_writer 只能按结果强度渲染，chapter_evaluator 按合同违规硬验收，auto_revise 按违规类型修复而非症状补丁。
