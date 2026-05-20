@@ -305,6 +305,27 @@ class ContextPack:
         nch = co.get("next_chapter_hook")
         if nch:
             parts.append(f"本章末尾交接下章（必须交付）：{nch}")
+
+        contract_labels = {
+            "start_state": "开场状态",
+            "end_state": "收束状态",
+            "time_delta": "时间消耗",
+            "location_path": "空间路径",
+            "entity_transfers": "实体转移",
+            "information_state": "信息状态",
+            "power_resource_map": "权力/资源图",
+            "mechanism_limits": "机制边界",
+            "result_strength": "结果强度",
+            "handoff_to_next": "交接下章",
+        }
+        contract_lines: list[str] = []
+        for key, label in contract_labels.items():
+            val = co.get(key)
+            if isinstance(val, str) and val.strip():
+                contract_lines.append(f"- {label}：{val.strip()}")
+        if contract_lines:
+            parts.append("本章世界逻辑合同：\n" + "\n".join(contract_lines))
+
         if not parts:
             # 降级：没有能识别的字段，还有 dict 内容 → fallback dump
             return json.dumps(co, ensure_ascii=False, indent=2)
@@ -362,6 +383,25 @@ class ContextPack:
                     parts.append("已埋伏笔：\n" + "\n".join(fs_lines))
         if vo.get("transition_to_next"):
             parts.append(f"卷末过渡：{vo['transition_to_next']}")
+
+        volume_contract_labels = {
+            "volume_start_state": "卷初状态",
+            "volume_end_state": "卷末状态",
+            "volume_power_resource_map": "本卷权力/资源图",
+            "volume_information_map": "本卷信息图",
+            "volume_mechanism_limits": "本卷机制边界",
+            "volume_result_strength_ladder": "本卷结果强度阶梯",
+            "foreshadow_progression": "伏笔推进",
+        }
+        vc_lines: list[str] = []
+        for key, label in volume_contract_labels.items():
+            val = vo.get(key)
+            if isinstance(val, str) and val.strip():
+                vc_lines.append(f"- {label}：{val.strip()}")
+            elif isinstance(val, (list, dict)) and val:
+                vc_lines.append(f"- {label}：{json.dumps(val, ensure_ascii=False)}")
+        if vc_lines:
+            parts.append("本卷世界逻辑合同：\n" + "\n".join(vc_lines))
         return "\n\n".join(parts)
 
     def to_system_prompt(self, token_budget: int = 8000) -> str:

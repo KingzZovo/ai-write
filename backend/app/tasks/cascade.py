@@ -582,10 +582,100 @@ async def _handle_world_rule_target(
     return result
 
 
-async def _handle_chapter_target(**_kw: Any) -> dict[str, Any]:
-    # 'chapter' targets are rare (planner currently never emits them) but
-    # the schema allows them; reserved for future use.
-    return {"status": "skipped", "reason": "chapter_handler_not_implemented"}
+async def _handle_chapter_target(
+    *,
+    db: Any,
+    target_entity_id: str,
+    project_id: str,
+    issue_summary: str | None,
+    severity: str,
+    source_chapter_id: str,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """Record contract failures directly onto Chapter.outline_json.
+
+    This is the fallback path for projects that have no rows in ``outlines``
+    and the preferred first repair target for world-logic contract violations:
+    the chapter outline must become an executable state contract before any
+    body rewrite can reliably pass.
+    """
+    from app.models.project import Chapter, Volume
+
+    if not target_entity_id:
+        return {"status": "failed", "reason": "chapter_target_missing_id"}
+
+    chapter = await db.get(Chapter, target_entity_id)
+    if chapter is None:
+        return {"status": "failed", "reason": f"chapter_target_not_found:{target_entity_id}"}
+
+    volume = await db.get(Volume, chapter.volume_id)
+    if volume is None:
+        return {"status": "failed", "reason": "chapter_target_volume_missing"}
+    if str(volume.project_id) != str(project_id):
+        return {"status": "failed", "reason": "chapter_target_project_mismatch"}
+
+    raw_outline = chapter.outline_json
+    outline: dict[str, Any] = dict(raw_outline) if isinstance(raw_outline, dict) else {}
+
+    revisions_in = outline.get("cascade_revisions")
+    revisions: list[dict[str, Any]] = (
+        [r for r in revisions_in if isinstance(r, dict)]
+        if isinstance(revisions_in, list)
+        else []
+    )
+    hints_in = outline.get("cascade_hints")
+    hints: list[str] = (
+        [str(h) for h in hints_in if isinstance(h, str)]
+        if isinstance(hints_in, list)
+        else []
+    )
+
+    rev_key = f"{source_chapter_id}:{severity}:chapter_outline_contract"
+    if any(r.get("rev_key") == rev_key for r in revisions):
+        return {"status": "skipped", "reason": "chapter_outline_revision_already_recorded"}
+
+    summary_text = (issue_summary or "").strip()
+    revisions.append(
+        {
+            "rev_key": rev_key,
+            "source_chapter_id": str(source_chapter_id),
+            "severity": str(severity),
+            "issue_summary": summary_text,
+            "repair_target": "chapter_outline_contract",
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    if summary_text:
+        for line in summary_text.splitlines():
+            line = line.strip()
+            if line and line not in hints:
+                hints.append(line)
+
+    outline["cascade_revisions"] = revisions
+    outline["cascade_hints"] = hints
+    outline["outline_contract_repair_required"] = True
+    outline.setdefault("contract_fields_required", [
+        "start_state",
+        "end_state",
+        "time_delta",
+        "location_path",
+        "entity_transfers",
+        "information_state",
+        "power_resource_map",
+        "mechanism_limits",
+        "result_strength",
+        "handoff_to_next",
+    ])
+    chapter.outline_json = outline
+    await db.commit()
+
+    logger.info(
+        "_handle_chapter_target: chapter=%s rev_key=%s hints=%d",
+        target_entity_id,
+        rev_key,
+        len(hints),
+    )
+    return {"status": "done", "reason": "chapter_outline_revision_recorded"}
 
 
 async def _run_cascade_task_async(

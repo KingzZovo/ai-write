@@ -75,6 +75,19 @@ IN_SCOPE_DIMENSIONS: frozenset[str] = frozenset(
     {"plot_coherence", "foreshadow_handling", "character_consistency"}
 )
 
+CONTRACT_OUTLINE_VIOLATIONS: frozenset[str] = frozenset(
+    {
+        "time_rule_violation",
+        "space_rule_violation",
+        "power_resource_violation",
+        "information_rule_violation",
+        "mechanism_rule_violation",
+        "result_strength_violation",
+    }
+)
+
+CONTRACT_LOCAL_VIOLATIONS: frozenset[str] = frozenset({"expression_contract_violation"})
+
 #: Allowed values for ``cascade_tasks.target_entity_type``. Mirrors the DB
 #: CHECK constraint ``ck_cascade_tasks_target_entity_type``.
 ALLOWED_TARGET_TYPES: frozenset[str] = frozenset(
@@ -219,6 +232,18 @@ async def _load_project_characters(
     return list(res.scalars().all())
 
 
+def _detect_contract_violation(issue: Mapping[str, Any]) -> str:
+    for field in ("violation_type", "type"):
+        val = issue.get(field)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    desc = str(issue.get("description") or "")
+    for label in sorted(CONTRACT_OUTLINE_VIOLATIONS | CONTRACT_LOCAL_VIOLATIONS):
+        if f"[{label}]" in desc or label in desc:
+            return label
+    return ""
+
+
 # --- Main planner -----------------------------------------------------------
 
 
@@ -251,7 +276,14 @@ async def plan_cascade(
     if not issues:
         return []
 
-    in_scope = [i for i in issues if i.get("dimension") in IN_SCOPE_DIMENSIONS]
+    in_scope = []
+    for issue in issues:
+        if issue.get("dimension") in IN_SCOPE_DIMENSIONS:
+            in_scope.append(issue)
+            continue
+        violation_type = _detect_contract_violation(issue)
+        if violation_type in CONTRACT_OUTLINE_VIOLATIONS:
+            in_scope.append(issue)
     if not in_scope:
         return []
 
@@ -270,15 +302,39 @@ async def plan_cascade(
         dim = issue.get("dimension")
         description = str(issue.get("description") or "")
 
+        violation_type = _detect_contract_violation(issue)
+
+        if violation_type in CONTRACT_OUTLINE_VIOLATIONS:
+            # Contract failures mean the executable chapter outline did not
+            # carry enough state/logic constraints. Repair the chapter outline
+            # first; if a project-level outline exists, also let the existing
+            # outline cascade path see repeated plot/foreshadow issues below.
+            _add_to_bucket(
+                buckets,
+                target_entity_type="chapter",
+                target_entity_id=source_chapter_id_s,
+                dimension=violation_type,
+                issue=issue,
+            )
+            if dim not in ("plot_coherence", "foreshadow_handling"):
+                continue
+
         if dim in ("plot_coherence", "foreshadow_handling"):
             if cached_outline is _SENTINEL:
                 cached_outline = await _load_target_outline(db, project_id_s)
             outline = cached_outline
             if outline is None:
                 logger.info(
-                    "cascade_planner: no outline for project %s; skipping %s issue",
+                    "cascade_planner: no outline for project %s; routing %s issue to chapter outline",
                     project_id_s,
                     dim,
+                )
+                _add_to_bucket(
+                    buckets,
+                    target_entity_type="chapter",
+                    target_entity_id=source_chapter_id_s,
+                    dimension=str(dim),
+                    issue=issue,
                 )
                 continue
             _add_to_bucket(
@@ -412,6 +468,8 @@ __all__ = [
     "DEFAULT_OVERALL_THRESHOLD",
     "CRITICAL_ISSUE_COUNT",
     "IN_SCOPE_DIMENSIONS",
+    "CONTRACT_OUTLINE_VIOLATIONS",
+    "CONTRACT_LOCAL_VIOLATIONS",
     "ALLOWED_TARGET_TYPES",
     "ALLOWED_SEVERITIES",
     "CascadeTaskCandidate",

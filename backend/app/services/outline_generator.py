@@ -17,8 +17,55 @@ import re
 from typing import AsyncIterator
 
 from app.services.model_router import get_model_router
+from app.services.narrative_contract import WORLD_LOGIC_CONTRACT
 
 logger = logging.getLogger(__name__)
+
+
+OUTLINE_BOOK_CONTRACT_PROMPT = f"""
+
+{WORLD_LOGIC_CONTRACT}
+
+【大纲层合同要求】
+本合同必须上移到全书大纲，不允许只在正文阶段补救。全书大纲必须明确写出一组题材无关、但由当前项目动态推导出来的 world_logic_contract，至少包含：
+- time_rules：本书时间成本、传讯/移动/准备/恢复/流程消耗规则。
+- space_rules：人物、物件、消息、风险、资源的空间路径和进入门槛。
+- power_resource_rules：主要势力/角色的权力、资源、能力、声望、关系、技术或制度权限差。
+- information_rules：信息获得、验证、误判、证据强度和角色认知边界。
+- mechanism_rules：能力、技术、法术、制度工具、金钱/人脉/证据等的触发条件、成本、边界、反制。
+- result_strength_rules：什么支撑能达成强结果；支撑不足时必须降级为疑点、局部胜利、暂缓、误导、代价胜或后续线索。
+"""
+
+
+OUTLINE_VOLUME_CONTRACT_PROMPT = """
+
+【分卷层世界逻辑合同】
+本卷大纲必须继承全书 world_logic_contract，并额外输出以下 JSON 字段，字段内容必须从当前题材/设定/全书大纲动态推导，禁止写固定题材补丁：
+- volume_start_state：本卷开头的人物、地点、资源、信息、冲突状态。
+- volume_end_state：本卷结束时允许达到的状态；必须与转折支撑相匹配。
+- volume_power_resource_map：本卷主要冲突各方可调用的权力/资源/能力/关系/信息优势与代价。
+- volume_information_map：本卷关键信息的持有者、传播路径、误判、验证方式。
+- volume_mechanism_limits：本卷会影响局势的能力/技术/制度/资源工具的触发条件、成本、边界、反制。
+- volume_result_strength_ladder：本卷结果强度阶梯，说明弱支撑只能导向疑点/局部胜利/暂缓，强支撑才能导向公开翻盘/定论/全面胜利。
+- foreshadow_progression：本卷伏笔从埋→推→收的状态推进，不得跳级。
+"""
+
+
+OUTLINE_CHAPTER_CONTRACT_PROMPT = """
+
+【章节大纲合同字段】
+每个章节摘要/章节详细大纲都必须变成“可执行剧情状态机”，不是单纯剧情摘要。除原有字段外，必须输出：
+- start_state：本章开头承接上一章的时间、空间、人物、物件、信息和冲突状态。
+- end_state：本章结束时实际交付给下一章的状态。
+- time_delta：距离上一章/上一关键场景过去多久，哪些流程/移动/准备消耗了时间。
+- location_path：关键人物、物件、消息、风险从上一地点到本章地点的路径；无移动也要写“同地承接”。
+- entity_transfers：关键人物、物件、尸体、文书、数据、法器、资源、消息等如何到场/转移/留置。
+- information_state：本章开始和结束时各方已知/未知/误解的信息；弱信息只能推出疑点或假设。
+- power_resource_map：本章冲突各方的权力/资源差、违抗成本、制衡条件。
+- mechanism_limits：本章使用的能力、技术、法术、制度工具、证据、资源调用的条件、成本、边界、反制。
+- result_strength：本章允许达成的结果强度；支撑不足时必须降级为疑点、局部胜利、暂缓、误导、代价胜或后续线索。
+- handoff_to_next：本章如何把时间、空间、人物、物件、信息状态交接给下一章。
+"""
 
 BOOK_OUTLINE_SYSTEM = """你是小说策划师。直接输出大纲内容，不要说任何多余的话。
 
@@ -518,6 +565,7 @@ class OutlineGenerator:
         system = await load_prompt("outline_book", fallback=BOOK_OUTLINE_SYSTEM)
         # PR-OL10: replace free-form volume-count guidance with hard directive.
         system = self._apply_scale_to_prompt(system, scale)
+        system = system + OUTLINE_BOOK_CONTRACT_PROMPT
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": f"请根据以下创意生成全书大纲：\n\n{user_input}"},
@@ -561,6 +609,7 @@ class OutlineGenerator:
         # Stage A — skeleton (一、三、七、八、九)
         # PR-OL10: inject hard volume-count directive into skeleton prompt.
         skeleton_system = self._apply_scale_to_prompt(BOOK_OUTLINE_SKELETON_SYSTEM, scale)
+        skeleton_system = skeleton_system + OUTLINE_BOOK_CONTRACT_PROMPT
         skeleton_msgs = [
             {"role": "system", "content": skeleton_system},
             {"role": "user", "content": f"创意：\n{user_input}\n\n请生成骨架五段。"},
@@ -578,11 +627,11 @@ class OutlineGenerator:
             f"创意：\n{user_input}\n\n已生成的骨架：\n{skeleton_text}\n"
         )
         characters_msgs = [
-            {"role": "system", "content": BOOK_OUTLINE_CHARACTERS_SYSTEM},
+            {"role": "system", "content": BOOK_OUTLINE_CHARACTERS_SYSTEM + OUTLINE_BOOK_CONTRACT_PROMPT},
             {"role": "user", "content": shared_context + "\n请生成二、四、五三段。"},
         ]
         world_msgs = [
-            {"role": "system", "content": BOOK_OUTLINE_WORLD_SYSTEM},
+            {"role": "system", "content": BOOK_OUTLINE_WORLD_SYSTEM + OUTLINE_BOOK_CONTRACT_PROMPT},
             {"role": "user", "content": shared_context + "\n请生成六、世界观设定集。"},
         ]
         characters_result, world_result = await asyncio.gather(
@@ -938,7 +987,7 @@ class OutlineGenerator:
         if user_notes:
             context += f"\n\n用户补充说明：{user_notes}"
 
-        _vol_sys = VOLUME_OUTLINE_SYSTEM
+        _vol_sys = VOLUME_OUTLINE_SYSTEM + OUTLINE_VOLUME_CONTRACT_PROMPT
         if self.chapter_naming_directive:
             _vol_sys = _vol_sys + "\n\n" + self.chapter_naming_directive
         messages = [
@@ -1000,7 +1049,7 @@ class OutlineGenerator:
             meta_result = await self.router.generate(
                 task_type="outline_volume",
                 messages=[
-                    {"role": "system", "content": VOLUME_META_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
+                    {"role": "system", "content": VOLUME_META_SYSTEM + OUTLINE_VOLUME_CONTRACT_PROMPT + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
                     {"role": "user", "content": meta_ctx},
                 ],
             )
@@ -1057,7 +1106,7 @@ class OutlineGenerator:
                 batch_result = await self.router.generate(
                     task_type="outline_volume",
                     messages=[
-                        {"role": "system", "content": VOLUME_CHAPTERS_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
+                        {"role": "system", "content": VOLUME_CHAPTERS_SYSTEM + OUTLINE_CHAPTER_CONTRACT_PROMPT + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
                         {"role": "user", "content": batch_ctx},
                     ],
                 )
@@ -1135,7 +1184,7 @@ class OutlineGenerator:
         if user_notes:
             context += f"\n\n用户补充说明：{user_notes}"
 
-        _ch_sys = CHAPTER_OUTLINE_SYSTEM
+        _ch_sys = CHAPTER_OUTLINE_SYSTEM + OUTLINE_CHAPTER_CONTRACT_PROMPT
         if self.chapter_naming_directive:
             _ch_sys = _ch_sys + "\n\n" + self.chapter_naming_directive
         messages = [

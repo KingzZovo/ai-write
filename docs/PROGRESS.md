@@ -1,3 +1,5 @@
+> **⚙️ 2026-05-20 22:20 大纲链路上移世界逻辑合同**：确认章节偏离不是正文单点问题，已把题材无关 World Logic Contract 前移到全文大纲、分卷大纲、章节摘要和章节大纲扩写；章节大纲新增 start/end state、time_delta、location_path、entity_transfers、information_state、power_resource_map、mechanism_limits、result_strength、handoff_to_next 等可执行状态字段。ContextPack 显式渲染卷/章合同字段，cascade planner 对 time/space/power/information/mechanism/result-strength 违规优先回写 chapter.outline_json；无 outlines 行时不再跳过，而是落到章节大纲修复。
+
 > **✅ 2026-05-20 13:45 世界逻辑合同改造**：按 King 纠偏，不再把约束写死到某章、某本书或某个题材；新增题材无关的 World Logic Contract，要求生成前先从项目题材/设定/大纲/已生成章节推导时间、空间、权力/资源、信息、能力/机制、结果强度六类规则。ContextPack 全局注入该合同，scene_planner 输出场景合同字段，scene_writer 只能按结果强度渲染，chapter_evaluator 按合同违规硬验收，auto_revise 按违规类型修复而非症状补丁。
 
 > **✅ 2026-05-19 21:05 赤心巡天完成巡检**：定时巡检确认《赤心巡天》decompile retry 已到 `ready`，style/beat 均 `22941/22941`，缺失与重复为 0；抽样内容非空且无乱码/截断。同步修复少量 LLM `items` / `scenes` 包装 JSON 对下游顶层字段读取的影响，并补回归测试与 RUNBOOK 对账 SQL。
