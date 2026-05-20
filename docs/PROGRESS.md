@@ -1,3 +1,5 @@
+> **✅ 2026-05-20 13:45 世界逻辑合同改造**：按 King 纠偏，不再把约束写死到某章、某本书或某个题材；新增题材无关的 World Logic Contract，要求生成前先从项目题材/设定/大纲/已生成章节推导时间、空间、权力/资源、信息、能力/机制、结果强度六类规则。ContextPack 全局注入该合同，scene_planner 输出场景合同字段，scene_writer 只能按结果强度渲染，chapter_evaluator 按合同违规硬验收，auto_revise 按违规类型修复而非症状补丁。
+
 > **✅ 2026-05-19 21:05 赤心巡天完成巡检**：定时巡检确认《赤心巡天》decompile retry 已到 `ready`，style/beat 均 `22941/22941`，缺失与重复为 0；抽样内容非空且无乱码/截断。同步修复少量 LLM `items` / `scenes` 包装 JSON 对下游顶层字段读取的影响，并补回归测试与 RUNBOOK 对账 SQL。
 
 > **✅ 2026-05-19 10:48 代码巡检优化**：按 King 指令巡检项目代码与创建/生成链路；确认前端已无错误参考书路由残留，后端 compile 与 `/api/health` 正常。顺手修掉 `GeneratePanel` 写法/架构选择器的 TS/ESLint 问题：去掉无用参数与 `any`，补齐结构类型，避免 effect 内同步 setState 报错，并同步移动端调用签名，确保 `npm run build` 通过。

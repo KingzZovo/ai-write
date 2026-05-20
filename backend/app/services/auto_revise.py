@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.narrative_contract import REVISE_CONTRACT_PROMPT
+
 # Tunable defaults; overridable via GenerateChapterRequest fields.
 DEFAULT_REVISE_THRESHOLD: float = 8.2
 DEFAULT_MAX_REVISE_ROUNDS: int = 3
@@ -160,6 +162,8 @@ def issues_to_revise_instruction(
         "禁止临时新增未铺垫人物、道具、能力和设定；禁止让角色忘记上一章已经知道的事实；"
         "禁止用突然自曝、机械巧合、全知视角一次性解释来补洞；伏笔只能自然推进，不能过早讲完。"
     )
+    lines.append("")
+    lines.append(REVISE_CONTRACT_PROMPT)
     return "\n".join(lines)
 
 

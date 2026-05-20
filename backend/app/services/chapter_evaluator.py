@@ -19,6 +19,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app.services.model_router import get_model_router_async
+from app.services.narrative_contract import EVALUATOR_CONTRACT_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,8 @@ EVALUATION_SYSTEM_PROMPT = """\
 3. style_adherence (风格贴合度): 检查写作风格是否与目标风格一致、用词是否恰当
 4. narrative_pacing (叙事节奏): 检查叙事节奏是否合适、详略是否得当、高潮/低谷安排
 5. foreshadow_handling (伏笔处理): 检查伏笔的埋设和回收是否自然、是否遗漏应有的伏笔
-"""
+
+""" + EVALUATOR_CONTRACT_PROMPT
 
 
 def _build_user_prompt(
@@ -171,8 +173,25 @@ def _parse_evaluation_response(raw_text: str) -> EvaluationResult:
                     "location": issue.get("paragraph", 0),
                     "description": issue.get("description", ""),
                     "suggestion": issue.get("suggestion", ""),
+                    "violation_type": issue.get("violation_type", ""),
+                    "severity": issue.get("severity", ""),
                 }
             )
+
+    for issue in data.get("contract_violations", []) or []:
+        if not isinstance(issue, dict):
+            continue
+        vtype = issue.get("violation_type") or issue.get("type") or "contract_violation"
+        all_issues.append(
+            {
+                "dimension": issue.get("dimension", "plot_coherence"),
+                "location": issue.get("paragraph", issue.get("location", 0)),
+                "description": f"[{vtype}] {issue.get('description') or issue.get('why') or issue.get('violated_rule') or ''}",
+                "suggestion": issue.get("suggestion") or issue.get("required_fix") or issue.get("downgrade_if_unfixable") or "按世界逻辑合同补足支撑或降低结果强度",
+                "violation_type": vtype,
+                "severity": issue.get("severity", ""),
+            }
+        )
 
     overall = sum(scores.values()) / len(dimensions) if dimensions else 0.0
 

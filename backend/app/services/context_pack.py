@@ -53,6 +53,7 @@ from app.models.project import (
     VolumeSummary,
     WorldRule,
 )
+from app.services.narrative_contract import WORLD_LOGIC_CONTRACT
 
 logger = logging.getLogger(__name__)
 
@@ -817,6 +818,7 @@ class ContextPackBuilder:
 
         # World rules from PostgreSQL
         try:
+            pack.world_rules.append(WORLD_LOGIC_CONTRACT)
             rules_result = await db.execute(
                 select(WorldRule.category, WorldRule.rule_text)
                 .where(WorldRule.project_id == pid)

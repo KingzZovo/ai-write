@@ -36,6 +36,10 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.context_pack import ContextPack, ContextPackBuilder
+from app.services.narrative_contract import (
+    SCENE_CONTRACT_FIELDS_PROMPT,
+    WRITER_CONTRACT_PROMPT,
+)
 from app.services.prompt_registry import run_text_prompt, stream_text_prompt
 
 logger = logging.getLogger(__name__)
@@ -57,6 +61,15 @@ class SceneBrief:
     key_action: str = ""
     target_words: int = 1000
     hook: str = ""
+    start_state: str = ""
+    time_delta: str = ""
+    location_path: str = ""
+    entity_transfers: str = ""
+    power_resource_map: str = ""
+    information_state: str = ""
+    mechanism_limits: str = ""
+    result_strength: str = ""
+    transition_bridge: str = ""
 
     @classmethod
     def from_dict(cls, idx: int, raw: dict) -> "SceneBrief":
@@ -83,6 +96,15 @@ class SceneBrief:
             key_action=_s("key_action"),
             target_words=target_words,
             hook=_s("hook"),
+            start_state=_s("start_state"),
+            time_delta=_s("time_delta"),
+            location_path=_s("location_path"),
+            entity_transfers=_s("entity_transfers"),
+            power_resource_map=_s("power_resource_map"),
+            information_state=_s("information_state"),
+            mechanism_limits=_s("mechanism_limits"),
+            result_strength=_s("result_strength"),
+            transition_bridge=_s("transition_bridge"),
         )
 
     def to_writer_user_content(self) -> str:
@@ -98,6 +120,20 @@ class SceneBrief:
             bullets.append(f"【时间】{self.time_cue}")
         if self.key_action:
             bullets.append(f"【主要动作】{self.key_action}")
+        contract_fields = [
+            ("开场承接", self.start_state),
+            ("时间成本", self.time_delta),
+            ("空间路径", self.location_path),
+            ("实体转移", self.entity_transfers),
+            ("权力/资源图", self.power_resource_map),
+            ("信息状态", self.information_state),
+            ("机制边界", self.mechanism_limits),
+            ("允许结果强度", self.result_strength),
+            ("下场交接", self.transition_bridge),
+        ]
+        for label, value in contract_fields:
+            if value:
+                bullets.append(f"【{label}】{value}")
         bullets.append(f"【目标字数】约 {self.target_words} 字 (800-1200)")
         if self.hook:
             bullets.append(f"【场末过渡】{self.hook}")
@@ -197,6 +233,15 @@ def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list
                 key_action="",
                 target_words=per_scene,
                 hook="" if i == n else "接下一场",
+                start_state="首场承接章节开局" if i == 1 else "承接上一场末尾状态",
+                time_delta="按本章大纲推导，不得跳过关键时间成本",
+                location_path="按本章大纲推导关键实体移动路径",
+                entity_transfers="列明本场关键人物/物件/信息/资源如何到场",
+                power_resource_map="按当前题材推导冲突双方权力与资源差",
+                information_state="只允许角色使用已获得且可信的信息",
+                mechanism_limits="任何改变局势的机制必须有成本和边界",
+                result_strength="支撑不足时降级为疑点/局部胜利/暂缓/后续线索",
+                transition_bridge="本场末尾交代交给下一场的状态" if i != n else "本章钩子必须由前文因果触发",
             )
         )
     return briefs
@@ -251,12 +296,14 @@ class SceneOrchestrator:
             "- 若同一线索需分阶段呈现，必须以可辨别的状态切片（前置铺垫 / 当下推进 / 后续余响），"
             "且 brief 中不得出现与前一 scene 相同的「动词 + 受事」组合。\n\n"
         )
+        contract_block = SCENE_CONTRACT_FIELDS_PROMPT + "\n"
         user_content = (
             f"{instr_block}"
+            f"{contract_block}"
             f"{mutex_block}"
             f"本章目标字数：约 {target_words} 字\n"
             f"{hint_line}"
-            f"请按系统提示输出严格 JSON。"
+            f"请按系统提示输出严格 JSON；每个 scene 必须包含场景合同字段，字段缺失视为规划失败。"
         )
         try:
             result = await run_text_prompt(
@@ -341,7 +388,8 @@ class SceneOrchestrator:
             if user_instruction and user_instruction.strip()
             else ""
         )
-        user_content = ctx_block + prior_block + instr_block + "\n\n请开始写本场景。"
+        contract_block = "\n\n" + WRITER_CONTRACT_PROMPT
+        user_content = ctx_block + contract_block + prior_block + instr_block + "\n\n请开始写本场景。"
         async for chunk in stream_text_prompt(
             task_type="scene_writer",
             user_content=user_content,
@@ -424,6 +472,10 @@ class SceneOrchestrator:
         head_line = f"[场 {scene.idx} | {scene.title}]"
         if scene.key_action:
             head_line += f" 主要动作：{scene.key_action}"
+        if scene.transition_bridge:
+            head_line += f" 交接：{scene.transition_bridge}"
+        elif scene.result_strength:
+            head_line += f" 结果强度：{scene.result_strength}"
         if not tail:
             return head_line
         return f"{head_line}\n末段：{tail}"
