@@ -391,6 +391,18 @@ class SceneOrchestrator:
             )
             _x4_inc_fallback("too_few")
             return _fallback_scene_briefs(target_words, chapter_outline_text)
+        if not _has_valid_scene_contract(briefs):
+            missing_by_scene = {
+                brief.idx: _missing_contract_fields(brief)
+                for brief in briefs
+                if _missing_contract_fields(brief)
+            }
+            logger.warning(
+                "scene_planner returned briefs with missing continuity contract fields: %s; using fallback instead",
+                missing_by_scene,
+            )
+            _x4_inc_fallback("missing_contract_fields")
+            return _fallback_scene_briefs(target_words, chapter_outline_text)
         return briefs
 
     @staticmethod

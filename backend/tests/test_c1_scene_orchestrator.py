@@ -250,6 +250,32 @@ async def test_plan_scenes_falls_back_on_unparseable():
     assert all(MIN_SCENE_WORDS <= b.target_words <= MAX_SCENE_WORDS for b in out)
 
 
+@pytest.mark.asyncio
+async def test_plan_scenes_falls_back_when_contract_fields_missing():
+    pack = _FakePack("<world rules>\n<chapter outline body>" * 20)
+    incomplete_briefs = [
+        {"title": "起", "brief": "缺少台账", "target_words": 900, "hook": "h1"},
+        _scene_contract(title="承", brief="完整", target_words=900, hook="h2"),
+        _scene_contract(title="合", brief="完整", target_words=900, hook=""),
+    ]
+    with patch(
+        "app.services.scene_orchestrator.run_text_prompt",
+        new=AsyncMock(return_value=_FakeResult(json.dumps(incomplete_briefs, ensure_ascii=False))),
+    ):
+        orch = SceneOrchestrator()
+        out = await orch.plan_scenes(
+            pack=pack,
+            db=None,
+            project_id="p",
+            chapter_id="c",
+            target_words=3500,
+            n_scenes_hint=3,
+        )
+    assert 3 <= len(out) <= 6
+    assert all(b.title.startswith("场景 ") for b in out)
+    assert all(b.continuity_ledger for b in out)
+
+
 # 7) ---------- plan_scenes falls back on LLM exception ----------
 
 @pytest.mark.asyncio
