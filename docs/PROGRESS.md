@@ -1,3 +1,5 @@
+> **✅ 2026-05-21 16:10 通用连续性台账与反抽卡 gate**：按 King 纠偏，停止围绕第三章具体症状打补丁，改为机制级通用修复：scene_planner 必须产出题材无关的 `continuity_ledger`，并与 start_state / entity_transfers / transition_bridge 一致；缺少时间、空间、实体、信息、机制、结果强度、连续性台账字段的 scene 规划会被拦截并 fallback。scene_writer 强制消费本场结构化台账，auto_revise 对 time/space/information/mechanism/power/result-strength 阻断标签即使分数达标也不放行；同类阻断标签跨轮重复时停止整章随机重抽，返回根因修复蓝图。已补场景合同与反抽卡单测，compile / diff check / 纯函数 smoke 通过；完整 pytest 受当前 venv 缺 `bcrypt` 阻断，未作为通过依据。
+
 > **⚠️ 2026-05-20 22:48 章节大纲长事务修复**：第 3 章大纲扩写在 LLM 返回后写库时触发 Postgres `idle-in-transaction timeout`，根因是章节大纲扩写 API 在等待上游模型期间一直持有读事务。已改为上下文读取完成后先释放事务，模型返回后重新取 fresh chapter 再写入，避免长时间 LLM 调用导致连接被数据库关闭。
 
 > **⚙️ 2026-05-20 22:20 大纲链路上移世界逻辑合同**：确认章节偏离不是正文单点问题，已把题材无关 World Logic Contract 前移到全文大纲、分卷大纲、章节摘要和章节大纲扩写；章节大纲新增 start/end state、time_delta、location_path、entity_transfers、information_state、power_resource_map、mechanism_limits、result_strength、handoff_to_next 等可执行状态字段。ContextPack 显式渲染卷/章合同字段，cascade planner 对 time/space/power/information/mechanism/result-strength 违规优先回写 chapter.outline_json；无 outlines 行时不再跳过，而是落到章节大纲修复。

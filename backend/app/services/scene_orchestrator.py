@@ -70,6 +70,7 @@ class SceneBrief:
     mechanism_limits: str = ""
     result_strength: str = ""
     transition_bridge: str = ""
+    continuity_ledger: str = ""
 
     @classmethod
     def from_dict(cls, idx: int, raw: dict) -> "SceneBrief":
@@ -104,7 +105,12 @@ class SceneBrief:
             information_state=_s("information_state"),
             mechanism_limits=_s("mechanism_limits"),
             result_strength=_s("result_strength"),
-            transition_bridge=_s("transition_bridge"),
+            transition_bridge=_s("transition_bridge") or _s("handoff_to_next"),
+            continuity_ledger=(
+                _s("continuity_ledger")
+                or _s("ledger")
+                or _s("连续性台账")
+            ),
         )
 
     def to_writer_user_content(self) -> str:
@@ -130,6 +136,7 @@ class SceneBrief:
             ("机制边界", self.mechanism_limits),
             ("允许结果强度", self.result_strength),
             ("下场交接", self.transition_bridge),
+            ("连续性台账", self.continuity_ledger),
         ]
         for label, value in contract_fields:
             if value:
@@ -242,9 +249,44 @@ def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list
                 mechanism_limits="任何改变局势的机制必须有成本和边界",
                 result_strength="支撑不足时降级为疑点/局部胜利/暂缓/后续线索",
                 transition_bridge="本场末尾交代交给下一场的状态" if i != n else "本章钩子必须由前文因果触发",
+                continuity_ledger="人物/物件/消息/证据/资源：场初承接上一场台账 -> 场末写清位置、持有人、知情人、转移路径和代价；新增实体必须写来源",
             )
         )
     return briefs
+
+
+_REQUIRED_CONTRACT_FIELDS: tuple[str, ...] = (
+    "start_state",
+    "time_delta",
+    "location_path",
+    "entity_transfers",
+    "power_resource_map",
+    "information_state",
+    "mechanism_limits",
+    "result_strength",
+    "transition_bridge",
+    "continuity_ledger",
+)
+
+
+def _missing_contract_fields(brief: SceneBrief) -> list[str]:
+    """Return missing generic continuity-contract fields for a planned scene."""
+    missing: list[str] = []
+    for field in _REQUIRED_CONTRACT_FIELDS:
+        if not str(getattr(brief, field, "") or "").strip():
+            missing.append(field)
+    return missing
+
+
+def _has_valid_scene_contract(briefs: list[SceneBrief]) -> bool:
+    """Reject planner output that lacks generic time/space/entity ledgers.
+
+    This is intentionally genre-agnostic: it checks abstract contract fields,
+    never a specific book, trope, role, location, prop, or plot symptom.
+    """
+    if not briefs:
+        return False
+    return all(not _missing_contract_fields(brief) for brief in briefs)
 
 
 class SceneOrchestrator:
@@ -297,9 +339,18 @@ class SceneOrchestrator:
             "且 brief 中不得出现与前一 scene 相同的「动词 + 受事」组合。\n\n"
         )
         contract_block = SCENE_CONTRACT_FIELDS_PROMPT + "\n"
+        bridge_block = (
+            "【章节过桥硬约束】\n"
+            "- scene 1 的 start_state 必须显式承接本章大纲 start_state / transition_bridge / 上章末尾状态；如果上章末尾有人物、物件、消息或风险停在别处，必须先写清到场路径、交接人、见证者、时间成本。\n"
+            "- 每个 scene 的 transition_bridge 必须把本场末状态完整交给下一场；禁止用省略句、抽象钩子或‘已经到了/转眼/不多时’跳过关键过桥。\n"
+            "- 若角色在本场使用信息，brief 必须能追溯信息来源；没有来源时只能写疑点、误判或局部尝试，不能写强结论。\n"
+            "- 每个 scene 必须输出 continuity_ledger 字段，结构为：人物/物件/消息/证据/资源：场初状态 -> 场末状态；新增实体必须写来源、入场路径、知情人和代价。\n"
+            "- continuity_ledger 与 start_state / entity_transfers / transition_bridge 必须互相一致；不一致时不得输出该规划。\n\n"
+        )
         user_content = (
             f"{instr_block}"
             f"{contract_block}"
+            f"{bridge_block}"
             f"{mutex_block}"
             f"本章目标字数：约 {target_words} 字\n"
             f"{hint_line}"
@@ -389,7 +440,15 @@ class SceneOrchestrator:
             else ""
         )
         contract_block = "\n\n" + WRITER_CONTRACT_PROMPT
-        user_content = ctx_block + contract_block + prior_block + instr_block + "\n\n请开始写本场景。"
+        ledger_block = (
+            "\n\n【连续性台账写作硬约束】\n"
+            f"- 本场结构化台账：{scene.continuity_ledger or '必须从场景合同自行补齐连续性台账'}\n"
+            "- 写正文前先依据本场合同在心中核对人物、物件、消息、证据、资源的场初状态。\n"
+            "- 正文中任何到场、离场、换手、被看见、被误解、被封存、被消耗，都必须有可读路径或代价。\n"
+            "- 不能为增强压迫感临时增加人手/道具/能力；需要新增时必须在正文出现入场路径和见证信息。\n"
+            "- 场末只允许留下 transition_bridge 台账能解释的结果；支撑不足时降级为疑点或待验证线索。"
+        )
+        user_content = ctx_block + contract_block + ledger_block + prior_block + instr_block + "\n\n请开始写本场景。"
         async for chunk in stream_text_prompt(
             task_type="scene_writer",
             user_content=user_content,

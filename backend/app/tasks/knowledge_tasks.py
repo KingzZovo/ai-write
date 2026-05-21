@@ -374,9 +374,12 @@ async def _run_async_generation_impl(task_id: str):
             if generated_chapter is not None and full_text:
                 from app.models.project import ChapterEvaluation, ChapterVersion, Volume
                 from app.services.auto_revise import (
+                    blocking_contract_violation_set,
+                    build_root_cause_repair_plan,
                     issues_to_revise_instruction,
                     merge_revise_into_user_instruction,
                     should_revise,
+                    should_stop_random_retry,
                     DEFAULT_REVISE_THRESHOLD,
                     DEFAULT_MAX_REVISE_ROUNDS,
                 )
@@ -410,6 +413,7 @@ async def _run_async_generation_impl(task_id: str):
 
                 current_text = full_text
                 final_eval = None
+                previous_blocking_violations: set[str] = set()
                 for round_idx in range(1, max_rounds + 2):
                     task.status = "evaluating"
                     task.progress_text = current_text
@@ -440,6 +444,22 @@ async def _run_async_generation_impl(task_id: str):
                         "Auto chapter evaluation: chapter_id=%s round=%d overall=%.2f threshold=%.2f issues=%d",
                         ch.id, round_idx, eval_result.overall, threshold, len(eval_result.issues),
                     )
+                    if should_stop_random_retry(eval_result, previous_blocking_violations):
+                        task.status = "needs_root_cause_repair"
+                        task.error = build_root_cause_repair_plan(
+                            eval_result,
+                            previous_blocking_violations=previous_blocking_violations,
+                        )
+                        await db.commit()
+                        logger.warning(
+                            "Auto chapter evaluation stopped lottery retry: chapter_id=%s round=%d repeated=%s",
+                            ch.id,
+                            round_idx,
+                            sorted(blocking_contract_violation_set(eval_result) & previous_blocking_violations),
+                        )
+                        break
+                    previous_blocking_violations = blocking_contract_violation_set(eval_result)
+
                     if not should_revise(eval_result, threshold=threshold) or not auto_revise_enabled:
                         break
                     if round_idx > max_rounds:

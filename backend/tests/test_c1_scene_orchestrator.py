@@ -33,6 +33,7 @@ from app.services.scene_orchestrator import (
     SceneBrief,
     SceneOrchestrator,
     _fallback_scene_briefs,
+    _has_valid_scene_contract,
     _try_parse_scene_array,
 )
 
@@ -60,6 +61,29 @@ class _FakeResult:
 async def _async_iter(chunks):
     for c in chunks:
         yield c
+
+
+def _scene_contract(**overrides) -> dict:
+    """Generic scene-contract fields required by current planner gate."""
+    base = {
+        "title": "场",
+        "brief": "推进主线",
+        "pov": "A",
+        "target_words": 900,
+        "hook": "接下一场",
+        "start_state": "承接上一场末尾状态",
+        "time_delta": "紧接上一场，未跳过关键耗时",
+        "location_path": "同地承接或写清移动路径",
+        "entity_transfers": "人物/物件/消息按场初台账到场",
+        "power_resource_map": "双方资源差与代价清楚",
+        "information_state": "角色只使用已知信息",
+        "mechanism_limits": "改变局势的机制有触发条件和边界",
+        "result_strength": "只允许局部推进，支撑不足降级",
+        "transition_bridge": "把场末状态交给下一场",
+        "continuity_ledger": "人物/物件/消息/证据/资源：场初 -> 场末，写清持有人/知情人/路径/代价",
+    }
+    base.update(overrides)
+    return base
 
 
 # 1) ---------- SceneBrief.from_dict clamping ----------
@@ -159,16 +183,33 @@ def test_writer_user_content_empty_hook_marks_chapter_end():
     assert "本场为末场" in uc
 
 
+def test_scene_contract_validator_rejects_missing_ledger():
+    bad = [SceneBrief.from_dict(1, {"title": "缺台账", "brief": "b"})]
+    assert _has_valid_scene_contract(bad) is False
+
+
+def test_scene_contract_validator_accepts_complete_generic_contract():
+    good = [SceneBrief.from_dict(1, _scene_contract())]
+    assert _has_valid_scene_contract(good) is True
+
+
+def test_scene_brief_preserves_continuity_ledger_in_writer_content():
+    b = SceneBrief.from_dict(1, _scene_contract(continuity_ledger="甲持证据：门外 -> 门内，乙知情"))
+    uc = b.to_writer_user_content()
+    assert "【连续性台账】" in uc
+    assert "甲持证据" in uc
+
+
 # 5) ---------- SceneOrchestrator.plan_scenes happy path ----------
 
 @pytest.mark.asyncio
 async def test_plan_scenes_uses_llm_when_json_parses():
     pack = _FakePack()
     fake_briefs = [
-        {"title": "起", "brief": "起头", "pov": "A", "target_words": 900, "hook": "h1"},
-        {"title": "承", "brief": "转折", "pov": "A", "target_words": 1100, "hook": "h2"},
-        {"title": "转", "brief": "高潮", "pov": "A", "target_words": 1100, "hook": "h3"},
-        {"title": "合", "brief": "收尾", "pov": "A", "target_words": 900, "hook": ""},
+        _scene_contract(title="起", brief="起头", target_words=900, hook="h1"),
+        _scene_contract(title="承", brief="转折", target_words=1100, hook="h2"),
+        _scene_contract(title="转", brief="高潮", target_words=1100, hook="h3"),
+        _scene_contract(title="合", brief="收尾", target_words=900, hook=""),
     ]
     fake_text = json.dumps(fake_briefs, ensure_ascii=False)
     with patch(
@@ -232,9 +273,9 @@ async def test_plan_scenes_falls_back_on_llm_exception():
 async def test_orchestrate_concatenates_scenes_with_separator():
     pack = _FakePack()
     briefs_json = json.dumps([
-        {"title": "a", "brief": "x", "target_words": 900, "hook": "h"},
-        {"title": "b", "brief": "y", "target_words": 900, "hook": "h"},
-        {"title": "c", "brief": "z", "target_words": 900, "hook": ""},
+        _scene_contract(title="a", brief="x", target_words=900, hook="h"),
+        _scene_contract(title="b", brief="y", target_words=900, hook="h"),
+        _scene_contract(title="c", brief="z", target_words=900, hook=""),
     ], ensure_ascii=False)
     # Each scene yields three chunks; we expect them joined with \n\n
     # separators between scenes (no leading separator).
@@ -282,7 +323,7 @@ async def test_orchestrate_concatenates_scenes_with_separator():
 async def test_on_scene_start_callback_called_per_scene():
     pack = _FakePack()
     briefs_json = json.dumps([
-        {"title": f"场 {i}", "brief": "b", "target_words": 900, "hook": "h" if i < 3 else ""}
+        _scene_contract(title=f"场 {i}", brief="b", target_words=900, hook="h" if i < 3 else "")
         for i in (1, 2, 3)
     ], ensure_ascii=False)
     seen: list[int] = []

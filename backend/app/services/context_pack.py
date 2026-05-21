@@ -317,6 +317,7 @@ class ContextPack:
             "mechanism_limits": "机制边界",
             "result_strength": "结果强度",
             "handoff_to_next": "交接下章",
+            "transition_bridge": "过桥约束",
         }
         contract_lines: list[str] = []
         for key, label in contract_labels.items():

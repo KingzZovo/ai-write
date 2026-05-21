@@ -135,7 +135,8 @@ USER_PROMPT_TMPL = """\
   "power_resource_map": "本章冲突各方权力/资源差、违抗成本、制衡条件",
   "mechanism_limits": "本章使用的能力/技术/制度工具/证据/资源调用的条件、成本、边界、反制",
   "result_strength": "本章允许达成的结果强度；支撑不足时如何降级",
-  "handoff_to_next": "本章如何把时间、空间、人物、物件、信息状态交接给下一章"
+  "handoff_to_next": "本章如何把时间、空间、人物、物件、信息状态交接给下一章",
+  "transition_bridge": "本章结尾到下一章开头之间必须显化的过桥过程：时间流逝、空间移动、人物/物件/消息交接、信息可见性、未解决风险。不能只写抽象钩子。"
 }}
 
 额外要求：
@@ -330,11 +331,16 @@ def _validate_and_normalize(parsed: Any, chapter: Chapter, stub: dict) -> dict[s
         "mechanism_limits",
         "result_strength",
         "handoff_to_next",
+        "transition_bridge",
     ):
         val = parsed.get(key)
         if not isinstance(val, str) or not val.strip():
             val = stub.get(key) if isinstance(stub.get(key), str) else ""
         out[key] = val.strip() if isinstance(val, str) else ""
+
+    if not out.get("transition_bridge"):
+        fallback_bridge = out.get("handoff_to_next") or out.get("end_state") or out.get("next_chapter_hook") or ""
+        out["transition_bridge"] = fallback_bridge.strip() if isinstance(fallback_bridge, str) else ""
 
     return out
 
