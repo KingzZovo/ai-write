@@ -222,6 +222,8 @@ def build_root_cause_repair_plan(
     lines.append("- 列出每个关键人物、物件、消息、证据、资源在每场开始/结束的位置、持有人、知情人、转移路径和代价。")
     lines.append("- 下一场只能从上一场台账状态推进；若台账无法解释，就必须降级结果或删除该桥段。")
     lines.append("- 章节结尾只能带走台账允许的局部成果；疑似线索必须标记风险和待验证项。")
+    lines.append("- 高压场面必须先列 action_budget：可用时间、身体姿态、双手限制、预置动作、最多动作数、代价；超预算时必须删动作、拆场或降级结果。")
+    lines.append("- 关键判断必须先列 inference_ledger：感知来源/证据、可推出结论强度、替代解释、允许写法；弱证据不得升级成定案。")
     return "\n".join(lines)
 
 

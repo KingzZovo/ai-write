@@ -102,6 +102,8 @@ def test_root_cause_instruction_contains_generic_repair_blueprint() -> None:
     assert "【根因修复蓝图】" in instr
     assert "修复决策只能选以下五类" in instr
     assert "【改写前强制台账】" in instr
+    assert "action_budget" in instr
+    assert "inference_ledger" in instr
     assert "mechanism_rule_violation" in instr
 
 

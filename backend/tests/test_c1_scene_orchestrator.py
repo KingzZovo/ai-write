@@ -81,6 +81,8 @@ def _scene_contract(**overrides) -> dict:
         "result_strength": "只允许局部推进，支撑不足降级",
         "transition_bridge": "把场末状态交给下一场",
         "continuity_ledger": "人物/物件/消息/证据/资源：场初 -> 场末，写清持有人/知情人/路径/代价",
+        "action_budget": "高压窗口、身体姿态、双手限制、预先准备、最多连续动作数和代价清楚",
+        "inference_ledger": "感知来源/证据、可推出结论强度、替代解释和允许写法清楚",
     }
     base.update(overrides)
     return base
@@ -156,6 +158,13 @@ def test_fallback_last_scene_hook_empty():
     assert all(b.hook for b in out[:-1])
 
 
+def test_fallback_scene_briefs_fill_action_budget_and_inference_ledger():
+    out = _fallback_scene_briefs(4000, "x" * 500)
+    assert out
+    assert all(b.action_budget for b in out)
+    assert all(b.inference_ledger for b in out)
+
+
 # 4) ---------- SceneBrief.to_writer_user_content ----------
 
 def test_writer_user_content_contains_all_anchors():
@@ -188,16 +197,34 @@ def test_scene_contract_validator_rejects_missing_ledger():
     assert _has_valid_scene_contract(bad) is False
 
 
+def test_scene_contract_validator_rejects_missing_action_budget_or_inference_ledger():
+    missing_action = _scene_contract(action_budget="")
+    missing_inference = _scene_contract(inference_ledger="")
+    assert _has_valid_scene_contract([SceneBrief.from_dict(1, missing_action)]) is False
+    assert _has_valid_scene_contract([SceneBrief.from_dict(1, missing_inference)]) is False
+
+
 def test_scene_contract_validator_accepts_complete_generic_contract():
     good = [SceneBrief.from_dict(1, _scene_contract())]
     assert _has_valid_scene_contract(good) is True
 
 
-def test_scene_brief_preserves_continuity_ledger_in_writer_content():
-    b = SceneBrief.from_dict(1, _scene_contract(continuity_ledger="甲持证据：门外 -> 门内，乙知情"))
+def test_scene_brief_preserves_continuity_and_action_inference_ledgers_in_writer_content():
+    b = SceneBrief.from_dict(
+        1,
+        _scene_contract(
+            continuity_ledger="甲持证据：门外 -> 门内，乙知情",
+            action_budget="近身搜拿窗口只能完成一动作，需付出受伤代价",
+            inference_ledger="只看见半圈白痕 -> 只能判断硬物压痕 -> 不得定案",
+        ),
+    )
     uc = b.to_writer_user_content()
     assert "【连续性台账】" in uc
+    assert "【动作预算】" in uc
+    assert "【推理台账】" in uc
     assert "甲持证据" in uc
+    assert "近身搜拿窗口" in uc
+    assert "半圈白痕" in uc
 
 
 # 5) ---------- SceneOrchestrator.plan_scenes happy path ----------

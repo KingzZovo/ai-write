@@ -316,6 +316,8 @@ class ContextPack:
             "power_resource_map": "权力/资源图",
             "mechanism_limits": "机制边界",
             "result_strength": "结果强度",
+            "action_budget": "动作预算",
+            "inference_ledger": "推理台账",
             "handoff_to_next": "交接下章",
             "transition_bridge": "过桥约束",
         }

@@ -71,6 +71,8 @@ class SceneBrief:
     result_strength: str = ""
     transition_bridge: str = ""
     continuity_ledger: str = ""
+    action_budget: str = ""
+    inference_ledger: str = ""
 
     @classmethod
     def from_dict(cls, idx: int, raw: dict) -> "SceneBrief":
@@ -111,6 +113,8 @@ class SceneBrief:
                 or _s("ledger")
                 or _s("连续性台账")
             ),
+            action_budget=_s("action_budget") or _s("动作预算"),
+            inference_ledger=_s("inference_ledger") or _s("推理台账"),
         )
 
     def to_writer_user_content(self) -> str:
@@ -137,6 +141,8 @@ class SceneBrief:
             ("允许结果强度", self.result_strength),
             ("下场交接", self.transition_bridge),
             ("连续性台账", self.continuity_ledger),
+            ("动作预算", self.action_budget),
+            ("推理台账", self.inference_ledger),
         ]
         for label, value in contract_fields:
             if value:
@@ -250,6 +256,8 @@ def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list
                 result_strength="支撑不足时降级为疑点/局部胜利/暂缓/后续线索",
                 transition_bridge="本场末尾交代交给下一场的状态" if i != n else "本章钩子必须由前文因果触发",
                 continuity_ledger="人物/物件/消息/证据/资源：场初承接上一场台账 -> 场末写清位置、持有人、知情人、转移路径和代价；新增实体必须写来源",
+                action_budget="高压场景列明可用时间窗口、身体姿态、双手是否受限、预先准备、最多连续动作数和代价；动作超预算则拆场或降级结果",
+                inference_ledger="关键判断列明感知来源/证据、结论强度、替代解释和允许写法；弱证据只能推出疑点",
             )
         )
     return briefs
@@ -266,6 +274,8 @@ _REQUIRED_CONTRACT_FIELDS: tuple[str, ...] = (
     "result_strength",
     "transition_bridge",
     "continuity_ledger",
+    "action_budget",
+    "inference_ledger",
 )
 
 
