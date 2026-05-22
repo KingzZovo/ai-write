@@ -319,6 +319,16 @@ class SceneOrchestrator:
         user_instruction: str = "",
     ) -> list[SceneBrief]:
         """Run scene_planner LLM call and return SceneBrief list (>=3, <=6)."""
+        # Root-cause guard (2026-05): do NOT proceed with chapter writing when
+        # scene_planner fails. Template fallback briefs are known to trigger
+        # continuity/time/space/information violations and cause quality collapse.
+        # Operators can override in emergencies via:
+        #   ALLOW_SCENE_PLANNER_FALLBACK=1
+        # Planner timeout can be tuned via:
+        #   SCENE_PLANNER_TIMEOUT_SECONDS=<float>
+        import os
+        allow_fallback = (os.getenv("ALLOW_SCENE_PLANNER_FALLBACK", "0") == "1")
+        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "60"))
         # Re-use ContextPack's system prompt as planner background, then
         # inject the planner-specific user instruction.
         background = pack.to_system_prompt()
@@ -367,18 +377,26 @@ class SceneOrchestrator:
             f"请按系统提示输出严格 JSON；每个 scene 必须包含场景合同字段，字段缺失视为规划失败。"
         )
         try:
-            result = await run_text_prompt(
-                task_type="scene_planner",
-                user_content=user_content,
-                db=db,
-                extra_system=background,
-                project_id=str(project_id),
-                chapter_id=str(chapter_id) if chapter_id else None,
-                rag_hits=[],
+            import asyncio
+            result = await asyncio.wait_for(
+                run_text_prompt(
+                    task_type="scene_planner",
+                    user_content=user_content,
+                    db=db,
+                    extra_system=background,
+                    project_id=str(project_id),
+                    chapter_id=str(chapter_id) if chapter_id else None,
+                    rag_hits=[],
+                ),
+                timeout=planner_timeout_s,
             )
             raw_text = getattr(result, "text", "") or ""
-        except Exception as exc:  # broad: planner is best-effort, never block writer
-            logger.warning("scene_planner LLM call failed: %s", exc)
+        except Exception as exc:
+            logger.warning(
+                "scene_planner LLM call failed/timeout (timeout=%.1fs): %s",
+                planner_timeout_s,
+                exc,
+            )
             raw_text = ""
 
         parsed = _try_parse_scene_array(raw_text)
@@ -387,7 +405,9 @@ class SceneOrchestrator:
                 "scene_planner returned unparseable output (len=%d); using fallback",  # v1.6.0 X4 metric: planner fallback
                 len(raw_text),
             )
-            return _fallback_scene_briefs(target_words, chapter_outline_text)
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: unparseable_output")
 
         briefs: list[SceneBrief] = []
         for i, raw in enumerate(parsed[:6], start=1):
@@ -400,7 +420,9 @@ class SceneOrchestrator:
                 len(briefs),
             )
             _x4_inc_fallback("too_few")
-            return _fallback_scene_briefs(target_words, chapter_outline_text)
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: too_few_briefs")
         if not _has_valid_scene_contract(briefs):
             missing_by_scene = {
                 brief.idx: _missing_contract_fields(brief)
@@ -412,7 +434,9 @@ class SceneOrchestrator:
                 missing_by_scene,
             )
             _x4_inc_fallback("missing_contract_fields")
-            return _fallback_scene_briefs(target_words, chapter_outline_text)
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: missing_contract_fields")
         return briefs
 
     @staticmethod
