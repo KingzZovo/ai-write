@@ -256,6 +256,9 @@ async def generate_chapter(
 
     async def event_stream() -> AsyncGenerator[str, None]:
         collected_text: list[str] = []
+        # Baseline snapshot so auto-revise failures do not leave a known-bad
+        # draft as the active chapter.content_text.
+        baseline_text_before_run = current_text
         try:
             yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
 
@@ -540,6 +543,9 @@ async def generate_chapter(
                     threshold = float(req.revise_threshold)
                     previous_blocking_violations: set[str] = set()
 
+                    accepted_final = False
+                    aborted_with_blocking = False
+
                     for round_idx in range(1, max_rounds + 1):
                         # 1) Score the current saved version.
                         yield f"data: {json.dumps({'event': 'evaluating', 'round': round_idx})}\n\n"
@@ -597,6 +603,7 @@ async def generate_chapter(
                                 "repair_plan": repair_plan,
                             }, ensure_ascii=False)
                             yield f"data: {gate_payload}\n\n"
+                            aborted_with_blocking = True
                             break
                         previous_blocking_violations = blocking_contract_violation_set(eval_result)
 
@@ -609,6 +616,7 @@ async def generate_chapter(
                                 "threshold": threshold,
                             })
                             yield f"data: {skipped_payload}\n\n"
+                            accepted_final = True
                             break
 
                         # 3) Build revise instruction and rerun SceneOrchestrator.
@@ -673,6 +681,7 @@ async def generate_chapter(
                                     "reason": "empty_briefs",
                                 })
                                 yield f"data: {err_payload}\n\n"
+                            aborted_with_blocking = True
                             break
 
                         # 4) Overwrite chapter content with the revised version.
@@ -696,6 +705,7 @@ async def generate_chapter(
                                 "C2 auto-revise round %d save failed: %s",
                                 round_idx, save2_err,
                             )
+                            aborted_with_blocking = True
                             break
                         current_text = revised_text
                     else:
@@ -733,6 +743,13 @@ async def generate_chapter(
                                     await eval_db2.commit()
                             except Exception:
                                 logger.warning("C2 auto-revise final eval persist failed", exc_info=True)
+
+                            # Only accept the final text when it meets the
+                            # threshold and has no blocking contract violations.
+                            if not should_revise(final_eval, threshold=threshold):
+                                accepted_final = True
+                            else:
+                                aborted_with_blocking = True
 
                             # C4-4: cascade auto-regenerate trigger.
                             # When auto-revise exhausts max_rounds without
@@ -823,7 +840,26 @@ async def generate_chapter(
                     logger.warning(
                         "C2 auto-revise loop failed: %s", revise_err, exc_info=True,
                     )
+                    aborted_with_blocking = True
                     yield f"data: {json.dumps({'event': 'revise_error', 'error': str(revise_err)})}\n\n"
+
+                # If the revise loop aborted due to blocking issues / timeout /
+                # rounds exhausted, rollback chapter.content_text so a known-bad
+                # draft does not become the active chapter.
+                if (not accepted_final) and aborted_with_blocking:
+                    try:
+                        from app.db.session import async_session_factory
+                        from app.models.project import Chapter as _ChapterRollback
+                        async with async_session_factory() as rb_db:
+                            ch_rb = await rb_db.get(_ChapterRollback, req.chapter_id)
+                            if ch_rb is not None:
+                                ch_rb.content_text = baseline_text_before_run or ""
+                                ch_rb.word_count = len(ch_rb.content_text or "")
+                                ch_rb.status = "draft"
+                                await rb_db.commit()
+                                yield f"data: {json.dumps({'event': 'rollback_applied', 'reason': 'auto_revise_blocking_or_timeout', 'chapter_id': req.chapter_id})}\n\n"
+                    except Exception:
+                        logger.warning("Auto-revise rollback failed", exc_info=True)
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"
