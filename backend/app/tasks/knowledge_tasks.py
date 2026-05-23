@@ -291,6 +291,7 @@ async def _run_async_generation_impl(task_id: str):
                 if not ch:
                     raise ValueError("章节不存在")
                 from app.services.scene_orchestrator import SceneOrchestrator
+                from app.services.chapter_generator import ChapterGenerator
 
                 generated_chapter = ch
                 generated_chapter_outline = ch.outline_json or {}
@@ -298,20 +299,43 @@ async def _run_async_generation_impl(task_id: str):
                 user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
                 generated_chapter_user_instr = user_instr
                 orchestrator = SceneOrchestrator()
-                async for chunk in orchestrator.orchestrate_chapter_stream(
-                    project_id=project_id,
-                    volume_id=str(ch.volume_id),
-                    chapter_idx=ch.chapter_idx,
-                    db=db,
-                    chapter_id=ch.id,
-                    user_instruction=user_instr,
-                    target_words=generated_chapter_target_words,
-                ):
-                    collected.append(chunk)
-                    if len(collected) % 5 == 0:
-                        task.progress_text = "".join(collected)
-                        task.char_count = len(task.progress_text)
-                        await db.commit()
+                try:
+                    async for chunk in orchestrator.orchestrate_chapter_stream(
+                        project_id=project_id,
+                        volume_id=str(ch.volume_id),
+                        chapter_idx=ch.chapter_idx,
+                        db=db,
+                        chapter_id=ch.id,
+                        user_instruction=user_instr,
+                        target_words=generated_chapter_target_words,
+                    ):
+                        collected.append(chunk)
+                        if len(collected) % 5 == 0:
+                            task.progress_text = "".join(collected)
+                            task.char_count = len(task.progress_text)
+                            await db.commit()
+                except Exception as scene_err:
+                    # Do not use template scene briefs; if scene-mode fails,
+                    # fall back to the single-shot chapter generator.
+                    logger.warning(
+                        "Async generation: SceneOrchestrator failed (fallback to ChapterGenerator) task_id=%s err=%s",
+                        task_id,
+                        scene_err,
+                    )
+                    generator = ChapterGenerator()
+                    async for chunk in generator.generate_stream(
+                        project_id=project_id,
+                        volume_id=str(ch.volume_id),
+                        chapter_idx=ch.chapter_idx,
+                        db=db,
+                        chapter_id=ch.id,
+                        user_instruction=user_instr,
+                    ):
+                        collected.append(chunk)
+                        if len(collected) % 5 == 0:
+                            task.progress_text = "".join(collected)
+                            task.char_count = len(task.progress_text)
+                            await db.commit()
 
             full_text = "".join(collected)
 
