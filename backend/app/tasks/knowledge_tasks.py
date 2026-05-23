@@ -324,7 +324,8 @@ async def _run_async_generation_impl(task_id: str):
                         task_id,
                         scene_err,
                     )
-                    task.status = "needs_root_cause_repair"
+                    # NOTE: generation_tasks.status is VARCHAR(20) in DB.
+                    task.status = "needs_repair"
                     task.error_message = (
                         "scene_mode blocked: scene_planner_failed/unparseable. "
                         "Fix planner reliability (timeout/model/output) or contract field compliance, then retry."
@@ -482,7 +483,8 @@ async def _run_async_generation_impl(task_id: str):
                         ch.id, round_idx, eval_result.overall, threshold, len(eval_result.issues),
                     )
                     if should_stop_random_retry(eval_result, previous_blocking_violations):
-                        task.status = "needs_root_cause_repair"
+                        # NOTE: generation_tasks.status is VARCHAR(20) in DB.
+                        task.status = "needs_repair"
                         task.error = build_root_cause_repair_plan(
                             eval_result,
                             previous_blocking_violations=previous_blocking_violations,
@@ -541,7 +543,8 @@ async def _run_async_generation_impl(task_id: str):
                             task_id,
                             regen_scene_err,
                         )
-                        task.status = "needs_root_cause_repair"
+                        # NOTE: generation_tasks.status is VARCHAR(20) in DB.
+                        task.status = "needs_repair"
                         task.error = (
                             "auto_revise blocked: scene_orchestrator_failed during regenerate. "
                             "Fix scene_planner/contract fields or upstream outline/context, then retry."
