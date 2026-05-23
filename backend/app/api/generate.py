@@ -1522,6 +1522,7 @@ class AsyncGenerateRequest(BaseModel):
     chapter_id: str | None = None
     volume_idx: int | None = None
     chapter_idx: int | None = None
+    params: dict | None = None
 
 
 @router.post("/async")
@@ -1548,6 +1549,7 @@ async def start_async_generation(
             "chapter_id": req.chapter_id,
             "volume_idx": req.volume_idx,
             "chapter_idx": req.chapter_idx,
+            **(req.params or {}),
         },
     )
     db.add(task)
