@@ -318,17 +318,43 @@ async def generate_chapter(
                 async def _on_scene_start(scene) -> None:  # type: ignore[no-untyped-def]
                     pass  # placeholder; SSE "scene" events can be added later
 
-                stream_iter = orchestrator.orchestrate_chapter_stream(
-                    project_id=req.project_id,
-                    volume_id=resolved_volume_id,
-                    chapter_idx=resolved_chapter_idx,
-                    db=db,
-                    chapter_id=req.chapter_id,
-                    user_instruction=effective_user_instruction,
-                    target_words=effective_target_words,
-                    n_scenes_hint=req.n_scenes_hint,
-                    on_scene_start=_on_scene_start,
-                )
+                try:
+                    stream_iter = orchestrator.orchestrate_chapter_stream(
+                        project_id=req.project_id,
+                        volume_id=resolved_volume_id,
+                        chapter_idx=resolved_chapter_idx,
+                        db=db,
+                        chapter_id=req.chapter_id,
+                        user_instruction=effective_user_instruction,
+                        target_words=effective_target_words,
+                        n_scenes_hint=req.n_scenes_hint,
+                        on_scene_start=_on_scene_start,
+                    )
+                    async for chunk in stream_iter:
+                        if chunk:
+                            collected_text.append(chunk)
+                        yield f"data: {json.dumps({'text': chunk})}\n\n"
+                except Exception as scene_err:
+                    # Root-cause guard: SceneOrchestrator is strict about scene_planner.
+                    # If planning fails, fall back to the single-shot chapter generator
+                    # rather than using template briefs.
+                    logger.warning(
+                        "SceneOrchestrator failed (falling back to ChapterGenerator): %s",
+                        scene_err,
+                    )
+                    generator = ChapterGenerator()
+                    stream_iter = generator.generate_stream(
+                        project_id=req.project_id,
+                        volume_id=resolved_volume_id,
+                        chapter_idx=resolved_chapter_idx,
+                        db=db,
+                        chapter_id=req.chapter_id,
+                        user_instruction=effective_user_instruction,
+                    )
+                    async for chunk in stream_iter:
+                        if chunk:
+                            collected_text.append(chunk)
+                        yield f"data: {json.dumps({'text': chunk})}\n\n"
             else:
                 generator = ChapterGenerator()
                 stream_iter = generator.generate_stream(
@@ -339,10 +365,10 @@ async def generate_chapter(
                     chapter_id=req.chapter_id,
                     user_instruction=effective_user_instruction,
                 )
-            async for chunk in stream_iter:
-                if chunk:
-                    collected_text.append(chunk)
-                yield f"data: {json.dumps({'text': chunk})}\n\n"
+                async for chunk in stream_iter:
+                    if chunk:
+                        collected_text.append(chunk)
+                    yield f"data: {json.dumps({'text': chunk})}\n\n"
 
             # PR-CH-SAVE-RACE: chapter SSE save was racing with Starlette
             # BaseHTTPMiddleware cancel scope (same root cause as PR-OL16).
@@ -641,20 +667,42 @@ async def generate_chapter(
                         try:
                             async with asyncio.timeout(900):  # 15min hard cap per round
                                 async with async_session_factory() as revise_db:
-                                    async for chunk in revise_orchestrator.orchestrate_chapter_stream(
-                                        project_id=req.project_id,
-                                        volume_id=resolved_volume_id,
-                                        chapter_idx=resolved_chapter_idx,
-                                        db=revise_db,
-                                        chapter_id=revise_chapter_id,
-                                        user_instruction=merged_instruction,
-                                        target_words=effective_target_words,
-                                        n_scenes_hint=req.n_scenes_hint,
-                                        on_scene_start=_on_scene_start,
-                                    ):
-                                        if chunk:
-                                            revised_chunks.append(chunk)
-                                        yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                                    try:
+                                        async for chunk in revise_orchestrator.orchestrate_chapter_stream(
+                                            project_id=req.project_id,
+                                            volume_id=resolved_volume_id,
+                                            chapter_idx=resolved_chapter_idx,
+                                            db=revise_db,
+                                            chapter_id=revise_chapter_id,
+                                            user_instruction=merged_instruction,
+                                            target_words=effective_target_words,
+                                            n_scenes_hint=req.n_scenes_hint,
+                                            on_scene_start=_on_scene_start,
+                                        ):
+                                            if chunk:
+                                                revised_chunks.append(chunk)
+                                            yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                                    except Exception as revise_scene_err:
+                                        # Same policy as initial generation: if scene planning/writing
+                                        # fails, fall back to the single-shot generator rather than
+                                        # producing template scenes.
+                                        logger.warning(
+                                            "C2 auto-revise: SceneOrchestrator failed (falling back to ChapterGenerator) round=%d err=%s",
+                                            round_idx,
+                                            revise_scene_err,
+                                        )
+                                        generator = ChapterGenerator()
+                                        async for chunk in generator.generate_stream(
+                                            project_id=req.project_id,
+                                            volume_id=resolved_volume_id,
+                                            chapter_idx=resolved_chapter_idx,
+                                            db=revise_db,
+                                            chapter_id=revise_chapter_id,
+                                            user_instruction=merged_instruction,
+                                        ):
+                                            if chunk:
+                                                revised_chunks.append(chunk)
+                                            yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
                         except asyncio.TimeoutError:
                             revise_timed_out = True
                             logger.warning(
