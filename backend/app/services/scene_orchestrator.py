@@ -328,7 +328,10 @@ class SceneOrchestrator:
         #   SCENE_PLANNER_TIMEOUT_SECONDS=<float>
         import os
         allow_fallback = (os.getenv("ALLOW_SCENE_PLANNER_FALLBACK", "0") == "1")
-        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "60"))
+        # Planner call is the main reliability bottleneck for reaching the
+        # quality bar (it gates all contract/ledger constraints). In practice
+        # 60s is too aggressive and causes empty output timeouts.
+        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "180"))
         # Re-use ContextPack's system prompt as planner background, then
         # inject the planner-specific user instruction.
         background = pack.to_system_prompt()
@@ -376,28 +379,47 @@ class SceneOrchestrator:
             f"{hint_line}"
             f"请按系统提示输出严格 JSON；每个 scene 必须包含场景合同字段，字段缺失视为规划失败。"
         )
-        try:
-            import asyncio
-            result = await asyncio.wait_for(
-                run_text_prompt(
-                    task_type="scene_planner",
-                    user_content=user_content,
-                    db=db,
-                    extra_system=background,
-                    project_id=str(project_id),
-                    chapter_id=str(chapter_id) if chapter_id else None,
-                    rag_hits=[],
-                ),
-                timeout=planner_timeout_s,
-            )
-            raw_text = getattr(result, "text", "") or ""
-        except Exception as exc:
-            logger.warning(
-                "scene_planner LLM call failed/timeout (timeout=%.1fs): %s",
-                planner_timeout_s,
-                exc,
-            )
-            raw_text = ""
+        import asyncio
+        raw_text = ""
+        last_exc: Exception | None = None
+        # Retry once on timeout/empty output. This is cheaper than falling back
+        # or aborting the whole chapter generation.
+        for attempt in (1, 2):
+            try:
+                timeout_s = planner_timeout_s if attempt == 1 else max(planner_timeout_s, 240.0)
+                result = await asyncio.wait_for(
+                    run_text_prompt(
+                        task_type="scene_planner",
+                        user_content=user_content,
+                        db=db,
+                        extra_system=background,
+                        project_id=str(project_id),
+                        chapter_id=str(chapter_id) if chapter_id else None,
+                        rag_hits=[],
+                    ),
+                    timeout=timeout_s,
+                )
+                raw_text = getattr(result, "text", "") or ""
+                if raw_text.strip():
+                    break
+                logger.warning(
+                    "scene_planner returned empty output (attempt=%d/%d); retrying",
+                    attempt,
+                    2,
+                )
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "scene_planner LLM call failed/timeout (attempt=%d/%d timeout=%.1fs): %s",
+                    attempt,
+                    2,
+                    planner_timeout_s,
+                    exc,
+                )
+                raw_text = ""
+        if not raw_text and last_exc is not None:
+            # Preserve original behavior: downstream parser will decide fallback/raise.
+            pass
 
         parsed = _try_parse_scene_array(raw_text)
         if not parsed:
