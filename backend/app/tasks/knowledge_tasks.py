@@ -298,23 +298,44 @@ async def _run_async_generation_impl(task_id: str):
                 generated_chapter_target_words = params.get("target_words") or ch.target_word_count
                 user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
                 generated_chapter_user_instr = user_instr
-                orchestrator = SceneOrchestrator()
-                try:
-                    async for chunk in orchestrator.orchestrate_chapter_stream(
-                        project_id=project_id,
-                        volume_id=str(ch.volume_id),
-                        chapter_idx=ch.chapter_idx,
-                        db=db,
-                        chapter_id=ch.id,
-                        user_instruction=user_instr,
-                        target_words=generated_chapter_target_words,
-                    ):
-                        collected.append(chunk)
-                        if len(collected) % 5 == 0:
-                            task.progress_text = "".join(collected)
-                            task.char_count = len(task.progress_text)
-                            await db.commit()
-                except Exception as scene_err:
+                import asyncio as _asyncio
+                # Scene-mode is required for quality, but it can fail transiently
+                # due to upstream LLM streaming/internal errors. Retry once
+                # before marking the task as needs_repair.
+                last_scene_err: Exception | None = None
+                for _attempt in (1, 2):
+                    orchestrator = SceneOrchestrator()
+                    try:
+                        async for chunk in orchestrator.orchestrate_chapter_stream(
+                            project_id=project_id,
+                            volume_id=str(ch.volume_id),
+                            chapter_idx=ch.chapter_idx,
+                            db=db,
+                            chapter_id=ch.id,
+                            user_instruction=user_instr,
+                            target_words=generated_chapter_target_words,
+                        ):
+                            collected.append(chunk)
+                            if len(collected) % 5 == 0:
+                                task.progress_text = "".join(collected)
+                                task.char_count = len(task.progress_text)
+                                await db.commit()
+                        last_scene_err = None
+                        break
+                    except Exception as scene_err:
+                        last_scene_err = scene_err
+                        if _attempt == 1:
+                            logger.warning(
+                                "Async generation: SceneOrchestrator failed (attempt=%d/%d); retrying task_id=%s err=%s",
+                                _attempt,
+                                2,
+                                task_id,
+                                scene_err,
+                            )
+                            await _asyncio.sleep(2.0)
+                            continue
+                        break
+                if last_scene_err is not None:
                     # Quality gate: for chapter generation we require scene-mode
                     # to succeed. Falling back to single-shot generation here
                     # bypasses the continuity contract and tends to reproduce the
@@ -322,7 +343,7 @@ async def _run_async_generation_impl(task_id: str):
                     logger.warning(
                         "Async generation: SceneOrchestrator failed; require root-cause repair task_id=%s err=%s",
                         task_id,
-                        scene_err,
+                        last_scene_err,
                     )
                     # NOTE: generation_tasks.status is VARCHAR(20) in DB.
                     task.status = "needs_repair"
@@ -516,9 +537,12 @@ async def _run_async_generation_impl(task_id: str):
                         revise_instr,
                     )
                     regen_chunks: list[str] = []
-                    orchestrator = SceneOrchestrator()
-                    try:
-                        async for chunk in orchestrator.orchestrate_chapter_stream(
+                    import asyncio as _asyncio
+                    last_regen_err: Exception | None = None
+                    for _attempt in (1, 2):
+                        orchestrator = SceneOrchestrator()
+                        try:
+                            async for chunk in orchestrator.orchestrate_chapter_stream(
                             project_id=project_id,
                             volume_id=str(ch.volume_id),
                             chapter_idx=ch.chapter_idx,
@@ -527,12 +551,27 @@ async def _run_async_generation_impl(task_id: str):
                             user_instruction=merged_instruction,
                             target_words=generated_chapter_target_words,
                         ):
-                            regen_chunks.append(chunk)
-                            if len(regen_chunks) % 5 == 0:
-                                task.progress_text = "".join(regen_chunks)
-                                task.char_count = len(task.progress_text)
-                                await db.commit()
-                    except Exception as regen_scene_err:
+                                regen_chunks.append(chunk)
+                                if len(regen_chunks) % 5 == 0:
+                                    task.progress_text = "".join(regen_chunks)
+                                    task.char_count = len(task.progress_text)
+                                    await db.commit()
+                            last_regen_err = None
+                            break
+                        except Exception as regen_scene_err:
+                            last_regen_err = regen_scene_err
+                            if _attempt == 1:
+                                logger.warning(
+                                    "Async generation: regen SceneOrchestrator failed (attempt=%d/%d); retrying task_id=%s err=%s",
+                                    _attempt,
+                                    2,
+                                    task_id,
+                                    regen_scene_err,
+                                )
+                                await _asyncio.sleep(2.0)
+                                continue
+                            break
+                    if last_regen_err is not None:
                         # Quality gate: do NOT fall back to single-shot generator
                         # during auto-revise. Scene planning failures correlate
                         # strongly with world-logic violations (time/space/etc.).
@@ -541,7 +580,7 @@ async def _run_async_generation_impl(task_id: str):
                         logger.warning(
                             "Async generation: regen SceneOrchestrator failed; require root-cause repair task_id=%s err=%s",
                             task_id,
-                            regen_scene_err,
+                            last_regen_err,
                         )
                         # NOTE: generation_tasks.status is VARCHAR(20) in DB.
                         task.status = "needs_repair"
