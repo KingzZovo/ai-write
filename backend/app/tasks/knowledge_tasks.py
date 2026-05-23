@@ -445,12 +445,30 @@ async def _run_async_generation_impl(task_id: str):
                     await db.commit()
 
                     evaluator = ChapterEvaluator()
-                    eval_result = await evaluator.evaluate(
-                        chapter_text=current_text,
-                        chapter_outline=generated_chapter_outline,
-                        previous_summary=prev_context,
-                        style_profile=style_text,
-                    )
+                    # Evaluation relies on LLM calls and can occasionally hang.
+                    # Put a hard timeout around it so async chapter generation
+                    # always makes forward progress and saves output.
+                    import asyncio as _asyncio
+                    _eval_timeout = float(params.get("evaluation_timeout_seconds") or 90)
+                    try:
+                        eval_result = await _asyncio.wait_for(
+                            evaluator.evaluate(
+                                chapter_text=current_text,
+                                chapter_outline=generated_chapter_outline,
+                                previous_summary=prev_context,
+                                style_profile=style_text,
+                            ),
+                            timeout=_eval_timeout,
+                        )
+                    except _asyncio.TimeoutError:
+                        logger.warning(
+                            "Auto chapter evaluation timed out (%.1fs): chapter_id=%s round=%d; saving without eval",
+                            _eval_timeout,
+                            ch.id,
+                            round_idx,
+                        )
+                        final_eval = None
+                        break
                     final_eval = eval_result
                     db.add(ChapterEvaluation(
                         chapter_id=ch.id,
