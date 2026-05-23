@@ -187,6 +187,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Verify JWT token for all /api/* requests except public paths."""
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        # Test/dev escape hatch: allow running without auth while keeping the
+        # middleware in place for production-like environments.
+        if os.getenv("DISABLE_AUTH", "0") == "1":
+            return await call_next(request)
+
         path = request.url.path
 
         # Skip auth for public paths and non-API routes
