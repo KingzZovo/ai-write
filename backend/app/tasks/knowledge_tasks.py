@@ -520,20 +520,42 @@ async def _run_async_generation_impl(task_id: str):
                     )
                     regen_chunks: list[str] = []
                     orchestrator = SceneOrchestrator()
-                    async for chunk in orchestrator.orchestrate_chapter_stream(
-                        project_id=project_id,
-                        volume_id=str(ch.volume_id),
-                        chapter_idx=ch.chapter_idx,
-                        db=db,
-                        chapter_id=ch.id,
-                        user_instruction=merged_instruction,
-                        target_words=generated_chapter_target_words,
-                    ):
-                        regen_chunks.append(chunk)
-                        if len(regen_chunks) % 5 == 0:
-                            task.progress_text = "".join(regen_chunks)
-                            task.char_count = len(task.progress_text)
-                            await db.commit()
+                    try:
+                        async for chunk in orchestrator.orchestrate_chapter_stream(
+                            project_id=project_id,
+                            volume_id=str(ch.volume_id),
+                            chapter_idx=ch.chapter_idx,
+                            db=db,
+                            chapter_id=ch.id,
+                            user_instruction=merged_instruction,
+                            target_words=generated_chapter_target_words,
+                        ):
+                            regen_chunks.append(chunk)
+                            if len(regen_chunks) % 5 == 0:
+                                task.progress_text = "".join(regen_chunks)
+                                task.char_count = len(task.progress_text)
+                                await db.commit()
+                    except Exception as regen_scene_err:
+                        logger.warning(
+                            "Async generation: regen SceneOrchestrator failed (fallback to ChapterGenerator) task_id=%s err=%s",
+                            task_id,
+                            regen_scene_err,
+                        )
+                        from app.services.chapter_generator import ChapterGenerator
+                        regen_generator = ChapterGenerator()
+                        async for chunk in regen_generator.generate_stream(
+                            project_id=project_id,
+                            volume_id=str(ch.volume_id),
+                            chapter_idx=ch.chapter_idx,
+                            db=db,
+                            chapter_id=ch.id,
+                            user_instruction=merged_instruction,
+                        ):
+                            regen_chunks.append(chunk)
+                            if len(regen_chunks) % 5 == 0:
+                                task.progress_text = "".join(regen_chunks)
+                                task.char_count = len(task.progress_text)
+                                await db.commit()
                     regenerated = "".join(regen_chunks).strip()
                     if not regenerated:
                         logger.warning("Auto chapter regeneration returned empty text: chapter_id=%s round=%d", ch.id, round_idx)
@@ -543,12 +565,14 @@ async def _run_async_generation_impl(task_id: str):
                 full_text = current_text
                 ch.content_text = full_text
                 ch.word_count = len(full_text)
-                ch.status = "completed" if (not final_eval or final_eval.overall >= threshold) else "needs_review"
-                await db.execute(
-                    _sql_update(ChapterVersion)
-                    .where(ChapterVersion.chapter_id == ch.id, ChapterVersion.is_active == 1)
-                    .values(is_active=0)
-                )
+                passed = bool(final_eval and getattr(final_eval, "overall", 0) >= threshold)
+                ch.status = "completed" if passed else "needs_review"
+                if passed:
+                    await db.execute(
+                        _sql_update(ChapterVersion)
+                        .where(ChapterVersion.chapter_id == ch.id, ChapterVersion.is_active == 1)
+                        .values(is_active=0)
+                    )
                 db.add(ChapterVersion(
                     chapter_id=ch.id,
                     parent_id=None,
@@ -556,7 +580,7 @@ async def _run_async_generation_impl(task_id: str):
                     content_text=full_text,
                     content_diff="",
                     word_count=len(full_text),
-                    is_active=1,
+                    is_active=1 if passed else 0,
                     source="ai_generation",
                     metadata_json={
                         "caller": "tasks.run_async_generation",
@@ -564,6 +588,7 @@ async def _run_async_generation_impl(task_id: str):
                         "revise_threshold": threshold,
                         "final_overall": getattr(final_eval, "overall", None),
                         "issue_count": len(getattr(final_eval, "issues", []) or []),
+                        "passed": passed,
                     },
                 ))
                 await db.commit()
@@ -611,7 +636,7 @@ async def _run_async_generation_impl(task_id: str):
                 task.polished_text = ""  # No polishing requested
             task.progress_text = full_text
             task.char_count = len(full_text)
-            task.status = "completed"
+            task.status = "completed" if (not generated_chapter or passed) else "needs_review"
 
             # Auto-save outline to outlines table
             if task.task_type.startswith("outline") and full_text and project_id:
