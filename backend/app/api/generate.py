@@ -255,6 +255,7 @@ async def generate_chapter(
             logger.warning("Style resolve failed: %s", e)
 
     async def event_stream() -> AsyncGenerator[str, None]:
+        nonlocal current_text
         collected_text: list[str] = []
         # Baseline snapshot so auto-revise failures do not leave a known-bad
         # draft as the active chapter.content_text.
