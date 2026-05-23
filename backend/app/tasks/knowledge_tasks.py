@@ -315,27 +315,22 @@ async def _run_async_generation_impl(task_id: str):
                             task.char_count = len(task.progress_text)
                             await db.commit()
                 except Exception as scene_err:
-                    # Do not use template scene briefs; if scene-mode fails,
-                    # fall back to the single-shot chapter generator.
+                    # Quality gate: for chapter generation we require scene-mode
+                    # to succeed. Falling back to single-shot generation here
+                    # bypasses the continuity contract and tends to reproduce the
+                    # same time/space/information/mechanism violations.
                     logger.warning(
-                        "Async generation: SceneOrchestrator failed (fallback to ChapterGenerator) task_id=%s err=%s",
+                        "Async generation: SceneOrchestrator failed; require root-cause repair task_id=%s err=%s",
                         task_id,
                         scene_err,
                     )
-                    generator = ChapterGenerator()
-                    async for chunk in generator.generate_stream(
-                        project_id=project_id,
-                        volume_id=str(ch.volume_id),
-                        chapter_idx=ch.chapter_idx,
-                        db=db,
-                        chapter_id=ch.id,
-                        user_instruction=user_instr,
-                    ):
-                        collected.append(chunk)
-                        if len(collected) % 5 == 0:
-                            task.progress_text = "".join(collected)
-                            task.char_count = len(task.progress_text)
-                            await db.commit()
+                    task.status = "needs_root_cause_repair"
+                    task.error_message = (
+                        "scene_mode blocked: scene_planner_failed/unparseable. "
+                        "Fix planner reliability (timeout/model/output) or contract field compliance, then retry."
+                    )
+                    await db.commit()
+                    return
 
             full_text = "".join(collected)
 
@@ -536,26 +531,23 @@ async def _run_async_generation_impl(task_id: str):
                                 task.char_count = len(task.progress_text)
                                 await db.commit()
                     except Exception as regen_scene_err:
+                        # Quality gate: do NOT fall back to single-shot generator
+                        # during auto-revise. Scene planning failures correlate
+                        # strongly with world-logic violations (time/space/etc.).
+                        # Surface a root-cause repair requirement instead of
+                        # producing another low-quality sample.
                         logger.warning(
-                            "Async generation: regen SceneOrchestrator failed (fallback to ChapterGenerator) task_id=%s err=%s",
+                            "Async generation: regen SceneOrchestrator failed; require root-cause repair task_id=%s err=%s",
                             task_id,
                             regen_scene_err,
                         )
-                        from app.services.chapter_generator import ChapterGenerator
-                        regen_generator = ChapterGenerator()
-                        async for chunk in regen_generator.generate_stream(
-                            project_id=project_id,
-                            volume_id=str(ch.volume_id),
-                            chapter_idx=ch.chapter_idx,
-                            db=db,
-                            chapter_id=ch.id,
-                            user_instruction=merged_instruction,
-                        ):
-                            regen_chunks.append(chunk)
-                            if len(regen_chunks) % 5 == 0:
-                                task.progress_text = "".join(regen_chunks)
-                                task.char_count = len(task.progress_text)
-                                await db.commit()
+                        task.status = "needs_root_cause_repair"
+                        task.error = (
+                            "auto_revise blocked: scene_orchestrator_failed during regenerate. "
+                            "Fix scene_planner/contract fields or upstream outline/context, then retry."
+                        )
+                        await db.commit()
+                        break
                     regenerated = "".join(regen_chunks).strip()
                     if not regenerated:
                         logger.warning("Auto chapter regeneration returned empty text: chapter_id=%s round=%d", ch.id, round_idx)
