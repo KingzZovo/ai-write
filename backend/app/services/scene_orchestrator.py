@@ -331,7 +331,10 @@ class SceneOrchestrator:
         # Planner call is the main reliability bottleneck for reaching the
         # quality bar (it gates all contract/ledger constraints). In practice
         # 60s is too aggressive and causes empty output timeouts.
-        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "180"))
+        # Default bumped to 600s because scene_planner calls frequently exceed
+        # 180s on the current standard endpoint, which causes avoidable timeouts
+        # and blocks chapter generation.
+        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "600"))
         # Re-use ContextPack's system prompt as planner background, then
         # inject the planner-specific user instruction.
         background = pack.to_system_prompt()
