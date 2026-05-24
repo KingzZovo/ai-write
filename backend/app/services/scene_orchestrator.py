@@ -379,16 +379,19 @@ class SceneOrchestrator:
             f"{hint_line}"
             f"请按系统提示输出严格 JSON；每个 scene 必须包含场景合同字段，字段缺失视为规划失败。"
         )
+        # Root-cause fix (planner reliability): run the planner as a structured
+        # prompt so we get JSON-parse defense (json_repair + one strict retry)
+        # instead of relying on best-effort parsing of arbitrary text.
         import asyncio
-        raw_text = ""
+        from app.services.prompt_registry import run_structured_prompt
+
         last_exc: Exception | None = None
-        # Retry once on timeout/empty output. This is cheaper than falling back
-        # or aborting the whole chapter generation.
+        parsed: list | None = None
         for attempt in (1, 2):
             try:
                 timeout_s = planner_timeout_s if attempt == 1 else max(planner_timeout_s, 240.0)
-                result = await asyncio.wait_for(
-                    run_text_prompt(
+                parsed_any = await asyncio.wait_for(
+                    run_structured_prompt(
                         task_type="scene_planner",
                         user_content=user_content,
                         db=db,
@@ -399,33 +402,29 @@ class SceneOrchestrator:
                     ),
                     timeout=timeout_s,
                 )
-                raw_text = getattr(result, "text", "") or ""
-                if raw_text.strip():
+                # scene_planner is expected to output a JSON array.
+                if isinstance(parsed_any, list) and parsed_any:
+                    parsed = parsed_any
                     break
                 logger.warning(
-                    "scene_planner returned empty output (attempt=%d/%d); retrying",
+                    "scene_planner returned non-list/empty structured output (attempt=%d/%d); retrying",
                     attempt,
                     2,
                 )
             except Exception as exc:
                 last_exc = exc
                 logger.warning(
-                    "scene_planner LLM call failed/timeout (attempt=%d/%d timeout=%.1fs): %s",
+                    "scene_planner structured call failed/timeout (attempt=%d/%d timeout=%.1fs): %s",
                     attempt,
                     2,
                     planner_timeout_s,
                     exc,
                 )
-                raw_text = ""
-        if not raw_text and last_exc is not None:
-            # Preserve original behavior: downstream parser will decide fallback/raise.
-            pass
+                parsed = None
 
-        parsed = _try_parse_scene_array(raw_text)
         if not parsed:
             logger.warning(
-                "scene_planner returned unparseable output (len=%d); using fallback",  # v1.6.0 X4 metric: planner fallback
-                len(raw_text),
+                "scene_planner returned no usable structured output; using fallback",
             )
             if allow_fallback:
                 return _fallback_scene_briefs(target_words, chapter_outline_text)
