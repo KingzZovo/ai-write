@@ -684,26 +684,24 @@ async def generate_chapter(
                                                 revised_chunks.append(chunk)
                                             yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
                                     except Exception as revise_scene_err:
-                                        # Same policy as initial generation: if scene planning/writing
-                                        # fails, fall back to the single-shot generator rather than
-                                        # producing template scenes.
+                                        # Root-cause policy: do NOT lottery-fallback to a different
+                                        # generator when we are trying to meet a strict quality bar.
+                                        # Scene-mode failures must surface as repair-required so
+                                        # upstream planning/contract issues get fixed deterministically.
                                         logger.warning(
-                                            "C2 auto-revise: SceneOrchestrator failed (falling back to ChapterGenerator) round=%d err=%s",
+                                            "C2 auto-revise: SceneOrchestrator failed; aborting revise loop round=%d err=%s",
                                             round_idx,
                                             revise_scene_err,
                                         )
-                                        generator = ChapterGenerator()
-                                        async for chunk in generator.generate_stream(
-                                            project_id=req.project_id,
-                                            volume_id=resolved_volume_id,
-                                            chapter_idx=resolved_chapter_idx,
-                                            db=revise_db,
-                                            chapter_id=revise_chapter_id,
-                                            user_instruction=merged_instruction,
-                                        ):
-                                            if chunk:
-                                                revised_chunks.append(chunk)
-                                            yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                                        err_payload = json.dumps({
+                                            "event": "revise_error",
+                                            "round": round_idx,
+                                            "reason": "scene_orchestrator_failed",
+                                            "error": str(revise_scene_err),
+                                        }, ensure_ascii=False)
+                                        yield f"data: {err_payload}\n\n"
+                                        revise_timed_out = True
+                                        break
                         except asyncio.TimeoutError:
                             revise_timed_out = True
                             logger.warning(
