@@ -1,0 +1,4 @@
+[2026-05-20 14:21:42] RUN mkdir -p /root/ai-write/backups
+[2026-05-20 14:21:42] RUN docker exec ai-write-postgres-1 pg_dump -U postgres -d aiwrite --table=chapters --table=chapter_evaluations --table=chapter_versions --table=cascade_tasks > /root/ai-write/backups/ch123_before_outline_repair_20260520_142142.sql
+[2026-05-20 14:21:43] BACKUP /root/ai-write/backups/ch123_before_outline_repair_20260520_142142.sql
+[2026-05-20 14:21:43] EXPAND_CH1_START e9d02dad-5778-4d92-a447-6b2dff36ddb4

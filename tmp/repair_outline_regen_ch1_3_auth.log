@@ -1,0 +1,6 @@
+[2026-05-20 14:22:42] LOGIN_HTTP 200 {"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJraW5nIiwiZXhwIjoxNzc5ODkxNzYyfQ.Cn7Ov-tdsrCQTaaJwegoUzGFaVGboataD7T0kkrIP-E","username":"king"}
+[2026-05-20 14:22:42] LOGIN_OK
+[2026-05-20 14:22:42] RUN mkdir -p /root/ai-write/backups
+[2026-05-20 14:22:42] RUN docker exec ai-write-postgres-1 pg_dump -U postgres -d aiwrite --table=chapters --table=chapter_evaluations --table=chapter_versions --table=cascade_tasks > /root/ai-write/backups/ch123_before_outline_repair_auth_20260520_142242.sql
+[2026-05-20 14:22:43] BACKUP /root/ai-write/backups/ch123_before_outline_repair_auth_20260520_142242.sql
+[2026-05-20 14:22:43] EXPAND_CH1_START e9d02dad-5778-4d92-a447-6b2dff36ddb4

@@ -303,9 +303,15 @@ async def _run_async_generation_impl(task_id: str):
                 # due to upstream LLM streaming/internal errors. Retry once
                 # before marking the task as needs_repair.
                 last_scene_err: Exception | None = None
+                # v1.12 L2: Hard timeout guard to prevent Celery tasks from
+                # getting stuck in an unacked state when upstream LLM calls hang.
+                # This timeout covers the whole scene-mode pipeline for a chapter.
+                _scene_timeout = float(params.get("scene_timeout_seconds") or 900)
+
                 for _attempt in (1, 2):
                     orchestrator = SceneOrchestrator()
-                    try:
+
+                    async def _consume_scene_stream() -> None:
                         async for chunk in orchestrator.orchestrate_chapter_stream(
                             project_id=project_id,
                             volume_id=str(ch.volume_id),
@@ -320,7 +326,26 @@ async def _run_async_generation_impl(task_id: str):
                                 task.progress_text = "".join(collected)
                                 task.char_count = len(task.progress_text)
                                 await db.commit()
+
+                    try:
+                        await _asyncio.wait_for(
+                            _consume_scene_stream(),
+                            timeout=_scene_timeout,
+                        )
                         last_scene_err = None
+                        break
+                    except _asyncio.TimeoutError as scene_timeout_err:
+                        last_scene_err = scene_timeout_err
+                        logger.warning(
+                            "Async generation: SceneOrchestrator timed out (attempt=%d/%d timeout=%.1fs); task_id=%s",
+                            _attempt,
+                            2,
+                            _scene_timeout,
+                            task_id,
+                        )
+                        if _attempt == 1:
+                            await _asyncio.sleep(2.0)
+                            continue
                         break
                     except Exception as scene_err:
                         last_scene_err = scene_err
@@ -348,7 +373,7 @@ async def _run_async_generation_impl(task_id: str):
                     # NOTE: generation_tasks.status is VARCHAR(20) in DB.
                     task.status = "needs_repair"
                     task.error_message = (
-                        "scene_mode blocked: scene_planner_failed/unparseable. "
+                        "scene_mode blocked: scene_planner_failed/unparseable/timeout. "
                         "Fix planner reliability (timeout/model/output) or contract field compliance, then retry."
                     )
                     await db.commit()
