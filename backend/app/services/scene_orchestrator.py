@@ -386,10 +386,12 @@ class SceneOrchestrator:
         from app.services.prompt_registry import run_structured_prompt
 
         last_exc: Exception | None = None
+        last_timeout_s: float = planner_timeout_s
         parsed: list | None = None
         for attempt in (1, 2):
             try:
                 timeout_s = planner_timeout_s if attempt == 1 else max(planner_timeout_s, 240.0)
+                last_timeout_s = timeout_s
                 parsed_any = await asyncio.wait_for(
                     run_structured_prompt(
                         task_type="scene_planner",
@@ -411,13 +413,22 @@ class SceneOrchestrator:
                     attempt,
                     2,
                 )
+            except asyncio.TimeoutError as exc:
+                last_exc = exc
+                logger.warning(
+                    "scene_planner structured call timed out (attempt=%d/%d timeout=%.1fs)",
+                    attempt,
+                    2,
+                    last_timeout_s,
+                )
+                parsed = None
             except Exception as exc:
                 last_exc = exc
                 logger.warning(
                     "scene_planner structured call failed/timeout (attempt=%d/%d timeout=%.1fs): %s",
                     attempt,
                     2,
-                    planner_timeout_s,
+                    last_timeout_s,
                     exc,
                 )
                 parsed = None
@@ -428,6 +439,9 @@ class SceneOrchestrator:
             )
             if allow_fallback:
                 return _fallback_scene_briefs(target_words, chapter_outline_text)
+            # Surface timeout vs unparseable as different root causes.
+            if isinstance(last_exc, asyncio.TimeoutError):
+                raise RuntimeError("scene_planner_failed: timeout")
             raise RuntimeError("scene_planner_failed: unparseable_output")
 
         briefs: list[SceneBrief] = []
