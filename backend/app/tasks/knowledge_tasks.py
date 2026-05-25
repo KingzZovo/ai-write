@@ -796,9 +796,32 @@ async def _run_async_generation_impl(task_id: str):
             logger.info("Async generation complete: %s, %d chars", task.task_type, len(full_text))
 
         except Exception as e:
-            task.status = "failed"
-            task.error_message = str(e)[:500]
-            await db.commit()
+            # v1.12 L5: be defensive about DB connection drops inside long
+            # running Celery tasks. If the session is in a rollback-only
+            # state (PendingRollbackError) or the connection is closed, a
+            # normal commit will raise and the task will appear "running"
+            # forever in the UI. Ensure we rollback, then persist failure
+            # using a fresh session.
+            try:
+                task.status = "failed"
+                task.error_message = str(e)[:500]
+                await db.commit()
+            except Exception as commit_err:
+                logger.warning("Async generation failure commit failed; retry with fresh session: %s", commit_err)
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                try:
+                    session_factory2 = _make_session()
+                    async with session_factory2() as db2:
+                        task2 = await db2.get(GenerationTask, task_id)
+                        if task2:
+                            task2.status = "failed"
+                            task2.error_message = str(e)[:500]
+                            await db2.commit()
+                except Exception as commit_err2:
+                    logger.error("Async generation failure commit (fresh session) also failed: %s", commit_err2)
             logger.exception("Async generation failed: %s", task_id)
 
 
