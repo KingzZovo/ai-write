@@ -390,6 +390,7 @@ class SceneOrchestrator:
 
         last_exc: Exception | None = None
         last_timeout_s: float = planner_timeout_s
+        last_raw_text: str = ""
         parsed: list | None = None
         for attempt in (1, 2):
             try:
@@ -411,6 +412,12 @@ class SceneOrchestrator:
                 if isinstance(parsed_any, list) and parsed_any:
                     parsed = parsed_any
                     break
+                # Debuggability: capture raw model text when the structured
+                # parser falls back to {raw_text, parse_error}.
+                if isinstance(parsed_any, dict):
+                    rt = parsed_any.get("raw_text")
+                    if isinstance(rt, str) and rt.strip():
+                        last_raw_text = rt.strip()
                 logger.warning(
                     "scene_planner returned non-list/empty structured output (attempt=%d/%d); retrying",
                     attempt,
@@ -445,6 +452,12 @@ class SceneOrchestrator:
             # Surface timeout vs unparseable as different root causes.
             if isinstance(last_exc, asyncio.TimeoutError):
                 raise RuntimeError("scene_planner_failed: timeout")
+            if last_raw_text:
+                snippet = last_raw_text[:1200]
+                raise RuntimeError(
+                    "scene_planner_failed: unparseable_output. raw_text_snippet="
+                    + snippet.replace("\n", " ")
+                )
             raise RuntimeError("scene_planner_failed: unparseable_output")
 
         briefs: list[SceneBrief] = []
