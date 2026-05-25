@@ -99,7 +99,13 @@ async def _vectorize_book_async(book_id: str):
     await qc.close()
 
 
-@celery_app.task(name="tasks.run_async_generation")
+@celery_app.task(
+    name="tasks.run_async_generation",
+    # v1.12 L4: This task can run for a long time and previously got stuck in
+    # Redis "unacked" state (acked-late) when a worker subprocess stalled.
+    # Ack early so a stalled worker won't permanently wedge the message.
+    acks_late=False,
+)
 def run_async_generation(task_id: str):
     """Run outline/chapter generation in background with progress tracking."""
     _run_async(_run_async_generation_impl(task_id))
