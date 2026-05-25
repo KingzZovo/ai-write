@@ -327,7 +327,12 @@ class SceneOrchestrator:
         # Planner timeout can be tuned via:
         #   SCENE_PLANNER_TIMEOUT_SECONDS=<float>
         import os
-        allow_fallback = (os.getenv("ALLOW_SCENE_PLANNER_FALLBACK", "0") == "1")
+        # Safety valve: never let chapter generation block on planner JSON.
+        # If the planner is unstable (timeout/unparseable/missing fields), fall
+        # back to deterministic scene briefs so we can still produce full prose
+        # and then score/revise.
+        # Default: enabled. Set ALLOW_SCENE_PLANNER_FALLBACK=0 to force strict.
+        allow_fallback = (os.getenv("ALLOW_SCENE_PLANNER_FALLBACK", "1") != "0")
         # Planner call is the main reliability bottleneck for reaching the
         # quality bar (it gates all contract/ledger constraints). In practice
         # 60s is too aggressive and causes empty output timeouts.
