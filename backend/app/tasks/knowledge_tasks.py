@@ -382,11 +382,10 @@ async def _run_async_generation_impl(task_id: str):
                     # string so we can tell whether the block was due to
                     # timeout vs parse vs contract.
                     _root = str(last_scene_err) if last_scene_err is not None else "unknown"
-                    task.error_message = (
-                        "scene_mode blocked: "
-                        + _root[:220]
-                        + ". Fix planner reliability (timeout/model/output) or contract field compliance, then retry."
-                    )
+                    # Make the persisted error actionable: keep a larger slice so
+                    # planner raw_text snippets survive, and avoid burying them
+                    # behind a generic suffix.
+                    task.error_message = "scene_mode blocked: " + _root[:1200]
                     await db.commit()
                     return
 
