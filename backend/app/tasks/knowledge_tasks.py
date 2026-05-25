@@ -378,9 +378,14 @@ async def _run_async_generation_impl(task_id: str):
                     )
                     # NOTE: generation_tasks.status is VARCHAR(20) in DB.
                     task.status = "needs_repair"
+                    # Make the gate debuggable: persist the concrete root cause
+                    # string so we can tell whether the block was due to
+                    # timeout vs parse vs contract.
+                    _root = str(last_scene_err) if last_scene_err is not None else "unknown"
                     task.error_message = (
-                        "scene_mode blocked: scene_planner_failed/unparseable/timeout. "
-                        "Fix planner reliability (timeout/model/output) or contract field compliance, then retry."
+                        "scene_mode blocked: "
+                        + _root[:220]
+                        + ". Fix planner reliability (timeout/model/output) or contract field compliance, then retry."
                     )
                     await db.commit()
                     return
