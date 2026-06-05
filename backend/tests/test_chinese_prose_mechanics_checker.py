@@ -661,3 +661,18 @@ def test_preflight_prompt_contains_dialogue_machine_constraints() -> None:
     assert "age_plausibility" in prompt
     assert "试错" in prompt
     assert "dialogue_topology_limit" in prompt
+
+
+def test_plain_contemporary_aggregate_does_not_double_count_overlapping_spans() -> None:
+    # One span ("可以借口留下来的声音") matches BOTH the semantic-collocation and
+    # abstract-evasion families. The aggregate must count the span once, not once
+    # per family — otherwise the human-facing audit number is inflated.
+    text = "门缝里没有任何可以借口留下来的声音。"
+
+    r = analyze_chinese_prose_mechanics(text)
+
+    assert r.semantic_collocation_count >= 1
+    assert r.abstract_evasion_count >= 1
+    assert r.plain_contemporary_violation_count < (
+        r.semantic_collocation_count + r.abstract_evasion_count
+    )

@@ -708,10 +708,9 @@ def _count_duplicate_explanation_spans(paragraphs: list[str]) -> int:
     explanation that repeats across paragraphs (回去…继续站…解释).
     """
     full = "\n".join(paragraphs)
-    count = 0
-    for pattern in regex_patterns_for("duplicate_explanation_control"):
-        if re.search(pattern, full):
-            count += 1
+    # Unique merged span so a single aphorism matched by overlapping catalog
+    # patterns (e.g. "所有能解释的退路都在变窄" and "退路.{0,8}变窄") counts once.
+    count = _count_unique_regex_hits(full, list(regex_patterns_for("duplicate_explanation_control")))
     pressure_patterns = (
         r"回去.{0,30}(?:赶|挡门|不让|赶出来).{0,50}继续站.{0,50}解释",
         r"继续站.{0,50}解释.{0,50}回去.{0,30}(?:赶|挡门|不让|赶出来)",
@@ -792,12 +791,15 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
     report.duplicate_explanation_span_count = _count_duplicate_explanation_spans(paragraphs)
     # Aggregate "normal modern Chinese" violation so the gate/UI catch the family
     # of problems instead of one-off phrases (cross_project_prose_quality_contract).
-    report.plain_contemporary_violation_count = (
-        report.pseudo_literary_register_count
-        + report.semantic_collocation_count
-        + report.awkward_register_count
-        + report.mundane_register_count
-        + report.abstract_evasion_count
+    # Count by unique merged span across the families so a phrase matching more than
+    # one family (e.g. semantic + abstract) is not double-counted in the audit number.
+    report.plain_contemporary_violation_count = _count_unique_regex_hits(
+        text,
+        PSEUDO_LITERARY_REGISTER_PATTERNS
+        + SEMANTIC_COLLOCATION_PATTERNS
+        + AWKWARD_REGISTER_PATTERNS
+        + MUNDANE_REGISTER_PATTERNS
+        + ABSTRACT_EVASION_PATTERNS,
     )
     report.passed = not (
         report.forbidden_collocation_count
