@@ -74,10 +74,16 @@ async def check_quality(
 
     result = await mgr.run_all(text, context)
 
+    # v1.9.1: surface the cross-project Chinese prose-mechanics report so the
+    # manual checker dashboard can audit the same rules the generation gate uses.
+    from app.services.chinese_prose_mechanics_checker import analyze_chinese_prose_mechanics
+    prose_report = analyze_chinese_prose_mechanics(text).to_safe_dict()
+
     return {
         "overall_score": result.overall_score,
         "passed": result.passed,
         "total_issues": result.total_issues,
+        "chinese_prose_mechanics": prose_report,
         "checkers": [
             {
                 "name": r.checker_name,
