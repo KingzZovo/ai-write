@@ -550,6 +550,10 @@ def test_generation_preflight_uses_soft_4000_word_target_without_filler_pressure
     assert "abstract_evasion" in prompt
     assert "plain_contemporary_chinese" in prompt
     assert "pseudo_literary_register" in prompt
+    assert "cross_project_prose_quality_contract" in prompt
+    assert "先归因到规则族" in prompt
+    assert "plain_contemporary_violation_count" in prompt
+    assert "duplicate_explanation_span_count" in prompt
 
 
 def test_detects_general_plain_contemporary_violations_not_only_original_phrase() -> None:

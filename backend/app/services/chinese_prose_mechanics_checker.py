@@ -908,6 +908,8 @@ def build_generation_preflight_prompt(
     shelter_cost_logic = int(safe.get("shelter_cost_logic_count") or 0)
     abstract_evasion = int(safe.get("abstract_evasion_count") or 0)
     pseudo_literary_register = int(safe.get("pseudo_literary_register_count") or 0)
+    plain_contemporary_violation = int(safe.get("plain_contemporary_violation_count") or 0)
+    duplicate_explanation_span = int(safe.get("duplicate_explanation_span_count") or 0)
     focus = "、".join(issue_focus or []) or "短句链、动作切片、空间刻度、生造名词、解释堆叠、对话节拍器、道具摆弄、显性停顿、潜台词说破、排比问答、物理测绘、履历自白、廉价机智、接梗强迫症、动机交底、设定名泄漏、方位导览罗列、生活逻辑失真、书面腔用词、伪文学压缩腔、有限视角越界、苦难标签堆叠、资源连续性矛盾、动作因果不成立、入门动机缺桥、年龄逻辑、抽象解释、白开水定价"
     return (
         f"\n\n【{version_label} 生成前自检：chinese_prose_mechanics_observation】"
@@ -929,7 +931,9 @@ def build_generation_preflight_prompt(
         f"action_causality={action_causality}, motivation_gap={motivation_gap}, "
         f"scene_plausibility={scene_plausibility}, transport_logic={transport_logic}, "
         f"semantic_collocation={semantic_collocation}, shelter_cost_logic={shelter_cost_logic}, "
-        f"abstract_evasion={abstract_evasion}, pseudo_literary_register={pseudo_literary_register}."
+        f"abstract_evasion={abstract_evasion}, pseudo_literary_register={pseudo_literary_register}, "
+        f"plain_contemporary_violation={plain_contemporary_violation}, "
+        f"duplicate_explanation_span={duplicate_explanation_span}."
         f"\n关注项：{focus}."
         "\nv4.38 修正：v4.36 能清掉动作+台词、道具摆弄和显性停顿，但仍会复发排比短问答、静态坐标测绘、NPC 式履历自白、廉价机智和动机交底。本轮先破坏模型安全路径：不要用整齐短句梯子模拟高压交锋，不要用精确距离词给人物测绘站位，不要在对峙中按年龄或时间轴背设定，也不要把“踩烂了，算你买 / 先问问它算谁卖”这类抛梗塞进日常对白。"
         "尤其不要复现“说好一行 / 就一行 / 多看一个字呢 / 你自己合上 / 认错呢 / 认对呢 / 明早我带见证到市书会认旧物”这一整组口诀式对仗；这类回合必须改成证物打断、抢白、避答或直接抛结论。"
@@ -974,4 +978,7 @@ def build_generation_preflight_prompt(
         "短对白密度不得过半，短句可用于压迫但不能把整章写成剧本回合；"
         "短段落密度不得超过 0.35，必要时合并同一动作或同一证据链；"
         "程序性解释簇必须拆散，旧库、码头、灯籍、封存、回封、待验等信息不能由专家 NPC 一口气讲完，必须由证物和争执分批露出。"
+        "cross_project_prose_quality_contract 必须执行；发现问题时先归因到规则族，不要只追加单词黑名单。"
+        "plain_contemporary_violation_count 必须为 0；普通现代场景必须使用完整自然的现代中文。"
+        "duplicate_explanation_span_count 必须为 0；同一压力链、退路解释和心理判断只保留一次，重复时改成行动推进。"
     )
