@@ -556,6 +556,7 @@ def test_generation_preflight_uses_soft_4000_word_target_without_filler_pressure
     assert "duplicate_explanation_span_count" in prompt
     assert "chapter_level_anti_padding" in prompt
     assert "repeated_realization_run" in prompt
+    assert "短对白墙" in prompt  # balance: don't trade monologue padding for a dialogue wall
 
 
 def test_detects_general_plain_contemporary_violations_not_only_original_phrase() -> None:

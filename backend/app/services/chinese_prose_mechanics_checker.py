@@ -1045,5 +1045,5 @@ def build_generation_preflight_prompt(
         "cross_project_prose_quality_contract 必须执行；发现问题时先归因到规则族，不要只追加单词黑名单。"
         "plain_contemporary_violation_count 必须为 0；普通现代场景必须使用完整自然的现代中文。"
         "duplicate_explanation_span_count 必须为 0；同一压力链、退路解释和心理判断只保留一次，重复时改成行动推进。"
-        "chapter_level_anti_padding 必须执行；每段带新信息（动作/对话/发现/关系变化），同一洞察全章只写一次，禁止换比喻重述；repeated_realization_run 不得超过 3，不要连续堆叠心理剖白段；保持对话/剧情密度，不用独白和金句凑字数。"
+        "chapter_level_anti_padding 必须执行；每段带新信息（动作/对话/发现/关系变化），同一洞察全章只写一次，禁止换比喻重述；repeated_realization_run 不得超过 3，不要连续堆叠心理剖白段；对话与有信息的叙述/动作平衡，既不用独白金句凑字数，也不要用整章短对白墙或一句一段凑字数。"
     )
