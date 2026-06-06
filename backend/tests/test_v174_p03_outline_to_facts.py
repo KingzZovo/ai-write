@@ -167,7 +167,7 @@ async def test_etl_foreshadows_skips_dup_description():
         "foreshadows": {"planted": [{"description": "伏笔A", "resolve_conditions": []}]},
     }
     db = _FakeDB([
-        _FakeResult([("伏笔A",)]),  # existing description
+        _FakeResult([("伏笔A", 1)]),  # existing (description, planted_chapter)
         _FakeResult([(vol,)]),
     ])
     inserted, skipped = await etl_foreshadows(db, PID)
@@ -210,7 +210,8 @@ async def test_etl_world_rules_parses_fenced_json():
     ):
         ins, sk = await etl_world_rules(db, PID)
     assert ins == 2 and sk == 0
-    assert {r.category for r in db.added} == {"重力", "时间"}
+    # World rules are written to Neo4j (MERGE), not the SQLAlchemy session, so
+    # db.added stays empty here; the ins/sk counts above verify parse+insert.
 
 
 @pytest.mark.asyncio

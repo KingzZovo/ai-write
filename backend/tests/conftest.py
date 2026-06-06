@@ -1,6 +1,15 @@
 """Pytest configuration and shared fixtures."""
 
 import os
+import hashlib
+
+# The in-process app's auth (app/api/auth.py) reads these from os.environ at
+# import time, defaulting to username "king" + a secret bcrypt hash that tests
+# cannot know. Pin deterministic test creds BEFORE importing the app so login
+# works offline. setdefault means a CI-provided real credential still wins.
+os.environ.setdefault("AUTH_USERNAME", "king")
+os.environ.setdefault("AUTH_PASSWORD", "testpass")
+os.environ.setdefault("AUTH_PASSWORD_HASH", hashlib.sha256(b"testpass").hexdigest())
 
 import asyncio
 import pytest

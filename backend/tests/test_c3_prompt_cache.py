@@ -156,10 +156,21 @@ async def test_negative_cache_remembers_missing_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_snapshot_swallows_db_errors() -> None:
-    """Cache must not propagate transient DB errors — just bypass."""
+async def test_get_snapshot_swallows_db_errors(monkeypatch) -> None:
+    """Cache must not propagate transient DB errors — just bypass.
+
+    v1.12 L3: on a caller-session error get_snapshot retries via a fresh
+    session. Force that fallback to fail too so the bypass-to-None path is
+    exercised deterministically, independent of a real seeded DB.
+    """
+    prompt_cache.reset_for_tests()
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=RuntimeError("connection lost"))
+
+    def _no_fresh_session(*args, **kwargs):
+        raise RuntimeError("fresh session unavailable")
+
+    monkeypatch.setattr("app.db.session.async_session_factory", _no_fresh_session)
 
     snap = await prompt_cache.get_snapshot("generation", db)
     assert snap is None

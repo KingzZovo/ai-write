@@ -300,9 +300,10 @@ def test_all_generation_quality_gate_calls_pass_target_word_count() -> None:
     import ast
     from pathlib import Path
 
+    repo_root = Path(__file__).resolve().parents[2]
     files = [
-        Path("backend/app/api/generate.py"),
-        Path("backend/app/tasks/knowledge_tasks.py"),
+        repo_root / "backend/app/api/generate.py",
+        repo_root / "backend/app/tasks/knowledge_tasks.py",
     ]
     missing: list[str] = []
     for path in files:
