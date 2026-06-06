@@ -155,6 +155,31 @@ PROSE_QUALITY_RULES: tuple[ProseQualityRule, ...] = (
             "紧张场景要允许无视、抢白、答非所问、说半截和信息掉地。"
         ),
     ),
+    ProseQualityRule(
+        rule_id="chapter_level_anti_padding",
+        metric_names=(
+            "interiority_monologue_rate",
+            "repeated_realization_run",
+            "dialogue_paragraph_rate",
+        ),
+        title="章节级注水（重复心理剖白/独白堆叠）",
+        root_cause="把同一洞察换比喻反复重述、整章心理剖白段落堆叠、对话与剧情密度过低，用内省凑字数。",
+        bad_examples=(
+            "他忽然意识到这栋楼并不普通，自己心里越来越清楚。",
+            "他越来越觉得，自己像一件被搁置的麻烦。",
+            "他终于明白，原来这里让他看见的，和真正想留下的，不是一回事。",
+        ),
+        good_examples=(
+            "他叫了一声：“师傅。”值守员抬头：“干什么？”",
+            "他把身份证放在台面上，水顺着袖口往下滴。",
+        ),
+        regex_patterns=(),
+        prompt_instruction=(
+            "chapter_level_anti_padding：每段必须带新信息（动作/对话/发现/关系变化）。"
+            "同一洞察全章只写一次，禁止换比喻反复重述；不得连续堆叠心理剖白段；"
+            "保持对话与剧情密度，不要用独白和金句凑字数。"
+        ),
+    ),
 )
 
 

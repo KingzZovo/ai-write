@@ -554,6 +554,8 @@ def test_generation_preflight_uses_soft_4000_word_target_without_filler_pressure
     assert "先归因到规则族" in prompt
     assert "plain_contemporary_violation_count" in prompt
     assert "duplicate_explanation_span_count" in prompt
+    assert "chapter_level_anti_padding" in prompt
+    assert "repeated_realization_run" in prompt
 
 
 def test_detects_general_plain_contemporary_violations_not_only_original_phrase() -> None:
@@ -676,3 +678,50 @@ def test_plain_contemporary_aggregate_does_not_double_count_overlapping_spans() 
     assert r.plain_contemporary_violation_count < (
         r.semantic_collocation_count + r.abstract_evasion_count
     )
+
+
+PADDED_INTERIORITY_TEXT = """
+他忽然意识到，这栋楼并不普通，自己心里越来越清楚这一点。
+
+他发现门牌、楼层、监控其实都在指向同一件事，他终于明白过来。
+
+他想起门厅里的登记簿，越来越觉得自己像一件被搁置的麻烦。
+
+他清楚地知道，自己不再能把这里当成普通小区，心里反而更沉。
+
+他越来越觉得，这地方仿佛在挑选谁该被记住，而他其实不再被承认。
+
+他终于明白，原来这栋楼让他看见的，和它真正想留下的，根本不是一回事。
+"""
+
+TIGHT_DIALOGUE_TEXT = """
+他叫了一声：“师傅。”
+
+值守员抬头：“干什么？”
+
+“车没了，手机快没电了。我想在门厅坐到天亮，不上楼，也不敲门。”
+
+值守员看了看他湿透的校服，拉开登记本：“身份证拿出来。”
+
+他把身份证放在台面上，水还顺着袖口往下滴。
+
+值守员看了一眼，把本子翻到新的一页：“写个名字，天亮就走。”
+"""
+
+
+def test_detects_chapter_level_interiority_padding() -> None:
+    report = analyze_chinese_prose_mechanics(PADDED_INTERIORITY_TEXT)
+
+    assert report.repeated_realization_run >= 4
+    assert report.interiority_monologue_rate > 0.5
+    assert report.dialogue_paragraph_rate == 0.0
+    assert not report.passed
+
+
+def test_allows_dialogue_driven_chapter_without_padding() -> None:
+    report = analyze_chinese_prose_mechanics(TIGHT_DIALOGUE_TEXT)
+
+    assert report.repeated_realization_run == 0
+    assert report.interiority_monologue_rate == 0.0
+    assert report.dialogue_paragraph_rate > 0.5
+    assert report.passed

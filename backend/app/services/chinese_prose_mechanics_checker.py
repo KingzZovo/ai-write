@@ -339,6 +339,9 @@ class ChineseProseMechanicsReport:
     tight_qa_pair_count: int = 0
     short_dialogue_density: float = 0.0
     short_paragraph_density: float = 0.0
+    interiority_monologue_rate: float = 0.0
+    repeated_realization_run: int = 0
+    dialogue_paragraph_rate: float = 0.0
     procedural_exposition_cluster_count: int = 0
     story_bible_leakage_count: int = 0
     directional_listing_count: int = 0
@@ -396,6 +399,9 @@ class ChineseProseMechanicsReport:
             "tight_qa_pair_count": self.tight_qa_pair_count,
             "short_dialogue_density": self.short_dialogue_density,
             "short_paragraph_density": self.short_paragraph_density,
+            "interiority_monologue_rate": self.interiority_monologue_rate,
+            "repeated_realization_run": self.repeated_realization_run,
+            "dialogue_paragraph_rate": self.dialogue_paragraph_rate,
             "procedural_exposition_cluster_count": self.procedural_exposition_cluster_count,
             "story_bible_leakage_count": self.story_bible_leakage_count,
             "directional_listing_count": self.directional_listing_count,
@@ -725,6 +731,50 @@ def _count_duplicate_explanation_spans(paragraphs: list[str]) -> int:
     return count
 
 
+# --- Chapter-level anti-padding (paragraph granularity) ---
+# Catches "重复解释/金句式心理剖白" at chapter scale, which the sentence-level
+# metrics miss: same insight restated paragraph after paragraph, interiority
+# monologue stacked with little dialogue/plot advancement.
+INTERIORITY_MARKERS = [
+    "意识到", "明白", "觉得", "发现", "清楚", "想起", "终于", "忽然", "不再", "知道自己",
+    "越来越", "其实", "像是", "仿佛", "这栋楼", "这地方", "让他", "反而", "心里", "原来",
+]
+INTERIORITY_MIN_MARKERS = 2
+INTERIORITY_RATE_LIMIT = 0.45
+REPEATED_REALIZATION_RUN_LIMIT = 3
+_QUOTE_PRESENCE_RE = re.compile(r"[“\"]")
+
+
+def _chapter_interiority_metrics(paragraphs: list[str]) -> tuple[float, int, float]:
+    """Return (interiority_monologue_rate, repeated_realization_run, dialogue_paragraph_rate).
+
+    An interiority paragraph carries no dialogue and packs >= INTERIORITY_MIN_MARKERS
+    introspection markers — a "realization/金句" paragraph. A long consecutive run of
+    these is the chapter-level padding signature (each paragraph restates the same
+    conclusion instead of advancing).
+    """
+    if not paragraphs:
+        return 0.0, 0, 0.0
+    interior_flags: list[bool] = []
+    dialogue = 0
+    for p in paragraphs:
+        has_quote = bool(_QUOTE_PRESENCE_RE.search(p))
+        if has_quote:
+            dialogue += 1
+        is_interior = (
+            not has_quote
+            and len(p) > 12
+            and sum(1 for m in INTERIORITY_MARKERS if m in p) >= INTERIORITY_MIN_MARKERS
+        )
+        interior_flags.append(is_interior)
+    n = len(paragraphs)
+    run = max_run = 0
+    for flag in interior_flags:
+        run = run + 1 if flag else 0
+        max_run = max(max_run, run)
+    return sum(interior_flags) / n, max_run, dialogue / n
+
+
 def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
     text = text or ""
     report = ChineseProseMechanicsReport()
@@ -801,6 +851,11 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
         + MUNDANE_REGISTER_PATTERNS
         + ABSTRACT_EVASION_PATTERNS,
     )
+    (
+        report.interiority_monologue_rate,
+        report.repeated_realization_run,
+        report.dialogue_paragraph_rate,
+    ) = _chapter_interiority_metrics(paragraphs)
     report.passed = not (
         report.forbidden_collocation_count
         or report.space_watchlist_hits
@@ -852,6 +907,8 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
         or report.pseudo_literary_register_count
         or report.plain_contemporary_violation_count
         or report.duplicate_explanation_span_count
+        or report.repeated_realization_run > REPEATED_REALIZATION_RUN_LIMIT
+        or report.interiority_monologue_rate > INTERIORITY_RATE_LIMIT
         or report.paragraph_risks
     )
     return report
@@ -912,6 +969,9 @@ def build_generation_preflight_prompt(
     pseudo_literary_register = int(safe.get("pseudo_literary_register_count") or 0)
     plain_contemporary_violation = int(safe.get("plain_contemporary_violation_count") or 0)
     duplicate_explanation_span = int(safe.get("duplicate_explanation_span_count") or 0)
+    interiority_rate = float(safe.get("interiority_monologue_rate") or 0.0)
+    repeated_realization = int(safe.get("repeated_realization_run") or 0)
+    dialogue_rate = float(safe.get("dialogue_paragraph_rate") or 0.0)
     focus = "、".join(issue_focus or []) or "短句链、动作切片、空间刻度、生造名词、解释堆叠、对话节拍器、道具摆弄、显性停顿、潜台词说破、排比问答、物理测绘、履历自白、廉价机智、接梗强迫症、动机交底、设定名泄漏、方位导览罗列、生活逻辑失真、书面腔用词、伪文学压缩腔、有限视角越界、苦难标签堆叠、资源连续性矛盾、动作因果不成立、入门动机缺桥、年龄逻辑、抽象解释、白开水定价"
     return (
         f"\n\n【{version_label} 生成前自检：chinese_prose_mechanics_observation】"
@@ -935,7 +995,9 @@ def build_generation_preflight_prompt(
         f"semantic_collocation={semantic_collocation}, shelter_cost_logic={shelter_cost_logic}, "
         f"abstract_evasion={abstract_evasion}, pseudo_literary_register={pseudo_literary_register}, "
         f"plain_contemporary_violation={plain_contemporary_violation}, "
-        f"duplicate_explanation_span={duplicate_explanation_span}."
+        f"duplicate_explanation_span={duplicate_explanation_span}, "
+        f"interiority_rate={interiority_rate:.2f}, repeated_realization={repeated_realization}, "
+        f"dialogue_rate={dialogue_rate:.2f}."
         f"\n关注项：{focus}."
         "\nv4.38 修正：v4.36 能清掉动作+台词、道具摆弄和显性停顿，但仍会复发排比短问答、静态坐标测绘、NPC 式履历自白、廉价机智和动机交底。本轮先破坏模型安全路径：不要用整齐短句梯子模拟高压交锋，不要用精确距离词给人物测绘站位，不要在对峙中按年龄或时间轴背设定，也不要把“踩烂了，算你买 / 先问问它算谁卖”这类抛梗塞进日常对白。"
         "尤其不要复现“说好一行 / 就一行 / 多看一个字呢 / 你自己合上 / 认错呢 / 认对呢 / 明早我带见证到市书会认旧物”这一整组口诀式对仗；这类回合必须改成证物打断、抢白、避答或直接抛结论。"
@@ -983,4 +1045,5 @@ def build_generation_preflight_prompt(
         "cross_project_prose_quality_contract 必须执行；发现问题时先归因到规则族，不要只追加单词黑名单。"
         "plain_contemporary_violation_count 必须为 0；普通现代场景必须使用完整自然的现代中文。"
         "duplicate_explanation_span_count 必须为 0；同一压力链、退路解释和心理判断只保留一次，重复时改成行动推进。"
+        "chapter_level_anti_padding 必须执行；每段带新信息（动作/对话/发现/关系变化），同一洞察全章只写一次，禁止换比喻重述；repeated_realization_run 不得超过 3，不要连续堆叠心理剖白段；保持对话/剧情密度，不用独白和金句凑字数。"
     )

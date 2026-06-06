@@ -205,6 +205,9 @@ def _quality_penalty(report: ChineseProseMechanicsReport) -> int:
         + report.shelter_cost_logic_count * 420
         + report.abstract_evasion_count * 320
         + report.pseudo_literary_register_count * 320
+        + int(report.interiority_monologue_rate * 400)
+        + report.repeated_realization_run * 60
+        + int(max(0.0, 0.10 - report.dialogue_paragraph_rate) * 300)
         + report.plain_contemporary_violation_count * 360
         + report.duplicate_explanation_span_count * 300
         + max(0, report.action_dialogue_beat_count - 14) * 120
@@ -323,6 +326,9 @@ def _build_rewrite_user_content(
         "pseudo_literary_register_count": initial_report.pseudo_literary_register_count,
         "plain_contemporary_violation_count": initial_report.plain_contemporary_violation_count,
         "duplicate_explanation_span_count": initial_report.duplicate_explanation_span_count,
+        "interiority_monologue_rate": round(initial_report.interiority_monologue_rate, 3),
+        "repeated_realization_run": initial_report.repeated_realization_run,
+        "dialogue_paragraph_rate": round(initial_report.dialogue_paragraph_rate, 3),
     }
     return (
         "请重写下面这段中文小说正文，只修复机械痕迹，不要改变事件顺序、人物关系和核心信息。"
@@ -354,6 +360,7 @@ def _build_rewrite_user_content(
         "- abstract_evasion：删除试错、借口留下来、价格难看、碰这种脸色等抽象逃避词，把行为理由写成钱、时间、电量、体力、路况和退路。\n\n"
         "- cross_project_prose_quality_contract：先按规则族修，不要只替换用户点名的一句话。同类伪文学压缩腔、语义搭配缺失、资源逻辑断裂和重复解释都要一起清理。\n"
         "- duplicate_explanation_control：同一压力链只解释一次。重复的退路说明、心理金句和困境标签要删除或改成下一步行动。\n\n"
+        "- chapter_level_anti_padding：每段必须带新信息（动作/对话/发现/关系变化）；同一洞察全章只写一次，禁止换比喻反复重述；删除连续堆叠的心理剖白段，段落不得只复述上一段结论；保持对话与剧情密度，不要用独白和金句凑字数。\n\n"
         "- 降低动作对白绑定率；不要让多数段落都是人物摆一下、看一下、挪一下之后说一句话。\n"
         "- 降低紧贴问答；问题不能被下一句完美接住，必须加入无视、抢白、答非所问、说半截、证物或环境打断。\n"
         "- 降低短对白密度和短段落密度；把同一动作、同一证据链、同一轮施压合并成自然段，保留呼吸。\n"

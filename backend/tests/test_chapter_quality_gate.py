@@ -342,6 +342,9 @@ async def test_quality_gate_rewrites_mechanical_text_and_returns_final_text(monk
         assert "floating_dialogue_exchange" in kwargs["extra_system"]
         assert "dialogue_symmetry_break" in kwargs["extra_system"]
         assert "说好一行" in kwargs["extra_system"]
+        assert "chapter_level_anti_padding" in kwargs["extra_system"]
+        assert "chapter_level_anti_padding" in kwargs["user_content"]
+        assert "repeated_realization_run" in kwargs["user_content"]
         return SimpleNamespace(text=GOOD_CONFLICT_TEXT)
 
     monkeypatch.setattr(cqg, "run_text_prompt", fake_run_text_prompt)
