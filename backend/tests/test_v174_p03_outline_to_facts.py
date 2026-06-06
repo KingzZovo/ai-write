@@ -74,6 +74,44 @@ class _FakeDB:
 
 
 # ---------------------------------------------------------------------------
+# Offline Neo4j: these ETL tests are meant to run offline (LLM is mocked), but
+# etl_world_rules writes rules ONLY to Neo4j and returns (0,0) when the driver
+# is None. Provide a non-None fake driver + no-op init/materialize so the whole
+# module is deterministic and credential-free (no real Neo4j needed).
+# ---------------------------------------------------------------------------
+
+
+class _FakeNeo4jResult:
+    async def consume(self):
+        return None
+
+
+class _FakeNeo4jSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def run(self, *args, **kwargs):
+        return _FakeNeo4jResult()
+
+
+class _FakeNeo4jDriver:
+    def session(self, *args, **kwargs):
+        return _FakeNeo4jSession()
+
+
+@pytest.fixture(autouse=True)
+def _offline_neo4j(monkeypatch):
+    from app.services import outline_to_facts as o2f
+
+    monkeypatch.setattr(o2f, "init_neo4j", AsyncMock())
+    monkeypatch.setattr(o2f._neo4j_mod, "_driver", _FakeNeo4jDriver())
+    monkeypatch.setattr(o2f, "_materialize_entities_to_postgres", AsyncMock())
+
+
+# ---------------------------------------------------------------------------
 # etl_characters
 # ---------------------------------------------------------------------------
 
