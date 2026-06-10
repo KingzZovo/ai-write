@@ -6,7 +6,7 @@ Replaces the single-shot "generation" prompt with a two-stage pipeline:
    chapter outline + context pack -> list of 3-6 SceneBrief.
 2. ``scene_writer`` (flagship tier, streaming):
    per-scene, takes the SceneBrief + a rolling summary of already-written
-   scenes -> 800-1200 char prose.
+  scenes -> 800-1200 char prose.
 
 The orchestrator joins per-scene streams into one continuous chunk stream
 so the existing SSE infrastructure (api/generate.py event_stream + auto-save)
@@ -40,6 +40,7 @@ from app.services.narrative_contract import (
     SCENE_CONTRACT_FIELDS_PROMPT,
     WRITER_CONTRACT_PROMPT,
 )
+from app.services.outline_readiness import build_outline_readiness_report
 from app.services.prompt_registry import run_text_prompt, stream_text_prompt
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TARGET_WORDS = 3500
 MIN_SCENE_WORDS = 800
 MAX_SCENE_WORDS = 1200
+MAX_SCENE_COUNT = 20
 
 
 @dataclass
@@ -217,14 +219,20 @@ def _x4_observe_scene_count(n: int) -> None:
         pass
 
 
+def _scene_count_for_target(target_words: int) -> int:
+    target = max(int(target_words or DEFAULT_TARGET_WORDS), MIN_SCENE_WORDS)
+    return max(3, min(MAX_SCENE_COUNT, round(target / 1000)))
+
+
 def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list[SceneBrief]:
     """Build deterministic scene briefs when the planner LLM fails to JSON.
 
-    We pick N = round(target_words / 1000), clamp to [3, 6], then split the
+    We pick N = round(target_words / 1000), clamp to [3, MAX_SCENE_COUNT],
+    then split the
     chapter outline text into N roughly equal slices to seed the briefs so
     the writer still has *some* structural anchor per scene.
     """
-    n = max(3, min(6, round(max(target_words, MIN_SCENE_WORDS) / 1000)))
+    n = _scene_count_for_target(target_words)
     text = (chapter_outline_text or "").strip()
     if text:
         chunk_size = max(1, len(text) // n)
@@ -261,6 +269,15 @@ def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list
             )
         )
     return briefs
+
+
+def _scene_budget_reaches_target(briefs: list[SceneBrief], target_words: int) -> bool:
+    if not briefs:
+        return False
+    target = int(target_words or 0)
+    if target <= 0:
+        return True
+    return sum(max(0, int(brief.target_words or 0)) for brief in briefs) >= int(target * 0.85)
 
 
 _REQUIRED_CONTRACT_FIELDS: tuple[str, ...] = (
@@ -339,16 +356,22 @@ class SceneOrchestrator:
         # Default bumped to 600s because scene_planner calls frequently exceed
         # 180s on the current standard endpoint, which causes avoidable timeouts
         # and blocks chapter generation.
-        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "600"))
+        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "180"))
+        # Hard cap keeps scene_planner from blocking the whole generation with 0 emitted chars.
+        # Operators may tune it, but default remains short enough to force deterministic fallback.
+        planner_timeout_cap_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS", "240"))
+        planner_timeout_s = min(planner_timeout_s, planner_timeout_cap_s)
         # Re-use ContextPack's system prompt as planner background, then
         # inject the planner-specific user instruction.
         background = pack.to_system_prompt()
         chapter_outline_text = self._extract_chapter_outline_text(pack)
         hint_line = (
             f"推荐场景数 = {n_scenes_hint}\n"
-            if isinstance(n_scenes_hint, int) and 3 <= n_scenes_hint <= 6
+            if isinstance(n_scenes_hint, int) and 3 <= n_scenes_hint <= MAX_SCENE_COUNT
             else ""
         )
+        if not hint_line:
+            hint_line = f"推荐场景数 = {_scene_count_for_target(target_words)}\n"
         instr_block = (
             f"【额外用户指令（改写要求）】\n{user_instruction.strip()}\n\n"
             if user_instruction and user_instruction.strip()
@@ -466,7 +489,8 @@ class SceneOrchestrator:
             raise RuntimeError("scene_planner_failed: unparseable_output")
 
         briefs: list[SceneBrief] = []
-        for i, raw in enumerate(parsed[:6], start=1):
+        max_scenes = _scene_count_for_target(target_words)
+        for i, raw in enumerate(parsed[:max_scenes], start=1):
             if not isinstance(raw, dict):
                 continue
             briefs.append(SceneBrief.from_dict(i, raw))
@@ -479,6 +503,16 @@ class SceneOrchestrator:
             if allow_fallback:
                 return _fallback_scene_briefs(target_words, chapter_outline_text)
             raise RuntimeError("scene_planner_failed: too_few_briefs")
+        if not _scene_budget_reaches_target(briefs, target_words):
+            logger.warning(
+                "scene_planner returned insufficient scene budget for target_words=%s sum=%s; using fallback instead",
+                target_words,
+                sum(max(0, int(brief.target_words or 0)) for brief in briefs),
+            )
+            _x4_inc_fallback("insufficient_scene_budget")
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: insufficient_scene_budget")
         if not _has_valid_scene_contract(briefs):
             missing_by_scene = {
                 brief.idx: _missing_contract_fields(brief)
@@ -582,6 +616,13 @@ class SceneOrchestrator:
         ``on_scene_start`` (if given) is awaited just before each scene's
         first chunk is emitted, with the SceneBrief as argument.
         """
+        await self._assert_outline_chain_ready(
+            db=db,
+            project_id=project_id,
+            volume_id=volume_id,
+            chapter_idx=chapter_idx,
+            chapter_id=chapter_id,
+        )
         pack = await ContextPackBuilder(db=db).build(
             project_id=project_id,
             volume_id=volume_id,
@@ -623,6 +664,30 @@ class SceneOrchestrator:
                 yield chunk
             full_scene_text = "".join(scene_text_parts)
             prior_summary_parts.append(self._summarize_scene(scene, full_scene_text))
+
+    @staticmethod
+    async def _assert_outline_chain_ready(
+        *,
+        db: AsyncSession | None,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_id: Optional[str | UUID] = None,
+    ) -> None:
+        if db is None:
+            return
+        readiness = await build_outline_readiness_report(
+            db,
+            project_id=str(project_id),
+            chapter_id=str(chapter_id) if chapter_id else None,
+            volume_id=str(volume_id),
+            chapter_idx=chapter_idx,
+        )
+        if not readiness.ready:
+            missing = ",".join(readiness.missing_layers)
+            raise RuntimeError(
+                f"outline_chain_incomplete: {readiness.block_message()} ({missing})"
+            )
 
     @staticmethod
     def _summarize_scene(scene: SceneBrief, scene_text: str) -> str:

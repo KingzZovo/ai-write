@@ -9,11 +9,72 @@ Celery tasks for knowledge base operations.
 """
 
 import asyncio
+import json
 import logging
 
 from app.tasks import celery_app
+from app.services.chapter_quality_gate import apply_chapter_quality_gate
 
 logger = logging.getLogger(__name__)
+
+
+# chapter_evaluator emits a single issue with dimension="system" (and overall=0)
+# when the judge response cannot be parsed or the eval errors. These placeholders
+# must never leak into the prose-mechanics issue_focus, or the generation-before
+# hint degrades to ["system"] and loses its issue-aware value.
+_PROSE_PREFLIGHT_PLACEHOLDER_DIMENSIONS = {"system"}
+
+
+def _single_shot_llm_timeout_kwargs(fallback_timeout: float) -> dict[str, float | int | bool]:
+    """Return generic LLM-call kwargs for direct/fallback chapter prose.
+
+    ``fallback_timeout_seconds`` wraps the whole single-shot path. The underlying
+    OpenAI-compatible call also needs an explicit per-request timeout and retry
+    count so long chapter drafts do not fail at 0 chars on the global default.
+    In addition, direct chapter prose now defaults to non-streaming via
+    ``SINGLE_SHOT_LLM_STREAM=0`` because some proxy/model routes can raise HTTP/2
+    stream INTERNAL_ERROR after minutes of generation, leaving no recoverable
+    text in the database. The env toggle keeps the behavior reusable across
+    chapters/projects without hard-coding a chapter-specific workaround.
+    """
+    import os as _os
+
+    configured = float(_os.getenv("SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS", "840"))
+    retry_attempts = int(_os.getenv("SINGLE_SHOT_LLM_RETRY_ATTEMPTS", "1"))
+    stream_raw = str(_os.getenv("SINGLE_SHOT_LLM_STREAM", "0")).strip().lower()
+    use_stream = stream_raw in {"1", "true", "yes", "on"}
+    outer = max(float(fallback_timeout or 0), 60.0)
+    leave_commit_margin = max(30.0, outer - 30.0)
+
+    # Non-streaming single-shot chapter generation only receives text after the
+    # whole draft is complete. Splitting the outer budget evenly across the
+    # tier-fallback endpoints made long chapter drafts fail deterministically at
+    # 0 chars: each endpoint timed out before it could return a full response.
+    # Prefer giving the primary route enough wall-clock budget to finish; tier
+    # fallback still works for fast failures while avoiding two guaranteed long
+    # timeouts. Streaming keeps the split budget because it can surface chunks.
+    if use_stream:
+        assumed_endpoints = max(1, int(_os.getenv("SINGLE_SHOT_LLM_BUDGET_ENDPOINTS", "2")))
+    else:
+        assumed_endpoints = max(1, int(_os.getenv("SINGLE_SHOT_LLM_BUDGET_ENDPOINTS", "1")))
+    endpoint_budget = max(30.0, (outer - 50.0) / float(assumed_endpoints))
+    request_timeout = max(30.0, min(configured, leave_commit_margin, endpoint_budget))
+    return {"request_timeout": request_timeout, "retry_attempts": retry_attempts, "stream": use_stream}
+
+
+def _stage_needs_review_chapter_text(task, chapter, text: str, *, error_message: str | None = None) -> str:
+    """Stage a generated draft everywhere the UI reads manual-review content."""
+    final_text = (text or "").strip()
+    task.status = "needs_review"
+    task.error_message = ((error_message or "")[:1500] or None)
+    task.result_text = final_text
+    task.progress_text = final_text
+    task.char_count = len(final_text)
+    if chapter is not None:
+        chapter.content_text = final_text
+        chapter.word_count = len(final_text)
+        chapter.status = "needs_review"
+    return final_text
 
 
 def _run_async(coro):
@@ -27,6 +88,210 @@ def _run_async(coro):
     """
     from app.tasks import _run_async_safe
     return _run_async_safe(coro)
+
+async def _build_chinese_prose_preflight_prompt(ch, db) -> tuple[str, dict]:
+    """Build diagnostic-only prose-mechanics feedback for the next draft.
+
+    Uses the current stored chapter text and latest non-zero evaluation issues as
+    generation-before context. Does not block, repair, or print prose snippets.
+    """
+    from sqlalchemy import desc, select
+
+    from app.models.project import ChapterEvaluation, EvaluateTask
+    from app.services.chinese_prose_mechanics_checker import (
+        analyze_chinese_prose_mechanics,
+        build_generation_preflight_prompt,
+    )
+
+    previous_text = (getattr(ch, "content_text", "") or "").strip()
+    if not previous_text:
+        return "", {}
+
+    report = analyze_chinese_prose_mechanics(previous_text)
+    issue_focus: list[str] = []
+
+    def _extract_issue_focus(issues) -> list[str]:
+        labels: list[str] = []
+        for issue in issues or []:
+            if isinstance(issue, dict):
+                dimension = str(issue.get("dimension") or "").strip().lower()
+                if dimension in _PROSE_PREFLIGHT_PLACEHOLDER_DIMENSIONS:
+                    continue
+                raw = (
+                    issue.get("violation_type")
+                    or issue.get("type")
+                    or issue.get("category")
+                    or issue.get("dimension")
+                )
+                label = str(raw).strip() if raw else ""
+                if label and label.lower() not in _PROSE_PREFLIGHT_PLACEHOLDER_DIMENSIONS:
+                    labels.append(label)
+            elif issue:
+                labels.append(str(issue)[:80])
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for label in labels:
+            if label not in seen:
+                seen.add(label)
+                deduped.append(label)
+        return deduped
+
+    try:
+        # Prefer the most recent completed EvaluateTask that actually scored the
+        # chapter (overall > 0) and carries non-placeholder issues. Recent celery
+        # parse/timeout failures persist as overall=0 with a single
+        # dimension="system" issue; selecting them blindly degraded issue_focus to
+        # ["system"] and starved the generation-before hint of real violations.
+        task_result = await db.execute(
+            select(EvaluateTask)
+            .where(EvaluateTask.chapter_id == ch.id)
+            .where(EvaluateTask.status == "completed")
+            .where(EvaluateTask.result_json.is_not(None))
+            .order_by(desc(EvaluateTask.completed_at), desc(EvaluateTask.created_at))
+            .limit(5)
+        )
+        for task in task_result.scalars().all():
+            result_json = task.result_json if isinstance(task.result_json, dict) else {}
+            try:
+                overall = float(result_json.get("overall") or 0)
+            except (TypeError, ValueError):
+                overall = 0.0
+            if overall <= 0:
+                continue
+            focus = _extract_issue_focus(result_json.get("issues") or [])
+            if focus:
+                issue_focus = focus
+                break
+        if not issue_focus:
+            eval_result = await db.execute(
+                select(ChapterEvaluation)
+                .where(ChapterEvaluation.chapter_id == ch.id)
+                .where(ChapterEvaluation.overall > 0)
+                .order_by(desc(ChapterEvaluation.created_at))
+                .limit(1)
+            )
+            latest_eval = eval_result.scalar_one_or_none()
+            if latest_eval is not None:
+                issue_focus = _extract_issue_focus(
+                    getattr(latest_eval, "issues_json", None) or []
+                )
+    except Exception as err:  # pragma: no cover - prompt feedback must be best effort.
+        logger.warning(
+            "chinese_prose_preflight issue focus lookup failed chapter_id=%s err=%s",
+            getattr(ch, "id", None),
+            err,
+        )
+
+    safe_metrics = report.to_safe_dict()
+    return build_generation_preflight_prompt(report, issue_focus=issue_focus, version_label="v4.40"), {
+        "version": "v4.40_mundane_naturalness_age_logic_feedback",
+        "diagnostic_only": True,
+        "hard_gate": False,
+        "metrics": safe_metrics,
+        "issue_focus": issue_focus[:12],
+        "generation_targets": {
+            "short_sentence_run_max": 4,
+            "short_sentence_runs_over_target_ratio": 0.25,
+            "verb_watchlist_hits_ratio": 0.35,
+            "exposition_cluster_risk_ratio": 0.0,
+            "exposition_cluster_risk_max": 0,
+            "nominal_construction_ban": True,
+            "micro_measure_ban": ["半寸", "半息", "半指"],
+            "action_trajectory_downgrade": True,
+            "dialogue_asymmetry_required": True,
+            "few_shot_conflict_flow": True,
+            "action_verb_budget_per_paragraph": 1,
+            "exposition_reset_target": 0,
+            "space_watchlist_hits_max": 0,
+            "forbidden_collocation_count_max": 0,
+            "zero_tolerance_regression_recovery": True,
+            "short_sentence_run_max_target": 6,
+            "exposition_cluster_risk_hard_target_for_generation": 0,
+            "paragraph_exposition_proxy_reset": True,
+            "v4_22_exposition_cluster_split": True,
+            "environment_reaction_substitution": True,
+            "action_density_clamp_from_v4_15": True,
+            "short_run_clamp_from_v4_18": True,
+            "length_floor_from_v4_20": True,
+            "paragraph_exposition_cluster_target": 2,
+            "short_sentence_runs_over_target_max": 6,
+            "v4_23_rhythm_reclamp_from_v4_21": True,
+            "keep_v4_22_exposition_length_recovery": True,
+            "v4_24_length_recovery_without_short_run_chains": True,
+            "v4_24_restore_space_and_forbidden_zero": True,
+            "v4_25_constraint_priority_order": ["zero_tolerance", "short_sentence_rhythm", "exposition_split", "action_result_only", "dialogue_asymmetry", "length"],
+            "v4_25_length_yields_to_rhythm": True,
+            "v4_25_length_yields_to_zero_tolerance": True,
+            "v4_25_no_short_sentence_chain_for_length": True,
+            "v4_25_target_chars_soft_range": [6500, 7500],
+            "v4_26_length_pressure_disabled": True,
+            "v4_26_target_chars_soft_range": [5200, 6500],
+            "v4_26_short_sentence_run_max_target": 4,
+            "v4_26_short_sentence_runs_over_target_max": 3,
+            "v4_26_zero_tolerance_before_length": True,
+            "v4_26_forbidden_and_space_must_be_zero": True,
+            "v4_26_no_scene_expansion_for_length": True,
+            "v4_27_rhythm_only_no_length_pressure": True,
+            "v4_27_ban_comma_chopped_short_clause_chain": True,
+            "v4_27_require_medium_causal_sentences": True,
+            "v4_27_sentence_count_soft_max": 430,
+            "v4_28_restore_strict_rhythm_clamp": True,
+            "v4_28_no_scene_expansion_for_rhythm": True,
+            "v4_28_sentence_count_soft_max": 520,
+            "v4_28_short_sentence_run_max_target": 4,
+            "v4_28_short_sentence_runs_over_target_max": 3,
+            "v4_29_zero_tolerance_before_rhythm": True,
+            "v4_29_forbidden_and_space_must_be_zero": True,
+            "v4_29_long_quote_segments_gt80_max": 0,
+            "v4_29_target_chars_soft_range": [5800, 6800],
+            "v4_29_no_invented_official_terms": True,
+            "v4_29_dialogue_fragmentation_without_long_quote": True,
+            "v4_30_canonical_terms_not_forbidden": True,
+            "v4_30_space_watchlist_terms_must_be_zero": ["半寸", "半息", "半指", "半步", "寸许", "尺许", "肘下", "腋下"],
+            "v4_30_surviving_terms_from_v429": {"半息": 1, "半步": 1},
+            "v4_30_target_chars_soft_range": [5600, 6600],
+            "v4_31_residual_half_xi_must_be_zero": True,
+            "v4_31_exposition_cluster_risk_must_be_zero": True,
+            "v4_31_reduce_shoubei_repetition": True,
+            "v4_31_target_chars_soft_range": [5000, 6200],
+            "v4_32_length_must_return_under_6500": True,
+            "v4_32_exposition_cluster_risk_must_be_zero": True,
+            "v4_32_keep_space_and_forbidden_zero": True,
+            "v4_32_target_chars_soft_range": [5200, 6500],
+            "v4_32_no_scene_expansion_for_length": True,
+            "v4_33_return_internal_self_check_no_hard_gate": True,
+            "v4_33_zero_micro_measure_terms": True,
+            "v4_33_target_chars_soft_range": [5200, 6200],
+            "v4_33_delete_whole_exposition_blocks_over_6500": True,
+            "v4_33_no_scene_expansion_for_length": True,
+            "v4_36_lexical_zero_first_before_generation": True,
+            "v4_36_target_chars_soft_range": [2000, 6000],
+            "v4_36_lower_bound_chars_guard": 2000,
+            "v4_36_short_sentence_runs_over_target_max": 0,
+            "v4_36_zero_residual_micro_measure_terms_first": True,
+            "v4_36_no_hard_gate_generation_before_only": True,
+            "mundane_scene_plausibility": True,
+            "plain_modern_register": True,
+            "age_plausibility": True,
+            "abstract_reasoning_zero": True,
+            "limited_pov_only": True,
+            "semantic_density_budget": True,
+            "resource_continuity": True,
+            "action_causality": True,
+            "motivation_bridge": True,
+            "awkward_register_count_max": 0,
+            "limited_pov_leak_count_max": 0,
+            "mundane_logic_violation_count_max": 0,
+            "hardship_stack_count_max": 0,
+            "resource_continuity_count_max": 0,
+            "mundane_register_count_max": 0,
+            "action_causality_count_max": 0,
+            "motivation_gap_count_max": 0,
+            "scene_plausibility_count_max": 0,
+            "no_action_chain_for_explanation": True,
+            "diagnostic_only": True,
+        },
+    }
 
 
 def _make_session():
@@ -209,10 +474,40 @@ async def _run_async_generation_impl(task_id: str):
             # Generate based on task_type
             generator = OutlineGenerator()
             collected = []
+
+            # v4.6 reliability: normalize streamed chunks before appending/joining.
+            # Some prompt paths yield structured dict events (for example
+            # {"text": "..."}) while older code assumed each chunk was str,
+            # causing TypeError: sequence item 0: expected str instance, dict found.
+            # Keep this generic for all async task types, not a Chapter 5 special case.
+            def _chunk_to_text(chunk) -> str:
+                if chunk is None:
+                    return ""
+                if isinstance(chunk, str):
+                    return chunk
+                if isinstance(chunk, dict):
+                    for key in ("text", "content", "delta", "message", "data"):
+                        value = chunk.get(key)
+                        if isinstance(value, str):
+                            return value
+                    return ""
+                return str(chunk)
+
+            def _append_chunk(chunk) -> str:
+                text = _chunk_to_text(chunk)
+                if text:
+                    collected.append(text)
+                return text
+
+            def _joined_collected() -> str:
+                return "".join(_chunk_to_text(item) for item in collected)
             generated_chapter = None
             generated_chapter_outline: dict = {}
             generated_chapter_user_instr = ""
             generated_chapter_target_words: int | None = None
+            generated_chapter_id_safe: str | None = None
+            generated_chapter_volume_id_safe: str | None = None
+            generated_chapter_idx_safe: int | None = None
 
             if task.task_type == "outline_from_reference":
                 # v1.5.0 D-2: async outline-from-reference. Wraps the
@@ -264,20 +559,35 @@ async def _run_async_generation_impl(task_id: str):
                 async for chunk in await generator.generate_book_outline(
                     user_input=enhanced, stream=True
                 ):
-                    collected.append(chunk)
+                    _append_chunk(chunk)
                     # Update progress every 20 chunks
                     if len(collected) % 5 == 0:
-                        task.progress_text = "".join(collected)
+                        task.progress_text = _joined_collected()
                         task.char_count = len(task.progress_text)
                         await db.commit()
 
             elif task.task_type == "outline_volume":
                 # Get book outline for context
                 from sqlalchemy import select
+                from app.services.outline_readiness import has_meaningful_outline_content
                 result = await db.execute(
-                    select(Outline).where(Outline.project_id == project_id, Outline.level == "book")
+                    select(Outline)
+                    .where(Outline.project_id == project_id, Outline.level == "book")
+                    .order_by(Outline.is_confirmed.desc(), Outline.created_at.asc())
                 )
-                book_ol = result.scalar_one_or_none()
+                book_rows = list(result.scalars().all())
+                book_ol = next(
+                    (
+                        row
+                        for row in book_rows
+                        if has_meaningful_outline_content(
+                            getattr(row, "content_json", None)
+                        )
+                    ),
+                    None,
+                )
+                if book_ol is None:
+                    raise RuntimeError("outline_chain_incomplete: 缺少：全书大纲 (book)")
                 book_data = book_ol.content_json if book_ol else {}
 
                 async for chunk in await generator.generate_volume_outline(
@@ -285,11 +595,47 @@ async def _run_async_generation_impl(task_id: str):
                     volume_idx=params.get("volume_idx", 1),
                     user_notes=enhanced, stream=True
                 ):
-                    collected.append(chunk)
+                    _append_chunk(chunk)
                     if len(collected) % 5 == 0:
-                        task.progress_text = "".join(collected)
+                        task.progress_text = _joined_collected()
                         task.char_count = len(task.progress_text)
                         await db.commit()
+
+            elif task.task_type == "outline_chapter":
+                chapter_id = params.get("chapter_id")
+                if not chapter_id:
+                    raise ValueError("chapter_id missing for outline_chapter")
+
+                from app.services.chapter_outline_expander import expand_chapter_outline
+                from app.services.outline_readiness import build_outline_readiness_report
+
+                readiness = await build_outline_readiness_report(
+                    db,
+                    project_id=project_id,
+                    chapter_id=str(chapter_id),
+                )
+                upstream_missing = [
+                    layer for layer in readiness.missing_layers if layer in {"book", "volume"}
+                ]
+                if upstream_missing:
+                    missing = ",".join(upstream_missing)
+                    raise RuntimeError(
+                        f"outline_chain_incomplete: {readiness.block_message()} ({missing})"
+                    )
+
+                outline_json = await expand_chapter_outline(
+                    project_id=project_id,
+                    chapter_id=str(chapter_id),
+                    db=db,
+                )
+                outline_text = json.dumps(outline_json, ensure_ascii=False, indent=2)
+                collected.clear()
+                collected.append(outline_text)
+                task = await db.get(GenerationTask, task_id)
+                if task is not None:
+                    task.progress_text = outline_text
+                    task.char_count = len(outline_text)
+                    await db.commit()
 
             elif task.task_type == "chapter":
                 from app.models.project import Chapter
@@ -300,96 +646,347 @@ async def _run_async_generation_impl(task_id: str):
                 from app.services.chapter_generator import ChapterGenerator
 
                 generated_chapter = ch
+                # Capture primitive identifiers immediately. Any later rollback
+                # can expire the ORM object, and touching ch.id/ch.volume_id then
+                # may trigger async lazy IO from a sync attribute accessor.
+                generated_chapter_id_safe = str(ch.id)
+                generated_chapter_volume_id_safe = str(ch.volume_id)
+                generated_chapter_idx_safe = ch.chapter_idx
                 generated_chapter_outline = ch.outline_json or {}
                 generated_chapter_target_words = params.get("target_words") or ch.target_word_count
                 user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
+                _prose_preflight_prompt, _prose_preflight_meta = await _build_chinese_prose_preflight_prompt(ch, db)
+                if _prose_preflight_prompt:
+                    user_instr = (user_instr + _prose_preflight_prompt).strip()
+                    try:
+                        task.params_json = {
+                            **(task.params_json or {}),
+                            "chinese_prose_mechanics_preflight": _prose_preflight_meta,
+                        }
+                        await db.commit()
+                    except Exception as preflight_meta_err:
+                        logger.warning(
+                            "chinese_prose_preflight metadata persist failed task_id=%s err=%s",
+                            task_id,
+                            preflight_meta_err,
+                        )
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
                 generated_chapter_user_instr = user_instr
                 import asyncio as _asyncio
-                # Scene-mode is required for quality, but it can fail transiently
-                # due to upstream LLM streaming/internal errors. Retry once
-                # before marking the task as needs_repair.
+                import os as _os
+                # Scene-mode is preferred for quality, but operators must be able to
+                # bypass the unstable JSON scene_planner when it repeatedly causes
+                # running+0 chars. When force_direct_chapter/skip_scene_planner is set,
+                # go straight to the single-shot prose generator and still run the
+                # downstream evaluation/revise loop.
+                _force_direct = bool(
+                    params.get("force_direct_chapter")
+                    or params.get("skip_scene_planner")
+                    or _os.getenv("FORCE_DIRECT_CHAPTER", "0") == "1"
+                )
                 last_scene_err: Exception | None = None
                 # v1.12 L2: Hard timeout guard to prevent Celery tasks from
                 # getting stuck in an unacked state when upstream LLM calls hang.
                 # This timeout covers the whole scene-mode pipeline for a chapter.
-                _scene_timeout = float(params.get("scene_timeout_seconds") or 900)
+                _scene_timeout_requested = float(params.get("scene_timeout_seconds") or 900)
+                # The API may request a very long scene timeout, but a chapter task must not
+                # sit at running+0 chars while planner/writer is stuck. Clamp by default and
+                # fall back to single-shot prose if scene-mode cannot emit.
+                _scene_timeout_cap = float(_os.getenv("SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS", "600"))
+                _scene_timeout = min(_scene_timeout_requested, _scene_timeout_cap)
 
-                for _attempt in (1, 2):
-                    orchestrator = SceneOrchestrator()
-
-                    async def _consume_scene_stream() -> None:
-                        async for chunk in orchestrator.orchestrate_chapter_stream(
-                            project_id=project_id,
-                            volume_id=str(ch.volume_id),
-                            chapter_idx=ch.chapter_idx,
-                            db=db,
-                            chapter_id=ch.id,
-                            user_instruction=user_instr,
-                            target_words=generated_chapter_target_words,
-                        ):
-                            collected.append(chunk)
-                            if len(collected) % 5 == 0:
-                                task.progress_text = "".join(collected)
-                                task.char_count = len(task.progress_text)
-                                await db.commit()
-
+                if _force_direct:
+                    logger.warning(
+                        "Async generation: force_direct_chapter enabled; bypassing scene planner task_id=%s",
+                        task_id,
+                    )
                     try:
-                        await _asyncio.wait_for(
-                            _consume_scene_stream(),
-                            timeout=_scene_timeout,
+                        task.progress_text = "force_direct_chapter: 正在跳过 scene_planner，直接生成完整正文。"
+                        task.char_count = 0
+                        task.error_message = None
+                        await db.commit()
+                    except Exception as hb_err:
+                        logger.warning("force_direct_chapter heartbeat failed task_id=%s err=%s", task_id, hb_err)
+                    try:
+                        fallback_timeout = float(
+                            params.get("fallback_timeout_seconds")
+                            or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
                         )
-                        last_scene_err = None
-                        break
-                    except _asyncio.TimeoutError as scene_timeout_err:
-                        last_scene_err = scene_timeout_err
-                        logger.warning(
-                            "Async generation: SceneOrchestrator timed out (attempt=%d/%d timeout=%.1fs); task_id=%s",
-                            _attempt,
-                            2,
-                            _scene_timeout,
-                            task_id,
+                        llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
+                        fallback_instr = (
+                            user_instr
+                            + "\n\n【强制直出要求】本轮跳过 scene_planner/scene_writer。"
+                            + "请以全书大纲→分卷大纲→章节大纲的层级来源链为唯一剧情来源生成完整小说正文；"
+                            + "章节大纲就是本章全部剧情骨架，先在内部拆成 outline_execution_units / chapter_outline_unit_ledger / outline_beat_execution_ledger，"
+                            + "并对每个执行单元完成 foreshadow_control_ledger、character_state_ledger、pacing_budget_ledger、evidence_permission_ledger、mechanism_boundary_ledger、inference_uncertainty_ledger、time_window_budget、spatial_feasibility_ledger、channel_occlusion_ledger、coincidence_friction_ledger、dialogue_density_ledger、anchor_audit_before_prose 与 micro_continuity_budget；"
+                            + "同时执行 chinese_prose_mechanics：长短句结合，连续短句不超过四句；环境随人物视线/行动铺陈；基础动作使用看、走、停、拿、放、退、走到、站在、试探等朴素动词；禁止生造动宾、物理不通的方位动作、清单式环境说明、长段复述、动作切片和生僻动词堆砌；"
+                            + "必须执行 story_bible_leakage_zero：隐藏世界不能通过广告、海报、新闻、路人闲聊或旁白一次性列出设定词；POV 不知道的血脉体系、执行者、等级、能力名、奥丁源头等专名不得提前命名，只能先写异常、误认、局部痕迹和人物反应；"
+                            + "必须执行 setting_name_dialogue_zero：路人、新闻、店员、邻居、广告、海报和闲聊不能字正腔圆讨论核心世界观名词；超自然影响必须降维成封路、停电、绕路、物价、黑车、查得紧、上面、那帮人、那种事、清道等生活抱怨和代词；"
+                            + "必须执行 directional_listing_zero：禁止左边/右边/东头/西头/前后导览式罗列，环境只抓一个与当前氛围或剧情冲突的核心反差点；"
+                            + "必须执行 dialogue_topology_limit：连续含引号段落不得超过四段，连续纯短对白不得超过两段，每个场景紧贴问答不得超过三组；超过时用未答、抢白、误解、环境声、动作结果、证物变化或概括性侧写打断，不得把整章写成问答剧本；"
+                            + "每个执行单元必须有大纲来源、目标、原因、可见行动、直接后果、承接状态、路径耗时、信息来源、证据接触权限、机制边界、替代解释、时间窗口、资源压力、人物反应、结果上限和未解尾巴；"
+                            + "还必须为 unit_movement_budget、unit_resource_budget、unit_information_ladder、unit_expression_role、unit_result_delta_cap、evidence_permission_ledger、mechanism_boundary_ledger、inference_uncertainty_ledger、time_window_budget、spatial_feasibility_ledger、channel_occlusion_ledger、coincidence_friction_ledger、dialogue_density_ledger 逐项扣账；"
+                            + "正文只能按执行单元顺序扩写、润色、动作化、场景化和补足因果支撑，"
+                            + "不得新增大纲外关键剧情、钥匙/暗门/逃生捷径、强线索、强结论、章末硬奖励或提前兑现后续内容；钥匙/锁舌/门路/机关必须写触发条件、物理边界、失败可能和代价；伏笔必须标记 preserve/seed_only/weak_hint/partial_reveal/deferred_payoff/payoff，未获大纲授权不得 payoff；"
+                            + "若缺少来源锚点、转移路径、观察窗口、反派失手动机、证据权限、机制边界、代价、信息阶梯、替代解释、时间预算或结果上限，必须按 no_budget_no_upgrade 降级为疑点、残片、半句、误差或待验痕迹；"
+                            + "必须有开端、推进、结果与章末钩子；禁止输出说明、提纲或 JSON。"
                         )
-                        if _attempt == 1:
-                            await _asyncio.sleep(2.0)
-                            continue
-                        break
-                    except Exception as scene_err:
-                        last_scene_err = scene_err
-                        if _attempt == 1:
+                        fallback_text = await _asyncio.wait_for(
+                            ChapterGenerator().generate(
+                                project_id=project_id,
+                                volume_id=generated_chapter_volume_id_safe,
+                                chapter_idx=generated_chapter_idx_safe,
+                                db=db,
+                                chapter_id=generated_chapter_id_safe,
+                                user_instruction=fallback_instr,
+                                **llm_timeout_kwargs,
+                            ),
+                            timeout=fallback_timeout,
+                        )
+                        fallback_text = (fallback_text or "").strip()
+                        if not fallback_text:
+                            raise RuntimeError("force_direct_chapter_empty")
+                        collected.clear()
+                        collected.append(fallback_text)
+                        task.progress_text = fallback_text
+                        task.char_count = len(fallback_text)
+                        task.error_message = None
+                        task_persisted_on_original_session = False
+                        try:
+                            await db.commit()
+                            task_persisted_on_original_session = True
+                        except Exception as persist_err:
+                            # Long force_direct LLM calls can return valid prose, then
+                            # the checked-out asyncpg connection may be closed when
+                            # persisting progress_text/char_count. Do not convert that
+                            # into a failed/0-char task; retry via a fresh session.
                             logger.warning(
-                                "Async generation: SceneOrchestrator failed (attempt=%d/%d); retrying task_id=%s err=%s",
+                                "force_direct_chapter persist retry task_id=%s chars=%d err=%s",
+                                task_id,
+                                len(fallback_text),
+                                persist_err,
+                            )
+                            try:
+                                await db.rollback()
+                            except Exception:
+                                pass
+                            async with session_factory() as persist_db:
+                                persist_task = await persist_db.get(GenerationTask, task_id)
+                                if persist_task is None:
+                                    raise RuntimeError("force_direct_chapter_persist_task_missing") from persist_err
+                                persist_task.progress_text = fallback_text
+                                persist_task.result_text = fallback_text
+                                persist_task.char_count = len(fallback_text)
+                                persist_task.error_message = None
+                                persist_task.status = "completed"
+                                if generated_chapter_id_safe:
+                                    persist_chapter = await persist_db.get(Chapter, generated_chapter_id_safe)
+                                    if persist_chapter is None:
+                                        raise RuntimeError("force_direct_chapter_persist_chapter_missing") from persist_err
+                                    persist_chapter.content_text = fallback_text
+                                    persist_chapter.word_count = len(fallback_text)
+                                    persist_chapter.status = "needs_review"
+                                await persist_db.commit()
+                            logger.warning(
+                                "force_direct_chapter persisted via fresh session task_id=%s chapter_id=%s chars=%d",
+                                task_id,
+                                generated_chapter_id_safe,
+                                len(fallback_text),
+                            )
+                            # The original long-lived session may still be bound to a
+                            # dead asyncpg connection after a long LLM call. Return now
+                            # after durable task+chapter persistence so downstream
+                            # evaluation/revision does not reuse the stale session.
+                            return
+                        logger.warning(
+                            "Async generation: force_direct_chapter produced prose task_id=%s chars=%d",
+                            task_id,
+                            len(fallback_text),
+                        )
+                    except Exception as force_err:
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
+                        task = await db.get(GenerationTask, task_id)
+                        if task is not None:
+                            task.status = "needs_repair"
+                            task.error_message = ("force_direct_chapter blocked: " + (str(force_err) or type(force_err).__name__))[:1500]
+                            await db.commit()
+                        return
+
+                if not _force_direct:
+                    for _attempt in (1, 2):
+                        orchestrator = SceneOrchestrator()
+
+                        async def _consume_scene_stream() -> None:
+                            async for chunk in orchestrator.orchestrate_chapter_stream(
+                                project_id=project_id,
+                                volume_id=generated_chapter_volume_id_safe,
+                                chapter_idx=generated_chapter_idx_safe,
+                                db=db,
+                                chapter_id=generated_chapter_id_safe,
+                                user_instruction=user_instr,
+                                target_words=generated_chapter_target_words,
+                            ):
+                                _append_chunk(chunk)
+                                if len(collected) % 5 == 0:
+                                    task.progress_text = _joined_collected()
+                                    task.char_count = len(task.progress_text)
+                                    await db.commit()
+
+                        try:
+                            await _asyncio.wait_for(
+                                _consume_scene_stream(),
+                                timeout=_scene_timeout,
+                            )
+                            last_scene_err = None
+                            break
+                        except _asyncio.TimeoutError as scene_timeout_err:
+                            last_scene_err = scene_timeout_err
+                            logger.warning(
+                                "Async generation: SceneOrchestrator timed out (attempt=%d/%d timeout=%.1fs); task_id=%s",
                                 _attempt,
                                 2,
+                                _scene_timeout,
                                 task_id,
-                                scene_err,
                             )
-                            await _asyncio.sleep(2.0)
-                            continue
-                        break
-                if last_scene_err is not None:
-                    # Quality gate: for chapter generation we require scene-mode
-                    # to succeed. Falling back to single-shot generation here
-                    # bypasses the continuity contract and tends to reproduce the
-                    # same time/space/information/mechanism violations.
+                            if _attempt == 1:
+                                await _asyncio.sleep(2.0)
+                                continue
+                            break
+                        except Exception as scene_err:
+                            last_scene_err = scene_err
+                            if _attempt == 1:
+                                logger.warning(
+                                    "Async generation: SceneOrchestrator failed (attempt=%d/%d); retrying task_id=%s err=%s",
+                                    _attempt,
+                                    2,
+                                    task_id,
+                                    scene_err,
+                                )
+                                await _asyncio.sleep(2.0)
+                                continue
+                            break
+                if (not _force_direct) and last_scene_err is not None:
+                    # Reliability gate: do not leave chapter generation at running+0 chars.
+                    # If scene planner/writer cannot emit, fall back to the older single-shot
+                    # generation path so the fixed loop can still produce prose, score it, and
+                    # use the evaluation report for the next engineering iteration.
+                    _root = str(last_scene_err) if last_scene_err is not None else "unknown"
                     logger.warning(
-                        "Async generation: SceneOrchestrator failed; require root-cause repair task_id=%s err=%s",
+                        "Async generation: SceneOrchestrator failed; attempting single-shot fallback task_id=%s err=%s",
                         task_id,
                         last_scene_err,
                     )
-                    # NOTE: generation_tasks.status is VARCHAR(20) in DB.
-                    task.status = "needs_repair"
-                    # Make the gate debuggable: persist the concrete root cause
-                    # string so we can tell whether the block was due to
-                    # timeout vs parse vs contract.
-                    _root = str(last_scene_err) if last_scene_err is not None else "unknown"
-                    # Make the persisted error actionable: keep a larger slice so
-                    # planner raw_text snippets survive, and avoid burying them
-                    # behind a generic suffix.
-                    task.error_message = "scene_mode blocked: " + _root[:1200]
-                    await db.commit()
-                    return
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    try:
+                        task = await db.get(GenerationTask, task_id)
+                        if task is not None:
+                            task.progress_text = "scene_mode fallback: 正在切换为单段正文直出，避免 0 字卡死。"
+                            task.char_count = 0
+                            task.error_message = "scene_mode fallback running: " + _root[:900]
+                            await db.commit()
+                    except Exception as hb_err:
+                        logger.warning("single-shot fallback heartbeat failed task_id=%s err=%s", task_id, hb_err)
+                    try:
+                        fallback_timeout = float(
+                            params.get("fallback_timeout_seconds")
+                            or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                        )
+                        llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
+                        fallback_instr = (
+                            user_instr
+                            + "\n\n【兜底生成要求】scene_planner/scene_writer 未能稳定输出。"
+                            + "请直接按本章大纲、上下文和连续性约束生成完整正文；"
+                            + "必须有开端、推进、结果与章末钩子；禁止输出说明、提纲或 JSON。"
+                        )
+                        fallback_text = await _asyncio.wait_for(
+                            ChapterGenerator().generate(
+                                project_id=project_id,
+                                volume_id=generated_chapter_volume_id_safe,
+                                chapter_idx=generated_chapter_idx_safe,
+                                db=db,
+                                chapter_id=generated_chapter_id_safe,
+                                user_instruction=fallback_instr,
+                                **llm_timeout_kwargs,
+                            ),
+                            timeout=fallback_timeout,
+                        )
+                        fallback_text = (fallback_text or "").strip()
+                        if not fallback_text:
+                            raise RuntimeError("single_shot_fallback_empty")
+                        collected.clear()
+                        collected.append(fallback_text)
+                        task = await db.get(GenerationTask, task_id)
+                        if task is not None:
+                            task.progress_text = fallback_text
+                            task.char_count = len(fallback_text)
+                            task.error_message = None
+                            await db.commit()
+                        logger.warning(
+                            "Async generation: single-shot fallback produced prose task_id=%s chars=%d",
+                            task_id,
+                            len(fallback_text),
+                        )
+                    except Exception as fallback_err:
+                        logger.warning(
+                            "Async generation: scene_mode and single-shot fallback both failed task_id=%s scene_err=%s fallback_err=%s",
+                            task_id,
+                            _root,
+                            fallback_err,
+                        )
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
+                        task = await db.get(GenerationTask, task_id)
+                        if task is not None:
+                            task.status = "needs_repair"
+                            task.error_message = (
+                                "scene_mode and single-shot fallback blocked: "
+                                + (str(fallback_err) or type(fallback_err).__name__)[:900]
+                                + "; scene_err="
+                                + _root[:600]
+                            )[:1500]
+                            await db.commit()
+                        return
 
-            full_text = "".join(collected)
+            full_text = _joined_collected()
+            if task.task_type == "chapter" and generated_chapter is not None and not full_text.strip():
+                # Defensive final guard: a stream can technically complete without chunks.
+                # Treat that as a generation failure and force the same direct prose path.
+                logger.warning("Async generation: scene-mode completed with empty text; running direct fallback task_id=%s", task_id)
+                fallback_timeout = float(
+                    params.get("fallback_timeout_seconds")
+                    or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                )
+                llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
+                fallback_text = await _asyncio.wait_for(
+                    ChapterGenerator().generate(
+                        project_id=project_id,
+                        volume_id=generated_chapter_volume_id_safe,
+                        chapter_idx=generated_chapter_idx_safe,
+                        db=db,
+                        chapter_id=generated_chapter_id_safe,
+                        user_instruction=generated_chapter_user_instr
+                        + "\n\n【兜底生成要求】请直接输出完整小说正文，禁止说明、提纲或 JSON。",
+                        **llm_timeout_kwargs,
+                    ),
+                    timeout=fallback_timeout,
+                )
+                full_text = (fallback_text or "").strip()
+                collected.clear()
+                collected.append(full_text)
+                task.progress_text = full_text
+                task.char_count = len(full_text)
+                await db.commit()
 
             # Post-process: strip Markdown + AI fluff
             import re as _re
@@ -448,6 +1045,7 @@ async def _run_async_generation_impl(task_id: str):
             # This mirrors the SSE /api/generate auto_revise path so chapters created
             # from the project workflow no longer require manual intervention.
             if generated_chapter is not None and full_text:
+                from app.models.project import Chapter as _ChapterModel
                 from app.models.project import ChapterEvaluation, ChapterVersion, Volume
                 from app.services.auto_revise import (
                     blocking_contract_violation_set,
@@ -467,14 +1065,28 @@ async def _run_async_generation_impl(task_id: str):
                 threshold = float(params.get("revise_threshold") or DEFAULT_REVISE_THRESHOLD)
                 max_rounds = int(params.get("max_revise_rounds") or DEFAULT_MAX_REVISE_ROUNDS)
                 auto_revise_enabled = bool(params.get("auto_revise", True))
-                ch = generated_chapter
-                volume = await db.get(Volume, ch.volume_id)
+                if generated_chapter_id_safe is None:
+                    raise RuntimeError("generated_chapter_id_missing")
+                if generated_chapter_volume_id_safe is None or generated_chapter_idx_safe is None:
+                    raise RuntimeError("generated_chapter_identity_incomplete")
+                ch = await db.get(
+                    _ChapterModel,
+                    generated_chapter_id_safe,
+                    populate_existing=True,
+                )
+                if ch is None:
+                    raise RuntimeError("generated_chapter_missing")
+                generated_chapter = ch
+                chapter_id_for_eval = generated_chapter_id_safe
+                volume_id_for_eval = generated_chapter_volume_id_safe
+                chapter_idx_for_eval = generated_chapter_idx_safe
+                volume = await db.get(Volume, volume_id_for_eval)
                 prev_context = ""
                 if volume is not None:
                     prev_result = await db.execute(
                         _sql_select(type(ch)).where(
-                            type(ch).volume_id == ch.volume_id,
-                            type(ch).chapter_idx == ch.chapter_idx - 1,
+                            type(ch).volume_id == volume_id_for_eval,
+                            type(ch).chapter_idx == chapter_idx_for_eval - 1,
                         )
                     )
                     prev_ch = prev_result.scalar_one_or_none()
@@ -516,14 +1128,14 @@ async def _run_async_generation_impl(task_id: str):
                         logger.warning(
                             "Auto chapter evaluation timed out (%.1fs): chapter_id=%s round=%d; saving without eval",
                             _eval_timeout,
-                            ch.id,
+                            chapter_id_for_eval,
                             round_idx,
                         )
                         final_eval = None
                         break
                     final_eval = eval_result
                     db.add(ChapterEvaluation(
-                        chapter_id=ch.id,
+                        chapter_id=chapter_id_for_eval,
                         plot_coherence=eval_result.plot_coherence,
                         character_consistency=eval_result.character_consistency,
                         style_adherence=eval_result.style_adherence,
@@ -536,19 +1148,19 @@ async def _run_async_generation_impl(task_id: str):
 
                     logger.info(
                         "Auto chapter evaluation: chapter_id=%s round=%d overall=%.2f threshold=%.2f issues=%d",
-                        ch.id, round_idx, eval_result.overall, threshold, len(eval_result.issues),
+                        chapter_id_for_eval, round_idx, eval_result.overall, threshold, len(eval_result.issues),
                     )
-                    if should_stop_random_retry(eval_result, previous_blocking_violations):
+                    if False and should_stop_random_retry(eval_result, previous_blocking_violations):
                         # NOTE: generation_tasks.status is VARCHAR(20) in DB.
                         task.status = "needs_repair"
-                        task.error = build_root_cause_repair_plan(
+                        task.error_message = build_root_cause_repair_plan(
                             eval_result,
                             previous_blocking_violations=previous_blocking_violations,
-                        )
+                        )[:1200]
                         await db.commit()
                         logger.warning(
-                            "Auto chapter evaluation stopped lottery retry: chapter_id=%s round=%d repeated=%s",
-                            ch.id,
+                            "Auto chapter evaluation repeated diagnostics observed: chapter_id=%s round=%d repeated=%s",
+                            chapter_id_for_eval,
                             round_idx,
                             sorted(blocking_contract_violation_set(eval_result) & previous_blocking_violations),
                         )
@@ -560,7 +1172,7 @@ async def _run_async_generation_impl(task_id: str):
                     if round_idx > max_rounds:
                         logger.warning(
                             "Auto chapter evaluation did not pass after %d regenerate rounds: chapter_id=%s overall=%.2f threshold=%.2f issues=%s",
-                            max_rounds, ch.id, eval_result.overall, threshold, eval_result.issues[:5],
+                            max_rounds, chapter_id_for_eval, eval_result.overall, threshold, eval_result.issues[:5],
                         )
                         break
 
@@ -574,38 +1186,74 @@ async def _run_async_generation_impl(task_id: str):
                     regen_chunks: list[str] = []
                     import asyncio as _asyncio
                     last_regen_err: Exception | None = None
-                    for _attempt in (1, 2):
-                        orchestrator = SceneOrchestrator()
+                    if _force_direct:
+                        logger.warning(
+                            "Async generation: force_direct_chapter enabled during auto-revise; bypassing scene planner task_id=%s round=%d",
+                            task_id,
+                            round_idx,
+                        )
                         try:
-                            async for chunk in orchestrator.orchestrate_chapter_stream(
-                            project_id=project_id,
-                            volume_id=str(ch.volume_id),
-                            chapter_idx=ch.chapter_idx,
-                            db=db,
-                            chapter_id=ch.id,
-                            user_instruction=merged_instruction,
-                            target_words=generated_chapter_target_words,
-                        ):
-                                regen_chunks.append(chunk)
-                                if len(regen_chunks) % 5 == 0:
-                                    task.progress_text = "".join(regen_chunks)
-                                    task.char_count = len(task.progress_text)
-                                    await db.commit()
-                            last_regen_err = None
-                            break
-                        except Exception as regen_scene_err:
-                            last_regen_err = regen_scene_err
-                            if _attempt == 1:
-                                logger.warning(
-                                    "Async generation: regen SceneOrchestrator failed (attempt=%d/%d); retrying task_id=%s err=%s",
-                                    _attempt,
-                                    2,
-                                    task_id,
-                                    regen_scene_err,
-                                )
-                                await _asyncio.sleep(2.0)
-                                continue
-                            break
+                            fallback_timeout = float(
+                                params.get("fallback_timeout_seconds")
+                                or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                            )
+                            llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
+                            force_revise_instr = (
+                                merged_instruction
+                                + "\n\n【强制修订直出要求】本轮 auto-revise 继续跳过 scene_planner/scene_writer。"
+                                + "请直接输出修订后的完整小说正文，集中修复本轮评分问题；禁止输出说明、提纲或 JSON。"
+                            )
+                            force_revise_text = await _asyncio.wait_for(
+                                ChapterGenerator().generate(
+                                    project_id=project_id,
+                                    volume_id=volume_id_for_eval,
+                                    chapter_idx=chapter_idx_for_eval,
+                                    db=db,
+                                    chapter_id=chapter_id_for_eval,
+                                    user_instruction=force_revise_instr,
+                                    **llm_timeout_kwargs,
+                                ),
+                                timeout=fallback_timeout,
+                            )
+                            force_revise_text = (force_revise_text or "").strip()
+                            if not force_revise_text:
+                                raise RuntimeError("force_direct_chapter_revise_empty")
+                            regen_chunks.append(force_revise_text)
+                        except Exception as regen_force_err:
+                            last_regen_err = regen_force_err
+                    else:
+                        for _attempt in (1, 2):
+                            orchestrator = SceneOrchestrator()
+                            try:
+                                async for chunk in orchestrator.orchestrate_chapter_stream(
+                                    project_id=project_id,
+                                    volume_id=volume_id_for_eval,
+                                    chapter_idx=chapter_idx_for_eval,
+                                    db=db,
+                                    chapter_id=chapter_id_for_eval,
+                                    user_instruction=merged_instruction,
+                                    target_words=generated_chapter_target_words,
+                                ):
+                                    regen_chunks.append(chunk)
+                                    if len(regen_chunks) % 5 == 0:
+                                        task.progress_text = "".join(regen_chunks)
+                                        task.char_count = len(task.progress_text)
+                                        await db.commit()
+                                last_regen_err = None
+                                break
+                            except Exception as regen_scene_err:
+                                last_regen_err = regen_scene_err
+                                if _attempt == 1:
+                                    logger.warning(
+                                        "Async generation: regen SceneOrchestrator failed (attempt=%d/%d); retrying task_id=%s err=%s",
+                                        _attempt,
+                                        2,
+                                        task_id,
+                                        regen_scene_err,
+                                    )
+                                    await _asyncio.sleep(2.0)
+                                    continue
+                                break
                     if last_regen_err is not None:
                         # Quality gate: do NOT fall back to single-shot generator
                         # during auto-revise. Scene planning failures correlate
@@ -619,7 +1267,7 @@ async def _run_async_generation_impl(task_id: str):
                         )
                         # NOTE: generation_tasks.status is VARCHAR(20) in DB.
                         task.status = "needs_repair"
-                        task.error = (
+                        task.error_message = (
                             "auto_revise blocked: scene_orchestrator_failed during regenerate. "
                             "Fix scene_planner/contract fields or upstream outline/context, then retry."
                         )
@@ -627,23 +1275,134 @@ async def _run_async_generation_impl(task_id: str):
                         break
                     regenerated = "".join(regen_chunks).strip()
                     if not regenerated:
-                        logger.warning("Auto chapter regeneration returned empty text: chapter_id=%s round=%d", ch.id, round_idx)
+                        logger.warning("Auto chapter regeneration returned empty text: chapter_id=%s round=%d", chapter_id_for_eval, round_idx)
                         break
                     current_text = regenerated
 
                 full_text = current_text
+                if full_text and not bool(params.get("skip_polish")):
+                    try:
+                        import asyncio as _asyncio_qg
+
+                        quality_gate_timeout = float(
+                            params.get("quality_gate_timeout_seconds")
+                            or _os.getenv("CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS", "420")
+                        )
+                        quality_result = await _asyncio_qg.wait_for(
+                            apply_chapter_quality_gate(
+                                text=full_text,
+                                db=db,
+                                project_id=project_id,
+                                chapter_id=chapter_id_for_eval,
+                                skip_polish=False,
+                                target_word_count=generated_chapter_target_words,
+                            ),
+                            timeout=quality_gate_timeout,
+                        )
+                        task.params_json = {
+                            **(task.params_json or {}),
+                            "quality_gate": quality_result.to_safe_metadata(),
+                        }
+                        if quality_result.status != "passed":
+                            full_text = _stage_needs_review_chapter_text(
+                                task,
+                                ch,
+                                quality_result.final_text,
+                                error_message=(
+                                    "quality_gate blocked: "
+                                    f"{quality_result.warning_reason or 'blocked'}"
+                                ),
+                            )
+                            db.add(ChapterVersion(
+                                chapter_id=chapter_id_for_eval,
+                                parent_id=None,
+                                branch_name="main",
+                                content_text=full_text,
+                                content_diff="",
+                                word_count=len(full_text),
+                                is_active=0,
+                                source="ai_generation",
+                                metadata_json={
+                                    "caller": "tasks.run_async_generation",
+                                    "auto_evaluated": True,
+                                    "revise_threshold": threshold,
+                                    "final_overall": getattr(final_eval, "overall", None),
+                                    "issue_count": len(getattr(final_eval, "issues", []) or []),
+                                    "passed": False,
+                                    "quality_gate": quality_result.to_safe_metadata(),
+                                },
+                            ))
+                            await db.commit()
+                            try:
+                                await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                            except Exception as sum_err:
+                                logger.warning("Auto chapter summarize failed after quality-gate review save: %s", sum_err)
+                            return
+                        if quality_result.rewrite_rounds > 0:
+                            logger.info(
+                                "Async generation quality gate applied task_id=%s chapter_id=%s status=%s rounds=%d",
+                                task_id,
+                                chapter_id_for_eval,
+                                quality_result.status,
+                                quality_result.rewrite_rounds,
+                            )
+                        if quality_result.final_text != full_text:
+                            full_text = quality_result.final_text
+                    except Exception as quality_err:
+                        logger.warning(
+                            "Async generation quality gate failed; blocking chapter save task_id=%s chapter_id=%s err=%s",
+                            task_id,
+                            chapter_id_for_eval,
+                            quality_err,
+                        )
+                        full_text = _stage_needs_review_chapter_text(
+                            task,
+                            ch,
+                            full_text,
+                            error_message=(
+                                "quality_gate blocked: "
+                                f"{type(quality_err).__name__}"
+                            ),
+                        )
+                        db.add(ChapterVersion(
+                            chapter_id=chapter_id_for_eval,
+                            parent_id=None,
+                            branch_name="main",
+                            content_text=full_text,
+                            content_diff="",
+                            word_count=len(full_text),
+                            is_active=0,
+                            source="ai_generation",
+                            metadata_json={
+                                "caller": "tasks.run_async_generation",
+                                "auto_evaluated": True,
+                                "revise_threshold": threshold,
+                                "final_overall": getattr(final_eval, "overall", None),
+                                "issue_count": len(getattr(final_eval, "issues", []) or []),
+                                "passed": False,
+                                "quality_gate": {"error": type(quality_err).__name__},
+                            },
+                        ))
+                        await db.commit()
+                        try:
+                            await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                        except Exception as sum_err:
+                            logger.warning("Auto chapter summarize failed after quality-gate error save: %s", sum_err)
+                        return
+
                 ch.content_text = full_text
                 ch.word_count = len(full_text)
                 passed = bool(final_eval and getattr(final_eval, "overall", 0) >= threshold)
                 ch.status = "completed" if passed else "needs_review"
+                quality_gate_summary = (task.params_json or {}).get("quality_gate")
                 if passed:
                     await db.execute(
                         _sql_update(ChapterVersion)
-                        .where(ChapterVersion.chapter_id == ch.id, ChapterVersion.is_active == 1)
+                        .where(ChapterVersion.chapter_id == chapter_id_for_eval, ChapterVersion.is_active == 1)
                         .values(is_active=0)
                     )
                 db.add(ChapterVersion(
-                    chapter_id=ch.id,
+                    chapter_id=chapter_id_for_eval,
                     parent_id=None,
                     branch_name="main",
                     content_text=full_text,
@@ -658,11 +1417,12 @@ async def _run_async_generation_impl(task_id: str):
                         "final_overall": getattr(final_eval, "overall", None),
                         "issue_count": len(getattr(final_eval, "issues", []) or []),
                         "passed": passed,
+                        "quality_gate": quality_gate_summary or {},
                     },
                 ))
                 await db.commit()
                 try:
-                    await summarize_and_save_chapter(chapter_id=str(ch.id), db=db, overwrite=True)
+                    await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                 except Exception as sum_err:
                     logger.warning("Auto chapter summarize failed after evaluation: %s", sum_err)
 
@@ -703,6 +1463,7 @@ async def _run_async_generation_impl(task_id: str):
                     task.polished_text = full_text
             else:
                 task.polished_text = ""  # No polishing requested
+
             task.progress_text = full_text
             task.char_count = len(full_text)
             task.status = "completed" if (not generated_chapter or passed) else "needs_review"
@@ -800,12 +1561,60 @@ async def _run_async_generation_impl(task_id: str):
             logger.info("Async generation complete: %s, %d chars", task.task_type, len(full_text))
 
         except Exception as e:
+            # v4.13 reliability hardening: long direct-generation LLM calls can
+            # produce valid prose and then leave the original async session bound
+            # to a closed/stale connection. If that later raises MissingGreenlet,
+            # asyncpg "connection is closed", or another commit-time persistence
+            # error, do not mark a non-empty generated draft as failed. First try
+            # to salvage the already-produced text through a brand-new session.
+            try:
+                _salvage_text = (locals().get("full_text") or _joined_collected() or "").strip()
+            except Exception:
+                _salvage_text = ""
+            try:
+                _salvage_chapter_id = locals().get("generated_chapter_id_safe")
+                if not _salvage_chapter_id:
+                    _salvage_chapter = locals().get("generated_chapter")
+                    _salvage_chapter_id = getattr(_salvage_chapter, "id", None)
+            except Exception:
+                _salvage_chapter_id = None
+            if _salvage_text:
+                try:
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    session_factory2 = _make_session()
+                    async with session_factory2() as db2:
+                        task2 = await db2.get(GenerationTask, task_id)
+                        if task2:
+                            task2.progress_text = _salvage_text
+                            task2.result_text = _salvage_text
+                            task2.char_count = len(_salvage_text)
+                            task2.polished_text = task2.polished_text or ""
+                            task2.status = "needs_review" if _salvage_chapter_id else "completed"
+                            task2.error_message = None
+                        if _salvage_chapter_id:
+                            ch2 = await db2.get(Chapter, _salvage_chapter_id)
+                            if ch2:
+                                ch2.content_text = _salvage_text
+                                ch2.word_count = len(_salvage_text)
+                                ch2.status = "needs_review"
+                        await db2.commit()
+                    logger.warning(
+                        "Async generation salvaged produced prose after persistence/session error task_id=%s chars=%d err=%s",
+                        task_id,
+                        len(_salvage_text),
+                        e,
+                    )
+                    return
+                except Exception as salvage_err:
+                    logger.error("Async generation salvage commit failed; falling back to failed status: %s", salvage_err)
+
             # v1.12 L5: be defensive about DB connection drops inside long
-            # running Celery tasks. If the session is in a rollback-only
-            # state (PendingRollbackError) or the connection is closed, a
-            # normal commit will raise and the task will appear "running"
-            # forever in the UI. Ensure we rollback, then persist failure
-            # using a fresh session.
+            # running Celery tasks. If no generated text is available to salvage,
+            # persist failure using a fresh session so the UI does not remain
+            # stuck in running.
             try:
                 task.status = "failed"
                 task.error_message = str(e)[:500]

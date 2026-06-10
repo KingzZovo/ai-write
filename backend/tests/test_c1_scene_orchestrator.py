@@ -5,7 +5,7 @@ Covers:
      back on empty/garbage inputs.
   2. _try_parse_scene_array handles strict JSON, fenced ```json blocks,
      wrapped {"scenes": [...]} dict shape, and returns None for garbage.
-  3. _fallback_scene_briefs always yields 3..6 briefs with target_words in
+  3. _fallback_scene_briefs yields enough 800-1200 word scenes for long chapter targets,
      bounds and last brief has empty hook (chapter end).
   4. SceneBrief.to_writer_user_content emits expected anchor strings.
   5. SceneOrchestrator.plan_scenes uses LLM result when JSON parse succeeds.
@@ -51,11 +51,6 @@ class _FakePack:
         msgs = [{"role": "system", "content": self._system_prompt}]
         msgs.append({"role": "user", "content": user_instruction or "生成"})
         return msgs
-
-
-class _FakeResult:
-    def __init__(self, text: str) -> None:
-        self.text = text
 
 
 async def _async_iter(chunks):
@@ -142,13 +137,22 @@ def test_parse_garbage_returns_none():
         (3000, 3, 3),
         (3500, 3, 4),
         (5000, 4, 5),
-        (6500, 6, 6),
-        (10000, 6, 6),  # capped at 6
+        (6500, 6, 7),
+        (10000, 9, 10),
+        (12500, 12, 13),
     ],
 )
 def test_fallback_scene_count_scales(target, expected_min_n, expected_max_n):
     out = _fallback_scene_briefs(target, "A" * 800)
     assert expected_min_n <= len(out) <= expected_max_n, (target, len(out))
+    assert all(MIN_SCENE_WORDS <= b.target_words <= MAX_SCENE_WORDS for b in out)
+
+
+def test_fallback_scene_briefs_scale_to_12500_target_without_six_scene_cap():
+    out = _fallback_scene_briefs(12500, "A" * 2400)
+
+    assert len(out) >= 12
+    assert sum(b.target_words for b in out) >= 12500 * 0.85
     assert all(MIN_SCENE_WORDS <= b.target_words <= MAX_SCENE_WORDS for b in out)
 
 
@@ -238,10 +242,9 @@ async def test_plan_scenes_uses_llm_when_json_parses():
         _scene_contract(title="转", brief="高潮", target_words=1100, hook="h3"),
         _scene_contract(title="合", brief="收尾", target_words=900, hook=""),
     ]
-    fake_text = json.dumps(fake_briefs, ensure_ascii=False)
     with patch(
-        "app.services.scene_orchestrator.run_text_prompt",
-        new=AsyncMock(return_value=_FakeResult(fake_text)),
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value=fake_briefs),
     ) as mocked:
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
@@ -259,14 +262,45 @@ async def test_plan_scenes_uses_llm_when_json_parses():
     assert all(MIN_SCENE_WORDS <= b.target_words <= MAX_SCENE_WORDS for b in out)
 
 
+@pytest.mark.asyncio
+async def test_plan_scenes_keeps_more_than_six_scenes_for_long_targets():
+    pack = _FakePack()
+    fake_briefs = [
+        _scene_contract(title=f"场{i}", brief=f"推进{i}", target_words=1000, hook="接下一场")
+        for i in range(1, 13)
+    ]
+    fake_briefs[-1]["hook"] = ""
+    with patch(
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value=fake_briefs),
+    ):
+        orch = SceneOrchestrator()
+        out = await orch.plan_scenes(
+            pack=pack,
+            db=None,
+            project_id="p1",
+            chapter_id="c1",
+            target_words=12500,
+            n_scenes_hint=12,
+        )
+
+    assert len(out) == 12
+    assert out[-1].hook == ""
+
+
 # 6) ---------- plan_scenes falls back on garbage ----------
 
 @pytest.mark.asyncio
 async def test_plan_scenes_falls_back_on_unparseable():
     pack = _FakePack()
     with patch(
-        "app.services.scene_orchestrator.run_text_prompt",
-        new=AsyncMock(return_value=_FakeResult("sorry I cannot do this")),
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(
+            return_value={
+                "raw_text": "sorry I cannot do this",
+                "parse_error": "not JSON",
+            }
+        ),
     ):
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
@@ -286,8 +320,8 @@ async def test_plan_scenes_falls_back_when_contract_fields_missing():
         _scene_contract(title="合", brief="完整", target_words=900, hook=""),
     ]
     with patch(
-        "app.services.scene_orchestrator.run_text_prompt",
-        new=AsyncMock(return_value=_FakeResult(json.dumps(incomplete_briefs, ensure_ascii=False))),
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value=incomplete_briefs),
     ):
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
@@ -309,7 +343,7 @@ async def test_plan_scenes_falls_back_when_contract_fields_missing():
 async def test_plan_scenes_falls_back_on_llm_exception():
     pack = _FakePack()
     with patch(
-        "app.services.scene_orchestrator.run_text_prompt",
+        "app.services.prompt_registry.run_structured_prompt",
         new=AsyncMock(side_effect=RuntimeError("upstream 500")),
     ):
         orch = SceneOrchestrator()
@@ -344,8 +378,8 @@ async def test_orchestrate_concatenates_scenes_with_separator():
         return _async_iter(scene_chunks[call_count["n"]])
 
     with patch(
-        "app.services.scene_orchestrator.run_text_prompt",
-        new=AsyncMock(return_value=_FakeResult(briefs_json)),
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value=json.loads(briefs_json)),
     ), patch(
         "app.services.scene_orchestrator.stream_text_prompt",
         side_effect=_stream,
@@ -388,8 +422,8 @@ async def test_on_scene_start_callback_called_per_scene():
         return _async_iter(["x"])
 
     with patch(
-        "app.services.scene_orchestrator.run_text_prompt",
-        new=AsyncMock(return_value=_FakeResult(briefs_json)),
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value=json.loads(briefs_json)),
     ), patch(
         "app.services.scene_orchestrator.stream_text_prompt",
         side_effect=_stream,

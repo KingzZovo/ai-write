@@ -254,7 +254,7 @@ class ContextPack:
         if title or cidx:
             parts.append(f"《第{cidx}章 {title}》".strip())
         if co.get("summary"):
-            parts.append(f"棗概：{co['summary']}")
+            parts.append(f"梗概：{co['summary']}")
         ke = co.get("key_events") or []
         if isinstance(ke, list) and ke:
             parts.append("关键事件：")
@@ -679,6 +679,13 @@ class ContextPackBuilder:
             pack.writing_guidance.extend(STYLE_V9_DIRECTIVES)
         except Exception as _sty1_err:
             logger.debug("PR-STY1 style v9 directive injection skipped: %s", _sty1_err)
+
+        # PR-DAMP: dialogue damping / plain register / focal measure guidance.
+        try:
+            from app.services.checkers.anti_ai_checker import DIALOGUE_DAMPING_DIRECTIVES
+            pack.writing_guidance.extend(DIALOGUE_DAMPING_DIRECTIVES)
+        except Exception as _damp_err:
+            logger.debug("PR-DAMP directive injection skipped: %s", _damp_err)
 
         # v0.9: clear the invalidation flag after a successful rebuild so
         # subsequent builds can hit any downstream cache again.

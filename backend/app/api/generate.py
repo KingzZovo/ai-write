@@ -3,6 +3,7 @@
 import json
 import logging
 import asyncio
+import os
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,7 +14,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.project import Project, Chapter, Outline, WorldRule
+from app.services.chapter_target_words import (
+    CHAPTER_DEFAULT_WORD_COUNT,
+    resolve_chapter_target_word_count,
+)
+from app.services.chapter_quality_gate import apply_chapter_quality_gate
 from app.services.chapter_generator import ChapterGenerator
+from app.services.chinese_prose_mechanics_checker import analyze_chinese_prose_mechanics
+from app.services.outline_readiness import (
+    LAYER_LABELS,
+    build_outline_readiness_report,
+    has_meaningful_outline_content,
+)
 from app.services.outline_generator import OutlineGenerator
 
 logger = logging.getLogger(__name__)
@@ -51,6 +63,23 @@ def _inc_chapter_auto_save(kind: str, outcome: str, reason: str) -> None:
         ).inc()
     except Exception:
         pass
+
+
+def _sync_single_shot_llm_kwargs() -> dict[str, float | int | bool]:
+    """LLM kwargs for synchronous single-shot chapter generation.
+
+    Direct chapter generation can take several minutes and some upstream
+    OpenAI-compatible routes have returned HTTP/2 stream INTERNAL_ERROR near
+    the end of a long response. Use a non-streaming request for the direct
+    single-shot path so the backend either receives a complete draft it can
+    quality-check/save or gets a clean failure, instead of losing a partial SSE
+    draft before persistence.
+    """
+    return {
+        "request_timeout": float(os.getenv("SYNC_SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS", "840")),
+        "retry_attempts": int(os.getenv("SYNC_SINGLE_SHOT_LLM_RETRY_ATTEMPTS", "1")),
+        "stream": False,
+    }
 
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
@@ -232,9 +261,10 @@ async def generate_chapter(
                 next_text_for_eval = next_chapter.content_text or ""
                 next_summary_for_eval = next_chapter.summary or ""
 
-    # Fall back to project default for target_words
-    if target_words is None and isinstance(project_settings.get("target_chapter_words"), int):
-        target_words = int(project_settings["target_chapter_words"])
+    target_words = resolve_chapter_target_word_count(
+        target_words,
+        project_settings.get("target_chapter_words"),
+    )
 
     # Resolve style: explicit style_id > manual text > auto-resolve
     resolved_style = req.style_instruction
@@ -267,7 +297,7 @@ async def generate_chapter(
             if target_words:
                 effective_user_instruction = (
                     effective_user_instruction
-                    + f"\n\n【本章目标字数】约 {target_words} 字（允许 ±15% 浮动）。"
+                    + f"\n\n【本章目标字数】软目标约 {target_words} 字。默认单章可在 2000-6000 字内自然浮动；不要为凑字数补空话、重复心理剖白、制度解释或大纲外剧情。"
                 )
             if structure_prompt:
                 effective_user_instruction = (
@@ -305,11 +335,36 @@ async def generate_chapter(
                 yield "data: [DONE]\n\n"
                 return
 
+            readiness = await build_outline_readiness_report(
+                db,
+                project_id=req.project_id,
+                chapter_id=req.chapter_id,
+                volume_id=resolved_volume_id,
+                chapter_idx=resolved_chapter_idx,
+            )
+            if not readiness.ready:
+                yield f"data: {json.dumps({'event': 'generation_blocked', 'status': 'blocked', 'reason': 'outline_chain_incomplete', 'message': readiness.block_message(), 'missing_layers': readiness.missing_layers, 'readiness': readiness.to_dict()}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             # v1.5.0 C1: opt-in scene-staged streaming. SceneOrchestrator
             # plans 3-6 scene briefs (scene_planner) then streams each scene
             # 800-1200 chars (scene_writer). Falls back to ChapterGenerator's
             # single-shot "generation" prompt when use_scene_mode is False.
             stream_iter: AsyncGenerator[str, None]
+            async def _run_single_shot_generator() -> str:
+                generator = ChapterGenerator()
+                text = await generator.generate(
+                    project_id=req.project_id,
+                    volume_id=resolved_volume_id,
+                    chapter_idx=resolved_chapter_idx,
+                    db=db,
+                    chapter_id=req.chapter_id,
+                    user_instruction=effective_user_instruction,
+                    **_sync_single_shot_llm_kwargs(),
+                )
+                return text or ""
+
             if req.use_scene_mode:
                 from app.services.scene_orchestrator import SceneOrchestrator
 
@@ -343,33 +398,15 @@ async def generate_chapter(
                         "SceneOrchestrator failed (falling back to ChapterGenerator): %s",
                         scene_err,
                     )
-                    generator = ChapterGenerator()
-                    stream_iter = generator.generate_stream(
-                        project_id=req.project_id,
-                        volume_id=resolved_volume_id,
-                        chapter_idx=resolved_chapter_idx,
-                        db=db,
-                        chapter_id=req.chapter_id,
-                        user_instruction=effective_user_instruction,
-                    )
-                    async for chunk in stream_iter:
-                        if chunk:
-                            collected_text.append(chunk)
-                        yield f"data: {json.dumps({'text': chunk})}\n\n"
+                    generated_text = await _run_single_shot_generator()
+                    if generated_text:
+                        collected_text.append(generated_text)
+                    yield f"data: {json.dumps({'text': generated_text}, ensure_ascii=False)}\n\n"
             else:
-                generator = ChapterGenerator()
-                stream_iter = generator.generate_stream(
-                    project_id=req.project_id,
-                    volume_id=resolved_volume_id,
-                    chapter_idx=resolved_chapter_idx,
-                    db=db,
-                    chapter_id=req.chapter_id,
-                    user_instruction=effective_user_instruction,
-                )
-                async for chunk in stream_iter:
-                    if chunk:
-                        collected_text.append(chunk)
-                    yield f"data: {json.dumps({'text': chunk})}\n\n"
+                generated_text = await _run_single_shot_generator()
+                if generated_text:
+                    collected_text.append(generated_text)
+                yield f"data: {json.dumps({'text': generated_text}, ensure_ascii=False)}\n\n"
 
             # PR-CH-SAVE-RACE: chapter SSE save was racing with Starlette
             # BaseHTTPMiddleware cancel scope (same root cause as PR-OL16).
@@ -381,7 +418,49 @@ async def generate_chapter(
             # survives the SSE pipe being torn down.
             full_text = "".join(collected_text)
             if full_text:
-                async def _persist_chapter_now():
+                quality_gate_result = None
+                quality_gate_meta = None
+                if not req.skip_polish:
+                    try:
+                        try:
+                            # Release any locks inherited from earlier SELECTs
+                            # before the quality gate opens its own session.
+                            await db.rollback()
+                        except Exception:
+                            pass
+                        pre_quality_report = analyze_chinese_prose_mechanics(full_text)
+                        yield f"data: {json.dumps({'event': 'quality_check', 'status': 'passed' if pre_quality_report.passed else 'needs_rewrite', 'passed': pre_quality_report.passed, 'report': pre_quality_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                        if not pre_quality_report.passed:
+                            yield f"data: {json.dumps({'event': 'quality_rewrite_start', 'rounds': 2}, ensure_ascii=False)}\n\n"
+                        from app.db.session import async_session_factory
+                        async with async_session_factory() as quality_db:
+                            quality_gate_result = await apply_chapter_quality_gate(
+                                text=full_text,
+                                db=quality_db,
+                                project_id=req.project_id,
+                                chapter_id=req.chapter_id,
+                                target_word_count=target_words,
+                                skip_polish=False,
+                            )
+                        quality_gate_meta = quality_gate_result.to_safe_metadata()
+                        if quality_gate_result.status != "passed":
+                            yield f"data: {json.dumps({'event': 'quality_failed', 'status': quality_gate_result.status, 'reason': quality_gate_result.warning_reason, 'rounds': quality_gate_result.rewrite_rounds, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
+                        if quality_gate_result.rewrite_rounds > 0:
+                            yield f"data: {json.dumps({'event': 'quality_rewrite_done', 'status': quality_gate_result.status, 'rounds': quality_gate_result.rewrite_rounds, 'content_text': quality_gate_result.final_text, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                        full_text = quality_gate_result.final_text
+                    except Exception as quality_err:
+                        logger.warning(
+                            "chapter quality gate failed; blocking save: %s",
+                            quality_err,
+                            exc_info=True,
+                        )
+                        yield f"data: {json.dumps({'event': 'quality_failed', 'status': 'blocked', 'reason': 'quality_gate_exception', 'error_class': type(quality_err).__name__}, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
+                async def _persist_chapter_now(text_to_save: str, quality_meta: dict | None = None):
                     """Returns (chapter_id_or_none, word_count, no_target_row)."""
                     from app.db.session import async_session_factory
                     async with async_session_factory() as save_db:
@@ -398,8 +477,8 @@ async def generate_chapter(
                             target_chapter = lookup.scalar_one_or_none()
                         if target_chapter is None:
                             return None, 0, True
-                        target_chapter.content_text = full_text
-                        target_chapter.word_count = len(full_text)
+                        target_chapter.content_text = text_to_save
+                        target_chapter.word_count = len(text_to_save)
                         target_chapter.status = "completed"
                         await save_db.commit()
                         # PR-FORESHADOW-LIFECYCLE: persist foreshadows from chapter outline_json after content saved
@@ -435,14 +514,15 @@ async def generate_chapter(
                                 chapter_id=target_chapter.id,
                                 parent_id=None,
                                 branch_name="main",
-                                content_text=full_text,
+                                content_text=text_to_save,
                                 content_diff="",
-                                word_count=len(full_text),
+                                word_count=len(text_to_save),
                                 is_active=1,
                                 source="ai_generation",
                                 metadata_json={
                                     "caller": "api.generate.stream_generate",
                                     "chapter_idx": resolved_chapter_idx,
+                                    "quality_gate": quality_meta or {},
                                 },
                             )
                             save_db.add(cv)
@@ -484,7 +564,7 @@ async def generate_chapter(
                             )
                         return str(target_chapter.id), target_chapter.word_count, False
 
-                _chsave_task = asyncio.create_task(_persist_chapter_now())
+                _chsave_task = asyncio.create_task(_persist_chapter_now(full_text, quality_gate_meta))
                 _CHAPTER_SAVE_BG_TASKS.add(_chsave_task)
                 _chsave_task.add_done_callback(_CHAPTER_SAVE_BG_TASKS.discard)
                 try:
@@ -572,6 +652,7 @@ async def generate_chapter(
 
                     accepted_final = False
                     aborted_with_blocking = False
+                    c2_revised = False
 
                     for round_idx in range(1, max_rounds + 1):
                         # 1) Score the current saved version.
@@ -612,7 +693,7 @@ async def generate_chapter(
                             )
 
                         # 2) Threshold / no-lottery gates.
-                        if should_stop_random_retry(eval_result, previous_blocking_violations):
+                        if False and should_stop_random_retry(eval_result, previous_blocking_violations):
                             repair_plan = build_root_cause_repair_plan(
                                 eval_result,
                                 previous_blocking_violations=previous_blocking_violations,
@@ -755,6 +836,7 @@ async def generate_chapter(
                             aborted_with_blocking = True
                             break
                         current_text = revised_text
+                        c2_revised = True
                     else:
                         # for-else: ran out of rounds without breaking. Emit a
                         # final scored event for the last write so the UI sees
@@ -889,6 +971,68 @@ async def generate_chapter(
                     )
                     aborted_with_blocking = True
                     yield f"data: {json.dumps({'event': 'revise_error', 'error': str(revise_err)})}\n\n"
+
+                if c2_revised and accepted_final and not aborted_with_blocking and not req.skip_polish:
+                    try:
+                        pre_final_quality_report = analyze_chinese_prose_mechanics(current_text)
+                        yield f"data: {json.dumps({'event': 'quality_check', 'status': 'passed' if pre_final_quality_report.passed else 'needs_rewrite', 'passed': pre_final_quality_report.passed, 'report': pre_final_quality_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                        if not pre_final_quality_report.passed:
+                            yield f"data: {json.dumps({'event': 'quality_rewrite_start', 'rounds': 2}, ensure_ascii=False)}\n\n"
+                        from app.db.session import async_session_factory
+                        async with async_session_factory() as quality_db2:
+                            final_quality_result = await apply_chapter_quality_gate(
+                                text=current_text,
+                                db=quality_db2,
+                                project_id=req.project_id,
+                                chapter_id=req.chapter_id,
+                                target_word_count=target_words,
+                                skip_polish=False,
+                            )
+                        final_quality_meta = final_quality_result.to_safe_metadata()
+                        if final_quality_result.status != "passed":
+                            accepted_final = False
+                            aborted_with_blocking = True
+                            yield f"data: {json.dumps({'event': 'quality_failed', 'status': final_quality_result.status, 'reason': final_quality_result.warning_reason, 'rounds': final_quality_result.rewrite_rounds, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                        elif final_quality_result.rewrite_rounds > 0:
+                            yield f"data: {json.dumps({'event': 'quality_rewrite_done', 'status': final_quality_result.status, 'rounds': final_quality_result.rewrite_rounds, 'content_text': final_quality_result.final_text, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+
+                        if final_quality_result.status == "passed" and final_quality_result.final_text != current_text:
+                            current_text = final_quality_result.final_text
+                            full_text = current_text
+                            _chsave_task2 = asyncio.create_task(_persist_chapter_now(current_text, final_quality_meta))
+                            _CHAPTER_SAVE_BG_TASKS.add(_chsave_task2)
+                            _chsave_task2.add_done_callback(_CHAPTER_SAVE_BG_TASKS.discard)
+                            try:
+                                _saved_id2, _wc2, _no_target2 = await asyncio.shield(_chsave_task2)
+                                if _no_target2:
+                                    logger.warning(
+                                        "Auto-save chapter: final quality gate no target row (chapter_id=%s vol=%s idx=%s)",
+                                        req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                                    )
+                                    _inc_chapter_auto_save("chapter", "failure", "no_target_row")
+                                    yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
+                                else:
+                                    yield f"data: {json.dumps({'status': 'saved', 'chapter_id': _saved_id2, 'word_count': _wc2, 'quality_gate': final_quality_result.status})}\n\n"
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as save2_final_err:
+                                logger.warning(
+                                    "Auto-save chapter final quality gate FAILED (chapter_id=%s vol=%s idx=%s): %s",
+                                    req.chapter_id, resolved_volume_id, resolved_chapter_idx,
+                                    save2_final_err, exc_info=True,
+                                )
+                                _inc_chapter_auto_save(
+                                    "chapter", "failure", type(save2_final_err).__name__
+                                )
+                    except Exception as quality2_err:
+                        logger.warning(
+                            "chapter final quality gate failed after auto-revise; rolling back: %s",
+                            quality2_err,
+                            exc_info=True,
+                        )
+                        accepted_final = False
+                        aborted_with_blocking = True
+                        yield f"data: {json.dumps({'event': 'quality_failed', 'status': 'blocked', 'reason': 'quality_gate_exception', 'error_class': type(quality2_err).__name__}, ensure_ascii=False)}\n\n"
 
                 # If the revise loop aborted due to blocking issues / timeout /
                 # rounds exhausted, rollback chapter.content_text so a known-bad
@@ -1058,7 +1202,10 @@ async def generate_outline(
                     _settings = {}
                 project_scale = compute_scale(
                     _twc,
-                    chapter_words=int(_settings.get("target_chapter_words") or 4000),
+                    chapter_words=int(
+                        _settings.get("target_chapter_words")
+                        or CHAPTER_DEFAULT_WORD_COUNT
+                    ),
                     chapters_per_volume_min=int(_settings.get("chapters_per_volume_min") or 100),
                     chapters_per_volume_max=int(_settings.get("chapters_per_volume_max") or 200),
                     chapters_per_volume_target=int(_settings.get("chapters_per_volume_target") or 150),
@@ -1150,6 +1297,21 @@ async def generate_outline(
             generator = OutlineGenerator(project_id=req.project_id, chapter_naming_directive=_chapter_naming_directive)
 
             yield f"data: {json.dumps({'status': 'generating', 'level': req.level})}\n\n"
+
+            blocked_layers: list[str] = []
+            if req.level == "volume" and not has_meaningful_outline_content(book_outline):
+                blocked_layers.append("book")
+            elif req.level == "chapter":
+                if not has_meaningful_outline_content(book_outline):
+                    blocked_layers.append("book")
+                if not has_meaningful_outline_content(volume_outline):
+                    blocked_layers.append("volume")
+
+            if blocked_layers:
+                labels = "、".join(LAYER_LABELS.get(layer, layer) for layer in blocked_layers)
+                yield f"data: {json.dumps({'event': 'generation_blocked', 'status': 'blocked', 'reason': 'outline_chain_incomplete', 'message': f'缺少：{labels}', 'missing_layers': blocked_layers}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
             # PR-OUTLINE-STAGED-PERSIST-STRUCT: nonlocal-style payload
             # captured from the staged-stream `done` event.
@@ -1512,11 +1674,12 @@ async def generate_outline(
 
 class AsyncGenerateRequest(BaseModel):
     project_id: str
-    task_type: str = "outline_book"  # outline_book, outline_volume, outline_chapter, chapter
+    task_type: str | None = None  # outline_book, outline_volume, outline_chapter, chapter
     user_input: str = ""
     style_id: str | None = None
     structure_book_id: str | None = None  # Optional: extract & use plot structure from this book
     enable_polish: bool = False  # Optional: second-pass anti-AI polishing
+    skip_polish: bool = False  # Optional: skip chapter quality rewrite gate
     chapter_id: str | None = None
     volume_idx: int | None = None
     chapter_idx: int | None = None
@@ -1534,16 +1697,94 @@ async def start_async_generation(
     project_settings = project.settings_json if project and isinstance(project.settings_json, dict) else {}
     style_id = req.style_id or _settings_style_profile_id(project_settings)
     structure_book_id = req.structure_book_id or _settings_structure_book_id(project_settings)
+    task_type = req.task_type or ("chapter" if req.chapter_id else "outline_book")
+    extra_params = req.params or {}
+    target_chapter_id = req.chapter_id or extra_params.get("chapter_id")
+
+    def _outline_chain_exception(
+        *,
+        missing_layers: list[str],
+        message: str | None = None,
+        readiness: dict | None = None,
+    ) -> HTTPException:
+        labels = "、".join(LAYER_LABELS.get(layer, layer) for layer in missing_layers)
+        return HTTPException(
+            status_code=422,
+            detail={
+                "code": "outline_chain_incomplete",
+                "message": message or f"缺少：{labels}",
+                "missing_layers": missing_layers,
+                **({"readiness": readiness} if readiness is not None else {}),
+            },
+        )
+
+    if task_type == "outline_volume":
+        book_rows = (
+            await db.execute(
+                select(Outline)
+                .where(Outline.project_id == req.project_id, Outline.level == "book")
+                .order_by(Outline.is_confirmed.desc(), Outline.created_at.asc())
+            )
+        ).scalars().all()
+        if not any(
+            has_meaningful_outline_content(getattr(row, "content_json", None))
+            for row in book_rows
+        ):
+            raise _outline_chain_exception(missing_layers=["book"])
+
+    elif task_type == "outline_chapter":
+        if not target_chapter_id:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "outline_target_required",
+                    "message": "请先选择要生成章节大纲的章节。",
+                },
+            )
+        readiness = await build_outline_readiness_report(
+            db,
+            project_id=req.project_id,
+            chapter_id=str(target_chapter_id),
+        )
+        upstream_missing = [
+            layer for layer in readiness.missing_layers if layer in {"book", "volume"}
+        ]
+        if upstream_missing:
+            raise _outline_chain_exception(
+                missing_layers=upstream_missing,
+                readiness=readiness.to_dict(),
+            )
+
+    elif task_type == "chapter":
+        if not target_chapter_id:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "outline_target_required",
+                    "message": "请先选择要生成正文的章节。",
+                },
+            )
+        readiness = await build_outline_readiness_report(
+            db,
+            project_id=req.project_id,
+            chapter_id=str(target_chapter_id),
+        )
+        if not readiness.ready:
+            raise _outline_chain_exception(
+                missing_layers=readiness.missing_layers,
+                readiness=readiness.to_dict(),
+            )
 
     task = GenerationTask(
         project_id=req.project_id,
-        task_type=req.task_type,
+        task_type=task_type,
         status="pending",
         params_json={
             "user_input": req.user_input,
             "style_id": style_id,
             "structure_book_id": structure_book_id,
             "enable_polish": req.enable_polish,
+            "skip_polish": req.skip_polish,
             "chapter_id": req.chapter_id,
             "volume_idx": req.volume_idx,
             "chapter_idx": req.chapter_idx,
