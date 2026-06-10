@@ -24,6 +24,42 @@ from app.observability.metrics import time_llm_call
 logger = logging.getLogger(__name__)
 
 
+async def _commit_llm_call_log(
+    db,
+    *,
+    operation: str,
+    task_type: str,
+    model: str,
+) -> None:
+    """Best-effort commit for LLM call telemetry sessions.
+
+    LLM call logging must not turn a successful provider response into a
+    failed generation. Long streaming responses can outlive a DB connection;
+    when that happens, drop the telemetry row and let the caller continue.
+    """
+    try:
+        await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "LLM call log commit failed (operation=%s task_type=%s model=%s): %s",
+            operation,
+            task_type,
+            model,
+            exc,
+        )
+        try:
+            await db.rollback()
+        except Exception as rollback_exc:
+            logger.warning(
+                "LLM call log rollback failed after commit error "
+                "(operation=%s task_type=%s model=%s): %s",
+                operation,
+                task_type,
+                model,
+                rollback_exc,
+            )
+
+
 # =========================================================================
 # v1.4 — shared tier routing helpers
 # =========================================================================
@@ -226,11 +262,11 @@ class OpenAIProvider(BaseProvider):
 
     async def generate(self, messages, model="gpt-4o",
                        temperature=0.7, max_tokens=8192, **kw) -> GenerationResult:
-        # Some API proxies only return content via streaming.
-        # Use stream mode and collect chunks for reliability.
         # v1.6.0 Y2: prompt_cache_key boosts hit-rate on long stable prefixes
         extra_body: dict = {}
         task_type = kw.get("task_type", "unknown")
+        stream_mode = kw.pop("stream", True)
+        request_timeout = kw.pop("request_timeout", None)
         if _OPENAI_CACHE_ENABLED:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
 
@@ -241,12 +277,36 @@ class OpenAIProvider(BaseProvider):
         from app.services.llm_retry import call_with_retry
 
         async def _one_attempt() -> GenerationResult:
+            # Evaluation expects one bounded JSON object. For direct chapter
+            # generation we now honor `stream=False` so callers can opt into a
+            # full non-streaming completion and avoid transport-side SSE issues.
+            if task_type == "evaluation" or stream_mode is False:
+                timeout = request_timeout if request_timeout is not None else 45
+                resp = await self.client.chat.completions.create(
+                    model=model, messages=messages,
+                    temperature=temperature, max_tokens=max_tokens,
+                    stream=False,
+                    extra_body=extra_body or None,
+                    timeout=timeout,
+                )
+                text = ""
+                if resp.choices and resp.choices[0].message:
+                    text = resp.choices[0].message.content or ""
+                u = getattr(resp, "usage", None)
+                usage = TokenUsage(
+                    getattr(u, 'prompt_tokens', 0) or 0,
+                    getattr(u, 'completion_tokens', 0) or 0,
+                    getattr(u, 'total_tokens', 0) or 0,
+                ) if u else TokenUsage()
+                return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
+
             chunks: list[str] = []
             stream = await self.client.chat.completions.create(
                 model=model, messages=messages,
                 temperature=temperature, max_tokens=max_tokens,
                 stream=True, stream_options={"include_usage": True},
-                extra_body=extra_body or None)
+                extra_body=extra_body or None,
+                timeout=request_timeout if request_timeout is not None else None)
             usage = TokenUsage()
             cached_tokens = 0
             async for chunk in stream:
@@ -269,7 +329,8 @@ class OpenAIProvider(BaseProvider):
             return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
         return await call_with_retry(
-            _one_attempt, label=f"openai_chat[{task_type}:{model}]"
+            _one_attempt, label=f"openai_chat[{task_type}:{model}]",
+            attempts=1 if task_type == "evaluation" else 4,
         )
 
     async def generate_stream(self, messages, model="gpt-4o",
@@ -729,7 +790,9 @@ class ModelRouter:
                     _mbox["output_tokens"] = result.usage.output_tokens
                 ctx.add_chunk(result.text)
                 ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
-            await db.commit()
+            await _commit_llm_call_log(
+                db, operation="generate", task_type=task_type, model=model
+            )
         self._track(result.usage)
         return result
 
@@ -768,7 +831,9 @@ class ModelRouter:
                         temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                         ctx.add_chunk(chunk)
                         yield chunk
-            await db.commit()
+            await _commit_llm_call_log(
+                db, operation="generate_stream", task_type=task_type, model=model
+            )
 
     async def generate_by_route(self, route, messages: list[dict],
                                 temperature: float | None = None,
@@ -813,7 +878,9 @@ class ModelRouter:
                     _mbox["output_tokens"] = result.usage.output_tokens
                 ctx.add_chunk(result.text)
                 ctx.set_usage(result.usage.input_tokens, result.usage.output_tokens)
-            await db.commit()
+            await _commit_llm_call_log(
+                db, operation="generate_by_route", task_type=task_type, model=model
+            )
         self._track(result.usage)
         return result
 
@@ -854,7 +921,9 @@ class ModelRouter:
                     temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
                     ctx.add_chunk(chunk)
                     yield chunk
-            await db.commit()
+            await _commit_llm_call_log(
+                db, operation="stream_by_route", task_type=task_type, model=model
+            )
 
     async def generate_with_fallback(self, task_type: str, messages: list[dict],
                                      **kw) -> GenerationResult:
@@ -1037,7 +1106,12 @@ class ModelRouter:
                         ctx.add_chunk(result.text)
                         ctx.set_usage(result.usage.input_tokens,
                                       result.usage.output_tokens)
-                    await db.commit()
+                    await _commit_llm_call_log(
+                        db,
+                        operation="generate_with_tier_fallback",
+                        task_type=task_type,
+                        model=model,
+                    )
                 self._track(result.usage)
                 return result
             except Exception as e:
@@ -1122,7 +1196,12 @@ class ModelRouter:
                             yielded_any = True
                             ctx.add_chunk(chunk)
                             yield chunk
-                    await db.commit()
+                    await _commit_llm_call_log(
+                        db,
+                        operation="stream_with_tier_fallback",
+                        task_type=task_type,
+                        model=model,
+                    )
                 return
             except Exception as e:
                 logger.warning(
