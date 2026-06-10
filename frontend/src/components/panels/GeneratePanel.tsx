@@ -25,6 +25,18 @@ interface StructureInfo {
   structure_summary?: string | null
 }
 
+interface OutlineReadinessLayer {
+  ready: boolean
+  detail?: string | null
+}
+
+interface OutlineReadinessInfo {
+  ready: boolean
+  missing_layers: string[]
+  block_message?: string | null
+  layers: Record<'book' | 'volume' | 'chapter', OutlineReadinessLayer>
+}
+
 // Exported so DesktopWorkspace can read the selected values
 let _selectedStyleId: string | null = null
 let _selectedStructureBookId: string | null = null
@@ -133,6 +145,9 @@ function StyleSelector({ projectId }: { projectId?: string | null }) {
 
 interface GeneratePanelProps {
   projectId?: string
+  selectedChapterId?: string | null
+  outlineReadiness?: OutlineReadinessInfo | null
+  outlineReadinessLoading?: boolean
   onGenerate?: () => void
   onGenerateOutline?: (level: string) => void
   onViewOutline?: (level: string) => void
@@ -164,7 +179,15 @@ const TASK_LABELS: Record<string, string> = {
   embedding: '向量嵌入',
 }
 
-export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onViewOutline }: GeneratePanelProps) {
+export function GeneratePanel({
+  projectId,
+  selectedChapterId,
+  outlineReadiness,
+  outlineReadinessLoading,
+  onGenerate,
+  onGenerateOutline,
+  onViewOutline,
+}: GeneratePanelProps) {
   const { isGenerating } = useGenerationStore()
   const [endpoints, setEndpoints] = useState<EndpointInfo[]>([])
   const [tasks, setTasks] = useState<TaskConfig[]>([])
@@ -200,6 +223,21 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
 
   const enabledEndpoints = endpoints.filter(e => e.enabled)
   const hasEndpoints = enabledEndpoints.length > 0
+  const outlineLayerLabels: Record<'book' | 'volume' | 'chapter', string> = {
+    book: '全书大纲',
+    volume: '当前卷大纲',
+    chapter: '本章大纲',
+  }
+  const canGenerateVolumeOutline =
+    selectedChapterId
+      ? Boolean(outlineReadiness?.layers.book?.ready)
+      : outlineCounts.book > 0
+  const canGenerateChapterOutline = Boolean(
+    selectedChapterId &&
+      outlineReadiness?.layers.book?.ready &&
+      outlineReadiness?.layers.volume?.ready,
+  )
+  const canGenerateChapterProse = Boolean(selectedChapterId && outlineReadiness?.ready)
 
   // Key tasks for writing
   const writingTasks = tasks.filter(t => ['generation', 'outline', 'polishing'].includes(t.task_type))
@@ -274,6 +312,55 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
         )}
       </div>
 
+      {/* Outline chain status */}
+      <div className="border-t pt-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">大纲链路</h3>
+        {!selectedChapterId ? (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500">
+            先选中一章，再检查全书 / 分卷 / 章节大纲是否齐备。
+          </div>
+        ) : outlineReadinessLoading ? (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500">
+            检查中...
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div
+              className={`p-3 rounded-lg border text-xs ${
+                outlineReadiness?.ready
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
+              }`}
+            >
+              {outlineReadiness?.ready
+                ? '链路完整，可生成本章正文。'
+                : outlineReadiness?.block_message || '链路齐备后才能生成本章正文。'}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(['book', 'volume', 'chapter'] as const).map((layerKey) => {
+                const layer = outlineReadiness?.layers[layerKey]
+                const ready = Boolean(layer?.ready)
+                return (
+                  <div
+                    key={layerKey}
+                    className={`rounded-lg border px-3 py-2 text-xs ${
+                      ready
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}
+                  >
+                    <div className="font-medium">{outlineLayerLabels[layerKey]}</div>
+                    <div className="mt-1 text-[11px] leading-snug">
+                      {layer?.detail || (ready ? '已就绪' : '未就绪')}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Generation buttons */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">内容生成</h3>
@@ -286,17 +373,17 @@ export function GeneratePanel({ projectId, onGenerate, onGenerateOutline, onView
           />
           <OutlineButtonRow
             label="分卷大纲" colorClass="bg-indigo-600 hover:bg-indigo-700"
-            count={outlineCounts.volume} disabled={isGenerating || !hasEndpoints}
+            count={outlineCounts.volume} disabled={isGenerating || !hasEndpoints || !canGenerateVolumeOutline}
             onView={() => onViewOutline?.("volume")}
             onGenerate={() => outlineCounts.volume > 0 ? setConfirmLevel("volume") : onGenerateOutline?.("volume")}
           />
           <OutlineButtonRow
             label="章节大纲" colorClass="bg-blue-600 hover:bg-blue-700"
-            count={outlineCounts.chapter} disabled={isGenerating || !hasEndpoints}
+            count={outlineCounts.chapter} disabled={isGenerating || !hasEndpoints || !canGenerateChapterOutline}
             onView={() => onViewOutline?.("chapter")}
             onGenerate={() => outlineCounts.chapter > 0 ? setConfirmLevel("chapter") : onGenerateOutline?.("chapter")}
           />
-          <button onClick={onGenerate} disabled={isGenerating || !hasEndpoints}
+          <button onClick={onGenerate} disabled={isGenerating || !hasEndpoints || !canGenerateChapterProse}
             className="w-full px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
             {isGenerating ? "生成中..." : "生成章节正文"}
           </button>

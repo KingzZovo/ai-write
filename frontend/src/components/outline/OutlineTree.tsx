@@ -29,12 +29,14 @@ const statusColors: Record<string, string> = {
   draft: 'bg-gray-200 text-gray-600',
   generating: 'bg-yellow-100 text-yellow-700',
   completed: 'bg-green-100 text-green-700',
+  needs_review: 'bg-red-100 text-red-700',
 }
 
 const statusLabels: Record<string, string> = {
   draft: '草稿',
   generating: '生成中',
   completed: '完成',
+  needs_review: '需复核',
 }
 
 export function OutlineTree({

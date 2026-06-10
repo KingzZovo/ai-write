@@ -3,13 +3,32 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
+import {
+  AlertTriangle,
+  BookOpen,
+  Brain,
+  CheckCircle2,
+  ClipboardCheck,
+  Database,
+  FileCheck2,
+  GitBranch,
+  History,
+  ListChecks,
+  Network,
+  PenLine,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from 'lucide-react'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { OutlineTree } from '@/components/outline/OutlineTree'
 import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
 import { OutlineEditor, type OutlineEditTarget } from '@/components/outline/OutlineEditor'
 import { GeneratePanel, getSelectedStyleId } from '@/components/panels/GeneratePanel'
 
-// Lazy load heavy panels — only loaded when their CollapsibleSection is opened
+// Lazy load heavy panels — only loaded when their workbench tab/drawer is opened
 const ForeshadowPanel = dynamic(() => import('@/components/panels/ForeshadowPanel').then(m => ({ default: m.ForeshadowPanel })), { ssr: false })
 const SettingsPanel = dynamic(() => import('@/components/panels/SettingsPanel').then(m => ({ default: m.SettingsPanel })), { ssr: false })
 const EvaluationPanel = dynamic(() => import('@/components/panels/EvaluationPanel').then(m => ({ default: m.EvaluationPanel })), { ssr: false })
@@ -52,6 +71,7 @@ interface ChapterRes {
   status: string
   summary: string | null
   outline_json: Record<string, unknown>
+  target_word_count?: number | null
 }
 
 interface OutlineRes {
@@ -62,42 +82,144 @@ interface OutlineRes {
   content_json: Record<string, unknown>
   version: number
   is_confirmed: number
-}// ----------------------------------------------------------------
-// CollapsibleSection (unchanged from original)
-// ----------------------------------------------------------------
+}
 
-function CollapsibleSection({
-  title,
-  defaultOpen = false,
+interface OutlineReadinessLayer {
+  ready: boolean
+  detail?: string | null
+  outline_id?: string | null
+  title?: string | null
+  volume_idx?: number | null
+  chapter_idx?: number | null
+}
+
+interface OutlineReadinessRes {
+  project_id: string
+  volume_id?: string | null
+  volume_idx?: number | null
+  chapter_id?: string | null
+  chapter_idx?: number | null
+  ready: boolean
+  missing_layers: string[]
+  block_message?: string | null
+  layers: Record<'book' | 'volume' | 'chapter', OutlineReadinessLayer>
+}
+
+function StatusPill({
+  tone = 'gray',
   children,
 }: {
-  title: string
-  defaultOpen?: boolean
+  tone?: 'gray' | 'green' | 'amber' | 'red' | 'blue' | 'purple'
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(defaultOpen)
-
+  const tones = {
+    gray: 'border-gray-200 bg-gray-50 text-gray-600',
+    green: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700',
+    red: 'border-red-200 bg-red-50 text-red-700',
+    blue: 'border-blue-200 bg-blue-50 text-blue-700',
+    purple: 'border-violet-200 bg-violet-50 text-violet-700',
+  }
   return (
-    <div className="border-b border-gray-200">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hover:bg-gray-50 transition-colors"
-      >
-        <span>{title}</span>
-        <svg
-          className={`w-3.5 h-3.5 text-gray-400 transition-transform ${
-            open ? 'rotate-180' : ''
-          }`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open && <div className="pb-3">{children}</div>}
+    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${tones[tone]}`}>
+      {children}
+    </span>
+  )
+}
+
+function WorkbenchMetric({
+  label,
+  value,
+  hint,
+}: {
+  label: string
+  value: string | number
+  hint?: string
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-gray-200 bg-white px-2.5 py-2">
+      <div className="text-[10px] font-medium text-gray-400">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold text-gray-900">{value}</div>
+      {hint && <div className="mt-0.5 truncate text-[10px] text-gray-500">{hint}</div>}
     </div>
+  )
+}
+
+function WorkbenchTabButton({
+  active,
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-medium transition-colors ${
+        active
+          ? 'border-gray-900 bg-gray-900 text-white'
+          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function WorkbenchCard({
+  title,
+  icon: Icon,
+  children,
+  action,
+}: {
+  title: string
+  icon: React.ComponentType<{ className?: string }>
+  children: React.ReactNode
+  action?: React.ReactNode
+}) {
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon className="h-4 w-4 text-gray-500" />
+          <h3 className="truncate text-sm font-semibold text-gray-900">{title}</h3>
+        </div>
+        {action}
+      </div>
+      <div className="p-3">{children}</div>
+    </section>
+  )
+}
+
+function DrawerLinkButton({
+  label,
+  icon: Icon,
+  onClick,
+  hint,
+}: {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  onClick: () => void
+  hint?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
+    >
+      <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
+        <Icon className="h-4 w-4 text-gray-500" />
+        {label}
+      </span>
+      {hint && <span className="mt-0.5 block pl-6 text-[11px] leading-relaxed text-gray-500">{hint}</span>}
+    </button>
   )
 }
 
@@ -130,6 +252,7 @@ export default function DesktopWorkspace() {
   const [editorContent, setEditorContent] = useState('')
   const [creativeInput, setCreativeInput] = useState('')
   const [outlinePreview, setOutlinePreview] = useState('')
+  const [generationError, setGenerationError] = useState<string | null>(null)
   // PR-OL1: AI-suggested volume plan parsed from staged SSE done event.
   const [volumePlan, setVolumePlan] = useState<Array<{idx:number; title:string; theme:string; core_conflict:string; est_chapters:number}> | null>(null)
   // PR-OL3: edit mode for the volume plan card.
@@ -173,13 +296,20 @@ export default function DesktopWorkspace() {
   const pendingBookOutlineIdRef = useRef<string | null>(null)
   // Outline inline editing
   const [outlineEditing, setOutlineEditing] = useState(false)
+  const [outlineReadiness, setOutlineReadiness] = useState<OutlineReadinessRes | null>(null)
+  const [outlineReadinessLoading, setOutlineReadinessLoading] = useState(false)
 
   // Drawer panel
   const [drawerPanel, setDrawerPanel] = useState<string | null>(null)
+  const [rightPanelTab, setRightPanelTab] = useState<'write' | 'review' | 'memory' | 'graph'>('write')
 
   // Auto-save ref
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedRef = useRef<string>('')
+  const generationBufferRef = useRef<string>('')
+  const generationBaselineRef = useRef<{ content: string; status: Chapter['status'] } | null>(null)
+  const generationSavedRef = useRef(false)
+  const generationFailedRef = useRef(false)
 
   // ----------------------------------------------------------------
   // Sync URL ?id=... → currentProject; redirect to / if missing/invalid
@@ -283,6 +413,33 @@ export default function DesktopWorkspace() {
     }
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const refreshOutlineReadiness = useCallback(async () => {
+    if (!currentProject?.id) {
+      setOutlineReadiness(null)
+      return
+    }
+    if (!selectedChapterId) {
+      setOutlineReadiness(null)
+      return
+    }
+    setOutlineReadinessLoading(true)
+    try {
+      const report = await apiFetch<OutlineReadinessRes>(
+        `/api/projects/${currentProject.id}/outline-readiness?chapter_id=${selectedChapterId}`,
+      )
+      setOutlineReadiness(report)
+    } catch (err) {
+      console.warn('Failed to load outline readiness:', err)
+      setOutlineReadiness(null)
+    } finally {
+      setOutlineReadinessLoading(false)
+    }
+  }, [currentProject?.id, selectedChapterId])
+
+  useEffect(() => {
+    void refreshOutlineReadiness()
+  }, [refreshOutlineReadiness, selectedChapterId, currentProject?.id, chapters.length])
+
   // PR-FIX-WIZARD-LOCK-V2: 只在 volumes 从 0 变为 >0 那一刻保护一次，避免 init race 退回引导。
   // 不能持续拦截，否则用户主动点“查看分卷/编辑大纲”会被即刻拉回 editor。
   const prevVolCountRef = useRef(volumes.length)
@@ -300,6 +457,45 @@ export default function DesktopWorkspace() {
   const handleGenerateOutline = useCallback(
     (level: string) => {
       if (isGenerating) return
+      if (level === 'chapter') {
+        if (!currentProject || !selectedChapterId) {
+          setGenerationError('请先在左侧选择要生成章节大纲的章节。')
+          return
+        }
+        setIsGenerating(true)
+        setGenerationError(null)
+        setActiveView('editor')
+        apiFetch<{ outline_json?: Record<string, unknown> }>(
+          `/api/projects/${currentProject.id}/chapters/${selectedChapterId}/outline/expand`,
+          { method: 'POST' },
+        )
+          .then((res) => {
+            const outlineJson = res.outline_json || {}
+            const targetChapter = chapters.find((c) => c.id === selectedChapterId)
+            setChapters(
+              chapters.map((c) =>
+                c.id === selectedChapterId ? { ...c, outline_json: outlineJson } : c
+              ),
+            )
+            setOutlineEditorTarget({
+              type: 'chapter',
+              chapterId: selectedChapterId,
+              initialJson: outlineJson,
+              title: `${targetChapter?.title || ''} · 章节大纲`,
+            })
+            void refreshOutlineReadiness()
+          })
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err)
+            setGenerationError(
+              msg === '[object Object]'
+                ? '章节大纲生成失败，请先补齐全书大纲和当前卷大纲。'
+                : `章节大纲生成失败：${msg}`,
+            )
+          })
+          .finally(() => setIsGenerating(false))
+        return
+      }
       setIsGenerating(true)
       setOutlinePreview('')
       if (level === 'book') {
@@ -369,7 +565,16 @@ export default function DesktopWorkspace() {
         },
       )
     },
-    [isGenerating, currentProject, creativeInput, setIsGenerating]
+    [
+      isGenerating,
+      currentProject,
+      creativeInput,
+      setIsGenerating,
+      selectedChapterId,
+      chapters,
+      setChapters,
+      refreshOutlineReadiness,
+    ]
   )
 
   // ----------------------------------------------------------------
@@ -679,8 +884,21 @@ export default function DesktopWorkspace() {
   // ----------------------------------------------------------------
   const handleGenerateChapter = useCallback(() => {
     if (isGenerating || !selectedChapterId || !currentProject) return
+    const currentChapterBeforeGenerate = chapters.find((c) => c.id === selectedChapterId)
+    const baselineContent =
+      currentChapterBeforeGenerate?.content_text ??
+      currentChapterBeforeGenerate?.contentText ??
+      editorContent
+    generationBaselineRef.current = {
+      content: baselineContent,
+      status: currentChapterBeforeGenerate?.status ?? 'draft',
+    }
+    generationSavedRef.current = false
+    generationFailedRef.current = false
+    setGenerationError(null)
     setIsGenerating(true)
     resetStreamContent()
+    generationBufferRef.current = ''
     setEditorContent('')
     setActiveView('editor')
     updateChapterStatus(selectedChapterId, 'generating')
@@ -693,27 +911,87 @@ export default function DesktopWorkspace() {
         style_id: getSelectedStyleId(),
       },
       (text) => {
+        generationBufferRef.current += text
         appendStreamContent(text)
-        setEditorContent((prev) => prev + text)
+        setEditorContent(generationBufferRef.current)
+        updateChapterContent(selectedChapterId, generationBufferRef.current)
       },
       () => {
         setIsGenerating(false)
-        updateChapterStatus(selectedChapterId, 'completed')
-        // Save the generated content
-        const finalContent = useProjectStore.getState().chapters.find(
-          (c) => c.id === selectedChapterId
-        )
-        if (finalContent) {
-          apiFetch(
-            `/api/projects/${currentProject.id}/chapters/${selectedChapterId}`,
-            {
-              method: 'PUT',
-              body: JSON.stringify({
-                content_text: finalContent.contentText,
-                status: 'completed',
-              }),
-            }
-          ).catch((err) => console.error('Failed to save generated chapter:', err))
+        if (generationFailedRef.current) {
+          updateChapterStatus(selectedChapterId, 'needs_review')
+          return
+        }
+        if (generationSavedRef.current) {
+          updateChapterStatus(selectedChapterId, 'completed')
+          lastSavedRef.current = generationBufferRef.current
+          return
+        }
+        const baseline = generationBaselineRef.current
+        generationBufferRef.current = baseline?.content ?? ''
+        resetStreamContent()
+        if (generationBufferRef.current) appendStreamContent(generationBufferRef.current)
+        setEditorContent(generationBufferRef.current)
+        updateChapterContent(selectedChapterId, generationBufferRef.current)
+        updateChapterStatus(selectedChapterId, baseline?.status ?? 'draft')
+      },
+      (evt) => {
+        const eventName = String(evt.event ?? evt.status ?? '')
+        if (eventName === 'generation_blocked' || evt.reason === 'outline_chain_incomplete') {
+          const baseline = generationBaselineRef.current
+          generationBufferRef.current = baseline?.content ?? ''
+          resetStreamContent()
+          if (generationBufferRef.current) appendStreamContent(generationBufferRef.current)
+          setEditorContent(generationBufferRef.current)
+          updateChapterContent(selectedChapterId, generationBufferRef.current)
+          updateChapterStatus(selectedChapterId, baseline?.status ?? 'draft')
+          setGenerationError(String(evt.message ?? '大纲链路未完成，不能生成正文。'))
+          void refreshOutlineReadiness()
+          return
+        }
+        if (eventName === 'saved') {
+          generationSavedRef.current = true
+          updateChapterStatus(selectedChapterId, 'completed')
+          return
+        }
+        if (eventName === 'quality_failed') {
+          const baseline = generationBaselineRef.current
+          generationFailedRef.current = true
+          generationBufferRef.current = baseline?.content ?? ''
+          resetStreamContent()
+          if (generationBufferRef.current) appendStreamContent(generationBufferRef.current)
+          setEditorContent(generationBufferRef.current)
+          updateChapterContent(selectedChapterId, generationBufferRef.current)
+          updateChapterStatus(selectedChapterId, 'needs_review')
+          const report = evt.report as Record<string, unknown> | undefined
+          const reason = String(evt.reason ?? 'quality_gate_blocked')
+          const summary = report
+            ? [
+                `dialogue=${report.dialogue_symmetry_risk_count ?? 0}`,
+                `duplicate=${report.duplicate_short_dialogue_ladder_count ?? 0}`,
+                `spatial=${report.spatial_mapping_count ?? 0}`,
+                `bio=${report.biographical_infodump_count ?? 0}`,
+                `plain=${report.plain_contemporary_violation_count ?? 0}`,
+                `pseudo=${report.pseudo_literary_register_count ?? 0}`,
+                `repeat=${report.duplicate_explanation_span_count ?? 0}`,
+              ].join(', ')
+            : ''
+          setGenerationError(`质量门禁阻断保存：${reason}${summary ? ` (${summary})` : ''}`)
+          return
+        }
+        const replacement =
+          typeof evt.content_text === 'string'
+            ? evt.content_text
+            : typeof evt.final_text === 'string'
+              ? evt.final_text
+              : null
+        if (!replacement) return
+        if (eventName === 'quality_rewrite_done' || eventName === 'quality_warning') {
+          generationBufferRef.current = replacement
+          resetStreamContent()
+          appendStreamContent(replacement)
+          setEditorContent(replacement)
+          updateChapterContent(selectedChapterId, replacement)
         }
       }
     )
@@ -721,10 +999,14 @@ export default function DesktopWorkspace() {
     isGenerating,
     selectedChapterId,
     currentProject,
+    chapters,
+    editorContent,
     setIsGenerating,
     resetStreamContent,
     appendStreamContent,
+    updateChapterContent,
     updateChapterStatus,
+    refreshOutlineReadiness,
   ])
 
   // ----------------------------------------------------------------
@@ -744,6 +1026,50 @@ export default function DesktopWorkspace() {
   const currentChapter = selectedChapterId
     ? chapters.find((c) => c.id === selectedChapterId)
     : null
+  const outlineLayerLabels: Record<string, string> = {
+    book: '全书大纲',
+    volume: '当前卷大纲',
+    chapter: '本章大纲',
+  }
+  const outlineMissingLayers = outlineReadiness?.missing_layers || []
+  const canGenerateChapterProse = Boolean(selectedChapterId && outlineReadiness?.ready)
+  const outlineReadinessText = !selectedChapterId
+    ? '先选中一章，再看这章的链路状态。'
+    : outlineReadinessLoading
+      ? '正在检查大纲链路...'
+      : outlineReadiness?.ready
+        ? '链路完整，可生成正文。'
+        : outlineReadiness?.block_message || '大纲链路未完成。'
+  const completedChapters = chapters.filter((c) => c.status === 'completed').length
+  const reviewChapters = chapters.filter((c) => c.status === 'needs_review').length
+  const draftChapters = chapters.filter((c) => c.status === 'draft').length
+  const totalWords = chapters.reduce(
+    (sum, chapter) => sum + Number(chapter.word_count ?? chapter.wordCount ?? 0),
+    0,
+  )
+  const chaptersWithOutlines = chapters.filter((c) => Boolean(c.outline_json)).length
+  const volumeOutlineCount = Object.keys(volumeOutlines).length
+  const totalMemoryLayers =
+    (bookOutlineData ? 1 : 0) + volumeOutlineCount + chaptersWithOutlines
+  const currentChapterVolume = currentChapter
+    ? volumes.find((volume) => volume.id === (currentChapter.volume_id ?? currentChapter.volumeId))
+    : null
+  const currentVolumeIdx = currentChapterVolume
+    ? currentChapterVolume.volume_idx ?? currentChapterVolume.volumeIdx
+    : null
+  const currentVolumeOutline =
+    typeof currentVolumeIdx === 'number' ? volumeOutlines[currentVolumeIdx] : null
+  const currentChapterOutline = currentChapter?.outline_json ?? null
+  const canonReady = Boolean(bookOutlineData && currentVolumeOutline && currentChapterOutline)
+  const draftGateTone =
+    !selectedChapterId ? 'gray' : reviewChapters > 0 ? 'red' : canonReady ? 'green' : 'amber'
+  const draftGateText = !selectedChapterId
+    ? '未选章节'
+    : reviewChapters > 0
+      ? `${reviewChapters} 章需复核`
+      : canonReady
+        ? '可进入正式生成'
+        : '大纲链路未齐'
 
   // ================================================================
   // RENDER
@@ -791,6 +1117,15 @@ export default function DesktopWorkspace() {
             <h2 className="text-lg font-semibold text-gray-900 truncate">
               {currentProject?.title || 'AI Write'}
             </h2>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <WorkbenchMetric label="卷册" value={volumes.length} hint="分卷大纲" />
+              <WorkbenchMetric label="章节" value={chapters.length} hint={`${completedChapters} 完成`} />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <StatusPill tone={bookOutlineData ? 'green' : 'amber'}>全书大纲</StatusPill>
+              <StatusPill tone={volumeOutlineCount > 0 ? 'green' : 'amber'}>{volumeOutlineCount} 个分卷</StatusPill>
+              <StatusPill tone={chaptersWithOutlines > 0 ? 'green' : 'amber'}>{chaptersWithOutlines} 个细纲</StatusPill>
+            </div>
           </div>
 
           {/* ---- Volume/Chapter tree ---- */}
@@ -834,6 +1169,32 @@ export default function DesktopWorkspace() {
       }
       editor={
         <div className="h-full flex flex-col">
+          {currentProject && (
+            <div className="border-b border-gray-200 bg-white px-6 py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <PenLine className="h-4 w-4 text-gray-500" />
+                    <h1 className="truncate text-base font-semibold text-gray-950">写作中枢</h1>
+                    <StatusPill tone={draftGateTone}>草稿闸门：{draftGateText}</StatusPill>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-gray-500">
+                    {currentChapter
+                      ? `${currentChapterVolume?.title || '未分卷'} / ${currentChapter.title}`
+                      : bookOutlineData
+                        ? '全书大纲、分卷大纲和章节细纲已接入目录，可从左侧打开。'
+                        : '先建立全书大纲，再拆分分卷和章节细纲。'}
+                  </p>
+                </div>
+                <div className="grid w-[420px] grid-cols-4 gap-2">
+                  <WorkbenchMetric label="总字数" value={`${(totalWords / 1000).toFixed(1)}k`} hint="正式正文" />
+                  <WorkbenchMetric label="完成" value={completedChapters} hint={`${chapters.length} 章`} />
+                  <WorkbenchMetric label="记忆层" value={totalMemoryLayers} hint="大纲/细纲" />
+                  <WorkbenchMetric label="待处理" value={reviewChapters + draftChapters} hint="草稿/复核" />
+                </div>
+              </div>
+            </div>
+          )}
           {/* PR-OUTLINE-CENTER-EDIT (2026-05-04): outline-in-centre takes priority. */}
           {outlineEditorTarget && currentProject ? (
             <OutlineEditor
@@ -1388,6 +1749,8 @@ export default function DesktopWorkspace() {
                             ? 'bg-green-100 text-green-700'
                             : currentChapter.status === 'generating'
                               ? 'bg-yellow-100 text-yellow-700'
+                              : currentChapter.status === 'needs_review'
+                                ? 'bg-red-100 text-red-700'
                               : 'bg-gray-100 text-gray-600'
                         }`}
                       >
@@ -1395,6 +1758,8 @@ export default function DesktopWorkspace() {
                           ? '完成'
                           : currentChapter.status === 'generating'
                             ? '生成中'
+                            : currentChapter.status === 'needs_review'
+                              ? '需复核'
                             : '草稿'}
                       </span>
                     </div>
@@ -1405,13 +1770,39 @@ export default function DesktopWorkspace() {
               <div className="max-w-3xl mx-auto py-4 px-6">
                 {selectedChapterId && (
                   <div className="mb-3">
+                    <div
+                      className={`mb-2 rounded border px-3 py-2 text-xs ${
+                        canGenerateChapterProse
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-amber-200 bg-amber-50 text-amber-800'
+                      }`}
+                    >
+                      <div className="font-medium">大纲链路：{outlineReadinessText}</div>
+                      {outlineMissingLayers.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {outlineMissingLayers.map((layer) => (
+                            <span
+                              key={layer}
+                              className="rounded bg-white/70 px-1.5 py-0.5 text-[11px]"
+                            >
+                              缺 {outlineLayerLabels[layer] || layer}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={handleGenerateChapter}
-                      disabled={isGenerating}
+                      disabled={isGenerating || !canGenerateChapterProse}
                       className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isGenerating ? '生成中...' : '生成本章'}
                     </button>
+                    {generationError && (
+                      <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {generationError}
+                      </div>
+                    )}
                   </div>
                 )}
                 <textarea
@@ -1434,89 +1825,232 @@ export default function DesktopWorkspace() {
         </div>
       }
       panel={
-        <div className="flex flex-col h-full">
-          <div className="flex-1 overflow-y-auto">
-            <CollapsibleSection title="生成设置" defaultOpen>
-              <GeneratePanel
-                projectId={currentProject?.id}
-                onGenerate={handleGenerateChapter}
-                onGenerateOutline={handleGenerateOutline}
+        <div className="flex h-full flex-col bg-gray-50">
+          <div className="border-b border-gray-200 bg-white px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-950">长篇工作台</h2>
+                <p className="mt-0.5 text-[11px] text-gray-500">生成、审查、记忆和图谱在同一处闭环。</p>
+              </div>
+              <StatusPill tone={canonReady ? 'green' : 'amber'}>
+                {canonReady ? 'Canon 就绪' : '链路待补'}
+              </StatusPill>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <WorkbenchTabButton
+                active={rightPanelTab === 'write'}
+                label="写作中枢"
+                icon={PenLine}
+                onClick={() => setRightPanelTab('write')}
               />
-            </CollapsibleSection>
+              <WorkbenchTabButton
+                active={rightPanelTab === 'review'}
+                label="审查中心"
+                icon={ShieldCheck}
+                onClick={() => setRightPanelTab('review')}
+              />
+              <WorkbenchTabButton
+                active={rightPanelTab === 'memory'}
+                label="记忆中心"
+                icon={Brain}
+                onClick={() => setRightPanelTab('memory')}
+              />
+              <WorkbenchTabButton
+                active={rightPanelTab === 'graph'}
+                label="图谱洞察"
+                icon={Network}
+                onClick={() => setRightPanelTab('graph')}
+              />
+            </div>
+          </div>
 
-            {selectedChapterId && (
-              <CollapsibleSection title="质量评估">
-                <div className="px-4">
-                  <EvaluationPanel chapterId={selectedChapterId} />
-                </div>
-              </CollapsibleSection>
-            )}
+          <div className="flex-1 space-y-3 overflow-y-auto p-3">
+            {rightPanelTab === 'write' && (
+              <>
+                <WorkbenchCard title="草稿闸门" icon={FileCheck2}>
+                  <div className="space-y-2 text-xs text-gray-600">
+                    <div className="flex items-center justify-between">
+                      <span>全书大纲</span>
+                      <StatusPill tone={bookOutlineData ? 'green' : 'amber'}>
+                        {bookOutlineData ? '已确认' : '缺失'}
+                      </StatusPill>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>当前卷大纲</span>
+                      <StatusPill tone={currentVolumeOutline ? 'green' : 'amber'}>
+                        {currentVolumeOutline ? '已接入' : '缺失'}
+                      </StatusPill>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>本章细纲</span>
+                      <StatusPill tone={currentChapterOutline ? 'green' : 'amber'}>
+                        {currentChapterOutline ? '已接入' : '缺失'}
+                      </StatusPill>
+                    </div>
+                    <p className="rounded-md bg-gray-50 px-2.5 py-2 leading-relaxed">
+                      正文生成只作为草稿流入编辑区；章节链路完整后再进入正式保存和后续审查。
+                    </p>
+                  </div>
+                </WorkbenchCard>
 
-            {selectedChapterId && (
-              <CollapsibleSection title="质量检查详情">
-                <div className="px-4">
-                  <CheckerDashboard chapterId={selectedChapterId} />
-                </div>
-              </CollapsibleSection>
-            )}
-
-            <CollapsibleSection title="写作指南">
-              <div className="px-4">
-                <WritingGuidePanel projectId={urlProjectId} />
-              </div>
-            </CollapsibleSection>
-
-            {selectedChapterId && (
-              <CollapsibleSection title="去AI味检查">
-                <div className="px-4">
-                  <AntiAIPanel chapterId={selectedChapterId} />
-                </div>
-              </CollapsibleSection>
-            )}
-
-            {selectedChapterId && (
-              <CollapsibleSection title="版本历史">
-                <div className="px-4">
-                  <VersionPanel chapterId={selectedChapterId} />
-                </div>
-              </CollapsibleSection>
-            )}
-
-            {currentProject && (
-              <CollapsibleSection title="Cascade 任务">
-                <div className="px-4">
-                  <CascadeTasksPanel
-                    projectId={currentProject.id}
-                    chapterId={selectedChapterId || undefined}
+                <WorkbenchCard title="生成设置" icon={Sparkles}>
+                  <GeneratePanel
+                    projectId={currentProject?.id}
+                    selectedChapterId={selectedChapterId}
+                    outlineReadiness={outlineReadiness}
+                    outlineReadinessLoading={outlineReadinessLoading}
+                    onGenerate={handleGenerateChapter}
+                    onGenerateOutline={handleGenerateOutline}
                   />
-                </div>
-              </CollapsibleSection>
+                </WorkbenchCard>
+
+                <WorkbenchCard title="写作指南" icon={BookOpen}>
+                  <WritingGuidePanel projectId={urlProjectId} />
+                </WorkbenchCard>
+              </>
             )}
 
-            {/* Panels that need more space — open as drawers */}
-            {currentProject && (
-              <div className="border-b border-gray-200 px-4 py-3 space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">详细面板</p>
-                {[
-                  { label: '三线平衡', key: 'strand' },
-                  { label: '伏笔追踪', key: 'foreshadow' },
-                  { label: '设定集', key: 'settings' },
-                  { label: '角色关系', key: 'relationship' },
-                ].map(item => (
-                  <button key={item.key} onClick={() => setDrawerPanel(item.key)}
-                    className="w-full text-left px-3 py-2 text-sm text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-between">
-                    <span>{item.label}</span>
-                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                ))}
-              </div>
+            {rightPanelTab === 'review' && (
+              <>
+                <WorkbenchCard title="审查中心" icon={ShieldCheck}>
+                  <div className="grid grid-cols-3 gap-2">
+                    <WorkbenchMetric label="完成" value={completedChapters} />
+                    <WorkbenchMetric label="草稿" value={draftChapters} />
+                    <WorkbenchMetric label="复核" value={reviewChapters} />
+                  </div>
+                  <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                    当前审查优先覆盖章节质量、机械写法、去 AI 味、版本回滚和级联影响。
+                  </p>
+                </WorkbenchCard>
+
+                {selectedChapterId ? (
+                  <>
+                    <WorkbenchCard title="质量评估" icon={ClipboardCheck}>
+                      <EvaluationPanel chapterId={selectedChapterId} />
+                    </WorkbenchCard>
+                    <WorkbenchCard title="质量检查详情" icon={ListChecks}>
+                      <CheckerDashboard chapterId={selectedChapterId} />
+                    </WorkbenchCard>
+                    <WorkbenchCard title="去 AI 味检查" icon={AlertTriangle}>
+                      <AntiAIPanel chapterId={selectedChapterId} />
+                    </WorkbenchCard>
+                    <WorkbenchCard title="版本历史" icon={History}>
+                      <VersionPanel chapterId={selectedChapterId} />
+                    </WorkbenchCard>
+                  </>
+                ) : (
+                  <WorkbenchCard title="未选章节" icon={AlertTriangle}>
+                    <p className="text-xs leading-relaxed text-gray-500">
+                      先从左侧目录选中章节，再运行章节审查、去 AI 味检查和版本对比。
+                    </p>
+                  </WorkbenchCard>
+                )}
+
+                {currentProject && (
+                  <WorkbenchCard title="级联任务" icon={GitBranch}>
+                    <CascadeTasksPanel
+                      projectId={currentProject.id}
+                      chapterId={selectedChapterId || undefined}
+                    />
+                  </WorkbenchCard>
+                )}
+              </>
+            )}
+
+            {rightPanelTab === 'memory' && (
+              <>
+                <WorkbenchCard title="记忆中心" icon={Brain}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <WorkbenchMetric label="全书 Canon" value={bookOutlineData ? '已接入' : '缺失'} />
+                    <WorkbenchMetric label="分卷记忆" value={volumeOutlineCount} />
+                    <WorkbenchMetric label="章节快照" value={chaptersWithOutlines} />
+                    <WorkbenchMetric label="总字数" value={totalWords.toLocaleString()} />
+                  </div>
+                  <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                    生成前优先读取全书大纲、当前卷大纲、本章细纲、上一章状态和已沉淀章节信息。
+                  </p>
+                </WorkbenchCard>
+                <WorkbenchCard title="设定与角色" icon={Users}>
+                  <div className="space-y-2">
+                    <DrawerLinkButton
+                      label="设定集"
+                      icon={Settings}
+                      hint="维护世界规则、角色资料和不可违背设定。"
+                      onClick={() => setDrawerPanel('settings')}
+                    />
+                    <DrawerLinkButton
+                      label="角色关系"
+                      icon={Users}
+                      hint="查看角色状态、关系变化和当前认知。"
+                      onClick={() => setDrawerPanel('relationship')}
+                    />
+                  </div>
+                </WorkbenchCard>
+                <WorkbenchCard title="伏笔与剧情线" icon={Database}>
+                  <div className="space-y-2">
+                    <DrawerLinkButton
+                      label="伏笔追踪"
+                      icon={Search}
+                      hint="检查新增、推进、回收和长期未处理的伏笔债务。"
+                      onClick={() => setDrawerPanel('foreshadow')}
+                    />
+                    <DrawerLinkButton
+                      label="三线平衡"
+                      icon={GitBranch}
+                      hint="观察主线、任务线和情绪线是否断档。"
+                      onClick={() => setDrawerPanel('strand')}
+                    />
+                  </div>
+                </WorkbenchCard>
+              </>
+            )}
+
+            {rightPanelTab === 'graph' && (
+              <>
+                <WorkbenchCard title="图谱洞察" icon={Network}>
+                  <div className="space-y-2 text-xs text-gray-600">
+                    <div className="grid grid-cols-2 gap-2">
+                      <WorkbenchMetric label="角色" value="关系面板" hint="当前入口" />
+                      <WorkbenchMetric label="线索" value="伏笔追踪" hint="债务面板" />
+                    </div>
+                    <p className="rounded-md bg-gray-50 px-2.5 py-2 leading-relaxed">
+                      现阶段复用角色关系、伏笔追踪和三线平衡作为图谱入口；后续可接入独立关系图页面。
+                    </p>
+                  </div>
+                </WorkbenchCard>
+                <WorkbenchCard title="探索入口" icon={Search}>
+                  <div className="space-y-2">
+                    <DrawerLinkButton
+                      label="角色关系网络"
+                      icon={Users}
+                      hint="追踪角色、任务、认知和关系变化。"
+                      onClick={() => setDrawerPanel('relationship')}
+                    />
+                    <DrawerLinkButton
+                      label="伏笔关联"
+                      icon={Database}
+                      hint="从伏笔债务回看涉及章节与角色。"
+                      onClick={() => setDrawerPanel('foreshadow')}
+                    />
+                    <DrawerLinkButton
+                      label="剧情线平衡"
+                      icon={GitBranch}
+                      hint="查看长期剧情推进是否偏科。"
+                      onClick={() => setDrawerPanel('strand')}
+                    />
+                  </div>
+                </WorkbenchCard>
+                <WorkbenchCard title="正式记忆状态" icon={CheckCircle2}>
+                  <p className="text-xs leading-relaxed text-gray-500">
+                    当前项目已有 {completedChapters} 章完成、{chaptersWithOutlines} 章细纲。
+                    图谱和检索入口只展示已确认或已沉淀的信息，避免草稿污染后续生成。
+                  </p>
+                </WorkbenchCard>
+              </>
             )}
           </div>
 
-          {/* Token dashboard always at bottom */}
-          <div className="border-t border-gray-200 p-3 bg-white">
+          <div className="border-t border-gray-200 bg-white p-3">
             <TokenDashboard />
           </div>
         </div>
@@ -1613,7 +2147,7 @@ function ChapterTargetWordsEditor({
   projectDefault: number | null | undefined
   onSaved: () => void
 }) {
-  const initial = (chapter as unknown as { target_word_count?: number | null }).target_word_count ?? null
+  const initial = chapter.target_word_count ?? null
   const [text, setText] = useState(initial != null ? String(initial) : '')
   const [editing, setEditing] = useState(false)
   const effective = initial != null ? initial : (projectDefault ?? null)
