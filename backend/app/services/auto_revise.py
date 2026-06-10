@@ -22,6 +22,17 @@ import re
 from typing import Any
 
 from app.services.narrative_contract import REVISE_CONTRACT_PROMPT
+from app.services.narrative_quality_gates import (
+    BLOCKING_CONTRACT_VIOLATION_TYPES,
+    QUALITY_GATE_RULES,
+    blocking_contract_violations,
+    blocking_contract_violation_set,
+    coerce_issues as _gate_coerce_issues,
+    group_issues_by_violation_type as _gate_group_issues_by_violation_type,
+    issue_violation_type as _gate_issue_violation_type,
+    repair_method_for,
+    reusable_bucket_lines as _gate_reusable_bucket_lines,
+)
 
 # Tunable defaults; overridable via GenerateChapterRequest fields.
 DEFAULT_REVISE_THRESHOLD: float = 8.2
@@ -29,21 +40,7 @@ DEFAULT_MAX_REVISE_ROUNDS: int = 3
 MAX_ISSUES_PER_DIMENSION: int = 5
 MAX_ISSUES_PER_VIOLATION_TYPE: int = 6
 
-# Numeric score alone is not enough for acceptance. These labels mean the
-# chapter still has continuity / causality jumps under the world-logic
-# contract, even if the evaluator phrases them as minor issues. The list is
-# genre-agnostic: it is based on contract violation categories, not on any
-# specific book, era, or plot element.
-BLOCKING_CONTRACT_VIOLATION_TYPES: frozenset[str] = frozenset(
-    {
-        "time_rule_violation",
-        "space_rule_violation",
-        "information_rule_violation",
-        "mechanism_rule_violation",
-        "power_resource_violation",
-        "result_strength_violation",
-    }
-)
+# Blocking violation taxonomy is centralized in narrative_quality_gates.
 
 _DIMENSION_LABELS: dict[str, str] = {
     "plot_coherence": "剧情连贯性",
@@ -81,11 +78,7 @@ def _coerce_overall(eval_obj: Any) -> float:
 
 
 def _coerce_issues(eval_obj: Any) -> list[dict]:
-    if eval_obj is None:
-        return []
-    if isinstance(eval_obj, dict):
-        return list(eval_obj.get("issues") or [])
-    return list(getattr(eval_obj, "issues", None) or [])
+    return _gate_coerce_issues(eval_obj)
 
 
 def _coerce_scores(eval_obj: Any) -> dict[str, float]:
@@ -106,74 +99,36 @@ def _coerce_scores(eval_obj: Any) -> dict[str, float]:
 
 def _issue_violation_type(issue: dict) -> str:
     """Extract a contract violation type from explicit fields or labels."""
-    for key in ("violation_type", "type"):
-        raw = issue.get(key)
-        if isinstance(raw, str) and raw.strip():
-            return raw.strip()
-    text = " ".join(
-        str(issue.get(key) or "") for key in ("description", "suggestion")
-    )
-    match = re.search(r"\[([a-z_]+_violation)\]", text)
-    return match.group(1) if match else ""
+    return _gate_issue_violation_type(issue)
 
 
-def blocking_contract_violations(eval_obj: Any) -> list[str]:
-    """Return blocking world-logic violation labels present in evaluation."""
-    found: list[str] = []
-    seen: set[str] = set()
-    for issue in _coerce_issues(eval_obj):
-        if not isinstance(issue, dict):
-            continue
-        vtype = _issue_violation_type(issue)
-        if vtype in BLOCKING_CONTRACT_VIOLATION_TYPES and vtype not in seen:
-            found.append(vtype)
-            seen.add(vtype)
-    return found
-
-
-def blocking_contract_violation_set(eval_obj: Any) -> set[str]:
-    """Set form for retry-gate comparisons."""
-    return set(blocking_contract_violations(eval_obj))
 
 
 def should_stop_random_retry(
     eval_obj: Any,
     previous_blocking_violations: set[str] | None,
 ) -> bool:
-    """Stop blind retries when the same structural violation type persists.
+    """Do not stop the main flow on repeated issue tags.
 
-    Re-running the whole chapter after the same time/space/information/
-    mechanism/power/result-strength class survives a rewrite is lottery-style
-    generation. At that point the system should stop, surface a root-cause
-    repair plan, and require targeted upstream/outline/local fixes instead of
-    drawing another sample from the model.
+    Repeated tags are now diagnostics for improving the next generation prompt,
+    not a post-output blocker. The happy path should optimize the first draft
+    through pre-generation constraints and accept/revise primarily by score.
     """
-    if not previous_blocking_violations:
-        return False
-    current = blocking_contract_violation_set(eval_obj)
-    return bool(current & previous_blocking_violations)
+    return False
 
 
-_VIOLATION_REPAIR_METHODS: dict[str, str] = {
-    "time_rule_violation": "补时间差、准备/恢复/传递耗时；若补不了，降低行动速度和结果强度。",
-    "space_rule_violation": "建立人物/物件/消息移动路径；明确入口、权限、见证者、时间成本；若补不了，拆分角色或删除新增资源。",
-    "power_resource_violation": "写清双方资源差、低资源方的规则漏洞/信息差/代价；禁止无成本压倒高资源方。",
-    "information_rule_violation": "给信息来源、可接触性、可信度和替代解释；若来源不足，把强结论降级为疑点/假设。",
-    "mechanism_rule_violation": "补触发顺序、条件、成本、边界、副作用、冷却和反制；让机关/能力像可运行流程而不是视觉效果。",
-    "result_strength_violation": "把定论、翻盘、可靠收获降级为局部胜利、暂缓、诱饵风险或后续线索。",
-    "expression_contract_violation": "压缩说明腔、拆短句、替换重复动作和口号式对白。",
-    "untyped_issue": "先判断问题属于补支撑、降级结果、删除冲突设定、拆分人物还是提前埋伏笔。",
-}
+_VIOLATION_REPAIR_METHODS: dict[str, str] = {tag: repair_method_for(tag) for tag in QUALITY_GATE_RULES}
+_VIOLATION_REPAIR_METHODS["untyped_issue"] = repair_method_for("untyped_issue")
+# Reusable revise buckets are centralized in narrative_quality_gates.
 
 
 def _group_issues_by_violation_type(issues: list[dict]) -> dict[str, list[dict]]:
-    grouped: dict[str, list[dict]] = {}
-    for issue in issues:
-        if not isinstance(issue, dict):
-            continue
-        vtype = _issue_violation_type(issue) or "untyped_issue"
-        grouped.setdefault(vtype, []).append(issue)
-    return grouped
+    return _gate_group_issues_by_violation_type(issues)
+
+
+def _reusable_bucket_lines(issues: list[dict]) -> list[str]:
+    """Summarize repeated issue classes into actionable revise buckets."""
+    return _gate_reusable_bucket_lines(issues)
 
 
 def build_root_cause_repair_plan(
@@ -194,15 +149,15 @@ def build_root_cause_repair_plan(
     repeated = sorted(blocking_now & (previous_blocking_violations or set()))
 
     lines: list[str] = []
-    lines.append("【根因修复蓝图】")
+    lines.append("【生成前内化诊断蓝图】")
     if repeated:
         lines.append(
-            "以下世界逻辑违规类型已经跨轮重复出现，禁止继续整章随机重抽；必须先按蓝图定点修复："
+            "以下结构风险曾跨轮重复出现；下一次生成前必须内化为写作约束，而不是写完后再靠流程纠错："
             + "、".join(repeated)
         )
     else:
-        lines.append("先按违规类型确定修复策略，再进入正文改写；不得只把问题列表塞回去重写。")
-    lines.append("修复决策只能选以下五类：补支撑 / 降级结果 / 删除冲突设定 / 拆分人物或资源 / 提前埋伏笔。")
+        lines.append("先按违规类型确定生成前约束，再写正文；目标是第一稿直接规避这些问题。")
+    lines.append("生成前写作决策优先选以下五类：补支撑 / 降级结果 / 删除冲突设定 / 拆分人物或资源 / 提前埋伏笔。")
 
     for vtype, items in grouped.items():
         method = _VIOLATION_REPAIR_METHODS.get(vtype, _VIOLATION_REPAIR_METHODS["untyped_issue"])
@@ -224,6 +179,7 @@ def build_root_cause_repair_plan(
     lines.append("- 章节结尾只能带走台账允许的局部成果；疑似线索必须标记风险和待验证项。")
     lines.append("- 高压场面必须先列 action_budget：可用时间、身体姿态、双手限制、预置动作、最多动作数、代价；超预算时必须删动作、拆场或降级结果。")
     lines.append("- 关键判断必须先列 inference_ledger：感知来源/证据、可推出结论强度、替代解释、允许写法；弱证据不得升级成定案。")
+    lines.append("- 复发硬门槛：别人直接说秘密、高资源证物低成本接触、疑似线索写成确认、追捕中长问答、对白百科、章末线索过准，必须在生成前改结构，不允许等生成后只补一句解释。")
     return "\n".join(lines)
 
 
@@ -232,15 +188,15 @@ def should_revise(
     eval_obj: Any,
     threshold: float = DEFAULT_REVISE_THRESHOLD,
 ) -> bool:
-    """True iff score is below threshold or blocking contract issues remain.
+    """True iff score is below threshold.
 
-    A chapter cannot be accepted while it still has time/space/information/
-    mechanism/power/result-strength violations: those are continuity jumps even
-    when phrased as "minor" issues by the evaluator. NaN / None overall is
-    treated as 0 (revise).
+    Issue tags remain useful diagnostics, but they should not force extra
+    repair rounds once the chapter reaches the target score. The goal is to
+    move those diagnostics into pre-generation constraints so the first draft
+    is already compliant.
     """
     overall = _coerce_overall(eval_obj)
-    return overall < float(threshold) or bool(blocking_contract_violations(eval_obj))
+    return overall < float(threshold)
 
 
 def issues_to_revise_instruction(
@@ -264,8 +220,19 @@ def issues_to_revise_instruction(
     issues = _coerce_issues(eval_obj)
 
     lines: list[str] = []
-    lines.append(build_root_cause_repair_plan(eval_obj))
+    lines.append(
+        build_root_cause_repair_plan(eval_obj, max_per_type=max_per_dimension)
+    )
     lines.append("")
+    bucket_lines = _reusable_bucket_lines(issues)
+    if bucket_lines:
+        lines.append("【可复用问题归类与本轮修复优先级】")
+        lines.extend(bucket_lines)
+        lines.append(
+            "执行顺序：先修空间/时间承接与证据强度，再修情报泄露和人物边界，最后处理语体与重复表达；"
+            "每一类都要在正文中体现具体修复，而不是只加解释句。"
+        )
+        lines.append("")
     lines.append(f"【重写要求 - 第 {round_idx} 轮】")
     lines.append(f"上一稿质量评分 overall={overall:.2f}/10。各维度得分：")
     for dim, label in _DIMENSION_LABELS.items():

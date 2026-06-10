@@ -123,6 +123,14 @@ STYLE_V9_DIRECTIVES: list[str] = [
     "　　不要全程以上帝视角描述。",
 ]
 
+DIALOGUE_DAMPING_DIRECTIVES: list[str] = [
+    "【communication_damping】密集交锋不必每句都接住；允许无视、岔开、迟钝、重复尾音、信息掉在地上或被环境打断。",
+    "【plain_register_no_wit】日常护财、试探、讨价还价和街头冲突必须服从人物当下情绪，禁止廉价机智、抖机灵、对仗式反击和硬凹聪明。",
+    "【focal_measure_only】数字化距离只在生死、翻脸、机密暴露或必须对齐证物的焦点时刻使用；普通走位不要写成坐标测绘。",
+    "【motive_exposition_zero】不要把角色或对方的底层动机直接说破；改用反问、压价、动作和结果施压。",
+    "【structural_prose_topology】动作对白绑定率不超过 0.35；紧贴问答不超过 12 组；短对白密度不得过半；制度/证据说明不能由专家 NPC 一口气讲完。",
+]
+
 
 class AntiAIChecker(BaseChecker):
     """AI writing trace detection.

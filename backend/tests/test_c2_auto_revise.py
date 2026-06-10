@@ -32,23 +32,23 @@ def test_should_revise_below_threshold_returns_true() -> None:
     assert should_revise(e, threshold=7.0) is True
 
 
-def test_should_revise_at_threshold_returns_false_without_blocking_labels() -> None:
-    # Exactly at threshold = quality bar met only when no blocking contract label remains.
+def test_should_revise_at_threshold_returns_false() -> None:
+    # Exactly at threshold = quality bar met.
     e = EvaluationLite(overall=8.2)
     assert should_revise(e, threshold=8.2) is False
 
 
-def test_should_revise_above_threshold_returns_false_without_blocking_labels() -> None:
+def test_should_revise_above_threshold_returns_false() -> None:
     e = EvaluationLite(overall=8.6)
     assert should_revise(e, threshold=8.2) is False
 
 
-def test_should_revise_above_threshold_still_revises_on_blocking_contract_label() -> None:
+def test_should_revise_above_threshold_ignores_diagnostic_contract_label() -> None:
     e = EvaluationLite(
         overall=9.0,
         issues=[{"description": "[space_rule_violation] 人物无路径到场"}],
     )
-    assert should_revise(e, threshold=8.2) is True
+    assert should_revise(e, threshold=8.2) is False
 
 
 def test_should_revise_default_threshold_is_8_2() -> None:
@@ -65,7 +65,15 @@ def test_should_revise_handles_dict_input() -> None:
     """Tolerates a plain dict (e.g. JSON deserialized from celery result)."""
     assert should_revise({"overall": 5.0}) is True
     assert should_revise({"overall": 9.0}) is False
-    assert should_revise({"overall": 9.0, "issues": [{"description": "[mechanism_rule_violation] 无触发条件"}]}) is True
+    assert (
+        should_revise(
+            {
+                "overall": 9.0,
+                "issues": [{"description": "[mechanism_rule_violation] 无触发条件"}],
+            }
+        )
+        is False
+    )
 
 
 def test_should_revise_handles_none_overall_as_zero() -> None:
@@ -80,27 +88,33 @@ def test_should_revise_handles_missing_overall() -> None:
     assert should_revise(None, threshold=7.0) is True
 
 
-def test_blocking_contract_violation_extraction_and_retry_gate() -> None:
+def test_blocking_contract_violation_extraction_without_retry_stop() -> None:
     e = EvaluationLite(
         overall=9.0,
         issues=[
             {"description": "[space_rule_violation] 人物无路径转移"},
-            {"violation_type": "information_rule_violation", "description": "弱信息推出强结论"},
+            {
+                "violation_type": "information_rule_violation",
+                "description": "弱信息推出强结论",
+            },
         ],
     )
-    assert blocking_contract_violation_set(e) == {"space_rule_violation", "information_rule_violation"}
-    assert should_stop_random_retry(e, {"space_rule_violation"}) is True
+    assert blocking_contract_violation_set(e) == {
+        "space_rule_violation",
+        "information_rule_violation",
+    }
+    assert should_stop_random_retry(e, {"space_rule_violation"}) is False
     assert should_stop_random_retry(e, {"time_rule_violation"}) is False
 
 
-def test_root_cause_instruction_contains_generic_repair_blueprint() -> None:
+def test_root_cause_instruction_contains_pre_generation_diagnostic_blueprint() -> None:
     e = EvaluationLite(
         overall=7.9,
         issues=[{"description": "[mechanism_rule_violation] 机制无边界", "suggestion": "补成本或降级"}],
     )
     instr = issues_to_revise_instruction(e, round_idx=1)
-    assert "【根因修复蓝图】" in instr
-    assert "修复决策只能选以下五类" in instr
+    assert "【生成前内化诊断蓝图】" in instr
+    assert "生成前写作决策优先选以下五类" in instr
     assert "【改写前强制台账】" in instr
     assert "action_budget" in instr
     assert "inference_ledger" in instr

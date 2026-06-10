@@ -24,55 +24,28 @@ from app.services.narrative_contract import EVALUATOR_CONTRACT_PROMPT
 logger = logging.getLogger(__name__)
 
 EVALUATION_SYSTEM_PROMPT = """\
-你是一位专业的小说质量评审专家。你将对一段章节文本进行多维度评估。
-
-请严格按照以下JSON格式输出评估结果，不要添加任何其他文字：
-
+你是小说章节质量评审。只输出合法 JSON，不要输出解释、Markdown 或正文摘录。
+按 5 个维度评分，每项 0-10：plot_coherence、character_consistency、style_adherence、narrative_pacing、foreshadow_handling。
+issues 只列关键问题，最多 12 条；每条只写元数据和简短诊断，禁止引用/复述原文章句子。
+JSON 格式必须是：
 {
-  "plot_coherence": {
-    "score": <0-10的浮点数>,
-    "issues": [
-      {
-        "paragraph": <段落编号，从1开始>,
-        "description": "<问题描述>",
-        "suggestion": "<改进建议>"
-      }
-    ]
-  },
-  "character_consistency": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  },
-  "style_adherence": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  },
-  "narrative_pacing": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  },
-  "foreshadow_handling": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  }
+  "plot_coherence": {"score": 0, "issues": [{"paragraph": 0, "description": "", "suggestion": "", "violation_type": "", "severity": ""}]},
+  "character_consistency": {"score": 0, "issues": []},
+  "style_adherence": {"score": 0, "issues": []},
+  "narrative_pacing": {"score": 0, "issues": []},
+  "foreshadow_handling": {"score": 0, "issues": []}
 }
+"""
 
-评分标准：
-- 0-3: 严重问题，需要重写
-- 4-5: 明显问题，需要大幅修改
-- 6-7: 有一些问题，需要小幅修改
-- 8-9: 质量良好，仅有细微问题
-- 10: 完美，无需修改
 
-评估维度说明：
-1. plot_coherence (剧情连贯性): 检查情节是否与大纲一致、是否有逻辑矛盾、转折是否合理
-2. character_consistency (角色一致性): 检查角色行为是否符合人设、对话是否符合角色性格
-3. style_adherence (风格贴合度): 检查写作风格是否与目标风格一致、用词是否恰当
-4. narrative_pacing (叙事节奏): 检查叙事节奏是否合适、详略是否得当、高潮/低谷安排
-5. foreshadow_handling (伏笔处理): 检查伏笔的埋设和回收是否自然、是否遗漏应有的伏笔
-
-""" + EVALUATOR_CONTRACT_PROMPT
-
+def _limit_text(text: str, max_chars: int) -> str:
+    if not text or max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    head = max_chars // 2
+    tail = max_chars - head
+    return text[:head] + "\n...[已截断，保留首尾用于评分]...\n" + text[-tail:]
 
 def _build_user_prompt(
     chapter_text: str,
@@ -85,19 +58,19 @@ def _build_user_prompt(
     parts: list[str] = []
 
     parts.append("## 待评估章节内容\n")
-    parts.append(chapter_text)
+    parts.append(_limit_text(chapter_text, 9000))
 
     if chapter_outline:
         parts.append("\n\n## 本章大纲\n")
-        parts.append(json.dumps(chapter_outline, ensure_ascii=False, indent=2))
+        parts.append(_limit_text(json.dumps(chapter_outline, ensure_ascii=False, indent=2), 2500))
 
     if previous_summary:
         parts.append("\n\n## 前文摘要\n")
-        parts.append(previous_summary)
+        parts.append(_limit_text(previous_summary, 1200))
 
     if style_profile:
         parts.append("\n\n## 目标风格描述\n")
-        parts.append(style_profile)
+        parts.append(_limit_text(style_profile, 1200))
 
     if active_foreshadows:
         parts.append("\n\n## 当前活跃伏笔\n")
@@ -259,7 +232,7 @@ class ChapterEvaluator:
                 task_type="evaluation",
                 messages=messages,
                 temperature=0.3,
-                max_tokens=4096,
+                max_tokens=900,
                 _log_meta={"caller": "chapter_evaluator.evaluate"},
             )
 
