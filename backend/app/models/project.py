@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
+from app.services.chapter_target_words import CHAPTER_DEFAULT_WORD_COUNT
 
 
 def _utcnow() -> datetime:
@@ -108,7 +109,10 @@ class Chapter(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     target_word_count = Column(
-        Integer, nullable=False, server_default="50000", default=50000
+        Integer,
+        nullable=False,
+        server_default=str(CHAPTER_DEFAULT_WORD_COUNT),
+        default=CHAPTER_DEFAULT_WORD_COUNT,
     )
 
     volume = relationship("Volume", back_populates="chapters")

@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.models.project import Project
+from app.services.outline_readiness import build_outline_readiness_report
 from app.schemas.project import (
     ProjectCreate,
     ProjectListResponse,
@@ -99,6 +100,25 @@ async def get_project(
     return ProjectResponse.model_validate(project)
 
 
+@router.get("/{project_id}/outline-readiness")
+async def get_outline_readiness(
+    project_id: UUID,
+    chapter_id: UUID | None = None,
+    volume_id: UUID | None = None,
+    chapter_idx: int | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return outline-chain readiness for a target chapter."""
+    report = await build_outline_readiness_report(
+        db,
+        project_id=str(project_id),
+        chapter_id=str(chapter_id) if chapter_id else None,
+        volume_id=str(volume_id) if volume_id else None,
+        chapter_idx=chapter_idx,
+    )
+    return report.to_dict()
+
+
 @router.put("/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: UUID,
@@ -111,7 +131,8 @@ async def update_project(
     we cascade the new total to the project's volumes and chapters via
     ``allocate_project_budget`` with the soft-guard (``force=False``) --
     values the user manually overrode stay put; values still equal to the
-    documented default (Volume=200000, Chapter=50000) are re-balanced so
+    documented default (Volume=200000, Chapter=4000; legacy Chapter=50000)
+    are re-balanced so
     ``SUM(volumes)`` lines up with the new project total.
     """
     result = await db.execute(
@@ -345,7 +366,8 @@ async def allocate_budget(
     Query params:
       - force:   when true, overwrite all targets regardless of current value.
                  when false (default), only overwrite values still equal to the
-                 documented default (Volume=200000, Chapter=50000).
+                 documented default (Volume=200000, Chapter=4000; legacy
+                 Chapter=50000).
       - dry_run: when true, return the computed plan without persisting.
     """
     from app.models.project import Chapter, Volume

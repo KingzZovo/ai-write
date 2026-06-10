@@ -317,7 +317,8 @@ async def regenerate_volume(
 
                 # chunk-30: auto-allocate volume budget across new chapters
                 # (local to this volume, force=True because all new rows still
-                # carry the Chapter default of 50000).
+                # carry the Chapter default; legacy 50000 rows are handled by
+                # the budget allocator as an untouched default.
                 volume_target = int(vol.target_word_count or 0)
                 if new_chapter_rows and volume_target > 0:
                     chapter_word_counts = allocate_even(volume_target, len(new_chapter_rows))

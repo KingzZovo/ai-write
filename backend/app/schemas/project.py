@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.chapter_target_words import CHAPTER_DEFAULT_WORD_COUNT
+
 
 # ---------------------------------------------------------------------------
 # Project
@@ -83,7 +85,7 @@ class ChapterResponse(BaseModel):
     word_count: int
     status: str
     summary: str | None = None
-    target_word_count: int = 50000
+    target_word_count: int = CHAPTER_DEFAULT_WORD_COUNT
     created_at: datetime
     updated_at: datetime
 

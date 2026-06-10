@@ -18,9 +18,14 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from app.services.chapter_target_words import (
+    CHAPTER_DEFAULT_WORD_COUNT,
+    LEGACY_CHAPTER_DEFAULT_WORD_COUNT,
+)
+
 PROJECT_DEFAULT: int = 3_000_000
 VOLUME_DEFAULT: int = 200_000
-CHAPTER_DEFAULT: int = 50_000
+CHAPTER_DEFAULT: int = CHAPTER_DEFAULT_WORD_COUNT
 
 
 def allocate_even(total: int, n: int) -> list[int]:
@@ -62,7 +67,7 @@ def allocate_weighted(total: int, weights: Iterable[float]) -> list[int]:
 
 
 def _should_overwrite(
-    current: Optional[int], default_value: int, force: bool
+    current: Optional[int], default_value: int, force: bool, legacy_defaults: tuple[int, ...] = ()
 ) -> bool:
     """Heuristic for whether the allocator may replace ``current``.
 
@@ -74,7 +79,8 @@ def _should_overwrite(
         return True
     if current is None:
         return True
-    return int(current) == default_value
+    current_value = int(current)
+    return current_value == default_value or current_value in legacy_defaults
 
 
 def allocate_project_budget(
@@ -130,7 +136,10 @@ def allocate_project_budget(
             for ch, ch_alloc in zip(chapters, ch_allocs):
                 ch_current = int(ch.get("current_target") or 0)
                 ch_overwrite = _should_overwrite(
-                    ch_current, CHAPTER_DEFAULT, force
+                    ch_current,
+                    CHAPTER_DEFAULT,
+                    force,
+                    (LEGACY_CHAPTER_DEFAULT_WORD_COUNT,),
                 )
                 ch_new = ch_alloc if ch_overwrite else ch_current
                 ch_changed = ch_overwrite and (ch_new != ch_current)

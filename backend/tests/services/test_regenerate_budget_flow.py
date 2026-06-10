@@ -82,7 +82,7 @@ def test_regenerate_large_even_split_30_chapters():
 
 
 def test_regenerate_overwrites_default_chapter_value():
-    # After regenerate, every chapter must have left the 50_000 default;
+    # After regenerate, every chapter must have left the 4_000 default;
     # assert via the first assertion on sum then via distinctness.
     chapters = _apply_regenerate_flow(210_000, 3)
     targets = [c.target_word_count for c in chapters]
