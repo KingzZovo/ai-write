@@ -35,7 +35,7 @@ JSON 格式必须是：
   "narrative_pacing": {"score": 0, "issues": []},
   "foreshadow_handling": {"score": 0, "issues": []}
 }
-"""
+""" + EVALUATOR_CONTRACT_PROMPT
 
 
 def _limit_text(text: str, max_chars: int) -> str:
@@ -232,7 +232,7 @@ class ChapterEvaluator:
                 task_type="evaluation",
                 messages=messages,
                 temperature=0.3,
-                max_tokens=900,
+                max_tokens=2400,
                 _log_meta={"caller": "chapter_evaluator.evaluate"},
             )
 
