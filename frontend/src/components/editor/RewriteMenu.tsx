@@ -54,6 +54,10 @@ export function RewriteMenu({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [onClose, showPreview])
 
+  // Abort any in-flight rewrite stream on unmount so it cannot setState on
+  // an unmounted component.
+  useEffect(() => () => { controllerRef.current?.abort() }, [])
+
   const handleRewrite = useCallback(
     (operation: Operation, instruction?: string) => {
       if (isLoading) return

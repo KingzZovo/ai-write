@@ -314,6 +314,9 @@ export default function DesktopWorkspace() {
   // stream (regenerate / re-click) and on unmount, so a stale stream cannot
   // keep reading and setState on a dead component.
   const sseControllerRef = useRef<AbortController | null>(null)
+  // Task F3 fold-in: lets long-running async loops (volume outline wizard)
+  // notice unmount and stop opening new streams.
+  const unmountedRef = useRef(false)
 
   // ----------------------------------------------------------------
   // Sync URL ?id=... → currentProject; redirect to / if missing/invalid
@@ -686,6 +689,9 @@ export default function DesktopWorkspace() {
       }
 
       for (let i = 1; i <= count; i++) {
+        // Unmount aborts the current stream but not this loop; without this
+        // guard the loop would keep opening new streams nobody can abort.
+        if (unmountedRef.current) return
         const existing = volumes.find(
           (v) => (v.volume_idx ?? v.volumeIdx) === i
         )
@@ -739,6 +745,9 @@ export default function DesktopWorkspace() {
         setWizardProgress(`正在生成第 ${i}/${count} 卷大纲...`)
         let { text: volumeOutlineText, outlineId: volumeOutlineId, parsed } = await runOnce()
         if (isEmptyOrInvalid(parsed)) {
+          // An unmount abort truncates the stream, which looks like an
+          // invalid outline — don't start a retry stream after unmount.
+          if (unmountedRef.current) return
           setWizardProgress((prev) => prev + `\n第 ${i} 卷首次生成无效，重试中...`)
           const retry = await runOnce()
           volumeOutlineText = retry.text
@@ -1051,7 +1060,10 @@ export default function DesktopWorkspace() {
 
   // Cleanup on unmount
   useEffect(() => {
+    // Reset on (re)mount so a StrictMode dev remount doesn't stay flagged.
+    unmountedRef.current = false
     return () => {
+      unmountedRef.current = true
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       // Task F2: stop any in-flight SSE stream so it cannot setState on an
       // unmounted component.

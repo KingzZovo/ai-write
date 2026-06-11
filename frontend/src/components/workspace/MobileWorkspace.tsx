@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Brain, FileCheck2, Network, PenLine, ShieldCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
+import { usePolling } from '@/lib/usePolling'
 import { getSelectedStructureBookId } from '@/components/panels/GeneratePanel'
 
 // Lazy load panels — only when user opens the tools tab
@@ -51,6 +52,13 @@ interface AsyncTaskDetail extends AsyncTaskSummary {
   result_text?: string | null
   polished_text?: string | null
   error_message?: string | null
+}
+
+// A backend async task currently being polled. `kind` selects which UI
+// updates apply (mirrors the previous per-handler polling bodies).
+interface PollingTask {
+  taskId: string
+  kind: 'resume' | 'outline' | 'chapter'
 }
 
 function compactText(value: unknown): string {
@@ -262,32 +270,8 @@ export default function MobileWorkspace() {
         const running = tasks.find((t) => t.status === 'pending' || t.status === 'running' || t.status === 'polishing')
         if (running) {
           setIsGenerating(true)
-          setGenTaskId(running.task_id)
-          // Resume polling
-          const poll = setInterval(async () => {
-            try {
-              const status = await apiFetch<AsyncTaskDetail>(`/api/generate/async/${running.task_id}`)
-              if (status.task_type?.startsWith('outline')) {
-                setOutlinePreview(status.progress_text || '')
-              } else {
-                setEditorContent(status.progress_text || '')
-              }
-              if (status.status === 'completed') {
-                clearInterval(poll)
-                setIsGenerating(false)
-                setGenTaskId(null)
-                if (status.task_type?.startsWith('outline')) {
-                  setSavedOutline(status.result_text || '')
-                  setPolishedOutline(status.polished_text || '')
-                  setOutlinePreview('')
-                }
-              } else if (status.status === 'failed') {
-                clearInterval(poll)
-                setIsGenerating(false)
-                setGenTaskId(null)
-              }
-            } catch { /* */ }
-          }, 3000)
+          // Resume polling (handled by the usePolling hook below)
+          setPollingTask({ taskId: running.task_id, kind: 'resume' })
         }
       } catch { /* */ }
     } catch { /* */ }
@@ -341,7 +325,59 @@ export default function MobileWorkspace() {
     } catch { /* */ }
   }
 
-  const [, setGenTaskId] = useState<string | null>(null)
+  // Unified async-task polling: started by event handlers via setPollingTask,
+  // cleaned up automatically on unmount / terminal task states.
+  const [pollingTask, setPollingTask] = useState<PollingTask | null>(null)
+
+  usePolling(async (stop) => {
+    if (!pollingTask) return
+    const { taskId, kind } = pollingTask
+    const status = await apiFetch<AsyncTaskDetail>(`/api/generate/async/${taskId}`)
+    const finish = () => {
+      stop()
+      setPollingTask(null)
+      setIsGenerating(false)
+    }
+    if (kind === 'resume') {
+      if (status.task_type?.startsWith('outline')) {
+        setOutlinePreview(status.progress_text || '')
+      } else {
+        setEditorContent(status.progress_text || '')
+      }
+      if (status.status === 'completed') {
+        finish()
+        if (status.task_type?.startsWith('outline')) {
+          setSavedOutline(status.result_text || '')
+          setPolishedOutline(status.polished_text || '')
+          setOutlinePreview('')
+        }
+      } else if (status.status === 'failed') {
+        finish()
+      }
+    } else if (kind === 'outline') {
+      setOutlinePreview(status.progress_text || '')
+      if (status.status === 'polishing') {
+        setOutlinePreview(status.progress_text || status.result_text || '')
+      } else if (status.status === 'completed') {
+        finish()
+        setSavedOutline(status.result_text || '')
+        setPolishedOutline(status.polished_text || '')
+        setOutlinePreview('')
+      } else if (status.status === 'failed') {
+        finish()
+        alert(`生成失败: ${status.error_message || '未知错误'}`)
+      }
+    } else {
+      setEditorContent(status.progress_text || '')
+      if (status.status === 'completed') {
+        finish()
+        setEditorContent(status.result_text || '')
+      } else if (status.status === 'failed') {
+        finish()
+        alert(`生成失败: ${status.error_message || '未知错误'}`)
+      }
+    }
+  }, 3000, pollingTask !== null)
 
   const handleGenerateOutline = async (level?: string) => {
     if (!currentProject) { alert('请先选择一个项目'); return }
@@ -388,29 +424,8 @@ export default function MobileWorkspace() {
           structure_book_id: getSelectedStructureBookId() || undefined,
         }),
       })
-      setGenTaskId(data.task_id)
-      // Start polling
-      const poll = setInterval(async () => {
-        try {
-          const status = await apiFetch<AsyncTaskDetail>(`/api/generate/async/${data.task_id}`)
-          setOutlinePreview(status.progress_text || '')
-          if (status.status === 'polishing') {
-            setOutlinePreview(status.progress_text || status.result_text || '')
-          } else if (status.status === 'completed') {
-            clearInterval(poll)
-            setIsGenerating(false)
-            setGenTaskId(null)
-            setSavedOutline(status.result_text || '')
-            setPolishedOutline(status.polished_text || '')
-            setOutlinePreview('')
-          } else if (status.status === 'failed') {
-            clearInterval(poll)
-            setIsGenerating(false)
-            setGenTaskId(null)
-            alert(`生成失败: ${status.error_message || '未知错误'}`)
-          }
-        } catch { /* */ }
-      }, 3000)
+      // Start polling (handled by the usePolling hook above)
+      setPollingTask({ taskId: data.task_id, kind: 'outline' })
     } catch (e) {
       setIsGenerating(false)
       alert(e instanceof Error ? e.message : '提交生成任务失败')
@@ -434,24 +449,8 @@ export default function MobileWorkspace() {
         method: 'POST',
         body: JSON.stringify({ project_id: currentProject.id, task_type: 'chapter', chapter_id: selectedChapter.id }),
       })
-      setGenTaskId(data.task_id)
-      const poll = setInterval(async () => {
-        try {
-          const status = await apiFetch<AsyncTaskDetail>(`/api/generate/async/${data.task_id}`)
-          setEditorContent(status.progress_text || '')
-          if (status.status === 'completed') {
-            clearInterval(poll)
-            setIsGenerating(false)
-            setGenTaskId(null)
-            setEditorContent(status.result_text || '')
-          } else if (status.status === 'failed') {
-            clearInterval(poll)
-            setIsGenerating(false)
-            setGenTaskId(null)
-            alert(`生成失败: ${status.error_message || '未知错误'}`)
-          }
-        } catch { /* */ }
-      }, 3000)
+      // Start polling (handled by the usePolling hook above)
+      setPollingTask({ taskId: data.task_id, kind: 'chapter' })
     } catch (e) {
       setIsGenerating(false)
       alert(e instanceof Error ? e.message : '提交生成任务失败')

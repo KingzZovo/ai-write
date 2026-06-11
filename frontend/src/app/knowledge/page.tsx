@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import type { BookSource, ReferenceBook, CrawlTask } from '@/stores/knowledgeStore'
 import { apiFetch } from '@/lib/api'
+import { usePolling } from '@/lib/usePolling'
 
 type TabKey = 'sources' | 'books' | 'crawl' | 'explore'
 
@@ -148,6 +149,30 @@ function SourcesTab() {
     fetchSources()
   }
 
+  // Batch-test progress polling: starts when handleBatchTest records a start
+  // timestamp, stops when all sources are tested or after the 10-min safety
+  // timeout, and is cleaned up on unmount.
+  const [batchTestStartedAt, setBatchTestStartedAt] = useState<number | null>(null)
+
+  usePolling(async (stop) => {
+    if (batchTestStartedAt === null) return
+    // Safety: stop polling after 10 min
+    if (Date.now() - batchTestStartedAt >= 600000) {
+      stop()
+      setBatchTestStartedAt(null)
+      setBatchTesting(false)
+      return
+    }
+    const progress = await apiFetch<any>('/api/knowledge/sources/test-progress')
+    setBatchTestResult((prev: any) => ({ ...prev, ...progress }))
+    if (progress.tested >= progress.total) {
+      stop()
+      setBatchTestStartedAt(null)
+      setBatchTesting(false)
+      fetchSources()
+    }
+  }, 3000, batchTestStartedAt !== null)
+
   const handleBatchTest = async () => {
     const ids = selected.size > 0 ? Array.from(selected) : null
     setBatchTesting(true)
@@ -158,21 +183,9 @@ function SourcesTab() {
         body: JSON.stringify(ids ? { source_ids: ids } : {}),
       })
       setBatchTestResult(data)
-      // Start polling for progress
+      // Start polling for progress (handled by the usePolling hook above)
       if (data.status === 'started') {
-        const poll = setInterval(async () => {
-          try {
-            const progress = await apiFetch<any>('/api/knowledge/sources/test-progress')
-            setBatchTestResult((prev: any) => ({ ...prev, ...progress }))
-            if (progress.tested >= progress.total) {
-              clearInterval(poll)
-              setBatchTesting(false)
-              fetchSources()
-            }
-          } catch { /* */ }
-        }, 3000)
-        // Safety: stop polling after 10 min
-        setTimeout(() => { clearInterval(poll); setBatchTesting(false) }, 600000)
+        setBatchTestStartedAt(Date.now())
       } else {
         setBatchTesting(false)
       }
