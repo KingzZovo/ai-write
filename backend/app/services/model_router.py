@@ -267,6 +267,7 @@ class OpenAIProvider(BaseProvider):
         task_type = kw.get("task_type", "unknown")
         stream_mode = kw.pop("stream", True)
         request_timeout = kw.pop("request_timeout", None)
+        retry_attempts = kw.pop("retry_attempts", None)
         if _OPENAI_CACHE_ENABLED:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
 
@@ -328,9 +329,12 @@ class OpenAIProvider(BaseProvider):
             text = "".join(chunks)
             return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
+        attempts = 1 if task_type == "evaluation" else 4
+        if retry_attempts is not None and int(retry_attempts) > 0:
+            attempts = int(retry_attempts)
         return await call_with_retry(
             _one_attempt, label=f"openai_chat[{task_type}:{model}]",
-            attempts=1 if task_type == "evaluation" else 4,
+            attempts=attempts,
         )
 
     async def generate_stream(self, messages, model="gpt-4o",
