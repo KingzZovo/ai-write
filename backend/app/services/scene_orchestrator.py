@@ -224,6 +224,16 @@ def _scene_count_for_target(target_words: int) -> int:
     return max(3, min(MAX_SCENE_COUNT, round(target / 1000)))
 
 
+def _cap_parsed_scenes(parsed: list) -> list:
+    """Cap planner output at the hard MAX_SCENE_COUNT, never the soft hint.
+
+    When overflowing, keep the final scene: it carries the chapter ending/hook.
+    """
+    if len(parsed) <= MAX_SCENE_COUNT:
+        return parsed
+    return parsed[: MAX_SCENE_COUNT - 1] + parsed[-1:]
+
+
 def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list[SceneBrief]:
     """Build deterministic scene briefs when the planner LLM fails to JSON.
 
@@ -489,8 +499,7 @@ class SceneOrchestrator:
             raise RuntimeError("scene_planner_failed: unparseable_output")
 
         briefs: list[SceneBrief] = []
-        max_scenes = _scene_count_for_target(target_words)
-        for i, raw in enumerate(parsed[:max_scenes], start=1):
+        for i, raw in enumerate(_cap_parsed_scenes(parsed), start=1):
             if not isinstance(raw, dict):
                 continue
             briefs.append(SceneBrief.from_dict(i, raw))

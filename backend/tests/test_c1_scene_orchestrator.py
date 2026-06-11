@@ -129,6 +129,24 @@ def test_parse_garbage_returns_none():
     assert _try_parse_scene_array("[1, 2, 3]") is None  # not list[dict]
 
 
+# 2b) ---------- _cap_parsed_scenes hard-cap behaviour ----------
+
+def test_planner_overflow_keeps_tail_scene():
+    from app.services.scene_orchestrator import MAX_SCENE_COUNT, _cap_parsed_scenes
+
+    parsed = [{"goal": f"s{i}"} for i in range(MAX_SCENE_COUNT + 5)]
+    capped = _cap_parsed_scenes(parsed)
+    assert len(capped) == MAX_SCENE_COUNT
+    assert capped[-1]["goal"] == f"s{MAX_SCENE_COUNT + 4}"  # 结尾场景必须保留
+
+
+def test_planner_within_cap_untouched():
+    from app.services.scene_orchestrator import _cap_parsed_scenes
+
+    parsed = [{"goal": f"s{i}"} for i in range(8)]
+    assert _cap_parsed_scenes(parsed) == parsed
+
+
 # 3) ---------- _fallback_scene_briefs ----------
 
 @pytest.mark.parametrize(
@@ -285,6 +303,40 @@ async def test_plan_scenes_keeps_more_than_six_scenes_for_long_targets():
         )
 
     assert len(out) == 12
+    assert out[-1].hook == ""
+
+
+@pytest.mark.asyncio
+async def test_plan_scenes_keeps_all_scenes_when_planner_exceeds_soft_hint():
+    """B7 regression: the soft per-target hint must not truncate planner output.
+
+    target_words=3000 yields a soft hint of 3 scenes; if the planner returns
+    8 well-formed scenes, all 8 must survive — especially the final scene,
+    which carries the chapter ending/hook.
+    """
+    pack = _FakePack()
+    fake_briefs = [
+        _scene_contract(title=f"场{i}", brief=f"推进{i}", target_words=900, hook="接下一场")
+        for i in range(1, 9)
+    ]
+    fake_briefs[-1]["title"] = "终场"
+    fake_briefs[-1]["hook"] = ""
+    with patch(
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value=fake_briefs),
+    ):
+        orch = SceneOrchestrator()
+        out = await orch.plan_scenes(
+            pack=pack,
+            db=None,
+            project_id="p1",
+            chapter_id="c1",
+            target_words=3000,
+            n_scenes_hint=None,
+        )
+
+    assert len(out) == 8
+    assert out[-1].title == "终场"
     assert out[-1].hook == ""
 
 
