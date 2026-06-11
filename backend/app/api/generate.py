@@ -398,6 +398,11 @@ async def generate_chapter(
                         "SceneOrchestrator failed (falling back to ChapterGenerator): %s",
                         scene_err,
                     )
+                    # Discard partial scene chunks: the single-shot fallback
+                    # regenerates the full chapter, so keeping them would
+                    # duplicate content in the saved full_text.
+                    collected_text.clear()
+                    yield f"data: {json.dumps({'event': 'fallback_restart'}, ensure_ascii=False)}\n\n"
                     generated_text = await _run_single_shot_generator()
                     if generated_text:
                         collected_text.append(generated_text)
