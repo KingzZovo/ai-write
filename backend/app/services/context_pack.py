@@ -215,6 +215,9 @@ class ContextPack:
     strand_tracker: StrandTracker = field(default_factory=StrandTracker)
     # v0.8 ContextPack v3: 4th recall path, scoped to project.genre_profile.
     writing_rules: list[str] = field(default_factory=list)
+    # Q3 v1.9.1: serialized character cognition ledger (who knows what /
+    # reader-only facts). Pre-rendered by character_cognition.serialize_for_prompt.
+    cognition_boundaries: str = ""
 
     # Layer 3: RAG (~20%)
     rag_snippets: list[str] = field(default_factory=list)
@@ -474,6 +477,14 @@ class ContextPack:
         if self.character_cards:
             cards_text = "\n".join(c.to_prompt() for c in self.character_cards)
             l2_parts.append(f"【活跃角色状态】\n{cards_text}")
+
+        if self.cognition_boundaries:
+            l2_parts.append(
+                "【人物认知边界】\n"
+                "角色只能依据其「知道」列表行动；写作时不得让角色说出/利用其"
+                "「不知道」列表中的信息（除非本章安排了明确的获知路径）。\n"
+                f"{self.cognition_boundaries}"
+            )
 
         if self.foreshadow_triplets:
             fs_text = "\n".join(f.to_prompt() for f in self.foreshadow_triplets)
@@ -1004,6 +1015,17 @@ class ContextPackBuilder:
                 pack.timeline_anchors = first + sampled + last
         except Exception as e:
             logger.warning("Failed to load timeline anchors: %s", e)
+
+        # Q3 v1.9.1: character cognition ledger -> 人物认知边界 section.
+        try:
+            from app.services import character_cognition as _cognition
+
+            ledger = await _cognition.load_ledger(db, pid)
+            pack.cognition_boundaries = _cognition.serialize_for_prompt(
+                ledger, max_chars=1200
+            )
+        except Exception as e:
+            logger.warning("Failed to load character cognition ledger: %s", e)
 
         # Build strand tracker from recent chapters
         await self._build_strand_tracker(pack, pid, chapter_idx)

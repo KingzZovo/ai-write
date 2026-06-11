@@ -12,6 +12,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import Boolean
 from sqlalchemy.dialects.postgresql import UUID
@@ -285,6 +286,38 @@ class CharacterState(Base):
     chapter_end = Column(Integer, nullable=True)
     status_json = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterCognition(Base):
+    """Per-character knowledge ledger (Task 17 / Q3, QMAI character-cognition).
+
+    One row per (project, character). ``knows`` / ``does_not_know`` are lists
+    of short fact strings. The pseudo character ``character_name='__reader__'``
+    stores reader-known facts (only ``knows`` is used) so the
+    reader-knows-but-character-doesn't gap — the basis of dramatic irony /
+    suspense — can be tracked and guarded during evaluation.
+    """
+
+    __tablename__ = "character_cognitions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    character_name = Column(String(128), nullable=False)
+    knows = Column(JSON, default=list)
+    does_not_know = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "character_name", name="uq_character_cognitions_key"
+        ),
+    )
 
 
 class StyleProfile(Base):

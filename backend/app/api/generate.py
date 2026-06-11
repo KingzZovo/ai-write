@@ -567,6 +567,18 @@ async def generate_chapter(
                             logger.warning(
                                 "Chapter summarize after auto-save failed: %s", sum_err
                             )
+                        # Q3 v1.9.1: character cognition ledger ingestion.
+                        # Never blocks chapter persistence.
+                        try:
+                            from app.services.character_cognition import extract_and_update
+                            await extract_and_update(
+                                save_db, req.project_id, text_to_save,
+                            )
+                        except Exception as cog_err:
+                            logger.warning(
+                                "Cognition ledger update after auto-save failed: %s",
+                                cog_err,
+                            )
                         return str(target_chapter.id), target_chapter.word_count, False
 
                 _chsave_task = asyncio.create_task(_persist_chapter_now(full_text, quality_gate_meta))
@@ -653,6 +665,20 @@ async def generate_chapter(
                     max_rounds = max(0, int(req.max_revise_rounds))
                     threshold = float(req.revise_threshold)
 
+                    # Q3 v1.9.1: serialized cognition ledger for the evaluator's
+                    # cognition_violation check. Best-effort; "" on any failure.
+                    cognition_ledger_text = ""
+                    try:
+                        from app.services import character_cognition as _cognition
+                        async with async_session_factory() as _cog_db:
+                            cognition_ledger_text = _cognition.serialize_for_prompt(
+                                await _cognition.load_ledger(_cog_db, req.project_id)
+                            )
+                    except Exception as _cog_err:
+                        logger.warning(
+                            "C2 auto-revise: cognition ledger load failed: %s", _cog_err
+                        )
+
                     accepted_final = False
                     aborted_with_blocking = False
                     c2_revised = False
@@ -666,6 +692,7 @@ async def generate_chapter(
                             chapter_outline=revise_outline,
                             previous_summary=evaluation_context,
                             style_profile=resolved_style,
+                            cognition_ledger_text=cognition_ledger_text,
                         )
                         _x4_inc_revise("scored")  # v1.6.0 X4 metric: revise round outcome
                         scored_payload = json.dumps({
@@ -861,6 +888,7 @@ async def generate_chapter(
                                 chapter_outline=revise_outline,
                                 previous_summary=evaluation_context,
                                 style_profile=resolved_style,
+                                cognition_ledger_text=cognition_ledger_text,
                             )
                             final_payload = json.dumps({
                                 "event": "scored",

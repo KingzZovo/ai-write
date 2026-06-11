@@ -1117,6 +1117,20 @@ async def _run_async_generation_impl(task_id: str):
 
                 current_text = full_text
                 final_eval = None
+
+                # Q3 v1.9.1: serialized cognition ledger for the evaluator's
+                # cognition_violation check. Best-effort; "" on any failure.
+                cognition_ledger_text = ""
+                try:
+                    from app.services import character_cognition as _cognition
+                    cognition_ledger_text = _cognition.serialize_for_prompt(
+                        await _cognition.load_ledger(db, project_id)
+                    )
+                except Exception as _cog_err:
+                    logger.warning(
+                        "Async generation: cognition ledger load failed: %s", _cog_err
+                    )
+
                 for round_idx in range(1, max_rounds + 2):
                     task.status = "evaluating"
                     task.progress_text = current_text
@@ -1136,6 +1150,7 @@ async def _run_async_generation_impl(task_id: str):
                                 chapter_outline=generated_chapter_outline,
                                 previous_summary=prev_context,
                                 style_profile=style_text,
+                                cognition_ledger_text=cognition_ledger_text,
                             ),
                             timeout=_eval_timeout,
                         )
@@ -1449,6 +1464,15 @@ async def _run_async_generation_impl(task_id: str):
                     await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                 except Exception as sum_err:
                     logger.warning("Auto chapter summarize failed after evaluation: %s", sum_err)
+                # Q3 v1.9.1: character cognition ledger ingestion on the main
+                # success path only (quality-gate-blocked needs_review saves
+                # are skipped — that text awaits manual review / rewrite and
+                # would pollute the ledger). Never blocks chapter persistence.
+                try:
+                    from app.services.character_cognition import extract_and_update
+                    await extract_and_update(db, project_id, full_text)
+                except Exception as cog_err:
+                    logger.warning("Cognition ledger update failed after evaluation: %s", cog_err)
 
             task.result_text = full_text
 

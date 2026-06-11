@@ -103,6 +103,7 @@ EVALUATOR_CONTRACT_PROMPT = """\
 - information_rule_violation：角色掌握未获得信息，或弱信息推出强结论。
 - mechanism_rule_violation：能力、技术、法术、制度工具、资源调用无触发条件/成本/边界/反制。
 - result_strength_violation：前置支撑不足却达成强结果，没有降级为疑点、局部胜利、暂缓、误导、代价胜或后续线索。
+- cognition_violation：角色知道了其不应知道的信息（认知账本或前文未给出获知路径却直接说破/利用），或「读者已知-角色未知」的信息差被无故抹平。
 - expression_contract_violation：表达层重复、句子呼吸失衡、动词生僻堆砌、生造动宾、空间动作不合物理、视角清单化、复述长段信息、动作切片、时代/场合/身份不适配、口号式或现代影视剧式互怼破坏沉浸。
 
 若出现上述高严重度违规，对应维度不得高于 7.5；若直接破坏因果链、角色认知或世界机制，对应维度不得高于 6.5。每条 issue 的 description 必须以违规类型标签开头，例如“[information_rule_violation] ...”，suggestion 用短语说明“降级结果/补足支撑”即可，避免长篇解释。
@@ -118,6 +119,7 @@ REVISE_CONTRACT_PROMPT = """\
 - information_rule_violation：把强结论降级为疑点/假设/佐证，补来源、可接触性、可信度和替代解释。
 - mechanism_rule_violation：补触发条件、成本、边界、副作用、冷却和反制方式。
 - result_strength_violation：把全面胜利/定论/公开翻盘降级为暂缓、暗查、误导、半胜或后续线索。
+- cognition_violation：删除角色对未获知信息的直接说破/利用，或补一条可信获知路径（目击、转述、文书、推断链）；恢复「读者已知-角色未知」的信息差，让角色继续在错误/缺失认知下行动。
 - expression_contract_violation：调节长短句呼吸，使用朴素准确动词，删除生造动宾和物理不通的空间动作，环境跟随视角流动，长段复述改为概括侧写，连贯动作不要切片；同时调整对白身份/场合/时代/题材语感。
 - recurrence_precheck：遇到跨章复发的 information/power/result/expression/time 问题，必须在生成前改场景结构：减少信息泄露口、降低证据强度、增加强资源方动机/设饵/流程成本、压缩追捕问答。
 - continuity/opening_gap：重写开头必须先补“上一章末状态 -> 本章开场位置”的路径、时间和阻隔，尤其是被藏起的人如何重新到场、追兵如何被甩开或拖住。

@@ -54,6 +54,7 @@ def _build_user_prompt(
     previous_summary: str,
     style_profile: str,
     active_foreshadows: list[str] | None,
+    cognition_ledger_text: str = "",
 ) -> str:
     """Build the user prompt with all context for evaluation."""
     parts: list[str] = []
@@ -72,6 +73,14 @@ def _build_user_prompt(
     if style_profile:
         parts.append("\n\n## 目标风格描述\n")
         parts.append(_limit_text(style_profile, 1200))
+
+    if cognition_ledger_text:
+        parts.append("\n\n## 当前认知账本\n")
+        parts.append(
+            "按下列账本核查 cognition_violation：角色不得说破/利用其「不知道」"
+            "列表中的信息（除非本章写明获知路径）；不要无故抹平「读者已知-角色未知」的信息差。\n"
+        )
+        parts.append(_limit_text(cognition_ledger_text, 1200))
 
     if active_foreshadows:
         parts.append("\n\n## 当前活跃伏笔\n")
@@ -199,6 +208,7 @@ class ChapterEvaluator:
         previous_summary: str = "",
         style_profile: str = "",
         active_foreshadows: list[str] | None = None,
+        cognition_ledger_text: str = "",
     ) -> EvaluationResult:
         """
         Evaluate a chapter using task_type='evaluation'.
@@ -209,6 +219,8 @@ class ChapterEvaluator:
             previous_summary: Summary of preceding chapters for context.
             style_profile: Description of the target writing style.
             active_foreshadows: List of currently active foreshadow descriptions.
+            cognition_ledger_text: Serialized character cognition ledger
+                (who knows what / reader-only facts) for cognition_violation checks.
 
         Returns:
             EvaluationResult with scores across 5 dimensions and specific issues.
@@ -223,6 +235,7 @@ class ChapterEvaluator:
             previous_summary=previous_summary,
             style_profile=style_profile,
             active_foreshadows=active_foreshadows,
+            cognition_ledger_text=cognition_ledger_text,
         )
 
         messages = [

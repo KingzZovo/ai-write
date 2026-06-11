@@ -20,6 +20,8 @@ def test_system_prompt_lists_all_violation_types():
         "mechanism_rule_violation",
         "result_strength_violation",
         "expression_contract_violation",
+        # Q3 v1.9.1: character cognition ledger violation.
+        "cognition_violation",
     ):
         assert vtype in EVALUATION_SYSTEM_PROMPT, f"missing taxonomy tag: {vtype}"
 
