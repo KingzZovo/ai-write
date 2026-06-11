@@ -23,13 +23,19 @@ export function RegenerateVolumeModal({
 
   const go = () => {
     if (busy) return
+    let failed = false
     setBusy(true)
     setProgress('准备中...')
     apiSSE(
       `/api/projects/${projectId}/volumes/${volumeId}/regenerate`,
       {},
       (text) => setProgress((p) => (p + text).slice(-600)),
-      () => { setBusy(false); onDone() },
+      () => {
+        setBusy(false)
+        // On transport error keep the modal open so the error message stays
+        // visible; parent onDone() would close it immediately.
+        if (!failed) onDone()
+      },
       (evt) => {
         if (evt.status === 'done') {
           setProgress(`已生成 ${evt.chapters_created} 章`)
@@ -37,6 +43,10 @@ export function RegenerateVolumeModal({
         if (typeof evt.error === 'string') {
           setProgress(`错误：${evt.error}`)
         }
+      },
+      (err) => {
+        failed = true
+        setProgress((p) => `${p}\n错误：${err.message}`)
       },
     )
   }

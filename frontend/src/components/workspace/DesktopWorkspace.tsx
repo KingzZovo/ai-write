@@ -563,6 +563,11 @@ export default function DesktopWorkspace() {
             }
           }
         },
+        (err) => {
+          // outlinePreview is the visible surface in both wizard and outline
+          // views, so surface transport errors there.
+          setOutlinePreview((prev) => prev + `\n\n[错误] 大纲生成失败：${err.message}`)
+        },
       )
     },
     [
@@ -712,6 +717,9 @@ export default function DesktopWorkspace() {
                 if (evt.status === 'saved' && typeof evt.outline_id === 'string') {
                   outlineId = evt.outline_id
                 }
+              },
+              (err) => {
+                setWizardProgress((prev) => prev + `\n⚠ 第 ${i} 卷大纲生成出错：${err.message}`)
               },
             )
           })
@@ -993,6 +1001,11 @@ export default function DesktopWorkspace() {
           setEditorContent(replacement)
           updateChapterContent(selectedChapterId, replacement)
         }
+      },
+      (err) => {
+        // onDone (guaranteed by apiSSE) restores the baseline content and
+        // status; here we only surface the error to the user.
+        setGenerationError(`正文生成失败：${err.message}`)
       }
     )
   }, [

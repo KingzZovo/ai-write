@@ -34,6 +34,7 @@ export function RewriteMenu({
 }: RewriteMenuProps) {
   const [rewrittenText, setRewrittenText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [showCustomInput, setShowCustomInput] = useState(false)
   const [customInstruction, setCustomInstruction] = useState('')
   const [showPreview, setShowPreview] = useState(false)
@@ -58,6 +59,7 @@ export function RewriteMenu({
       if (isLoading) return
       setIsLoading(true)
       setRewrittenText('')
+      setError(null)
       setShowPreview(true)
       setShowCustomInput(false)
 
@@ -75,6 +77,10 @@ export function RewriteMenu({
         },
         () => {
           setIsLoading(false)
+        },
+        undefined,
+        (err) => {
+          setError(err.message)
         }
       )
       controllerRef.current = controller
@@ -190,9 +196,12 @@ export function RewriteMenu({
               {isLoading ? 'Generating...' : 'New'}
             </span>
             <div className="mt-0.5 px-2 py-1.5 bg-green-50 border border-green-100 rounded text-xs text-gray-800 leading-relaxed min-h-[2rem]">
-              {rewrittenText || (
-                <span className="text-gray-400 animate-pulse">Generating rewrite...</span>
-              )}
+              {rewrittenText ||
+                (error ? (
+                  <span className="text-red-500">Rewrite failed: {error}</span>
+                ) : (
+                  <span className="text-gray-400 animate-pulse">Generating rewrite...</span>
+                ))}
             </div>
           </div>
 

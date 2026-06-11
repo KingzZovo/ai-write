@@ -69,8 +69,19 @@ export function apiSSE(
   onChunk: (text: string) => void,
   onDone: () => void,
   onEvent?: (event: Record<string, unknown>) => void,
+  onError?: (err: Error) => void,
 ) {
   const controller = new AbortController()
+  let finished = false
+  const finish = (err?: Error) => {
+    if (finished) return
+    finished = true
+    if (err) {
+      console.error('SSE error:', err)
+      onError?.(err)
+    }
+    onDone()
+  }
 
   fetch(`${API_BASE}${path}`, {
     method: 'POST',
@@ -83,10 +94,11 @@ export function apiSSE(
       if (typeof window !== 'undefined') {
         window.location.href = '/login'
       }
+      finish(new Error('Unauthorized'))
       return
     }
     if (!res.ok || !res.body) {
-      throw new Error('SSE connection failed')
+      throw new Error(`SSE connection failed (${res.status})`)
     }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -102,7 +114,7 @@ export function apiSSE(
         if (line.startsWith('data: ')) {
           const data = line.slice(6)
           if (data === '[DONE]') {
-            onDone()
+            finish()
             return
           }
           try {
@@ -118,9 +130,13 @@ export function apiSSE(
         }
       }
     }
-    onDone()
+    finish()
   }).catch((err) => {
-    if (err.name !== 'AbortError') console.error('SSE error:', err)
+    if (err.name === 'AbortError') {
+      finish() // user-initiated cancel still needs the UI to settle via onDone
+      return
+    }
+    finish(err instanceof Error ? err : new Error(String(err)))
   })
 
   return controller
