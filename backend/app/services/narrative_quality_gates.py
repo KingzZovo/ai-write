@@ -15,6 +15,10 @@ from app.services.prose_quality_rules import render_prose_quality_prompt
 
 VIOLATION_TAG_RE = re.compile(r"\[([a-z_]+_violation)\]")
 
+# Single source of truth for the chapter-blueprint contract version. Every
+# version reference in this module's rendered prompts must use this constant.
+BLUEPRINT_VERSION = "v4.13"
+
 @dataclass(frozen=True)
 class QualityGateRule:
     tag: str
@@ -214,9 +218,10 @@ def contract_hard_gate_prompt() -> str:
     return "\n".join(lines)
 
 def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
-    """Return generic direct-generation-first v4.9 micro-continuity budget guidance.
+    """Return generic direct-generation-first micro-continuity budget guidance.
 
-    Cross-project / cross-chapter scaffold. This is not a post-output blocking
+    Versioned by ``BLUEPRINT_VERSION``. Cross-project / cross-chapter scaffold.
+    This is not a post-output blocking
     gate, not a repair loop, and not a scene_planner JSON plan. It forces the
     model to internally convert the current chapter outline into executable
     units, allocate movement/resource/information/expression/result budgets,
@@ -224,10 +229,10 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
     """
     chapter_label = f"第{chapter_idx}章" if chapter_idx else "本章"
     return f"""
-【direct_generation_first_v4.13｜空间可行性、信息遮蔽、巧合摩擦与中文行文约束】
+【direct_generation_first_{BLUEPRINT_VERSION}｜空间可行性、信息遮蔽、巧合摩擦与中文行文约束】
 目标：{chapter_label}写正文前，必须先在内部执行 outline_execution_units / chapter_outline_unit_ledger / outline_beat_execution_ledger / foreshadow_control_ledger / character_state_ledger / pacing_budget_ledger / evidence_permission_ledger / mechanism_boundary_ledger / inference_uncertainty_ledger / time_window_budget / spatial_feasibility_ledger / channel_occlusion_ledger / coincidence_friction_ledger / dialogue_density_ledger / anchor_audit_before_prose / micro_continuity_budget。不要输出合同、表格、自检、分析、JSON 或说明；最终只输出小说正文。
 
-核心原则：v4.12 是跨章节、跨项目通用约束。章节大纲仍是本章全部剧情骨架，正文阶段只做扩写、润色、动作化、场景化和因果支撑；不得新增大纲外关键剧情、钥匙/暗门/逃生捷径、强线索、强结论或章末硬 payoff。v4.8 的锚点审计仍保留，但必须升级为“微连续性预算扣账”：每个执行单元写正文前，先为路径、资源、信息、表达和结果强度分配预算；预算缺失时只能降级，不得先写强结果再补理由。历史评分 issue 只作诊断；本约束用于生成前内化，不是后置 hard gate / needs_repair / auto_revise，也不依赖 scene_planner。
+核心原则：{BLUEPRINT_VERSION} 是跨章节、跨项目通用约束。章节大纲仍是本章全部剧情骨架，正文阶段只做扩写、润色、动作化、场景化和因果支撑；不得新增大纲外关键剧情、钥匙/暗门/逃生捷径、强线索、强结论或章末硬 payoff。{BLUEPRINT_VERSION} 的锚点审计仍保留，但必须升级为“微连续性预算扣账”：每个执行单元写正文前，先为路径、资源、信息、表达和结果强度分配预算；预算缺失时只能降级，不得先写强结果再补理由。历史评分 issue 只作诊断；本约束用于生成前内化，不是后置 hard gate / needs_repair / auto_revise，也不依赖 scene_planner。
 
 零、hierarchical_outline_contract（层级来源合同，保留执行）
 写正文第一句前，内部建立来源链：book_to_volume_contract → volume_to_chapter_contract → chapter_outline_source_of_truth → prose_expand_unit_only。
@@ -263,10 +268,6 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
 - channel_occlusion_ledger：隔墙、雨声、渠声、人群、门缝、暗处听见的信息必须扣声源、遮挡、噪音、距离和可辨词数；只能得到片段、语气或关键词，不得完整听清制度/计划/口供。
 - coincidence_friction_ledger：钥匙、木片、册页、证物、脚边物、恰好相合的线索必须有中介原因、距离/时间成本、误差或替代用途；缺少摩擦时只能写“像是、可疑、待验”，不得直接送到脚边或正合结论。
 - dialogue_density_ledger：喊令、重复命令、转述长句必须有密度预算；连续喊令不得压过动作与环境，通过概括侧写处理重复台词，短促命令只留给真正转折点。
-- communication_damping：密集交锋不必每句都接住；允许无视、岔开、迟钝、重复尾音、信息掉在地上或被环境打断，不要让所有人像带提词器一样无缝对答。
-- plain_register_no_wit：日常护财、试探、讨价还价和街头冲突必须服从人物当下情绪，禁止廉价机智、抖机灵、对仗式反击和硬凹“聪明”；粗鄙直接比俏皮更真实。
-- focal_measure_only：数字化距离只在生死、翻脸、机密暴露或必须对齐证物的焦点时刻使用；普通走位、站立、互动和压迫不要写成坐标测绘。
-- motive_exposition_zero：禁止把角色或对方的底层动机直接说破；不要写“你就是想赖账/你其实……”这类拆解句，改用反问、压价、动作和结果施压。
 - anchor_audit_before_prose：写本单元正文前必须完成来源/路径/观察/动机/代价/上限审计；审计缺口决定降级.
 - micro_continuity_budget：写本单元正文前必须完成下列五类预算扣账，预算不足不得升级结果。
 
@@ -344,7 +345,7 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
 - 所有章末收获都有 result_delta_cap，且不得超过 payoff_ceiling_before_reveal；默认不得从疑点直接升级为定案。
 - 所有关键角色动作都有 character_state_ledger；所有低重要度段落都有 pacing_budget_ledger；所有机关/钥匙/门路都有 mechanism_boundary_ledger；所有倒计时段都有 time_window_budget；所有贴身/狭窄/方位动作都有 spatial_feasibility_ledger；所有喊令/复述都有 dialogue_density_ledger。
 
-七、针对 v4.8 复发问题的生成前压制
+七、针对 {BLUEPRINT_VERSION} 复发问题的生成前压制
 - space_rule_violation：人物/物件/消息从 A 到 B 必须写起点、路径、耗时、载体、权限或风险；否则降级为痕迹。
 - information_rule_violation：角色不能知道文本没给来源的信息；弱信息只能推出疑点，不能推出强结论；信息要走 unit_information_ladder。
 - power_resource_violation：低资源方突破高资源方必须有扣账；高资源方不能为送证据突然降智；无 unit_resource_budget 不给奖励。
@@ -353,43 +354,8 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
 - result_strength_violation：每单元只允许一个小状态变化；章末最多一个主收获，其他只能保留疑似、残片、误差、替代解释或后续问题；不得用定案语气写“走门/定路/真相”。
 - expression_contract_violation：制度/推理说明拆进动作、物件、短对白；重复意象和关键词必须有新功能，否则删减、分散或改写成视线/动作承载。
 
-八、runtime_prompt_snapshot（运行时观测要求）
-
 八、chinese_prose_mechanics（中文行文机械约束，内部执行，不输出）
-写正文时必须把“准确、自然、可读”置于“短促、古风、干练”之前：
-- 句子呼吸：连续短句不得超过四句；环境用长句顺人物视线/听觉/行动轨迹铺陈，核心动作和风险反应用短句提速；避免为了紧张感把普通动作压缩成碎片。
-- 动词克制：基础动作还原为看、走、停、拿、放、退、靠近、转身、走到、站在、试探等朴素动词；禁止堆砌生僻动词或为了文学性强行换词。
-- 搭配守正：禁止生造动宾短语；必须写符合中文习惯的“走到檐下”“试探鼻息”“站在门边”，不得写“进檐”“探鼻”等压缩词。
-- 物理准确：屋檐、雨网、门槛、墙角、桌案、阴影等只能与人物形成合理方位和动作关系；方位介词必须准确。
-- 视角流动：环境细节跟随人物看见、听见、走近、停下、转头而出现；禁止清单式罗列陈设。
-- 信息复述：长段台词/传闻/供词/制度说明再次出现时，用概括性侧写承接，只保留关键词和新反应，禁止全文复述。
-- 动作整体性：一个连贯动作不要切成机械步骤；只有当每一步带来风险、观察、阻碍或代价时才拆开。
-- floating_dialogue_exchange：讨价还价、逼问、互相试探时允许连续纯台词交替；不要写成“动作+台词、动作+台词”的节拍器。纯台词必须靠内容咬合，动作只服务局势改变。
-- dialogue_symmetry_break：禁止连续四组以上短问短答，禁止原样复述或镜像回应。用答非所问、抢白、动作打断、直接抛结论破坏对称性。不要把“说好一行 / 就一行 / 多看一个字呢 / 你自己合上 / 认错呢 / 认对呢”连成排比回合。
-- prop_fiddling_guard：禁止拨算盘、绕细绳、擦砚台、摸杯子、挪纸张等无意义道具交互。除非它在物理阻挡、掩饰心虚、转移证物或情绪爆发中起作用，否则删除。
-- explicit_pause_marker_zero：禁用“安静了一会儿、沉默了、没有立刻回话、一小会儿、半晌、顿了顿、停了一下”。停顿用环境音突入、物件响动、脚步靠近或直接切下一句承载。
-- subtext_occlusion：禁止角色直接说破对方真实意图，例如“你怕我……”“你想让……”“我想让你……”。用反问、避答、压价、局部事实和动作压力保留潜台词。
-- spatial_mapping_zero：禁用三步外、一指宽、影子外、几寸等静态测绘词；人物位置只写逼近、退开、让开、挡住、压住等动态趋势或遮挡关系。
-- biographical_infodump_zero：往事作证最多两句，禁止从几岁讲到几岁，禁止按时间轴背履历。
-- story_bible_leakage_zero：隐藏世界不得通过广告、海报、新闻、路人闲聊或旁白一次性列出设定词。不要在正文里集中出现“血脉体系、执行者体系、核心权能、校准、未知X、奥丁源头”等故事说明书式词串；POV 不知道的名词只能留作异常痕迹、误听片段或后续解释。
-- setting_name_dialogue_zero：路人、新闻、店员、邻居、广告、海报和闲聊不能字正腔圆讨论核心世界观名词。超自然影响必须降维成封路、停电、绕路、物价、黑车、查得紧、上面、那帮人、那种事、清道等生活抱怨和代词。
-- directional_listing_zero：禁止“左边/右边/东头/西头/前后”导览式罗列；环境只抓一个与当前氛围或剧情冲突的核心反差点，砍掉无关陈设扫描。
-- mundane_scene_plausibility：修正不合生活逻辑的日常场景。烤肠摊只卖摊位合理物，不顺手出现临期面包、热水、汤锅；便利店不硬塞消毒水味和温水；大雨院子里不要安排人群围电视。
-- plain_modern_register：改回正常现代汉语。写锁屏/按灭屏幕、别挡着锅、别往楼里跑/别进去，不写把手机按黑、别挡锅、别碰那边、带了急、收租截图这类压缩拗口词。
-- plain_contemporary_chinese：普通现代场景必须用完整、自然、当代的中文表达，不写半文言、伪文学、为了显得干练而硬压缩的句子。写“他叫了一声：‘师傅。’”“车没了，手机快没电了”，不要写“喊了声师傅”“来意说得很低”“终于抬头”“声音被关门声挡住一半”。
-- age_plausibility：公共场景里的拒绝、催促和登记要与年龄身份一致。十八岁去旅馆不要写成“未成年不行”；更自然的阻力是满房、押金、证件、前台态度、关门时间。
-- abstract_reasoning_zero：删除“试错”“本质上”“底层逻辑”“慢慢试错”这类元语言解释，把原因落到余额、体力、时间、电量、路况和退路上。
-- limited_pov_only：第三人称有限视角只保留主角能看见、听见、感到的事实；删除“才想起他、没人记得、没人问他、他像水印一样会没”这类替别人下心理结论或点破比喻的旁白。
-- semantic_density_budget：开篇苦难/边缘化信息限量，只留两三个与当前困境物理相关的痛点，删除老师、门卫、班群、食堂、房东同质标签堆叠。
-- resource_continuity：校验钱、手机、电量、支付方式、交通选择是否互相支撑；叫车失败、现金不足、移动支付、旁人坐车都必须有一致资源逻辑。
-- action_causality：校验动作和结果的物理/语义因果，不用一句漂亮话遮住不成立的动作链。
-- motivation_bridge：进入危险空间前必须补足求生压力、退路关闭、误判理由或外部催逼；不能把看见门/灯/门缝干燥当成自动行动因果。
-- dialogue_topology_limit：连续含引号段落不得超过四段；连续纯短对白不得超过两段；每个场景紧贴问答不得超过三组。超出时必须合并为自然段，或改成答非所问、未答、抢白、环境声打断、动作结果和证物变化。
-- 结构拓扑自检：动作对白绑定率不得超过 0.35；多数段落若都写成“人物微动作 + 台词”，必须合并、删除或改成纯台词/证物推进。
-- 紧贴问答限制：紧贴问答不得超过 12 组；连续追问必须被无视、抢白、答非所问、说半截、证物或环境打断。
-- 短对白密度限制：短对白密度不得过半；短句用于压迫，不用于把整章写成剧本回合。
-- 短段落密度限制：短段落密度不得超过 0.35；同一动作、同一证据链、同一轮施压应合并成自然段。
-- 程序性解释簇限制：旧库、码头、灯籍、封存、回封、待验等制度/证据说明不能由专家 NPC 一口气讲完，必须拆进物证、争执、误解和局部记录。
+{CHINESE_PROSE_MECHANICS_PROMPT.strip()}
 
 dialogue_machine_few_shot（内部参照，不输出）
 原段落（廉价机智与翻译腔抛梗）：
@@ -442,5 +408,5 @@ dialogue_machine_few_shot（内部参照，不输出）
 {render_prose_quality_prompt()}
 
 九、runtime_prompt_snapshot（运行时可观测，不阻断）
-本提示必须可在运行时被验证：contract_version、direct_generation_first_v4.13、chinese_prose_mechanics、outline_execution_units、chapter_outline_unit_ledger、outline_beat_execution_ledger、foreshadow_control_ledger、character_state_ledger、pacing_budget_ledger、evidence_permission_ledger、mechanism_boundary_ledger、inference_uncertainty_ledger、time_window_budget、spatial_feasibility_ledger、channel_occlusion_ledger、coincidence_friction_ledger、dialogue_density_ledger、communication_damping、plain_register_no_wit、focal_measure_only、motive_exposition_zero、setting_name_dialogue_zero、directional_listing_zero、mundane_scene_plausibility、plain_modern_register、plain_contemporary_chinese、age_plausibility、abstract_reasoning_zero、limited_pov_only、semantic_density_budget、resource_continuity、action_causality、motivation_bridge、anchor_audit_before_prose、micro_continuity_budget、unit_movement_budget、unit_resource_budget、unit_information_ladder、unit_expression_role、unit_result_delta_cap、no_budget_no_upgrade、runtime_prompt_snapshot 和 prompt_hash 应进入日志或任务元数据。该观测只用于诊断 prompt 是否注入，不阻断生成，不触发后置修订。
+本提示必须可在运行时被验证：contract_version、direct_generation_first_{BLUEPRINT_VERSION}、chinese_prose_mechanics、outline_execution_units、chapter_outline_unit_ledger、outline_beat_execution_ledger、foreshadow_control_ledger、character_state_ledger、pacing_budget_ledger、evidence_permission_ledger、mechanism_boundary_ledger、inference_uncertainty_ledger、time_window_budget、spatial_feasibility_ledger、channel_occlusion_ledger、coincidence_friction_ledger、dialogue_density_ledger、communication_damping、plain_register_no_wit、focal_measure_only、motive_exposition_zero、setting_name_dialogue_zero、directional_listing_zero、mundane_scene_plausibility、plain_modern_register、plain_contemporary_chinese、age_plausibility、abstract_reasoning_zero、limited_pov_only、semantic_density_budget、resource_continuity、action_causality、motivation_bridge、anchor_audit_before_prose、micro_continuity_budget、unit_movement_budget、unit_resource_budget、unit_information_ladder、unit_expression_role、unit_result_delta_cap、no_budget_no_upgrade、runtime_prompt_snapshot 和 prompt_hash 应进入日志或任务元数据。该观测只用于诊断 prompt 是否注入，不阻断生成，不触发后置修订。
 """.strip()
