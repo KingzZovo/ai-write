@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # Pure helpers: locate / splice / merge
@@ -148,6 +150,65 @@ def test_revise_spans_rejects_degenerate_rewrite():
     result = asyncio.run(revise_spans(_TEXT, issues, llm_call=empty_llm))
     assert result.spans_revised == 0
     assert result.text == _TEXT
+
+
+@pytest.mark.asyncio
+async def test_too_short_rewrite_rejected():
+    """LLM 短应答（如「好。」）不得替换整个区间——短于原文 1/3 必为退化。"""
+    from app.services.auto_revise import revise_spans
+
+    issues = [{"description": "问题", "quote": "错误描写在这里需要修"}]
+
+    async def short_llm(prompt: str) -> str:
+        return "好。"
+
+    result = await revise_spans(_TEXT, issues, llm_call=short_llm)
+    assert result.spans_revised == 0
+    assert result.text == _TEXT
+    assert "好。" not in result.text
+
+
+@pytest.mark.asyncio
+async def test_fenced_rewrite_stripped():
+    """LLM 回复带 ```fence``` 包裹时，splice 前剥离围栏（含语言标记行）。"""
+    from app.services.auto_revise import revise_spans
+
+    issues = [{"description": "问题", "quote": "错误描写在这里需要修"}]
+    body = "改写后的正文内容，问题已经修复，衔接保持自然。"
+
+    for fenced in (f"```\n{body}\n```", f"```text\n{body}\n```"):
+        async def fenced_llm(prompt: str, _reply: str = fenced) -> str:
+            return _reply
+
+        result = await revise_spans(_TEXT, issues, llm_call=fenced_llm)
+        assert result.spans_revised == 1
+        assert "```" not in result.text
+        assert body in result.text
+
+
+@pytest.mark.asyncio
+async def test_oversized_span_falls_back():
+    """单 \\n 分段的文本让一个“段落”=整场景；超预算区间跳过定点走回退。"""
+    from app.services.auto_revise import SPAN_REWRITE_MAX_CHARS, revise_spans
+
+    # 单 \n 分段 → \n\n 切分下整篇是一个“段落”，span 覆盖全文且超预算。
+    filler = "这一行是场景中的一句普通叙述，用单换行结尾。\n" * 200
+    text = filler + "结尾处错误描写在这里需要修。"
+    assert "\n\n" not in text
+    assert len(text) > SPAN_REWRITE_MAX_CHARS
+
+    issues = [{"description": "问题", "quote": "错误描写在这里需要修"}]
+    calls: list[str] = []
+
+    async def fake_llm(prompt: str) -> str:
+        calls.append(prompt)
+        return "不应该被调用"
+
+    result = await revise_spans(text, issues, llm_call=fake_llm)
+    assert calls == []
+    assert result.spans_revised == 0
+    assert result.text == text
+    assert issues[0] in result.unlocatable_issues
 
 
 def test_targeted_revision_enabled_env_switch(monkeypatch):

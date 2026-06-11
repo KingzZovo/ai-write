@@ -300,6 +300,13 @@ def merge_revise_into_user_instruction(
 # Spans rewrites are short (~3 paragraphs), so a modest token budget suffices.
 SPAN_REWRITE_MAX_TOKENS: int = 2000
 
+# Hard cap on merged-span size (chars). Texts that use single-\n paragraph
+# breaks collapse into one giant "paragraph" under the \n\n splitter, so a
+# ±1-paragraph span can cover the whole scene; rewriting it would exceed
+# SPAN_REWRITE_MAX_TOKENS (2000 中文字 ≈ 2000-3000 tokens) and splice a
+# truncated rewrite back. Oversized spans skip targeted revision instead.
+SPAN_REWRITE_MAX_CHARS: int = 2000
+
 SPAN_REWRITE_SYSTEM_PROMPT = (
     "你是小说定点修订编辑。只重写【待修订区间原文】给出的正文区间，逐条修复列出的问题；"
     "保持与上文、下文自然衔接，保持人物、情节、时间线与原文一致；"
@@ -341,6 +348,20 @@ def splice_revision(text: str, span: tuple[int, int], revised: str) -> str:
     """Replace text[start:end] with `revised`, leaving the rest untouched."""
     start, end = span
     return text[:start] + revised + text[end:]
+
+
+# Same shape as chapter_summarizer's fence stripper: outer ``` fence with an
+# optional language tag on the opening line.
+_CODE_FENCE_RE = re.compile(r"^```[a-zA-Z0-9_+-]*\s*\n(.*?)\n?```$", re.DOTALL)
+
+
+def _strip_code_fence(s: str) -> str:
+    """Strip one outer markdown code fence (incl. language tag) + whitespace."""
+    s = (s or "").strip()
+    m = _CODE_FENCE_RE.match(s)
+    if m:
+        s = m.group(1).strip()
+    return s
 
 
 def merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -398,7 +419,8 @@ class SpanRevisionResult:
 
     spans_revised == 0 means nothing was spliced; the caller should fall back
     to full-chapter regeneration. unlocatable_issues lists issues whose quote
-    was missing or not found verbatim — they ride along the fallback path.
+    was missing or not found verbatim, or whose span exceeded the rewrite
+    budget (SPAN_REWRITE_MAX_CHARS) — they ride along the fallback path.
     """
 
     text: str
@@ -434,8 +456,12 @@ async def revise_spans(
     - Issues with a verbatim-locatable `quote` are grouped per merged span
       (paragraph ±1, overlapping/adjacent spans merged) — one LLM call per
       merged span, spliced back in reverse order so offsets stay valid.
-    - Degenerate rewrites (empty, or wildly longer than the original span)
-      are rejected and leave the original span untouched.
+    - Merged spans longer than SPAN_REWRITE_MAX_CHARS skip targeted revision
+      (a rewrite would overflow the token budget and splice back truncated
+      output); their issues join `unlocatable_issues` for the fallback path.
+    - Degenerate rewrites (empty, much shorter, or wildly longer than the
+      original span; code fences are stripped first) are rejected and leave
+      the original span untouched.
     - Issues without a locatable quote are returned for the caller to decide
       on full-chapter fallback (spans_revised == 0 → fall back).
     """
@@ -469,14 +495,27 @@ async def revise_spans(
     # the end keeps earlier offsets valid.
     for (m_start, m_end), related in sorted(grouped, key=lambda g: g[0][0], reverse=True):
         span_text = text[m_start:m_end]
+        if len(span_text) > SPAN_REWRITE_MAX_CHARS:
+            # Oversized span (e.g. single-\n paragraphing collapses the whole
+            # scene into one "paragraph"): a rewrite would blow the token
+            # budget and splice truncated output back. Route these issues to
+            # the full-chapter fallback path instead.
+            unlocatable.extend(related)
+            continue
         prompt = build_span_rewrite_prompt(
             span_text,
             related,
             before=text[max(0, m_start - 200):m_start].strip(),
             after=text[m_end:m_end + 200].strip(),
         )
-        revised = ((await llm_call(prompt)) or "").strip()
-        if not revised or len(revised) > max(len(span_text) * 3, len(span_text) + 400):
+        revised = _strip_code_fence((await llm_call(prompt)) or "")
+        if (
+            not revised
+            # Shorter than 1/3 of the original span is a degenerate reply
+            # (e.g. "好。") — the system prompt demands ±20% length.
+            or len(revised) < len(span_text) // 3
+            or len(revised) > max(len(span_text) * 3, len(span_text) + 400)
+        ):
             continue
         out = splice_revision(out, (m_start, m_end), revised)
         revised_count += 1
