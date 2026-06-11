@@ -310,6 +310,10 @@ export default function DesktopWorkspace() {
   const generationBaselineRef = useRef<{ content: string; status: Chapter['status'] } | null>(null)
   const generationSavedRef = useRef(false)
   const generationFailedRef = useRef(false)
+  // Task F2: tracks the live SSE stream. Aborted before starting a new
+  // stream (regenerate / re-click) and on unmount, so a stale stream cannot
+  // keep reading and setState on a dead component.
+  const sseControllerRef = useRef<AbortController | null>(null)
 
   // ----------------------------------------------------------------
   // Sync URL ?id=... → currentProject; redirect to / if missing/invalid
@@ -510,7 +514,8 @@ export default function DesktopWorkspace() {
         setActiveView('outline')
       }
 
-      apiSSE(
+      sseControllerRef.current?.abort()
+      sseControllerRef.current = apiSSE(
         '/api/generate/outline',
         {
           project_id: currentProject?.id || '',
@@ -697,7 +702,12 @@ export default function DesktopWorkspace() {
           let text = ''
           let outlineId: string | null = null
           await new Promise<void>((resolve) => {
-            apiSSE(
+            // Per-volume stream in a sequential loop: the previous volume's
+            // stream has already finished by the time we get here, so the
+            // abort is a no-op then — it only matters for stale streams from
+            // other entry points.
+            sseControllerRef.current?.abort()
+            sseControllerRef.current = apiSSE(
               '/api/generate/outline',
               {
                 project_id: currentProject.id,
@@ -911,7 +921,8 @@ export default function DesktopWorkspace() {
     setActiveView('editor')
     updateChapterStatus(selectedChapterId, 'generating')
 
-    apiSSE(
+    sseControllerRef.current?.abort()
+    sseControllerRef.current = apiSSE(
       '/api/generate/chapter',
       {
         project_id: currentProject.id,
@@ -945,6 +956,18 @@ export default function DesktopWorkspace() {
       },
       (evt) => {
         const eventName = String(evt.event ?? evt.status ?? '')
+        if (eventName === 'fallback_restart') {
+          // Backend Task 3 (b5273da): the scene stream failed mid-way and the
+          // single-shot fallback will re-send the FULL chapter text next.
+          // Discard the partial scene chunks streamed so far — i.e. return
+          // the streaming buffer to its empty generation-start state — so the
+          // resent full text is not appended onto stale partial scenes.
+          generationBufferRef.current = ''
+          resetStreamContent()
+          setEditorContent('')
+          updateChapterContent(selectedChapterId, '')
+          return
+        }
         if (eventName === 'generation_blocked' || evt.reason === 'outline_chain_incomplete') {
           const baseline = generationBaselineRef.current
           generationBufferRef.current = baseline?.content ?? ''
@@ -1030,6 +1053,9 @@ export default function DesktopWorkspace() {
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      // Task F2: stop any in-flight SSE stream so it cannot setState on an
+      // unmounted component.
+      sseControllerRef.current?.abort()
     }
   }, [])
 

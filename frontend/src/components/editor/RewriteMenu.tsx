@@ -196,12 +196,16 @@ export function RewriteMenu({
               {isLoading ? 'Generating...' : 'New'}
             </span>
             <div className="mt-0.5 px-2 py-1.5 bg-green-50 border border-green-100 rounded text-xs text-gray-800 leading-relaxed min-h-[2rem]">
-              {rewrittenText ||
-                (error ? (
-                  <span className="text-red-500">Rewrite failed: {error}</span>
-                ) : (
+              {error ? (
+                // Error wins over partial text: a mid-stream failure leaves a
+                // truncated rewrittenText behind, and the user must see the
+                // failure instead of silently accepting a truncated rewrite.
+                <span className="text-red-500">Rewrite failed: {error}</span>
+              ) : (
+                rewrittenText || (
                   <span className="text-gray-400 animate-pulse">Generating rewrite...</span>
-                ))}
+                )
+              )}
             </div>
           </div>
 
@@ -209,7 +213,7 @@ export function RewriteMenu({
           <div className="flex gap-1.5">
             <button
               onClick={handleAccept}
-              disabled={isLoading || !rewrittenText}
+              disabled={isLoading || !rewrittenText || Boolean(error)}
               className="flex-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
               Accept

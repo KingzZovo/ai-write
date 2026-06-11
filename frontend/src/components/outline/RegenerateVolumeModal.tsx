@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiSSE } from '@/lib/api'
 
 export function RegenerateVolumeModal({
@@ -20,13 +20,23 @@ export function RegenerateVolumeModal({
 }) {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
+  // Task F2: keep the SSE controller so the stream is aborted if the parent
+  // unmounts this modal mid-regeneration (duplicate clicks are already
+  // blocked by the `busy` guard).
+  const controllerRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort()
+    }
+  }, [])
 
   const go = () => {
     if (busy) return
     let failed = false
     setBusy(true)
     setProgress('准备中...')
-    apiSSE(
+    controllerRef.current = apiSSE(
       `/api/projects/${projectId}/volumes/${volumeId}/regenerate`,
       {},
       (text) => setProgress((p) => (p + text).slice(-600)),

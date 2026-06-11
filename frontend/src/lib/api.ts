@@ -77,11 +77,16 @@ export function apiSSE(
   const finish = (err?: Error) => {
     if (finished) return
     finished = true
-    if (err) {
-      console.error('SSE error:', err)
-      onError?.(err)
+    try {
+      if (err) {
+        console.error('SSE error:', err)
+        onError?.(err)
+      }
+    } finally {
+      // onDone must run even if onError throws: callers rely on it to clear
+      // isGenerating / busy flags.
+      onDone()
     }
-    onDone()
   }
 
   fetch(`${API_BASE}${path}`, {
@@ -115,6 +120,9 @@ export function apiSSE(
         if (line.startsWith('data: ')) {
           const data = line.slice(6)
           if (data === '[DONE]') {
+            // Early return path: release the HTTP connection. (The normal
+            // while-done exit below has already drained the stream.)
+            reader.cancel().catch(() => {})
             finish()
             return
           }
