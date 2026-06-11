@@ -77,6 +77,21 @@ def _stage_needs_review_chapter_text(task, chapter, text: str, *, error_message:
     return final_text
 
 
+def _resolve_task_chapter_target_words(params, chapter_target_word_count, project_settings) -> int:
+    """Resolve the effective chapter target word count for Celery generation.
+
+    Mirrors the API path (api/generate.py): explicit task param wins over the
+    chapter row value, then legacy 50k defaults are remapped via
+    resolve_chapter_target_word_count to the project setting or 4000 fallback.
+    """
+    from app.services.chapter_target_words import resolve_chapter_target_word_count
+
+    return resolve_chapter_target_word_count(
+        (params or {}).get("target_words") or chapter_target_word_count,
+        (project_settings or {}).get("target_chapter_words"),
+    )
+
+
 def _run_async(coro):
     """Run async function in sync Celery task context.
 
@@ -653,7 +668,9 @@ async def _run_async_generation_impl(task_id: str):
                 generated_chapter_volume_id_safe = str(ch.volume_id)
                 generated_chapter_idx_safe = ch.chapter_idx
                 generated_chapter_outline = ch.outline_json or {}
-                generated_chapter_target_words = params.get("target_words") or ch.target_word_count
+                generated_chapter_target_words = _resolve_task_chapter_target_words(
+                    params, ch.target_word_count, project_settings
+                )
                 user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
                 _prose_preflight_prompt, _prose_preflight_meta = await _build_chinese_prose_preflight_prompt(ch, db)
                 if _prose_preflight_prompt:

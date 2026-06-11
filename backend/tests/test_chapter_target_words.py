@@ -25,3 +25,12 @@ def test_project_setting_overrides_legacy_50000() -> None:
 def test_real_user_target_is_preserved() -> None:
     assert is_legacy_chapter_target_word_count(7200) is False
     assert resolve_chapter_target_word_count(7200, 3200) == 7200
+
+
+def test_celery_chapter_target_words_resolves_legacy_50k() -> None:
+    from app.tasks.knowledge_tasks import _resolve_task_chapter_target_words
+
+    assert _resolve_task_chapter_target_words({"target_words": None}, 50_000, {"target_chapter_words": 6000}) == 6000
+    assert _resolve_task_chapter_target_words({}, 50_000, {}) == 4000
+    assert _resolve_task_chapter_target_words({"target_words": 3000}, 50_000, {}) == 3000
+    assert _resolve_task_chapter_target_words(None, 7000, None) == 7000
