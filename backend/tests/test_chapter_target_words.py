@@ -34,3 +34,22 @@ def test_celery_chapter_target_words_resolves_legacy_50k() -> None:
     assert _resolve_task_chapter_target_words({}, 50_000, {}) == 4000
     assert _resolve_task_chapter_target_words({"target_words": 3000}, 50_000, {}) == 3000
     assert _resolve_task_chapter_target_words(None, 7000, None) == 7000
+
+
+def test_celery_chapter_branch_wired_to_resolver() -> None:
+    """Guard the call-site wiring: the original bug was exactly an unwired resolver.
+
+    Source-assertion tripwire (same approach as the max_tokens guard in
+    tests/services/test_chapter_evaluator_prompt.py). Whitespace is stripped
+    because the call site is formatted across multiple lines.
+    """
+    import inspect
+    import re
+
+    from app.tasks import knowledge_tasks
+
+    src = re.sub(r"\s+", "", inspect.getsource(knowledge_tasks))
+    assert (
+        "generated_chapter_target_words="
+        "_resolve_task_chapter_target_words(params,ch.target_word_count,project_settings)"
+    ) in src
