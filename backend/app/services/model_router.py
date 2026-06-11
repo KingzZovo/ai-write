@@ -242,6 +242,16 @@ class AnthropicProvider(BaseProvider):
                 pass
 
 
+def _resolve_nonstream_timeout(request_timeout, task_type: str) -> float:
+    """Evaluation reads ~13K chars of Chinese prose; 45s was causing silent
+    timeouts that surfaced as all-zero scores. Default is env-tunable."""
+    if request_timeout is not None:
+        return request_timeout
+    if task_type == "evaluation":
+        return float(_os_cache.getenv("EVALUATION_REQUEST_TIMEOUT", "120"))
+    return 45
+
+
 class OpenAIProvider(BaseProvider):
     name = "openai"
 
@@ -282,7 +292,7 @@ class OpenAIProvider(BaseProvider):
             # generation we now honor `stream=False` so callers can opt into a
             # full non-streaming completion and avoid transport-side SSE issues.
             if task_type == "evaluation" or stream_mode is False:
-                timeout = request_timeout if request_timeout is not None else 45
+                timeout = _resolve_nonstream_timeout(request_timeout, task_type)
                 resp = await self.client.chat.completions.create(
                     model=model, messages=messages,
                     temperature=temperature, max_tokens=max_tokens,
