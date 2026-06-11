@@ -1,3 +1,40 @@
+
+> **✍️ 2026-05-27 v4.10 Chinese prose mechanics**：根据第一章人工阅读反馈，新增跨章节/跨项目通用中文行文机械约束：长短句呼吸、朴素准确动词、禁止生造动宾、空间动作符合物理常识、环境随视角流动、长段复述改为概括侧写、拒绝动作切片。该约束进入生成前 prompt / writer contract / force_direct 直出路径，用于第一稿内化，不作为后置 hard gate。
+## 2026-05-27 v4.9 compact evaluator output
+- The evaluator prompt now requires compact JSON: no prose excerpts, no Markdown, short descriptions/suggestions, and at most 8 real issues per dimension with high/medium issues prioritized.
+- The chapter outline is serialized compactly in the evaluator input. This reduces scoring output/input overhead and is generic across chapters/projects.
+- This does not introduce post-output blocking/repair and does not turn infrastructure failures into quality scores.
+
+
+## 2026-05-27 v4.9 evaluator non-stream fallback
+- Evaluation calls now default to non-streaming OpenAI-compatible chat completions (`EVALUATION_LLM_STREAM=0`) to avoid stalls in streaming iterators on slow/local scoring endpoints.
+- Scoring output budget is reduced by default (`EVALUATION_LLM_MAX_TOKENS=2048`, temperature `0.2`) while retaining hard request timeout, tier fallback, and failed-task semantics for infrastructure failures.
+- This is scoring infrastructure only; it does not add post-output gates or generation-time repair.
+
+
+## 2026-05-27 v4.9 evaluator infrastructure failure semantics
+- Fixed evaluator failure semantics: model timeout/fallback failure and invalid evaluator JSON now raise `EvaluationInfrastructureError` instead of returning a synthetic all-zero `EvaluationResult`.
+- Async evaluation tasks persist these cases as `failed`, so downstream exports do not treat infrastructure outages as chapter-quality scores.
+- Removed the bogus v4.9 `overall=0/issues=1` row generated while validating the timeout guard; v4.9 remains generated/saved but not validly scored until evaluator infrastructure returns a real rubric result.
+
+
+## 2026-05-27 v4.9 evaluator fallback timeout refinement
+- After the first saved-draft evaluation proved the timeout guard works (failed cleanly with `TimeoutError()` and no stuck Celery task), evaluation routing was refined to avoid spending the whole task timeout on one endpoint.
+- Evaluation OpenAI-compatible provider calls now default to one provider retry attempt, letting `ModelRouter.generate_with_tier_fallback` move to another configured endpoint/model after a bounded timeout.
+- Evaluation request timeout defaults to 55s and the async evaluation task hard cap defaults to 210s, preserving a hard upper bound while allowing bounded tier fallback.
+- This remains infrastructure safety/scoring reliability only; it does not add post-output quality gates or auto-revision to the generation path.
+
+
+## 2026-05-27 v4.9 evaluator timeout guard
+- Added reusable LLM timeout hardening after v4.9 evaluator stuck following upstream HTTP 500.
+- `OpenAIProvider` now disables long SDK retries by default and applies request-level timeouts.
+- `llm_retry.call_with_retry` supports `per_attempt_timeout`.
+- `ChapterEvaluator` passes an evaluation-specific request timeout.
+- Async `evaluate_chapter_task` uses a hard wait_for and records failure instead of retrying indefinitely.
+- This is infrastructure safety only; it does not reintroduce post-output hard gates or auto-revise as the main generation path.
+
+> **⚙️ 2026-05-27 v4.9 micro-continuity budget**：第五章 v4.8 直出验证未达标（overall 7.24 / issues 19），主要复发为 power_resource / expression / information / result_strength / space 等生成前约束未充分内化。v4.9 不引入 hard gate、needs_repair、post-output blocking 或 auto_revise 主流程，也不回到 scene_planner；继续 force_direct，并把 v4.8 的 anchor_audit_before_prose 升级为每个 outline_execution_unit 的 `micro_continuity_budget`：`unit_movement_budget`、`unit_resource_budget`、`unit_information_ladder`、`unit_expression_role`、`unit_result_delta_cap`，要求正文生成前完成预算扣账，预算缺失时只能降级为疑点/残片/待验。
+
 > **✅ 2026-05-22 10:55 动作预算与推理台账通用约束**：针对第三章反复出现 time / power_resource / mechanism / information / result-strength 阻断标签的共同根因，继续做题材无关机制级修复：在叙事合同、章节大纲扩写、ContextPack 渲染、场景规划、正文写作和自动修订根因蓝图中加入 `action_budget` / `inference_ledger`。现在 scene_planner 输出缺少高压动作预算或推理台账会被 `_has_valid_scene_contract` 拦截并 fallback；fallback scene 也会填充两个字段；writer content 显式带入【动作预算】/【推理台账】。验证使用 compileall、直接 smoke、git diff --check 与 health check；不以当前 pytest 环境作为通过依据。下一步基于新合同重做/重修第三章，不再在 v5 正文上堆补丁。
 
 > **✅ 2026-05-22 19:52 Auto-revise 失败回滚（防止坏稿落地）**：根治“阻断标签/超时/轮次耗尽后，仍把低分坏稿写进 chapters.content_text 成为 active”的工程路径：在 `/api/generate/chapter` 的 C2 auto-revise loop 增加 baseline snapshot + rollback。只有当 `should_revise(final_eval)==False`（≥阈值且无阻断标签）才视为 accepted；否则一旦出现 `root_cause_repair_required`、`timeout/empty`、save 失败或 loop 异常，就自动把 `chapters.content_text` 回滚到生成前基线并标回 `draft`，同时 SSE 发出 `rollback_applied` 事件。这样后续同类问题不再污染主表正文，必须先做上游根因修复/级联修复再推进。
@@ -714,3 +751,491 @@ outlines tag occurrences <volume-plan>=0  ✅
 **Vol1 终态**：20/20 ≥ 7.0，均分 7.97，总 223,167 字。Stage E 验证报告 `docs/CHIXIN_VALIDATION_REPORT_2026-05-05.md`。
 
 **Backlog 上提**：PR-CHAPTER-PROTECT-V1 (PUT guard / 前端定位 / 自动 snapshot) / PR-GEN-SSE-FINALIZE (ch10/12/15 silent-skip 同根)。
+
+## 2026-05-26 16:46:43 +0000 — 通用 v4.5 生成前可执行证据-动作账
+
+- 背景：第五章 v4.4 `world_logic_contract_v4_4_preflight_continuity_evidence_budget` 第一稿未达标（overall=7.12，issues=13，repeat=13），问题集中在信息提前命名、权限机制例外含混、强弱资源差无代价、动作链物理支撑不足、章末奖励路径不足。
+- 通用化原则：本次修复不得写入第五章专名或当前项目特化规则；目标是跨章节、跨项目复用，减少同类 `information_rule_violation / mechanism_rule_violation / power_resource_violation / result_strength_violation / space_rule_violation / time_rule_violation / expression_contract_violation`。
+- 代码版本：`NARRATIVE_CONTRACT_VERSION = "world_logic_contract_v4_5_preflight_executable_ledger"`。
+- 核心 prompt：`direct_generation_first_v4.5` / `evidence_name_ledger` / `authority_procedure_ledger` / `interference_action_ledger` / `reward_provenance_ledger` / `negative_permission_before_source` / `payoff_after_source_action_cost` / `downgrade_if_ledger_missing` / `runtime_prompt_snapshot`。
+- 生效机制：`ChapterGenerator._with_preflight_blueprint` 注入通用 v4.5 system prompt，并记录 `preflight_contract_snapshot contract_version=... chapter_idx=... prompt_hash=... markers_missing=...`。该日志只用于观测 prompt 是否进入运行时，不阻断生成、不触发后置修订、不制造 `needs_repair`。
+- 生成策略：继续保留 `force_direct_chapter=true` 与 `skip_scene_planner=true` 可用，避免 scene_planner JSON list 造成 0 字卡死；质量收敛依靠生成前内化账本，而非后置 hard gate / auto_revise 主流程。
+- 验证要求：重启 backend/celery 后 smoke 必须确认 backend/celery import 的版本为 v4.5，prompt marker 全部存在，celery ping 正常，metrics 200；随后以第一稿验证观察 overall/issues/repeat 与 issue tag 分布是否下降。
+
+## 2026-05-27 · v4.6 hierarchical_outline_contract 通用层级大纲来源合同
+
+- 背景：v4.5 `world_logic_contract_v4_5_preflight_executable_ledger` 已确认运行时注入有效，但 Chapter 5 first draft 仍为 overall=7.48、issues=14、repeat=14，未达到 overall>=8.2/issues<=12/repeat<=12。主要失败不是 prompt 未加载，而是章节大纲未成为正文生成的“唯一剧情源/执行合同”。
+- 用户约束：章节大纲应是本章全部剧情；正文只做扩写、润色、场景化、动作化、因果支撑，不应再让 LLM 新增剧情。并且分卷大纲受全书大纲约束、章节大纲受分卷大纲约束。
+- 新版本：`world_logic_contract_v4_6_hierarchical_outline_contract`。
+- 通用原则：全书大纲是剧情宪法；分卷只能细化全书；章节只能细化分卷；正文只能扩写章节。下层不得新增上层未授权的剧情功能、强线索、强结论、逃生捷径、章末硬奖励或提前兑现。
+- 新增生成前 markers：`direct_generation_first_v4.6`、`hierarchical_outline_contract`、`outline_lineage_contract`、`book_to_volume_contract`、`volume_to_chapter_contract`、`chapter_outline_source_of_truth`、`prose_expand_only_contract`、`result_ceiling_from_outline`、`outline_drift_precheck`、`no_new_plot_in_prose`、`runtime_prompt_snapshot`。
+- force_direct 路径同步强化：跳过 scene_planner 时也必须以“全书大纲→分卷大纲→章节大纲”的层级来源链为唯一剧情来源，章节正文只允许扩写润色。
+- 仍保持：不引入后置 hard gate / needs_repair / auto_revise 主流程；评分 issue 仅用于诊断和下一轮生成前内化。
+- 已验证：本地 `python3 -m py_compile` 通过，后续需重启 backend/celery、smoke 并触发 v4.6 first-draft 验证。
+
+
+## 2026-05-27 01:30:54 +0000 v4.6 async task routing and chunk normalization
+- Fixed generic `/api/generate/async` task-type inference: if `chapter_id` is present and `task_type` is omitted, create a `chapter` task instead of defaulting to `outline_book`.
+- Added generic async chunk normalization in `knowledge_tasks.py` so streamed dict chunks are converted to text before append/join, preventing `sequence item 0: expected str instance, dict found`.
+- Reusable across chapters/projects and outline/chapter async tasks; not a Chapter 5 special case.
+
+
+## 2026-05-27 v4.7 outline execution units
+- Updated contract to `world_logic_contract_v4_7_outline_execution_units`.
+- Replaced v4.6 hierarchical-outline-only scaffold with generic pre-generation `outline_execution_units` and `chapter_outline_unit_ledger`.
+- v4.7 keeps the user-required direction: first draft should internalize constraints before generation; no hard gate / needs_repair / auto_revise main flow; no scene_planner dependency.
+- Each chapter outline node must become execution units with cause/effect bridge, information source, resource pressure, character response, foreshadow handling, result state delta, result ceiling, and unresolved tail.
+- Strengthened force-direct fallback instruction so chapter generation remains usable across chapters/projects when scene planner JSON is unstable.
+
+
+## 2026-05-27 v4.8 anchor audit before prose
+- Updated generic narrative contract to `world_logic_contract_v4_8_anchor_audit_before_prose`.
+- Added direct-generation-first `anchor_audit_before_prose` requirements to preflight prompt: source anchors, transfer paths, observation windows, adversary incentives, costs/interference, downgrade rules, and payoff ceilings before reveal.
+- Updated runtime prompt markers and force-direct fallback instructions.
+- This remains generation-before internalization, not a hard gate / needs_repair / post-output blocking workflow.
+
+## 2026-05-27 v4.10 generation timeout propagation
+
+- Added per-call timeout propagation for long single-shot chapter generation.
+- `ChapterGenerator.generate()` now accepts `request_timeout`, `retry_attempts`, and `stream` routing kwargs and passes them through `run_text_prompt()` to the model router.
+- Force-direct and single-shot fallback chapter paths now derive an LLM request timeout from `fallback_timeout_seconds` via `SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS` and use `SINGLE_SHOT_LLM_RETRY_ATTEMPTS` (default 1) so tier fallback can happen within the outer task budget.
+- This is a generic cross-chapter/cross-project fix for 0-character direct-generation failures caused by the old global 75-second OpenAI-compatible request timeout; it does not add post-output quality gates or auto-revision as the main flow.
+
+## 2026-05-27 v4.10 single-shot generation non-stream fallback
+- Context: v4.10 timeout propagation reached longer endpoint attempts, but the retry still ended with `APIError: stream error: stream ID 7; INTERNAL_ERROR; received from peer` and persisted a 0-character draft for task `9f13c288-5a3d-4c63-bd7f-d2294d3ddd91`.
+- Change: direct/fallback chapter prose now passes a generic `stream` kwarg from `SINGLE_SHOT_LLM_STREAM`, defaulting to non-streaming (`0`) for single-shot generation while leaving normal chat/global `OPENAI_CHAT_STREAM` behavior unchanged.
+- Scope: reusable for all chapters/projects using force-direct or fallback chapter generation; not a chapter-specific repair, not a post-output quality gate, and not an auto-revision workflow.
+- Expected effect: avoid losing the whole draft when an upstream streaming route fails late; the request still uses bounded request timeout and one provider attempt per endpoint.
+
+
+## 2026-05-27 v4.10 force-direct durable persist recovery
+- Context: SQL3 validation task `a3bc30ba-015e-4357-937b-154e6e32a8bb` proved non-stream timeout budgeting can return a full draft (`char_count=7457`), but a stale asyncpg connection during post-LLM persistence caused a failed task even after fresh-session progress persistence.
+- Change: after force-direct prose is durably persisted through a fresh session, the task no longer reuses the old long-lived ORM session before continuing. This avoids `connection is closed` / `greenlet_spawn has not been called` errors from converting valid generated prose into a failed/0-result workflow.
+- Scope: generic for all chapters/projects using force-direct or single-shot fallback chapter generation; it does not introduce post-output hard gates, auto-revision, or scene_planner dependency.
+- Validation requirement: restart backend/celery, run smoke, then rerun/repair validation so a generated draft reaches completion and can be scored.
+
+
+## 2026-05-27 v4.10 evaluation timeout budget alignment
+- Context: after SQL3 force-direct recovery, the compensation evaluation failed as infrastructure timeout: two standard endpoints each timed out around the old 55-second request budget, producing no valid score and no synthetic zero row.
+- Change: the generic evaluator request timeout default is raised from 55s to 180s and the async evaluation task wrapper default from 210s to 420s. This gives long Chinese chapter evaluation enough time to return compact JSON while preserving bounded failure behavior.
+- Scope: reusable across chapters/projects; still no synthetic zero scores, no post-output quality gate, and no auto-revision as the main workflow. Evaluation remains diagnostic/observability for generation-before prompt refinement.
+
+
+## 2026-05-27 v4.10 evaluation extended timeout budget
+- Context: after raising evaluation request timeout to 180s, the recovered v4.10 draft still timed out on both standard endpoints, taking ~361s and producing no synthetic score row.
+- Change: the generic evaluator request timeout default is raised to 420s and the async evaluation wrapper to 960s, allowing one full long-form judge attempt per endpoint while keeping bounded terminal failure semantics.
+- Scope: evaluation infrastructure only; no post-output hard gate, no auto-revision, no generated prose output in logs/artifacts.
+
+
+## 2026-05-27 19:30:40 +0000 v4.10 evaluation compact judge budget
+- Context: recovered Chapter 5 SQL3 draft has valid 7457-char content, but compensation evaluation timed out on both standard endpoints even with 420s per endpoint / 960s wrapper. No score row was created and zero-score rows remained 0.
+- Change: made the generic evaluator more compact and endpoint-friendly: default judge output budget is now 768 tokens, temperature defaults to 0.0, evaluation streaming is enabled by default, chapter/outline/summary/style/foreshadow contexts are bounded by environment-configurable character caps, and prompt length metadata is logged without prose content.
+- Scope: reusable evaluation infrastructure for all chapters/projects. This does not add post-output hard gates, auto-revision, synthetic 0 scores, or scene_planner dependency; evaluation remains diagnostic/observational for generation-before prompt refinement.
+
+## 2026-05-27 v4.10 evaluation compact retry tightening
+- Context: the compact evaluator retry still failed after two ~420s endpoint attempts with streaming enabled and an ~8049-character user prompt. No score row was created, and zero-score rows stayed at 0.
+- Change: tighten generic evaluator defaults again: chapter text cap 4200 chars, outline cap 1600 chars, prior summary cap 900 chars, style cap 800 chars, active foreshadow cap 12 items, judge output cap 512 tokens, and evaluator streaming default back to non-streaming.
+- Scope: reusable across chapters/projects; evaluation remains diagnostic only. This does not add a post-output hard gate, auto-revision, synthetic 0 score, scene_planner dependency, or chapter-specific prose handling.
+
+## 2026-05-28 v4.11 outline execution ledger constraints
+- Context: Chapter 5 v4.10 compact-tight evaluation completed without infrastructure failure (`overall=6.46`, `issues=12`). Issue count met the target, but overall missed because failures shifted from prose mechanics to plot coherence, foreshadow strength, and character action causality.
+- Change: upgraded the generic direct-generation preflight prompt to v4.11. The prompt now requires `outline_beat_execution_ledger`, `foreshadow_control_ledger`, `character_state_ledger`, and `pacing_budget_ledger` before prose. These ledgers force every chapter-outline beat to carry goal/cause/action/consequence/no-new-plot budget, prevent unauthorized foreshadow payoff, require character knowledge/motive/location/resource/cost before actions, and cap low-importance beat expansion.
+- Scope: cross-chapter/cross-project prompt/contract behavior only. This is generation-before constraint internalization, not a post-output hard gate, not needs_repair/auto-revise as a main flow, and not scene_planner-dependent. Force-direct fallback remains available.
+
+## 2026-05-28 v4.12 evidence/mechanism/uncertainty ledgers
+- Upgraded narrative contract to `world_logic_contract_v4_12_evidence_mechanism_uncertainty_ledgers`.
+- Added generation-before ledgers for evidence permissions, mechanism boundaries, inference uncertainty, and time-window budgets.
+- Preserved and strengthened Chinese prose mechanics: sentence rhythm, plain verbs, natural collocations, physical prepositions, viewpoint flow, no long quote repetition, no action slicing.
+- This remains direct-generation-first diagnostic guidance, not a post-output hard gate or repair workflow.
+
+
+## 2026-05-28 v4.13 spatial/occlusion/coincidence/dialogue ledgers
+- Added generic pre-generation ledgers for spatial feasibility, channel occlusion, coincidence friction, and dialogue density.
+- Purpose: reduce over-convenient clue placement, impossible close-quarters movement, too-clear overheard information, and dense shout/command repetition while preserving Chinese prose mechanics.
+- Still generation-first: diagnostics/markers observe prompt injection only; no post-output hard gate or repair workflow.
+
+## 2026-05-28 07:15:47 +0000 v4.13 evaluator compact-timeout follow-up
+
+- 原因：v4.13 compact-tight 评分任务 4c268882-68ac-426b-8397-bf6170f72ed0 因评价基础设施 APITimeout 失败，未写入伪零分。
+- 通用修复：进一步压缩评价输入/输出默认预算，降低跨章节/跨项目评价超时概率：正文 4200→2600、上一章摘要 900→450、风格 800→420、章节大纲 1600→900、伏笔条目 12→6、输出 tokens 512→384、单次请求 420s→360s。
+- 原则：只影响评分基础设施稳定性，不改变正文生成主流程；不引入 hard gate / needs_repair / 后置阻断作为主流程。
+
+## 2026-05-28 v4.13 evaluator ultra-compact retry follow-up
+- Context: Chapter 5 v4.13 evaluation retry still failed with `EvaluationInfrastructureError` caused by APITimeout after the prior compact-timeout reduction.
+- Change: tightened evaluator diagnostic defaults generically to reduce request size and expected response length: chapter text 1400 chars, previous summary/style 260 chars, outline 520 chars, active foreshadow items 4, max tokens 256, request timeout 240s.
+- Scope: scoring infrastructure stability only. This does not change chapter generation, does not introduce post-output hard gates, and does not add `needs_repair` or blocking repair as the main workflow.
+
+## 2026-05-28 v4.13 direct-generation persistence salvage
+- Context: Chapter 5 v4.13 direct generation produced valid prose, but the original long-lived async DB session later hit a persistence/session error (`connection is closed` / `MissingGreenlet` class) and marked the task failed until manually recovered.
+- Change: the async generation failure handler now first checks whether non-empty generated text already exists. If so, it uses a fresh DB session to persist `progress_text`, `result_text`, `char_count`, and chapter `content_text` as `needs_review`, then returns instead of writing a failed status.
+- Scope: generic cross-chapter/cross-project reliability fix for already-produced drafts. It does not add a post-output quality gate, does not introduce `needs_repair` as a main flow, and does not alter the prompt constraints or scene planner behavior.
+
+2026-05-28 14:11:55 +0000
+• 评分路径修复：evaluation 任务改走非流式 Chat Completions，并在章节评价侧将输出上限降到 1600，避免 OpenAI-compatible 代理 HTTP 200 后流式尾包长期不结束导致 Celery 评分任务卡在 running。该修复为通用评分路径，不绑定特定章节/项目。
+
+2026-05-28 14:17:53 +0000
+• 修复上一轮评分补丁的 _limit_text 字符串转义错误；评分链路保持短 JSON-only prompt、正文/大纲截断、evaluation 非流式 45s 超时和单次尝试。目标是跨章节/跨项目恢复评分可用性，避免后置质量门作为主流程。
+
+## 2026-05-28T15:31:27+00:00 - Chinese prose mechanics checker diagnostics
+- Added backend/app/services/chinese_prose_mechanics_checker.py as a reusable, diagnostic-only checker for cross-chapter Chinese prose mechanics.
+- Measures: forbidden collocations, high-risk verb watchlist, short-sentence run max, long/repeated quote counts, physical-space watchlist hits, exposition cluster proxy, ornate verb density proxy.
+- Purpose: feed measurable observations into the next generation prompt/self-check snapshot; it does not block generation, set needs_repair, or create a post-output hard gate.
+- Verification: python3 -m py_compile backend/app/services/chinese_prose_mechanics_checker.py; smoke metrics for chapter_id=db18e301-38b2-4b47-8a93-e66472fee281 written to /tmp/chinese_prose_checker_ch5_v413_smoke_1779982287.json with no prose snippets.
+- Next: wire summarized metrics into a v4.14 generation-before prompt snapshot, still force_direct/skip_scene_planner first.
+
+## 2026-05-28T16:01:09+00:00 - v4.14 prose mechanics preflight snapshot landed
+- Landed generation-before prose mechanics feedback for chapter generation in backend/app/tasks/knowledge_tasks.py.
+- Landed build_generation_preflight_prompt() in backend/app/services/chinese_prose_mechanics_checker.py.
+- Behavior: before a new draft, current stored chapter text is analyzed, latest completed evaluate_tasks.result_json issues are preferred, safe metrics are appended to user_instruction, and metadata is stored under params_json.chinese_prose_mechanics_preflight.
+- Guardrail: diagnostic_only=true and hard_gate=false; it does not block generation, set needs_repair, start scoring, or create a post-output repair state.
+- Verification: backend-container py_compile passed; safe smoke metadata for chapter_id=db18e301-38b2-4b47-8a93-e66472fee281 written to /tmp/preflight_container_smoke_1779984068.json without printing chapter prose.
+- Next: run v4.14 force_direct/skip_scene_planner only after this wiring is restarted and health/ping pass.
+
+## 2026-05-28T16:15:29.254277+00:00 - v4.14 prose mechanics checker result from monitor
+- Behavior/result: v4.14 checker metrics: short_run=16 (delta 0), runs_over=25 (delta 0), verb_hits=19 (delta 0).
+- Guardrail: diagnostic-only metrics; no hard gate, no needs_repair flow, no prose output.
+- Related ids: task_id=be83bf79-c627-484e-b7fe-4a557b9c6698; chapter_id=db18e301-38b2-4b47-8a93-e66472fee281.
+- Logs: /tmp/chinese_prose_checker_ch5_v414_monitor_1779984747.json
+
+## 2026-05-28T23:10:35+00:00 - v4.14 final prose mechanics checker result
+- Behavior/result: v4.14 final metrics: len=12791, short_run=12 (delta -4), runs_over=30 (delta 5), verb_hits=41 (delta 22), forbidden=0, long_quote=0, duplicate_quote=0.
+- Guardrail: diagnostic-only metrics; no hard gate, no needs_repair flow, no prose output.
+- Related ids: task_id=be83bf79-c627-484e-b7fe-4a557b9c6698; chapter_id=db18e301-38b2-4b47-8a93-e66472fee281.
+- Logs: /tmp/chinese_prose_checker_ch5_v414_final_1780009834.json
+
+## 2026-05-28T23:32:36+00:00 - v4.14 force_direct 持久化修复落地
+- 目标：修复长耗时 force_direct 生成已产出正文但原 async session 在提交时连接关闭，导致 generation_tasks 有输出而 chapters 未落库的问题。
+- 变更：在 `backend/app/tasks/knowledge_tasks.py` 中保留 primitive chapter id/volume/id/idx；当原 session 提交失败时，使用 fresh session 同步写入 `GenerationTask.progress_text/result_text/char_count/status` 和 `Chapter.content_text/word_count/status=needs_review`，并在 fresh-session 成功后直接返回，避免复用 stale session。
+- 约束：不引入 post-output hard gate；不设置 needs_repair 作为主流程；不输出正文；保留 force_direct/skip_scene_planner 可用性。
+- 验证：host 与 backend container `py_compile` 均通过；backend/celery 已重启，health 与 celery ping 已通过。
+- 关联：task_id=be83bf79-c627-484e-b7fe-4a557b9c6698；chapter_id=db18e301-38b2-4b47-8a93-e66472fee281。
+
+## 2026-05-28T23:35:47+00:00 - v4.15 prose mechanics density preflight targets
+- Context: v4.14 landed safely but final diagnostics showed regressions in short-sentence run count and verb/action density while keeping forbidden collocations and long/duplicate quotes at zero.
+- Change: upgraded the diagnostic generation-before Chinese prose mechanics prompt to v4.15. It now computes adaptive targets for `short_sentence_runs_over_target` and `verb_watchlist_hits`, adds a `rhythm_budget` reminder, and instructs drafts to reduce action slicing and reserve high-risk verbs for true contact/conflict points.
+- Metadata: `params_json.chinese_prose_mechanics_preflight.version` is now `v4.15_generation_before_density_feedback` and includes diagnostic-only `generation_targets` ratios.
+- Guardrail: this remains generation-before feedback only; no post-output hard gate, no needs_repair main flow, and no prose/prompt body is printed.
+- Verification: host/container py_compile passed; safe smoke writes only metadata and metric subset.
+
+## 2026-05-28T23:45:19.396163+00:00 - v4.15 final prose mechanics checker result
+- Behavior/result: v4.15 final metrics: short_run=11, runs_over=24, verb_hits=11, forbidden=0, long_quote=0, duplicate_quote=0.
+- Baseline: compared against v4.14 final metrics short_run=12, runs_over=30, verb_hits=41.
+- Guardrail: diagnostic-only metrics; no hard gate, no needs_repair flow, no prose output.
+- Related ids: task_id=3b523a90-d258-461f-956c-17952f2f743e; chapter_id=db18e301-38b2-4b47-8a93-e66472fee281.
+- Logs: /tmp/chinese_prose_checker_ch5_v415_final_1780011587.json
+
+## 2026-05-28T23:46:44.797859+00:00 - v4.15 interim mechanics metrics
+- Behavior/result: task_status=needs_review; chapter content length checked via DB only; short_run=11, runs_over=24, verb_hits=11, forbidden=0, long_quote=0, duplicate_quote=0, exposition=4.
+- Baseline: v4.14 final short_run=12, runs_over=30, verb_hits=41, exposition=1.
+- Guardrail: diagnostic-only metrics; no hard gate, no needs_repair flow, no prose output.
+- Related ids: task_id=3b523a90-d258-461f-956c-17952f2f743e; chapter_id=db18e301-38b2-4b47-8a93-e66472fee281.
+- Logs: /tmp/chinese_prose_checker_ch5_v415_interim_1780012004.json
+
+## 2026-05-28T23:47:32+00:00 - v4.16 generation-before exposition-density preflight patched
+- Behavior/result: v4.16 keeps diagnostic-only generation-before feedback, preserves v4.15 action-density gains, and adds explicit exposition_budget targets for the v4.15 exposition_cluster_risk regression.
+- Metrics basis: v4.15 final short_run=11, runs_over=24, verb_hits=11, exposition_cluster_risk=4.
+- Guardrail: no post-output hard gate, no needs_repair flow, no prose output.
+- Related ids: task_id=3b523a90-d258-461f-956c-17952f2f743e; chapter_id=db18e301-38b2-4b47-8a93-e66472fee281.
+- Logs: /tmp/patch_v416_preflight_1780012052.log
+
+## 2026-05-28T23:49:25.317368+00:00 - v4.16 preflight validation rerun passed
+- Behavior/result: metadata=v4.16_generation_before_exposition_density_feedback; targets={'diagnostic_only': True, 'exposition_cluster_risk_max': 2, 'exposition_cluster_risk_ratio': 0.5, 'short_sentence_run_max': 4, 'short_sentence_runs_over_target_ratio': 0.75, 'verb_watchlist_hits_ratio': 0.85}; metrics={'duplicate_quote_segments_gt20': 0, 'exposition_cluster_risk': 4, 'forbidden_collocation_count': 0, 'long_quote_segments_gt80': 0, 'short_sentence_run_max': 11, 'short_sentence_runs_over_target': 24, 'verb_watchlist_hits': 11}; prompt_len=818; contains_exposition_budget=True.
+- Validation: host/container py_compile OK; backend health OK; celery ping OK.
+- Guardrail: diagnostic-only generation-before feedback; no hard gate, no needs_repair flow, no prose output.
+- Related ids: task_id=3b523a90-d258-461f-956c-17952f2f743e; chapter_id=db18e301-38b2-4b47-8a93-e66472fee281.
+- Logs: /tmp/rerun_validate_restart_v416_1780012139.log; smoke=/tmp/v416_preflight_smoke_fixed_1780012139.json; restart=/tmp/restart_backend_celery_v416_fixed_1780012139.log
+
+## 2026-05-29T00:48:03+00:00 - v4.16 nested recovery mechanics result
+- Task: e26954b2-45c5-4ca9-be54-05f14bd51ab4; chapter=db18e301-38b2-4b47-8a93-e66472fee281.
+- Result: {"delta_vs_v415": {"exposition_cluster_risk": -4, "sentence_count": -40, "short_sentence_run_max": -2, "short_sentence_runs_over_target": -2, "verb_watchlist_hits": 12}, "metrics": {"duplicate_quote_segments_gt20": 0, "exposition_cluster_risk": 0, "forbidden_collocation_count": 0, "long_quote_segments_gt80": 0, "pass": false, "passed": false, "sentence_count": 858, "short_sentence_run_max": 9, "short_sentence_runs_over_target": 22, "space_watchlist_hits": 0, "verb_watchlist_hits": 23}}
+- Note: diagnostic-only generation-before flow; no post-output hard gate; no prose output.
+- Logs: /tmp/finalize_v416_nested_metrics_1780015682.log; checker=/tmp/chinese_prose_checker_ch5_v416_nested_final_1780015219.json
+
+## 2026-05-29T01:51:08+00:00 - v4.17 prompt constraints validation
+- Updated generation-before prompt constraints for noun construction, action downgrade, micro-measure bans, dialogue asymmetry, and few-shot conflict-flow principles.
+- Validation: host/container py_compile OK; safe smoke OK; no post-output hard gate.
+- Logs: /tmp/validate_v417_prompt_constraints_1780019468.log; smoke=/tmp/v417_preflight_smoke_1780019468.json
+
+## 2026-05-29T01:52:14+00:00 - v4.17 full few-shot examples added
+- Added user-specified complete contrast examples internally to the generation-before prompt.
+- Validation: py_compile OK; safe boolean smoke OK; prompt/prose not printed.
+- Logs: /tmp/patch_v417_full_fewshot_launch_1780019534.log
+
+
+## 2026-05-29T05:46:41+00:00 v4.18 generation-before action/exposition reset
+- Updated  to v4.18 diagnostic-only preflight.
+- Tightened generation-before targets: short-run ratio 0.60, verb-watchlist ratio 0.60, exposition reset target 0.
+- Added action_verb_budget and exposition_reset_budget instructions while preserving v4.17 negative list and few-shot contrast internally.
+- Updated  metadata to .
+- Validation: host/container py_compile passed; safe smoke passed without printing prose/prompt bodies.
+- Next: restart backend/celery and launch v4.18 force_direct task.
+
+
+## 2026-05-29T05:46:40+00:00 v4.18 generation-before action/exposition reset
+- Updated backend/app/services/chinese_prose_mechanics_checker.py to v4.18 diagnostic-only preflight.
+- Tightened generation-before targets: short-run ratio 0.60, verb-watchlist ratio 0.60, exposition reset target 0.
+- Added action_verb_budget and exposition_reset_budget instructions while preserving v4.17 negative list and few-shot contrast internally.
+- Updated backend/app/tasks/knowledge_tasks.py metadata to v4.18_generation_before_action_exposition_reset_feedback.
+- Validation: host/container py_compile passed; safe smoke passed without printing prose/prompt bodies.
+- Note: repaired this docs entry using Python to avoid shell backtick command substitution.
+- Next: restart backend/celery and launch v4.18 force_direct task.
+
+
+## 2026-05-29T05:48:25+00:00 v4.18 launch
+- Restarted backend/celery after v4.18 code changes.
+- Health check and Celery ping passed.
+- Launched v4.18 force_direct async chapter generation with nested params.
+- Task id: 869cc37c-d903-46cf-9e2c-bb0a674d3dfb
+- Monitor log: /tmp/v418_safe_monitor_1780033686.log
+- Checker target: /tmp/chinese_prose_checker_ch5_v418_final_1780033686.json
+- No post-output hard gate; final metrics will be diagnostic only.
+
+
+## 2026-05-29T05:56:23+00:00 v4.18 final diagnostics
+- v4.18 task reached needs_review and backfilled chapter with 8412 chars.
+- Final mechanics: short_sentence_runs_over_target=14, verb_watchlist_hits=23, exposition_cluster_risk=2, space_watchlist_hits=1.
+- Compared with v4.17, short-run count improved by 12 and verb hits improved by 2; exposition risk stayed at 2.
+- Compared with v4.16 nested, short-run count improved by 8 and verb hits were equal, but exposition risk regressed by 2.
+- Next optimization: v4.19 should preserve v4.18 rhythm/action gains while resetting exposition risk to 0 and eliminating space watchlist hits.
+
+
+## 2026-05-29T05:56:56+00:00 v4.19 generation-before exposition/space reset
+- Updated backend/app/services/chinese_prose_mechanics_checker.py to v4.19 diagnostic-only preflight.
+- Preserved v4.18 rhythm/action budget gains while adding paragraph_exposition_reset and space_watchlist zero-tolerance instructions.
+- Updated backend/app/tasks/knowledge_tasks.py metadata to v4.19_generation_before_exposition_space_reset_feedback.
+- Validation: host/container py_compile passed; safe smoke passed without printing prose or full prompt bodies.
+- Next: restart backend/celery and launch v4.19 force_direct task.
+
+
+## 2026-05-29T05:57:38+00:00 v4.19 launch
+- Restarted backend/celery after v4.19 code changes.
+- Health check and Celery ping passed.
+- Launched v4.19 force_direct async chapter generation with nested params.
+- Task id: f77e0e3c-b0ad-4dc0-8fc3-84bb208db69e
+- Monitor log: /tmp/v419_safe_monitor_1780034240.log
+- Checker target: /tmp/chinese_prose_checker_ch5_v419_final_1780034240.json
+- No post-output hard gate; final metrics will be diagnostic only.
+
+## 2026-05-29T06:13:01+00:00 v4.20 recovered launch
+- Recovered after the previous combined v4.20 script failed while reading a non-UTF-8 byte in root PROGRESS.md.
+- v4.20 code markers and host/container py_compile are valid.
+- Proceeding with restart and v4.20 force_direct launch.
+
+## 2026-05-29T06:13:17+00:00 v4.20 launch
+- Restarted backend/celery and launched v4.20 force_direct task.
+- Task id: 8af1804a-2176-41e5-8829-bb1fbae9a2ef
+- Monitor log: /tmp/v420_safe_monitor_1780035180.log
+- Checker target: /tmp/chinese_prose_checker_ch5_v420_final_1780035180.json
+- No post-output hard gate; checker remains diagnostic-only.
+
+
+## 2026-05-29T06:21:01.696081+00:00 v4.20 终态机械指标总结
+- task_id: 8af1804a-2176-41e5-8829-bb1fbae9a2ef
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- status: needs_review; chapter 已回填；checker_json=/tmp/chinese_prose_checker_ch5_v420_final_1780035180.json
+- result: sentence_count=847; short_sentence_run_max=15; short_sentence_runs_over_target=28; verb_watchlist_hits=42; exposition_cluster_risk=2; space_watchlist_hits=0; pass=False
+- deltas: vs v4.19 exposition_cluster_risk -4, but short_sentence_runs_over_target +15 and verb_watchlist_hits +22; vs v4.18 exposition unchanged, action/rhythm regressed.
+- interpretation: v4.20 修复一部分说明聚集并保持空间词为 0，但动作/短句密度明显反弹；下一轮应回滚 v4.20 过强扩写倾向，采用 v4.21 “动作/节奏硬目标写前约束”，保留说明拆分但降低动作动词预算。
+- next: patch v4.21 generation-before preflight; no post-output 硬门禁；继续 force_direct_chapter/skip_scene_planner。
+- Todo:
+  - [x] v4.20 落库与回填确认
+  - [x] v4.20 机械指标检查
+  - [ ] v4.21 写前约束补丁
+  - [ ] v4.21 短批生成验证
+
+
+## 2026-05-29T06:21:59.298442+00:00 v4.21 写前约束补丁
+- action: patched generation-before preflight from v4.20 to v4.21 rhythm/action clamp.
+- result: metadata version v4.21_generation_before_rhythm_action_clamp_feedback; reduced short_sentence_runs_over_target_ratio to 0.45 and verb_watchlist_hits_ratio to 0.35; kept exposition split order and space zero-tolerance; no post-output hard gate.
+- validation: host/container py_compile passed; safe smoke verifies v4.21 markers without printing prompt/prose.
+- next: restart backend/celery, verify health/celery, then launch v4.21 force_direct chapter generation.
+
+
+## 2026-05-29T06:23:26.930518+00:00 v4.21 已启动
+- task_id: e27769e0-05dc-4059-8bf5-626943884441
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- payload: /tmp/ch5_v421_rhythm_action_payload_1780035795.json
+- response: /tmp/launch_v421_rhythm_action_1780035795.json
+- monitor: /tmp/v421_safe_monitor_1780035795.sh
+- monitor_log: /tmp/v421_safe_monitor_1780035795.log
+- checker_json: /tmp/chinese_prose_checker_ch5_v421_final_1780035795.json
+- result: async generation launched; force_direct=true; skip_scene_planner=true; fallback_timeout_seconds=1200; no post-output hard gate.
+- next: poll monitor and summarize v4.21 metrics when terminal.
+
+## 2026-05-29T06:37:00+00:00 v4.21 terminal mechanics result
+- task_id: e27769e0-05dc-4059-8bf5-626943884441
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- result: completed, chapter backfilled as needs_review, 3819 chars.
+- diagnostic-only checker:
+  - sentence_count=283
+  - short_sentence_run_max=6
+  - short_sentence_runs_over_target=2
+  - verb_watchlist_hits=16
+  - exposition_cluster_risk=3
+  - space_watchlist_hits=0
+  - forbidden_collocation_count=0
+  - long_quote_segments_gt80=0
+  - duplicate_quote_segments_gt20=0
+  - pass=false, passed=false
+- interpretation: v4.21 reclaimed rhythm/action density strongly while preserving zero space-watchlist hits, but left 3 exposition cluster proxies and over-shortened output length. Next prompt/config direction is v4.22: keep v4.21 clamps, add length-floor guidance and stricter paragraph-level exposition split without post-output hard gate.
+
+## 2026-05-29T07:11:50+00:00 v4.22 retry result: exposition fixed, rhythm regressed
+- task_id: 5a8d6f02-bed1-4f03-8b4e-80250a781b6b
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- result: v4.22 retry completed to needs_review with 7394 chars. Generation-before exposition/length feedback recovered length and reduced exposition_cluster_risk to 0, paragraph_risk_count to 0, while preserving space/forbidden/long-quote/duplicate-quote zero hits.
+- metrics: sentence_count=646; short_sentence_run_max=17; short_sentence_runs_over_target=28; verb_watchlist_hits=17; exposition_cluster_risk=0; space_watchlist_hits=0; passed=false.
+- comparison: vs v4.21, length +3575 chars and exposition risk -3, but short-sentence run max +11 and over-target runs +26.
+- next: v4.23 should combine v4.22 exposition/length constraints with stricter v4.21-style rhythm clamp, still diagnostic/generation-before only, no hard gate.
+
+## 2026-05-29T07:12:57+00:00 v4.23 generation-before rhythm reclamp patch
+- related_task_id: 5a8d6f02-bed1-4f03-8b4e-80250a781b6b
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- change: v4.23 keeps v4.22 exposition split and length-recovery direction, while tightening the generation-before rhythm target back toward v4.21.
+- metadata: version=v4.23_rhythm_reclamp_exposition_length_feedback; short_sentence_runs_over_target_ratio=0.25; short_sentence_run_max_target=6; v4_23_rhythm_reclamp_from_v4_21=true; keep_v4_22_exposition_length_recovery=true.
+- validation: host py_compile passed for knowledge_tasks.py and chinese_prose_mechanics_checker.py.
+- next: sync to containers, restart backend/celery, then launch a short v4.23 force-direct retry.
+
+## 2026-05-29T07:30:08+00:00 v4.23 rhythm reclamp result
+- Behavior result: generation-before rhythm reclamp restored sentence rhythm strongly but introduced zero-tolerance regressions.
+- task_id: 2eaa3347-9299-4886-9d5d-d4eaf7039d7c
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- Metrics: chars=4758; sentence_count=252; short_sentence_run_max=3; short_sentence_runs_over_target=0; verb_watchlist_hits=17; exposition_cluster_risk=1; paragraph_risk_count=2; space_watchlist_hits=1; forbidden_collocation_count=1; long_quote_segments_gt80=0; duplicate_quote_segments_gt20=0; passed=false.
+- Interpretation: v4.23 overcorrected rhythm successfully while partially losing v4.22 exposition/zero-tolerance stability. Next behavior change should keep v4.23 rhythm constraints, restore strict space/forbidden-collocation zeroing, and add a length-support clause that uses environment state and consequence beats rather than micro-action chains.
+
+## $(date -Is) v4.24 checker patch repaired
+- Behavior change completed: checker preflight prompt now emits v4.24 wording alongside metadata already patched in knowledge_tasks.py.
+- Validation: host py_compile passed for knowledge_tasks.py and chinese_prose_mechanics_checker.py.
+- Safety: generation-before diagnostic only; no post-output hard gate added.
+
+## $(date -Is) v4.25 constraint priority patch
+- Behavior change: v4.25 adds explicit constraint priority order to avoid v4.23/v4.24 oscillation: zero-tolerance first, short-sentence rhythm second, exposition split third, action-result-only fourth, dialogue asymmetry fifth, length last.
+- Conflict rule: length yields to rhythm and zero-tolerance; no short-sentence chains, micro-action trajectory, or invented official nouns may be used to recover length.
+- Validation: host py_compile passed for knowledge_tasks.py and chinese_prose_mechanics_checker.py.
+- Safety: generation-before diagnostic feedback only; no post-output hard gate added.
+
+## v4.26 no-length-pressure patch
+- Behavior change: after v4.25 regressed to over-length and short-sentence chains, v4.26 disables length pressure and makes zero-tolerance/rhythm dominant.
+- Priority: forbidden/space zero first; short-sentence rhythm second; exposition split third; length last and allowed to yield.
+- Soft range adjusted to 5200-6500 characters; no scene expansion for length.
+- Validation: host py_compile passed for knowledge_tasks.py and chinese_prose_mechanics_checker.py.
+- Safety: generation-before diagnostic feedback only; no post-output hard gate added.
+
+## 2026-05-29T12:53:43+00:00 v4.27 rhythm-only generation-before patch
+- Change: added v4.27 rhythm-only constraints after v4.26 completed with acceptable length/zero-tolerance improvement but worse short-sentence chains.
+- Scope: backend/app/tasks/knowledge_tasks.py and backend/app/services/chinese_prose_mechanics_checker.py.
+- Intent: keep no length pressure and force direct generation, but explicitly prevent comma-chopped short-clause chains by requiring medium causal/transition sentences.
+- Validation: host py_compile passed.
+- Next: sync patched files into backend/celery containers, restart, verify health and Celery ping, then launch a short v4.27 force-direct run.
+
+
+## v4.28 rhythm clamp patch
+- Change: After v4.27 regressed on length and short-sentence chains, the generation-before mechanics prompt now restores a strict rhythm clamp and removes scene-expansion incentives.
+- Intent: keep force-direct/no-hard-gate flow while prioritizing sentence merging, trimming expanded scene detail, and preserving zero-tolerance constraints.
+- Validation: host py_compile is run in the patch step; container sync/restart remains a separate step.
+
+
+## 2026-05-29T13:19:06.714047+00:00 v4.29 zero-tolerance-before-rhythm patch
+- task_id: 80f071e4-b503-4e4f-a27c-002b857f73d6
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- result: v4.28 improved rhythm but regressed forbidden/space/long quote; v4.29 reorders generation-before guidance to zero-tolerance lexical cleanup before rhythm/length.
+- next: py_compile, sync containers, restart backend/celery, verify imports/health/ping, then launch short v4.29 retry if requested.
+
+
+## 2026-05-29T13:52:35.027467+00:00 v4.30 small alignment patch
+- task_id: 506115bc-ebcc-4c0c-b2e4-0cc5258ed672
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- v4.29 completed at 5639 chars with good rhythm/quote metrics but failed zero-tolerance counts.
+- v4.30 removes the canon/title false positive from forbidden counting and emphasizes the remaining micro-measure terms before generation.
+
+
+## 2026-05-29T14:08:19.426843+00:00 v4.31 residual lexical/exposition patch
+- task_id: 0c0d420e-cbdf-4069-af95-8258a1804e40
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- v4.30 reached needs_review at 3664 chars with rhythm/quote metrics improved, but still had one residual micro-measure term and one exposition cluster.
+- v4.31 keeps the direct generation-before path and adds residual lexical zeroing plus repeated-role/exposition dispersion guidance.
+
+
+## 2026-05-29T14:17:06.061280+00:00 v4.32 length/exposition clamp patch
+- task_id: f04cb639-1160-4eaa-ba26-cfb6cb2e9437
+- chapter_id: db18e301-38b2-4b47-8a93-e66472fee281
+- v4.31 zeroed space/forbidden terms but expanded to 8323 chars and still had exposition/paragraph risk.
+- v4.32 keeps lexical zero as baseline and tightens generation-before instructions around length rollback, repeated role terms, and exposition-cluster cleanup.
+
+
+## v4.33 generation-before lexical/length clamp (2026-05-29T14:31:51.793451Z)
+- v4.32 completed but failed mechanical pass: chars=8336, short runs fixed, but 半寸/半步 regressed, exposition_cluster_risk=1, paragraph risk remained.
+- Added generation-before-only v4.33 instruction: internal pre-return self-check for zero micro-measure terms, 5200-6200 target, delete whole exposition blocks over 6500, no scene expansion for length, no post-output hard gate.
+
+
+## v4.34 concise-rewrite generation-before patch
+- v4.33 completed but failed mechanical pass: chars=9499, short run risk returned, one long quote segment appeared, exposition/paragraph risks remained, and role terms were still dense.
+- Added v4.34 generation-before concise-rewrite guidance: target 4800-5800 chars, delete over-6200 material before writing more, keep micro-measure terms at zero, ban long quote segments, reduce repeated role-term density, and avoid scene/exposition padding.
+- Safety: generation-before diagnostic feedback only; no post-output hard gate added.
+
+
+## v4.35 rhythm + lexical-zero generation-before patch
+- Applied a minimal generation-before update after v4.34 completed at 5538 chars but failed mechanical pass on short-sentence runs and one residual micro-measure term.
+- Direction: keep v4.34 length/exposition gains, merge staccato short sentences into medium causal/environmental sentences, and keep all micro-measure/trajectory terms at zero without adding a post-output hard gate.
+- Changed checker prompt marker to v4.35 and knowledge task metadata to v4.35_rhythm_lexical_zero_feedback.
+
+
+## v4.36 lexical-zero-first length/rhythm generation-before patch
+- Applied a minimal generation-before update after v4.35 reached needs_review at 4139 chars but still failed on short-sentence runs and residual micro-measure terms.
+- Direction: prioritize lexical zero before rhythm, keep length in a 5200-5600 soft range with a 5000 lower-bound guard, and keep exposition/long-quote/paragraph gains without adding a post-output hard gate.
+- Changed checker prompt marker to v4.36 and knowledge task metadata to v4.36_lexical_zero_first_length_rhythm_feedback.
+
+## narrative anti-mechanical flow doc
+- Added `docs/narrative_antimechanical_flow.md` as a reusable process distilled from Chapter 5 issues.
+- Scope: dialogue symmetry, motion-calculation action, stage-direction narration, and game-item clue exposition.
+- This is a generation-before process document only; no hard gate or new generation was launched.
+
+## 2026-05-30 01:38:34 +0000 v4.10+ chinese_prose_mechanics_checker 定型
+- 新增 backend/app/services/chinese_prose_mechanics_checker.py：将中文行文机械约束从「只在 prompt 里表述」升级为「可检测、可量化、可持续、跨章节/跨项目通用」的 analyzer
+- 输出指标（全部只输出计数/枚举/段落索引，绝不输出正文片段）：
+  - forbidden_collocation_count/forbidden_collocation_counts：供纸案匣、外目三、手腕一翻、从肘下钻过、半寸、半息、半指 等明确禁例
+  - space_watchlist_hits：半寸/半息/半指/半步/寸许/尺许/肘下/腇下
+  - verb_watchlist_hits：一翻/钻过/掠出/探手/反手/肘下/腇下/腕/膝/踝/贴着/错身/旋身 等肢体轨迹词
+  - sentence_count / short_sentence_run_max / short_sentence_runs_over_target（中文标点切句，≤8 字为短句，连发目标 ≤4）
+  - exposition_cluster_risk / paragraph_risks：段内制度/规制/衡门/名册/卷宗/供奉/守备/门人/账书/香火 等词频 ≥8 且段长 >220
+  - long_quote_segments_gt80 / duplicate_quote_segments_gt20
+  - passed（诊断位，不作为任何主流程硬门）
+- 提供双接口：
+  - analyze_chinese_prose_mechanics(text) -> ChineseProseMechanicsReport
+  - analyze_to_safe_dict(text) -> dict
+  - dumps_report(report) -> str
+  - build_generation_preflight_prompt(report, *, issue_focus, version_label) -> str（主调用者拼接进生成前 system prompt 末尾，作为生成前自检清单）
+- 接入原则（后续接入 narrative_quality_gates / knowledge_tasks force_direct 路径时必须遵守）：
+  - 只用于诊断与生成前提示，不作为 needs_repair / hard gate 上游触发器
+  - 不阐断 fallback / force_direct 直出路径
+  - 不允许造成 0 字卡死
+- 首次 smoke（第五章 v4.13，task_id 2240fbec-...）指标：
+  - sentence_count=361，short_sentence_run_max=7，short_sentence_runs_over_target=7（目标 ≤4）
+  - forbidden_collocation_count=22；供纸案匣×6、外目三×7、手腕一翻×1、半寸×4、半息×2、半指×2
+  - space_watchlist_hits=9，verb_watchlist_hits=18
+  - exposition_cluster_risk=1 (paragraph_1)；passed=false
+- 意义：验证 prompt-only 约束仍不足以清零微观刻度词与生造名词；v4.14 需把 checker 报告带入生成前 prompt，让 LLM 在下一稿内化
+
+## 2026-05-30 v4.36 chinese_prose_mechanics 可检测化 + 生成前提示注入定型
+- 模块：backend/app/services/chinese_prose_mechanics_checker.py
+  - analyze_chinese_prose_mechanics(text) -> 指标：forbidden_collocation（供纸案匮/外目三/手腕一翻/从肘下钻过/半寸/半息/半指）、space_watchlist、verb_watchlist、短句连发 run_max/over_target（目标 ≤4）、exposition_cluster_risk、长引(>80)/重复引(>20)
+  - to_safe_dict / build_generation_preflight_prompt（v4.36：先词汇清零再节奏合并，5200-5600 篇幅，连续短句≤4，exposition_cluster_risk=0）
+- 接入：backend/app/tasks/knowledge_tasks.py
+  - 新增 async _build_chinese_prose_preflight_prompt(ch, db)：用本章存稿 + 最近 completed eval issues 生成“生成前自检提示”+ meta
+  - chapter 生成路径（含 force_direct 直出同链路）把 preflight 文本拼接进 user_instr；meta 落 task.params_json.chinese_prose_mechanics_preflight
+  - diagnostic_only=true, hard_gate=false：仅诊断/观测/生成前提示，不阻断、不触发后置修订
+- 性质：跨章节/跨项目通用中文行文机械约束；用于第一稿内化，不作为 hard gate / needs_repair
+- 验证：py_compile 通过；backend/celery 重启正常（/api/health ok、celery pong）；smoke 对第五章确认 prompt 注入生效（prompt_len=535、diagnostic_only/hard_gate 标志正确）
+
+## [2026-05-30 02:30:08 UTC] v4.36 行为修复: 生成前 issue_focus 过滤评分链路占位标签
+- 变更文件: backend/app/tasks/knowledge_tasks.py (函数 _build_chinese_prose_preflight_prompt)。
+- 行为变更: 中文行文机械约束的「生成前 issue-aware 关注项」(issue_focus) 现在会忽略评分失败兜底产生的占位标签 (dimension="system", overall=0)，并在最近 5 条 completed EvaluateTask 中优先选取真实评分(overall>0)结果，必要时回退 ChapterEvaluation；标签保序去重。
+- 影响: build_generation_preflight_prompt 的 issue_focus 由退化的 ["system"] 恢复为真实违规类型(如 space_clarity / exposition_cluster / overpointed_clue 等)，提升生成前内化提示的针对性。
+- 不变量: 仍为 diagnostic_only / 非 hard_gate, 不引入任何后置质量门或 needs_repair 状态; force_direct 直出路径不受影响。
+- 验证: py_compile OK; backend+celery 重启正常; /api/health ok; celery pong; smoke 显示 issue_focus 含 10 条真实标签, prompt_len=704, diagnostic_only=true, hard_gate=false。
+
+## 2026-06-02 — 跨项目正文质量内化
+
+- 新增 `docs/narrative_prose_quality_contract.md`，把《神裔》第一章反馈沉淀为跨项目规则：伪文学压缩腔、正常汉语搭配缺失、生活逻辑与资源链断裂、重复解释、对话过度聪明。
+- 新增 `backend/app/services/prose_quality_rules.py` 作为规则单一来源，供生成前提示、质量门禁、检查器和人工审核共用。
+- 新增聚合指标 `plain_contemporary_violation_count` 与 `duplicate_explanation_span_count`，防止只修用户点名句子。
+- `/api/chapters/{chapter_id}/check-quality` 返回 `chinese_prose_mechanics`，前端检查面板可人工审核行文机械问题。
