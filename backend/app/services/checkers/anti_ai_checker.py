@@ -18,6 +18,7 @@ from collections import Counter
 
 from app.services.checkers.base import BaseChecker, CheckResult
 from app.services.context_pack import ContextPack
+from app.services.prompts.anti_ai_rules_zh import AI_PHRASE_BLACKLIST
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,14 @@ AI_PHRASES: list[str] = [
     "一股莫名的", "一种说不出的",
     "心中五味杂陈", "百感交集",
 ]
+
+# Merge the QMAI-derived phrase blacklist (services/prompts/anti_ai_rules_zh)
+# into the detection source, deduplicated. Original entries and detection
+# logic stay unchanged; this only widens phrase coverage.
+for _phrases in AI_PHRASE_BLACKLIST.values():
+    for _phrase in _phrases:
+        if _phrase not in AI_PHRASES:
+            AI_PHRASES.append(_phrase)
 
 # Four-character idiom pattern (CJK 4-char combinations)
 FOUR_CHAR_PATTERN = re.compile(r'[\u4e00-\u9fff]{4}')

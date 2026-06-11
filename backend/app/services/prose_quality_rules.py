@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.prompts.anti_ai_rules_zh import render_anti_ai_prompt_block
+
 
 @dataclass(frozen=True)
 class ProseQualityRule:
@@ -211,4 +213,8 @@ def render_prose_quality_prompt() -> str:
         lines.append(f"- {rule.rule_id}｜{rule.title}：{rule.prompt_instruction}")
         lines.append("  坏例：" + " / ".join(rule.bad_examples))
         lines.append("  好例：" + " / ".join(rule.good_examples))
+    # QMAI-derived concrete blacklist + rewrite examples (single injection
+    # point: this prompt feeds both contract_hard_gate_prompt and the
+    # preflight blueprint, each of which renders it exactly once).
+    lines.append(render_anti_ai_prompt_block())
     return "\n".join(lines)
