@@ -26,10 +26,11 @@ logger = logging.getLogger(__name__)
 EVALUATION_SYSTEM_PROMPT = """\
 你是小说章节质量评审。只输出合法 JSON，不要输出解释、Markdown 或正文摘录。
 按 5 个维度评分，每项 0-10：plot_coherence、character_consistency、style_adherence、narrative_pacing、foreshadow_handling。
-issues 只列关键问题，最多 12 条；每条只写元数据和简短诊断，禁止引用/复述原文章句子。
+issues 只列关键问题，最多 12 条；每条只写元数据和简短诊断；除 quote 字段外禁止引用/复述原文章句子。
+quote 必须是从原文逐字摘取的 10-40 字连续片段，用于定位问题位置；无法逐字摘取时留空字符串。
 JSON 格式必须是：
 {
-  "plot_coherence": {"score": 0, "issues": [{"paragraph": 0, "description": "", "suggestion": "", "violation_type": "", "severity": ""}]},
+  "plot_coherence": {"score": 0, "issues": [{"paragraph": 0, "description": "", "suggestion": "", "violation_type": "", "severity": "", "quote": ""}]},
   "character_consistency": {"score": 0, "issues": []},
   "style_adherence": {"score": 0, "issues": []},
   "narrative_pacing": {"score": 0, "issues": []},
@@ -148,6 +149,8 @@ def _parse_evaluation_response(raw_text: str) -> EvaluationResult:
                     "suggestion": issue.get("suggestion", ""),
                     "violation_type": issue.get("violation_type", ""),
                     "severity": issue.get("severity", ""),
+                    # Q2 targeted revision: verbatim 10-40 char locator snippet.
+                    "quote": issue.get("quote", "") or "",
                 }
             )
 
@@ -163,6 +166,7 @@ def _parse_evaluation_response(raw_text: str) -> EvaluationResult:
                 "suggestion": issue.get("suggestion") or issue.get("required_fix") or issue.get("downgrade_if_unfixable") or "按世界逻辑合同补足支撑或降低结果强度",
                 "violation_type": vtype,
                 "severity": issue.get("severity", ""),
+                "quote": issue.get("quote", "") or "",
             }
         )
 

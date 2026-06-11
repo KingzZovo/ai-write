@@ -640,7 +640,9 @@ async def generate_chapter(
                     from app.services.auto_revise import (
                         issues_to_revise_instruction,
                         merge_revise_into_user_instruction,
+                        revise_spans,
                         should_revise,
+                        targeted_revision_enabled,
                     )
                     from app.services.chapter_evaluator import ChapterEvaluator
                     from app.services.scene_orchestrator import SceneOrchestrator
@@ -706,75 +708,107 @@ async def generate_chapter(
                             accepted_final = True
                             break
 
-                        # 3) Build revise instruction and rerun SceneOrchestrator.
-                        revise_instr = issues_to_revise_instruction(
-                            eval_result, round_idx=round_idx,
-                        )
-                        merged_instruction = merge_revise_into_user_instruction(
-                            effective_user_instruction, revise_instr,
-                        )
+                        # 3) Q2 targeted span revision (QMAI rewriteTarget):
+                        # locate issues via their evaluator `quote` and rewrite
+                        # only paragraph-±1 spans, splicing the results back
+                        # into the current text. Falls back to the existing
+                        # full-chapter SceneOrchestrator rewrite when nothing
+                        # is locatable or the targeted pass fails.
+                        targeted_text: str | None = None
+                        if targeted_revision_enabled():
+                            try:
+                                span_result = await revise_spans(
+                                    current_text, eval_result.issues,
+                                )
+                                if span_result.spans_revised > 0:
+                                    targeted_text = span_result.text
+                                    targeted_payload = json.dumps({
+                                        "event": "targeted_revision",
+                                        "round": round_idx,
+                                        "spans_revised": span_result.spans_revised,
+                                        "unlocatable_issues": len(span_result.unlocatable_issues),
+                                    })
+                                    yield f"data: {targeted_payload}\n\n"
+                            except Exception as targeted_err:
+                                logger.warning(
+                                    "C2 targeted revision failed; falling back to full rewrite (round=%d): %s",
+                                    round_idx, targeted_err,
+                                )
                         _x4_inc_revise("revised")  # v1.6.0 X4 metric: revise round outcome
                         revising_payload = json.dumps({
                             "event": "revising",
                             "round": round_idx,
                             "overall": eval_result.overall,
                             "threshold": threshold,
+                            "mode": "targeted" if targeted_text is not None else "full",
                         })
                         yield f"data: {revising_payload}\n\n"
 
-                        revise_orchestrator = SceneOrchestrator()
                         revised_chunks: list[str] = []
                         revise_timed_out = False
-                        try:
-                            async with asyncio.timeout(900):  # 15min hard cap per round
-                                async with async_session_factory() as revise_db:
-                                    try:
-                                        async for chunk in revise_orchestrator.orchestrate_chapter_stream(
-                                            project_id=req.project_id,
-                                            volume_id=resolved_volume_id,
-                                            chapter_idx=resolved_chapter_idx,
-                                            db=revise_db,
-                                            chapter_id=revise_chapter_id,
-                                            user_instruction=merged_instruction,
-                                            target_words=effective_target_words,
-                                            n_scenes_hint=req.n_scenes_hint,
-                                            on_scene_start=_on_scene_start,
-                                        ):
-                                            if chunk:
-                                                revised_chunks.append(chunk)
-                                            yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
-                                    except Exception as revise_scene_err:
-                                        # Root-cause policy: do NOT lottery-fallback to a different
-                                        # generator when we are trying to meet a strict quality bar.
-                                        # Scene-mode failures must surface as repair-required so
-                                        # upstream planning/contract issues get fixed deterministically.
-                                        logger.warning(
-                                            "C2 auto-revise: SceneOrchestrator failed; aborting revise loop round=%d err=%s",
-                                            round_idx,
-                                            revise_scene_err,
-                                        )
-                                        err_payload = json.dumps({
-                                            "event": "revise_error",
-                                            "round": round_idx,
-                                            "reason": "scene_orchestrator_failed",
-                                            "error": str(revise_scene_err),
-                                        }, ensure_ascii=False)
-                                        yield f"data: {err_payload}\n\n"
-                                        revise_timed_out = True
-                                        break
-                        except asyncio.TimeoutError:
-                            revise_timed_out = True
-                            logger.warning(
-                                "C2 auto-revise round %d timed out after 900s; aborting loop",
-                                round_idx,
+                        if targeted_text is not None:
+                            revised_chunks.append(targeted_text)
+                            yield f"data: {json.dumps({'text': targeted_text, 'revise_round': round_idx})}\n\n"
+                        else:
+                            # Full-chapter fallback: build revise instruction
+                            # and rerun SceneOrchestrator.
+                            revise_instr = issues_to_revise_instruction(
+                                eval_result, round_idx=round_idx,
                             )
-                            err_payload = json.dumps({
-                                "event": "revise_error",
-                                "round": round_idx,
-                                "reason": "timeout",
-                                "timeout_seconds": 900,
-                            })
-                            yield f"data: {err_payload}\n\n"
+                            merged_instruction = merge_revise_into_user_instruction(
+                                effective_user_instruction, revise_instr,
+                            )
+                            revise_orchestrator = SceneOrchestrator()
+                            try:
+                                async with asyncio.timeout(900):  # 15min hard cap per round
+                                    async with async_session_factory() as revise_db:
+                                        try:
+                                            async for chunk in revise_orchestrator.orchestrate_chapter_stream(
+                                                project_id=req.project_id,
+                                                volume_id=resolved_volume_id,
+                                                chapter_idx=resolved_chapter_idx,
+                                                db=revise_db,
+                                                chapter_id=revise_chapter_id,
+                                                user_instruction=merged_instruction,
+                                                target_words=effective_target_words,
+                                                n_scenes_hint=req.n_scenes_hint,
+                                                on_scene_start=_on_scene_start,
+                                            ):
+                                                if chunk:
+                                                    revised_chunks.append(chunk)
+                                                yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                                        except Exception as revise_scene_err:
+                                            # Root-cause policy: do NOT lottery-fallback to a different
+                                            # generator when we are trying to meet a strict quality bar.
+                                            # Scene-mode failures must surface as repair-required so
+                                            # upstream planning/contract issues get fixed deterministically.
+                                            logger.warning(
+                                                "C2 auto-revise: SceneOrchestrator failed; aborting revise loop round=%d err=%s",
+                                                round_idx,
+                                                revise_scene_err,
+                                            )
+                                            err_payload = json.dumps({
+                                                "event": "revise_error",
+                                                "round": round_idx,
+                                                "reason": "scene_orchestrator_failed",
+                                                "error": str(revise_scene_err),
+                                            }, ensure_ascii=False)
+                                            yield f"data: {err_payload}\n\n"
+                                            revise_timed_out = True
+                                            break
+                            except asyncio.TimeoutError:
+                                revise_timed_out = True
+                                logger.warning(
+                                    "C2 auto-revise round %d timed out after 900s; aborting loop",
+                                    round_idx,
+                                )
+                                err_payload = json.dumps({
+                                    "event": "revise_error",
+                                    "round": round_idx,
+                                    "reason": "timeout",
+                                    "timeout_seconds": 900,
+                                })
+                                yield f"data: {err_payload}\n\n"
                         revised_text = "".join(revised_chunks)
                         if revise_timed_out or not revised_text:
                             if not revise_timed_out:

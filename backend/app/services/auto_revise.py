@@ -12,14 +12,26 @@ Design notes:
   convergence on continuity / hallucination defects.
 - We cap issues per dimension to 5 to avoid prompt explosion when the LLM
   evaluator returns a long flat list.
-- This module has zero DB / LLM / IO side effects — pure helpers, easy to
-  unit-test deterministically.
+- The original helpers have zero DB / LLM / IO side effects — pure functions,
+  easy to unit-test deterministically. The only exception is the Q2 targeted
+  revision entry `revise_spans`, which performs LLM calls through an injected
+  (or lazily resolved) `llm_call` coroutine; module import stays side-effect
+  free.
+
+Q2 targeted revision (QMAI rewriteTarget):
+  Evaluator issues now carry a verbatim `quote` snippet (10-40 chars). When a
+  quote can be located in the chapter text, we rewrite only the containing
+  paragraph ±1 (merged across overlapping issues) and splice the result back,
+  instead of regenerating the whole chapter. Issues without a locatable quote
+  are returned to the caller, which keeps full-chapter regeneration as the
+  fallback path.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 import re
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from app.services.narrative_contract import REVISE_CONTRACT_PROMPT
 from app.services.narrative_quality_gates import (
@@ -279,3 +291,194 @@ def merge_revise_into_user_instruction(
     if not base:
         return revise
     return f"{base}\n\n{revise}"
+
+
+# ---------------------------------------------------------------------------
+# Q2 — targeted span revision (QMAI rewriteTarget)
+# ---------------------------------------------------------------------------
+
+# Spans rewrites are short (~3 paragraphs), so a modest token budget suffices.
+SPAN_REWRITE_MAX_TOKENS: int = 2000
+
+SPAN_REWRITE_SYSTEM_PROMPT = (
+    "你是小说定点修订编辑。只重写【待修订区间原文】给出的正文区间，逐条修复列出的问题；"
+    "保持与上文、下文自然衔接，保持人物、情节、时间线与原文一致；"
+    "字数变化控制在 ±20% 以内。"
+    "只输出替换后的区间文本，不要输出解释、标题、JSON、引号包裹或区间以外的内容。"
+)
+
+
+def targeted_revision_enabled() -> bool:
+    """Env switch for the targeted revision path (default on)."""
+    return os.getenv("TARGETED_REVISION_ENABLED", "1") != "0"
+
+
+def locate_revision_span(text: str, quote: str) -> tuple[int, int] | None:
+    """Find the paragraph containing `quote`, widened to ±1 paragraph.
+
+    Returns (start, end) char offsets into `text`, or None if the quote does
+    not occur verbatim.
+    """
+    if not quote or not text:
+        return None
+    idx = text.find(quote.strip())
+    if idx < 0:
+        return None
+    paras: list[tuple[int, int]] = []
+    cursor = 0
+    for part in text.split("\n\n"):
+        paras.append((cursor, cursor + len(part)))
+        cursor += len(part) + 2
+    hit = next((i for i, (s, e) in enumerate(paras) if s <= idx < e), None)
+    if hit is None:
+        return None
+    start = paras[max(0, hit - 1)][0]
+    end = paras[min(len(paras) - 1, hit + 1)][1]
+    return (start, end)
+
+
+def splice_revision(text: str, span: tuple[int, int], revised: str) -> str:
+    """Replace text[start:end] with `revised`, leaving the rest untouched."""
+    start, end = span
+    return text[:start] + revised + text[end:]
+
+
+def merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Sort spans and merge overlapping/adjacent ones into disjoint spans."""
+    if not spans:
+        return []
+    ordered = sorted(spans)
+    merged: list[list[int]] = [list(ordered[0])]
+    for start, end in ordered[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [(s, e) for s, e in merged]
+
+
+def build_span_rewrite_prompt(
+    span_text: str,
+    issues: list[dict],
+    *,
+    before: str = "",
+    after: str = "",
+) -> str:
+    """Build the user prompt for one merged-span rewrite call. Pure."""
+    lines: list[str] = []
+    if before:
+        lines.append("【上文（只读，不要重写）】")
+        lines.append(before)
+        lines.append("")
+    lines.append("【待修订区间原文】")
+    lines.append(span_text)
+    lines.append("")
+    if after:
+        lines.append("【下文（只读，不要重写）】")
+        lines.append(after)
+        lines.append("")
+    lines.append("【需要修复的问题】")
+    for i, issue in enumerate(issues, 1):
+        desc = (issue.get("description") or "").strip()
+        sugg = (issue.get("suggestion") or "").strip()
+        lines.append(f"{i}. {desc or '（无描述）'}")
+        if sugg:
+            lines.append(f"   修复建议：{sugg}")
+    lines.append("")
+    lines.append(
+        "只重写【待修订区间原文】这一区间，修复以上全部问题，"
+        "保持与上下文衔接，字数变化 ±20% 内，输出仅替换文本。"
+    )
+    return "\n".join(lines)
+
+
+@dataclass
+class SpanRevisionResult:
+    """Outcome of revise_spans.
+
+    spans_revised == 0 means nothing was spliced; the caller should fall back
+    to full-chapter regeneration. unlocatable_issues lists issues whose quote
+    was missing or not found verbatim — they ride along the fallback path.
+    """
+
+    text: str
+    spans_revised: int = 0
+    unlocatable_issues: list[dict] = field(default_factory=list)
+
+
+async def _router_span_llm_call(prompt: str) -> str:
+    """Default LLM callable: model_router task_type='rewrite' (lazy import)."""
+    from app.services.model_router import get_model_router_async
+
+    router = await get_model_router_async()
+    result = await router.generate_with_tier_fallback(
+        task_type="rewrite",
+        messages=[
+            {"role": "system", "content": SPAN_REWRITE_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
+        max_tokens=SPAN_REWRITE_MAX_TOKENS,
+        _log_meta={"caller": "auto_revise.revise_spans"},
+    )
+    return result.text or ""
+
+
+async def revise_spans(
+    text: str,
+    issues: list[dict],
+    llm_call: Callable[[str], Awaitable[str]] | None = None,
+) -> SpanRevisionResult:
+    """Targeted revision: rewrite only the spans located by issue quotes.
+
+    - Issues with a verbatim-locatable `quote` are grouped per merged span
+      (paragraph ±1, overlapping/adjacent spans merged) — one LLM call per
+      merged span, spliced back in reverse order so offsets stay valid.
+    - Degenerate rewrites (empty, or wildly longer than the original span)
+      are rejected and leave the original span untouched.
+    - Issues without a locatable quote are returned for the caller to decide
+      on full-chapter fallback (spans_revised == 0 → fall back).
+    """
+    if llm_call is None:
+        llm_call = _router_span_llm_call
+
+    locatable: list[tuple[tuple[int, int], dict]] = []
+    unlocatable: list[dict] = []
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        quote = str(issue.get("quote") or "").strip()
+        span = locate_revision_span(text, quote) if quote else None
+        if span is None:
+            unlocatable.append(issue)
+        else:
+            locatable.append((span, issue))
+
+    if not locatable:
+        return SpanRevisionResult(text=text, spans_revised=0, unlocatable_issues=unlocatable)
+
+    merged = merge_spans([span for span, _ in locatable])
+    grouped: list[tuple[tuple[int, int], list[dict]]] = []
+    for m_start, m_end in merged:
+        related = [it for (s, e), it in locatable if s < m_end and e > m_start]
+        grouped.append(((m_start, m_end), related))
+
+    out = text
+    revised_count = 0
+    # Reverse order: merged spans are disjoint and sorted, so splicing from
+    # the end keeps earlier offsets valid.
+    for (m_start, m_end), related in sorted(grouped, key=lambda g: g[0][0], reverse=True):
+        span_text = text[m_start:m_end]
+        prompt = build_span_rewrite_prompt(
+            span_text,
+            related,
+            before=text[max(0, m_start - 200):m_start].strip(),
+            after=text[m_end:m_end + 200].strip(),
+        )
+        revised = ((await llm_call(prompt)) or "").strip()
+        if not revised or len(revised) > max(len(span_text) * 3, len(span_text) + 400):
+            continue
+        out = splice_revision(out, (m_start, m_end), revised)
+        revised_count += 1
+
+    return SpanRevisionResult(text=out, spans_revised=revised_count, unlocatable_issues=unlocatable)

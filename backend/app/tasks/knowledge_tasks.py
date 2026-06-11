@@ -1067,7 +1067,9 @@ async def _run_async_generation_impl(task_id: str):
                 from app.services.auto_revise import (
                     issues_to_revise_instruction,
                     merge_revise_into_user_instruction,
+                    revise_spans,
                     should_revise,
+                    targeted_revision_enabled,
                     DEFAULT_REVISE_THRESHOLD,
                     DEFAULT_MAX_REVISE_ROUNDS,
                 )
@@ -1175,6 +1177,31 @@ async def _run_async_generation_impl(task_id: str):
 
                     task.status = "regenerating"
                     await db.commit()
+
+                    # Q2 targeted span revision (QMAI rewriteTarget): locate
+                    # issues via their evaluator `quote` and rewrite only
+                    # paragraph-±1 spans, splicing back into the current text.
+                    # On success the spliced text re-enters the scoring loop
+                    # directly; otherwise fall through to the existing
+                    # full-chapter regeneration below.
+                    if targeted_revision_enabled():
+                        try:
+                            span_result = await revise_spans(current_text, eval_result.issues)
+                        except Exception as targeted_err:
+                            span_result = None
+                            logger.warning(
+                                "Async generation: targeted revision failed; falling back to full rewrite chapter_id=%s round=%d err=%s",
+                                chapter_id_for_eval, round_idx, targeted_err,
+                            )
+                        if span_result is not None and span_result.spans_revised > 0:
+                            logger.info(
+                                "Async generation: targeted revision applied chapter_id=%s round=%d spans=%d unlocatable=%d",
+                                chapter_id_for_eval, round_idx,
+                                span_result.spans_revised, len(span_result.unlocatable_issues),
+                            )
+                            current_text = span_result.text
+                            continue
+
                     revise_instr = issues_to_revise_instruction(eval_result, round_idx=round_idx)
                     merged_instruction = merge_revise_into_user_instruction(
                         generated_chapter_user_instr,
