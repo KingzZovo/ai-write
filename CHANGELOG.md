@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.9.1] - 2026-06-11
+
+质量加固 + QMAI 借鉴迭代（28 commits）：先把积压的进行中改动按语义拆分提交锁定，随后修复 8 个后端 + 6 个前端正确性 bug，并落地 4 项借鉴自 QMAI（MIT, github.com/Mochocyang/QMAI）的特性。计划与逐任务审查记录见 `docs/superpowers/plans/2026-06-10-quality-hardening-and-qmai-adoption.md`。
+
+### 锁定的进行中改动（提交拆分）
+
+- 章节目标字数迁移：默认 50000 → 4000，`resolve_chapter_target_word_count` 做 legacy 解析（迁移 a1001909）。
+- 大纲就绪门（outline readiness gate）、场景数上限 6→20、评分策略由"硬门槛阻断"翻转为"生成前内化 + 分数验收"。
+- 前端 readiness UI、结构化错误解析、工作台 tab 化。
+
+### 修复（后端）
+
+- **SSE 场景回退正文重复**：场景流中途失败回退单发生成时未清空已流出的半截文本，保存的章节 = 半截场景 + 完整全文。现已清空并向前端发 `fallback_restart` 事件（`api/generate.py`）。
+- **`retry_attempts` 形同虚设**：参数层层传入但 provider 不消费，重试硬编码 4 次（单发路径最坏 840s×4 ≈ 56 分钟挂死）。现已透传（`model_router.py`）。
+- **评分 45s 超时假评分**：评估调用超时硬编码 45s，长输入超时 → overall=0 全零评分误触发重写。现默认 120s，env `EVALUATION_REQUEST_TIMEOUT` 可调。
+- **评审提示丢失违规分类法**：`EVALUATOR_CONTRACT_PROMPT` import 了但没拼进系统提示，下游修订管道被静默削弱；`max_tokens=900` 易截断 JSON。现已拼回 + 提到 2400。
+- **Celery 路径遗留 50000 字数**：未走 legacy 解析导致老章节永远落入模板兜底（质量塌陷）。现与 API 路径一致。
+- 删除 `should_stop_random_retry` 三层死代码；场景列表截断改为硬顶 `MAX_SCENE_COUNT` 且保留结尾钩子场景；blueprint 散文力学规则单源化（消除两处重复定义 + 空壳小节 + 版本号漂移，规则零丢失、44 marker 零缺失）。
+
+### 修复（前端）
+
+- **SSE 失败 UI 永久卡"生成中"**：`apiSSE` 失败路径不回调。现保证终态回调恰好一次 + 新增 `onError`（5 个调用点全部接入）。
+- **SSE 流无法取消/卸载泄漏**：AbortController 被丢弃。现统一 ref 管理，切章/重新生成/卸载时 abort；处理 `fallback_restart` 事件清空半截文本。
+- **轮询泄漏**：多处 `setInterval` 无卸载清理、vector 页缺 failed 终态且瞬时错误即停。新增 `usePolling` hook 统一改造 5 处（另 5 处确认本就规范）。
+- `apiFetch` 调用方传 headers 会整体覆盖 Authorization 的潜伏地雷已修。
+
+### 新功能（QMAI 借鉴，均注明 MIT 出处）
+
+- **去AI味规则库**（`services/prompts/anti_ai_rules_zh.py`）：41 条分类黑名单 + 5 组"情绪→动作"改写对照 + 对白十原则 + 防过度矫正禁令，接入 `anti_ai_checker` 检测与生成/润色 prompt（每章 prompt 增量约 1.2k 字符）。
+- **定点修订（rewriteTarget）**：评审 issue 新增 `quote` 字段（10-40 字原文定位片段），修订轮优先对"问题段落±1 段"做定点改写拼回，替代整章重生成；不可定位/超预算/退化改写自动回退整章路径。env `TARGETED_REVISION_ENABLED`（默认开）。
+- **角色认知账本**（`character_cognitions` 表，迁移 a1001910）：每角色 knows/does_not_know + 读者已知三表。章节定稿后 LLM 抽取增量合并（每角色上限 30 条，挤旧保新），生成时注入【人物认知边界】节，评审新增 `cognition_violation` 违规类型（防"角色提前知道不该知道的事"穿帮）。needs_review 文本不摄取。
+- **伏笔债务分 + 黄金开篇**：`compute_debt_score`（planted 滞留 ≥5 章 -15、推进后停滞 ≥10 章 -5、未回收超 5 条每条 -2），伏笔列表 API 附 `debt`，score<60 时生成 prompt 注入"优先推进/回收、禁止新埋"；开卷前三章注入开篇硬约束（500 字内入事、禁铺垫、章末必留钩子）。
+
+### 测试与卫生
+
+- pytest **529 passed**（本轮新增 ~80 个测试，关键修复均经变异测试验证）；唯一失败 `test_relationships_crud` 为既有环境性失败（与本轮无关，待查）。
+- tsc 零错误；eslint 维持基线 78 problems 零新增。
+- `PROGRESS.md`（3.9MB 运行日志）与 `tmp/` 出库并 ignore；删除根目录一次性补偿脚本。
+
+### Breaking / 注意
+
+- 评审 issue schema 新增 `quote` 字段（向后兼容，缺省空）；显式传 `target_words=50000` 现按 legacy 解析为项目设置/4000（与 API 路径既有行为一致）。
+- 需执行迁移至 a1001910（`alembic upgrade head`，幂等，本机已执行）。
+- 已知遗留：context_pack 路径的 `chapter_idx` 为卷内局部值，第 2 卷起伏笔债务可能漏报（不误报）；独立评估任务与手动评估端点暂未传认知账本。
+
 ## [1.7.3] - 2026-04-28
 
 v1.7.3 是 v1.7.x 线上 `stream_by_route` `NameError` 热修复，详见 `RELEASE_NOTES_v1.7.3.md`。
