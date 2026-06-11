@@ -10,6 +10,10 @@ Scoring contract (max 100, floor 0):
 """
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pytest
+
 from app.services.foreshadow_manager import (
     CRITICAL_STALL_CHAPTERS,
     DEBT_GATE_THRESHOLD,
@@ -183,3 +187,75 @@ class TestContextPackDebtInjection:
         pack = ContextPack(foreshadow_debt_warning="")
         prompt = pack.to_system_prompt(token_budget=8000)
         assert "伏笔债务警报" not in prompt
+
+
+class TestBuildFactsWiring:
+    """Mutation guard: ``ContextPackBuilder._build_facts`` must wire
+    ``render_debt_warning(compute_debt_score(fs_rows, chapter_idx))`` into
+    ``pack.foreshadow_debt_warning``.
+
+    Drives the real ``_build_facts`` with a stub async db session: the
+    Foreshadow query returns stalled rows that trip the debt gate; every
+    other query returns empty results (each block is fail-safe).
+    """
+
+    @pytest.mark.asyncio
+    async def test_build_facts_assigns_rendered_debt_warning(self):
+        from app.models.project import Foreshadow
+        from app.services.context_pack import ContextPack, ContextPackBuilder
+
+        class _FakeForeshadowRow:
+            status = "planted"
+            planted_chapter = 0
+            type = "plot"
+            resolved_chapter = None
+            narrative_proximity = 0.5
+
+            def __init__(self, description: str) -> None:
+                self.description = description
+                self.resolve_conditions_json: list = []
+                self.resolution_blueprint_json: dict = {}
+
+        # 3 planted foreshadows stalled for 20 chapters -> score 55 (< 60
+        # gate), so render_debt_warning yields a non-empty alert.
+        fs_rows = [_FakeForeshadowRow(f"超期伏笔{i}") for i in range(3)]
+        chapter_idx = 20
+
+        async def _fake_execute(stmt, *args, **kwargs):
+            try:
+                entities = [d.get("entity") for d in stmt.column_descriptions]
+            except Exception:
+                entities = []
+            rows = fs_rows if Foreshadow in entities else []
+            result = MagicMock()
+            result.all = MagicMock(return_value=[])
+            scalars = MagicMock()
+            scalars.all = MagicMock(return_value=rows)
+            result.scalars = MagicMock(return_value=scalars)
+            return result
+
+        fake_db = MagicMock()
+        fake_db.execute = _fake_execute
+
+        builder = ContextPackBuilder.__new__(ContextPackBuilder)
+        builder._db = fake_db
+        builder._owns_db = False
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        # Neutralize sub-builders that need Neo4j / extra services.
+        builder._enrich_characters_from_neo4j = _noop
+        builder._build_strand_tracker = _noop
+
+        pack = ContextPack()
+        await builder._build_facts(pack, "proj-1", chapter_idx)
+
+        expected = render_debt_warning(
+            compute_debt_score(fs_rows, chapter_idx)
+        )
+        assert expected, "precondition: stub rows must trip the debt gate"
+        assert pack.foreshadow_triplets, (
+            "stub foreshadow rows should reach the foreshadow block"
+        )
+        assert pack.foreshadow_debt_warning == expected

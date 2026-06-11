@@ -218,9 +218,9 @@ def contract_hard_gate_prompt() -> str:
     return "\n".join(lines)
 
 GOLDEN_OPENING_RULES = """\
-【开篇硬约束（前三章适用）】
+【开篇硬约束（开卷前三章适用）】
 - 前300-500字内必须进入主体事件/危机/冲突，禁止铺垫式开场（天气、回忆、世界观说明）。
-- 穿越/重生/背景设定只许一笔带过，禁止成段解释。
+- 穿越/重生/背景设定/前情只许一笔带过，禁止成段解释。
 - 每个自然段必须推动事件或人物关系，删掉任何"可有可无"的段落。
 - 本章结尾必须留下让读者非看下一章不可的钩子。
 """  # Adapted from QMAI golden-three-chapters (MIT, github.com/Mochocyang/QMAI)
@@ -235,7 +235,8 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
     units, allocate movement/resource/information/expression/result budgets,
     then expand only budgeted and anchored units at the allowed strength.
 
-    For chapters 1-3 the golden-three-chapters opening constraints are
+    For the first three chapters of each volume (``chapter_idx`` is
+    volume-local 1-based) the golden-three-chapters opening constraints are
     appended (Q4, adapted from QMAI).
     """
     chapter_label = f"第{chapter_idx}章" if chapter_idx else "本章"
