@@ -1464,15 +1464,24 @@ async def _run_async_generation_impl(task_id: str):
                     await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                 except Exception as sum_err:
                     logger.warning("Auto chapter summarize failed after evaluation: %s", sum_err)
-                # Q3 v1.9.1: character cognition ledger ingestion on the main
-                # success path only (quality-gate-blocked needs_review saves
-                # are skipped — that text awaits manual review / rewrite and
-                # would pollute the ledger). Never blocks chapter persistence.
-                try:
-                    from app.services.character_cognition import extract_and_update
-                    await extract_and_update(db, project_id, full_text)
-                except Exception as cog_err:
-                    logger.warning("Cognition ledger update failed after evaluation: %s", cog_err)
+                # Q3 v1.9.1 (review fix): character cognition ledger ingestion
+                # only when the final evaluation passed. needs_review saves
+                # (passed=False, ch.status='needs_review') await manual review
+                # or a rewrite and must not pollute the ledger — previously
+                # this final-save path ingested them anyway, contradicting the
+                # quality-gate-blocked branch above which already skips
+                # ingestion. Never blocks chapter persistence.
+                if passed:
+                    try:
+                        from app.services.character_cognition import extract_and_update
+                        await extract_and_update(db, project_id, full_text)
+                    except Exception as cog_err:
+                        logger.warning("Cognition ledger update failed after evaluation: %s", cog_err)
+                else:
+                    logger.debug(
+                        "Skipping cognition ledger ingestion for needs_review chapter %s (overall below threshold)",
+                        chapter_id_for_eval,
+                    )
 
             task.result_text = full_text
 

@@ -422,6 +422,10 @@ async def generate_chapter(
             # asyncio.shield + module-level strong reference so the commit
             # survives the SSE pipe being torn down.
             full_text = "".join(collected_text)
+            # Q3 v1.9.1 (review fix): the final settled chapter text to feed the
+            # character cognition ledger exactly once, right before `completed`.
+            # None = nothing was saved, or the revise loop rolled the text back.
+            cognition_ingest_text: str | None = None
             if full_text:
                 quality_gate_result = None
                 quality_gate_meta = None
@@ -567,18 +571,14 @@ async def generate_chapter(
                             logger.warning(
                                 "Chapter summarize after auto-save failed: %s", sum_err
                             )
-                        # Q3 v1.9.1: character cognition ledger ingestion.
-                        # Never blocks chapter persistence.
-                        try:
-                            from app.services.character_cognition import extract_and_update
-                            await extract_and_update(
-                                save_db, req.project_id, text_to_save,
-                            )
-                        except Exception as cog_err:
-                            logger.warning(
-                                "Cognition ledger update after auto-save failed: %s",
-                                cog_err,
-                            )
+                        # Q3 v1.9.1 (review fix): cognition ledger ingestion
+                        # intentionally NOT here. Extracting at draft-save time
+                        # polluted the ledger with the chapter's own facts
+                        # before evaluation (self-masking cognition_violation),
+                        # double-ingested via the final-polish re-save, and
+                        # survived revise-abort rollbacks. It now runs exactly
+                        # once at the end of the stream, after the final text
+                        # is settled (see `cognition_ingest_text` below).
                         return str(target_chapter.id), target_chapter.word_count, False
 
                 _chsave_task = asyncio.create_task(_persist_chapter_now(full_text, quality_gate_meta))
@@ -594,6 +594,7 @@ async def generate_chapter(
                         _inc_chapter_auto_save("chapter", "failure", "no_target_row")
                         yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
                     else:
+                        cognition_ingest_text = full_text
                         yield f"data: {json.dumps({'status': 'saved', 'chapter_id': _saved_id, 'word_count': _wc})}\n\n"
                 except asyncio.CancelledError:
                     # SSE pipe cancelled mid-save; bg task continues commit independently.
@@ -634,6 +635,13 @@ async def generate_chapter(
                 and resolved_chapter_idx is not None
                 and req.chapter_id
             ):
+                # Pre-bind loop state so the post-loop polish / rollback /
+                # cognition-ingestion settlement below never hits a NameError
+                # when the try-block fails before its own initialization.
+                accepted_final = False
+                aborted_with_blocking = False
+                c2_revised = False
+                current_text = full_text
                 try:
                     # C2 deadlock fix: the outer baseline-path session (`db`)
                     # may still hold an open transaction with row-level locks
@@ -1092,6 +1100,35 @@ async def generate_chapter(
                                 yield f"data: {json.dumps({'event': 'rollback_applied', 'reason': 'auto_revise_blocking_or_timeout', 'chapter_id': req.chapter_id})}\n\n"
                     except Exception:
                         logger.warning("Auto-revise rollback failed", exc_info=True)
+
+                # Q3 v1.9.1 (review fix): settle the ledger ingestion source.
+                # An aborted/rolled-back draft must never reach the ledger;
+                # otherwise the final converged text (post-revise, post-polish)
+                # supersedes the initial draft saved above. Only upgrade when
+                # something was actually persisted (initial save succeeded —
+                # cognition_ingest_text already set — or a revise round
+                # overwrote the chapter).
+                if (not accepted_final) and aborted_with_blocking:
+                    cognition_ingest_text = None
+                elif cognition_ingest_text is not None or c2_revised:
+                    cognition_ingest_text = current_text
+
+            # Q3 v1.9.1 (review fix): character cognition ledger ingestion runs
+            # exactly ONCE per stream, here, after the final chapter text is
+            # settled. Best-effort: never blocks stream completion.
+            if cognition_ingest_text:
+                try:
+                    from app.db.session import async_session_factory
+                    from app.services.character_cognition import extract_and_update
+                    async with async_session_factory() as cog_ingest_db:
+                        await extract_and_update(
+                            cog_ingest_db, req.project_id, cognition_ingest_text,
+                        )
+                except Exception as cog_err:
+                    logger.warning(
+                        "Cognition ledger update after final save failed: %s",
+                        cog_err,
+                    )
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"

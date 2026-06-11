@@ -36,6 +36,13 @@ EXTRACTION_PROMPT = """从本章正文中抽取认知变化，只输出 JSON 数
 # reveal and the chapter-end twist, which is where cognition changes cluster.
 _MAX_INPUT_CHARS = 6000
 
+# Per-character cap on each of knows / does_not_know. Without a bound the
+# lists grow by up to 10 entries per chapter forever; with serialization
+# budgeted at ~1200 chars an unbounded ledger only wastes DB rows and skews
+# the entry-count importance ordering. Oldest facts (list head) are evicted
+# first — the tail holds the most recent chapter's additions.
+MAX_FACTS_PER_CHARACTER = 30
+
 
 # ---------------------------------------------------------------------------
 # Pure logic
@@ -82,16 +89,29 @@ def apply_changes(ledger: dict, changes: list[dict]) -> dict:
         if still_unknown and name != READER:
             if still_unknown not in entry["knows"] and still_unknown not in entry["does_not_know"]:
                 entry["does_not_know"].append(still_unknown)
+    # Capacity bound: evict the oldest facts (list head) and keep the most
+    # recent MAX_FACTS_PER_CHARACTER (list tail, where new entries land).
+    for entry in out.values():
+        if len(entry["knows"]) > MAX_FACTS_PER_CHARACTER:
+            entry["knows"] = entry["knows"][-MAX_FACTS_PER_CHARACTER:]
+        if len(entry["does_not_know"]) > MAX_FACTS_PER_CHARACTER:
+            entry["does_not_know"] = entry["does_not_know"][-MAX_FACTS_PER_CHARACTER:]
     return out
 
 
 def serialize_for_prompt(ledger: dict, max_chars: int = 1200) -> str:
     """Render the ledger as a compact prompt block.
 
-    Per-character lines 『X知道：a；b』 / 『X不知道：c』, reader line
-    『读者已知：…』 last. Characters with more ledger entries are considered
-    more important and survive truncation first. Truncation drops whole
-    lines so the block never ends mid-sentence. Empty ledger returns "".
+    Reader line 『读者已知：…』 comes FIRST — the reader-knows/character-
+    doesn't-know gap is the suspense backbone and must never be the first
+    thing truncated away. Remaining per-character lines 『X知道：a；b』 /
+    『X不知道：c』 follow, characters with more ledger entries first.
+
+    Truncation never ends mid-sentence: when a line does not fit the
+    remaining budget, its oldest facts (list head) are dropped item by item
+    until the newest ones fit; if not even the newest single fact fits, the
+    whole line is skipped and later (shorter) lines still get a chance.
+    Empty ledger returns "".
     """
     ledger = _copy_ledger(ledger)
     reader_entry = ledger.pop(READER, None)
@@ -100,26 +120,30 @@ def serialize_for_prompt(ledger: dict, max_chars: int = 1200) -> str:
         _, e = item
         return len(e["knows"]) + len(e["does_not_know"])
 
-    lines: list[str] = []
+    # (prefix, facts) candidates in priority order: reader first, then
+    # characters by entry count descending.
+    candidates: list[tuple[str, list[str]]] = []
+    if reader_entry and reader_entry["knows"]:
+        candidates.append(("读者已知：", reader_entry["knows"]))
     for name, entry in sorted(ledger.items(), key=_entry_weight, reverse=True):
         if entry["knows"]:
-            lines.append(f"{name}知道：" + "；".join(entry["knows"]))
+            candidates.append((f"{name}知道：", entry["knows"]))
         if entry["does_not_know"]:
-            lines.append(f"{name}不知道：" + "；".join(entry["does_not_know"]))
-    if reader_entry and reader_entry["knows"]:
-        lines.append("读者已知：" + "；".join(reader_entry["knows"]))
-
-    if not lines:
-        return ""
+            candidates.append((f"{name}不知道：", entry["does_not_know"]))
 
     kept: list[str] = []
     used = 0
-    for line in lines:
-        cost = len(line) + (1 if kept else 0)  # newline separator
-        if used + cost > max_chars:
-            break
+    for prefix, facts in candidates:
+        sep_cost = 1 if kept else 0  # newline separator
+        budget = max_chars - used - sep_cost - len(prefix)
+        # Drop oldest facts (head) until the newest ones fit the budget.
+        while facts and len("；".join(facts)) > budget:
+            facts = facts[1:]
+        if not facts:
+            continue  # line unfittable; later, shorter lines may still fit
+        line = prefix + "；".join(facts)
         kept.append(line)
-        used += cost
+        used += sep_cost + len(line)
     return "\n".join(kept)
 
 

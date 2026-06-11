@@ -10,6 +10,7 @@ import uuid
 import pytest
 
 from app.services.character_cognition import (
+    MAX_FACTS_PER_CHARACTER,
     READER,
     apply_changes,
     load_ledger,
@@ -88,6 +89,31 @@ def test_apply_changes_reader_learns_and_skips_garbage():
     assert set(out.keys()) == {READER}
 
 
+def test_apply_changes_caps_facts_per_character():
+    # Capacity bound: after MAX+1 learns the oldest fact is evicted and only
+    # the newest MAX_FACTS_PER_CHARACTER remain (list tail = most recent).
+    ledger: dict = {}
+    for i in range(MAX_FACTS_PER_CHARACTER + 1):  # 31 incremental learns
+        ledger = apply_changes(ledger, [{"character": "林冲", "learns": f"事实{i}"}])
+    knows = ledger["林冲"]["knows"]
+    assert len(knows) == MAX_FACTS_PER_CHARACTER
+    assert "事实0" not in knows  # oldest evicted
+    assert knows[0] == "事实1"
+    assert knows[-1] == f"事实{MAX_FACTS_PER_CHARACTER}"  # newest kept
+
+    # does_not_know is bounded the same way.
+    out = apply_changes(
+        {},
+        [
+            {"character": "林冲", "still_unknown": f"未知{i}"}
+            for i in range(MAX_FACTS_PER_CHARACTER + 5)
+        ],
+    )
+    unknown = out["林冲"]["does_not_know"]
+    assert len(unknown) == MAX_FACTS_PER_CHARACTER
+    assert unknown[-1] == f"未知{MAX_FACTS_PER_CHARACTER + 4}"
+
+
 # ---------------------------------------------------------------------------
 # serialize_for_prompt (pure)
 # ---------------------------------------------------------------------------
@@ -133,6 +159,42 @@ def test_serialize_budget_capped():
     for line in text.splitlines():
         assert line.startswith(("主角", "角色", "读者已知")), line
         assert not line.endswith(("；", "，")), line
+
+
+def test_serialize_reader_line_first():
+    # The reader-knows/character-doesn't-know gap is the suspense backbone:
+    # the reader line must lead the block, never trail into the truncation zone.
+    ledger = {
+        "林冲": {"knows": ["陆谦是卧底"], "does_not_know": ["妻子已被害"]},
+        "鲁智深": {"knows": ["林冲被发配"], "does_not_know": []},
+        READER: {"knows": ["高俅设局"], "does_not_know": []},
+    }
+    text = serialize_for_prompt(ledger)
+    assert text.splitlines()[0] == "读者已知：高俅设局"
+
+
+def test_serialize_oversized_line_does_not_blank_output():
+    # Regression: one mega-line from the entry-richest character used to hit
+    # `break` on the first non-fitting line and blank the WHOLE block (reader
+    # line included). Now the oversized line is truncated in-line to its
+    # newest facts and shorter lines still make it in.
+    ledger = {
+        "主角": {
+            "knows": [f"超长事实{i}" + "废" * 40 for i in range(20)],
+            "does_not_know": [],
+        },
+        "配角": {"knows": ["短事实"], "does_not_know": []},
+        READER: {"knows": ["读者线索"], "does_not_know": []},
+    }
+    text = serialize_for_prompt(ledger, max_chars=200)
+    assert text, "oversized single line must not blank the whole ledger block"
+    assert len(text) <= 200
+    # Reader line and the short minor-character line both survive.
+    assert "读者已知：读者线索" in text
+    assert "配角知道：短事实" in text
+    # The oversized line keeps its NEWEST facts (list tail), drops the oldest.
+    assert "超长事实19" in text
+    assert "超长事实0" not in text
 
 
 # ---------------------------------------------------------------------------
