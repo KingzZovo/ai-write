@@ -217,6 +217,14 @@ def contract_hard_gate_prompt() -> str:
     )
     return "\n".join(lines)
 
+GOLDEN_OPENING_RULES = """\
+【开篇硬约束（前三章适用）】
+- 前300-500字内必须进入主体事件/危机/冲突，禁止铺垫式开场（天气、回忆、世界观说明）。
+- 穿越/重生/背景设定只许一笔带过，禁止成段解释。
+- 每个自然段必须推动事件或人物关系，删掉任何"可有可无"的段落。
+- 本章结尾必须留下让读者非看下一章不可的钩子。
+"""  # Adapted from QMAI golden-three-chapters (MIT, github.com/Mochocyang/QMAI)
+
 def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
     """Return generic direct-generation-first micro-continuity budget guidance.
 
@@ -226,9 +234,12 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
     model to internally convert the current chapter outline into executable
     units, allocate movement/resource/information/expression/result budgets,
     then expand only budgeted and anchored units at the allowed strength.
+
+    For chapters 1-3 the golden-three-chapters opening constraints are
+    appended (Q4, adapted from QMAI).
     """
     chapter_label = f"第{chapter_idx}章" if chapter_idx else "本章"
-    return f"""
+    prompt = f"""
 【direct_generation_first_{BLUEPRINT_VERSION}｜空间可行性、信息遮蔽、巧合摩擦与中文行文约束】
 目标：{chapter_label}写正文前，必须先在内部执行 outline_execution_units / chapter_outline_unit_ledger / outline_beat_execution_ledger / foreshadow_control_ledger / character_state_ledger / pacing_budget_ledger / evidence_permission_ledger / mechanism_boundary_ledger / inference_uncertainty_ledger / time_window_budget / spatial_feasibility_ledger / channel_occlusion_ledger / coincidence_friction_ledger / dialogue_density_ledger / anchor_audit_before_prose / micro_continuity_budget。不要输出合同、表格、自检、分析、JSON 或说明；最终只输出小说正文。
 
@@ -410,3 +421,6 @@ dialogue_machine_few_shot（内部参照，不输出）
 九、runtime_prompt_snapshot（运行时可观测，不阻断）
 本提示必须可在运行时被验证：contract_version、direct_generation_first_{BLUEPRINT_VERSION}、chinese_prose_mechanics、outline_execution_units、chapter_outline_unit_ledger、outline_beat_execution_ledger、foreshadow_control_ledger、character_state_ledger、pacing_budget_ledger、evidence_permission_ledger、mechanism_boundary_ledger、inference_uncertainty_ledger、time_window_budget、spatial_feasibility_ledger、channel_occlusion_ledger、coincidence_friction_ledger、dialogue_density_ledger、communication_damping、plain_register_no_wit、focal_measure_only、motive_exposition_zero、setting_name_dialogue_zero、directional_listing_zero、mundane_scene_plausibility、plain_modern_register、plain_contemporary_chinese、age_plausibility、abstract_reasoning_zero、limited_pov_only、semantic_density_budget、resource_continuity、action_causality、motivation_bridge、anchor_audit_before_prose、micro_continuity_budget、unit_movement_budget、unit_resource_budget、unit_information_ladder、unit_expression_role、unit_result_delta_cap、no_budget_no_upgrade、runtime_prompt_snapshot 和 prompt_hash 应进入日志或任务元数据。该观测只用于诊断 prompt 是否注入，不阻断生成，不触发后置修订。
 """.strip()
+    if chapter_idx is not None and chapter_idx <= 3:
+        prompt = prompt + "\n\n" + GOLDEN_OPENING_RULES.strip()
+    return prompt

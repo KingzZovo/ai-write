@@ -210,6 +210,9 @@ class ContextPack:
     world_rules: list[str] = field(default_factory=list)
     character_cards: list[CharacterCard] = field(default_factory=list)
     foreshadow_triplets: list[CFPGTriplet] = field(default_factory=list)
+    # Q4 v1.9.2: foreshadow debt alert (QMAI-adapted). Pre-rendered by
+    # foreshadow_manager.render_debt_warning; "" when health score >= 60.
+    foreshadow_debt_warning: str = ""
     timeline_anchors: list[TimeAnchor] = field(default_factory=list)
     contradiction_cache: list[str] = field(default_factory=list)
     strand_tracker: StrandTracker = field(default_factory=StrandTracker)
@@ -486,9 +489,11 @@ class ContextPack:
                 f"{self.cognition_boundaries}"
             )
 
-        if self.foreshadow_triplets:
-            fs_text = "\n".join(f.to_prompt() for f in self.foreshadow_triplets)
-            l2_parts.append(f"【伏笔追踪】\n{fs_text}")
+        if self.foreshadow_triplets or self.foreshadow_debt_warning:
+            fs_lines = [f.to_prompt() for f in self.foreshadow_triplets]
+            if self.foreshadow_debt_warning:
+                fs_lines.append(self.foreshadow_debt_warning)
+            l2_parts.append("【伏笔追踪】\n" + "\n".join(fs_lines))
 
         if self.timeline_anchors:
             tl_text = "\n".join(a.to_prompt() for a in self.timeline_anchors[-10:])
@@ -968,7 +973,8 @@ class ContextPackBuilder:
                 )
                 .order_by(Foreshadow.narrative_proximity.desc())
             )
-            for fs in fs_result.scalars().all():
+            fs_rows = list(fs_result.scalars().all())
+            for fs in fs_rows:
                 conditions = fs.resolve_conditions_json or []
                 blueprint = fs.resolution_blueprint_json or {}
                 triplet = CFPGTriplet(
@@ -980,6 +986,21 @@ class ContextPackBuilder:
                     proximity=fs.narrative_proximity or 0.0,
                 )
                 pack.foreshadow_triplets.append(triplet)
+
+            # Q4: foreshadow debt gate (QMAI-adapted). When the health score
+            # drops below the threshold, inject a hard "advance/resolve, no
+            # new plants" alert into the same【伏笔追踪】section. Fail-safe:
+            # never block context building.
+            try:
+                from app.services.foreshadow_manager import (
+                    compute_debt_score,
+                    render_debt_warning,
+                )
+
+                debt = compute_debt_score(fs_rows, int(chapter_idx))
+                pack.foreshadow_debt_warning = render_debt_warning(debt)
+            except Exception as e:
+                logger.warning("Failed to compute foreshadow debt: %s", e)
         except Exception as e:
             logger.warning("Failed to load foreshadow triplets: %s", e)
 

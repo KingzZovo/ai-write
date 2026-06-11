@@ -36,6 +36,131 @@ PROXIMITY_READY = 0.9
 # Statuses considered "active" (not yet resolved)
 ACTIVE_STATUSES = ("planted", "ripening", "ready")
 
+# ---------------------------------------------------------------------------
+# Foreshadow debt health score (Q4)
+# Adapted from QMAI foreshadowing debt (MIT, github.com/Mochocyang/QMAI).
+# ---------------------------------------------------------------------------
+
+# A "planted" foreshadow that has not even started ripening after this many
+# chapters is a critical debt.
+CRITICAL_STALL_CHAPTERS = 5
+# An advanced foreshadow (ripening/ready, i.e. past "planted") stalled this
+# many chapters since planting is a warning debt. The model has no
+# last-advanced-chapter column, so planted_chapter is the stall baseline.
+WARNING_STALL_CHAPTERS = 10
+# More than this many unresolved foreshadows costs -2 each beyond the cap.
+UNRESOLVED_SOFT_CAP = 5
+# Below this score, chapter generation gets the "advance, don't plant" prompt.
+DEBT_GATE_THRESHOLD = 60
+
+# Statuses considered "advanced" past planting (no dedicated advancement
+# chapter exists in the schema; see WARNING_STALL_CHAPTERS comment).
+_ADVANCED_STATUSES = ("ripening", "ready")
+
+
+def _fs_field(fs, name: str, default=None):
+    """Read a field from either a dict item or an ORM Foreshadow object."""
+    if isinstance(fs, dict):
+        return fs.get(name, default)
+    return getattr(fs, name, default)
+
+
+def compute_debt_score(foreshadows, current_chapter_idx: int) -> dict:
+    """伏笔债务健康分（满分 100，下限 0）。
+
+    Adapted from QMAI foreshadowing debt (MIT, github.com/Mochocyang/QMAI).
+
+    Rules (chapter indices are book-global, same domain as
+    ``Foreshadow.planted_chapter``):
+    - resolved foreshadows are skipped entirely;
+    - status == "planted" and (current - planted_chapter) >= 5 -> critical, -15 each;
+    - status in ("ripening", "ready") and (current - planted_chapter) >= 10
+      -> warning, -5 each;
+    - unresolved total beyond 5 -> -2 per extra item.
+
+    Accepts ORM ``Foreshadow`` rows or dict items (e.g. from
+    ``foreshadow_lifecycle.load_active_foreshadows_for_context``).
+
+    Returns ``{"score", "criticals", "warnings", "unresolved"}`` where
+    criticals/warnings carry description/type/planted_chapter/age for prompt
+    injection and API display.
+    """
+    criticals: list[dict] = []
+    warnings: list[dict] = []
+    unresolved = 0
+    current = int(current_chapter_idx)
+
+    for fs in foreshadows or []:
+        status = str(_fs_field(fs, "status", "") or "").strip().lower()
+        if status == "resolved":
+            continue
+        unresolved += 1
+
+        try:
+            planted = int(_fs_field(fs, "planted_chapter", 0) or 0)
+        except (TypeError, ValueError):
+            planted = 0
+        age = current - planted
+        if age < 0:
+            # Pre-planted in a future chapter (outline-level): not stalled.
+            continue
+
+        entry = {
+            "description": str(_fs_field(fs, "description", "") or ""),
+            "type": str(_fs_field(fs, "type", "") or ""),
+            "status": status,
+            "planted_chapter": planted,
+            "age": age,
+        }
+        if status == "planted" and age >= CRITICAL_STALL_CHAPTERS:
+            criticals.append(entry)
+        elif status in _ADVANCED_STATUSES and age >= WARNING_STALL_CHAPTERS:
+            warnings.append(entry)
+
+    score = max(
+        0,
+        100
+        - 15 * len(criticals)
+        - 5 * len(warnings)
+        - 2 * max(0, unresolved - UNRESOLVED_SOFT_CAP),
+    )
+    return {
+        "score": score,
+        "criticals": criticals,
+        "warnings": warnings,
+        "unresolved": unresolved,
+    }
+
+
+def render_debt_warning(debt: dict) -> str:
+    """Render the generation-time debt alert; "" when health is acceptable.
+
+    Only emits text when ``debt["score"] < DEBT_GATE_THRESHOLD`` so callers
+    can append the result unconditionally.
+    """
+    if not isinstance(debt, dict):
+        return ""
+    score = debt.get("score")
+    if not isinstance(score, (int, float)) or score >= DEBT_GATE_THRESHOLD:
+        return ""
+
+    lines = [
+        f"【伏笔债务警报】当前伏笔健康分 {score}/100（低于 {DEBT_GATE_THRESHOLD} 触发硬约束）。",
+        "以下伏笔已严重超期，必须处理：",
+    ]
+    for entry in debt.get("criticals") or []:
+        lines.append(
+            f"  - [滞留未推进] {entry.get('description', '')}"
+            f"（埋于第{entry.get('planted_chapter')}章，已搁置 {entry.get('age')} 章）"
+        )
+    for entry in debt.get("warnings") or []:
+        lines.append(
+            f"  - [推进后停滞] {entry.get('description', '')}"
+            f"（埋于第{entry.get('planted_chapter')}章，已搁置 {entry.get('age')} 章）"
+        )
+    lines.append("本章必须优先推进或回收上述既有伏笔，禁止新埋伏笔。")
+    return "\n".join(lines)
+
 
 class ForeshadowManager:
     """
