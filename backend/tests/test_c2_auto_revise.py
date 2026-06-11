@@ -18,7 +18,6 @@ from app.services.auto_revise import (
     issues_to_revise_instruction,
     merge_revise_into_user_instruction,
     should_revise,
-    should_stop_random_retry,
 )
 
 
@@ -88,7 +87,7 @@ def test_should_revise_handles_missing_overall() -> None:
     assert should_revise(None, threshold=7.0) is True
 
 
-def test_blocking_contract_violation_extraction_without_retry_stop() -> None:
+def test_blocking_contract_violation_extraction() -> None:
     e = EvaluationLite(
         overall=9.0,
         issues=[
@@ -103,8 +102,6 @@ def test_blocking_contract_violation_extraction_without_retry_stop() -> None:
         "space_rule_violation",
         "information_rule_violation",
     }
-    assert should_stop_random_retry(e, {"space_rule_violation"}) is False
-    assert should_stop_random_retry(e, {"time_rule_violation"}) is False
 
 
 def test_root_cause_instruction_contains_pre_generation_diagnostic_blueprint() -> None:

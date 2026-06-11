@@ -102,21 +102,6 @@ def _issue_violation_type(issue: dict) -> str:
     return _gate_issue_violation_type(issue)
 
 
-
-
-def should_stop_random_retry(
-    eval_obj: Any,
-    previous_blocking_violations: set[str] | None,
-) -> bool:
-    """Do not stop the main flow on repeated issue tags.
-
-    Repeated tags are now diagnostics for improving the next generation prompt,
-    not a post-output blocker. The happy path should optimize the first draft
-    through pre-generation constraints and accept/revise primarily by score.
-    """
-    return False
-
-
 _VIOLATION_REPAIR_METHODS: dict[str, str] = {tag: repair_method_for(tag) for tag in QUALITY_GATE_RULES}
 _VIOLATION_REPAIR_METHODS["untyped_issue"] = repair_method_for("untyped_issue")
 # Reusable revise buckets are centralized in narrative_quality_gates.

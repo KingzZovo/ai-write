@@ -638,12 +638,9 @@ async def generate_chapter(
                     from app.models.project import Chapter as _Chapter
                     from app.models.project import ChapterEvaluation
                     from app.services.auto_revise import (
-                        blocking_contract_violation_set,
-                        build_root_cause_repair_plan,
                         issues_to_revise_instruction,
                         merge_revise_into_user_instruction,
                         should_revise,
-                        should_stop_random_retry,
                     )
                     from app.services.chapter_evaluator import ChapterEvaluator
                     from app.services.scene_orchestrator import SceneOrchestrator
@@ -653,7 +650,6 @@ async def generate_chapter(
                     revise_outline = chapter_outline or {}
                     max_rounds = max(0, int(req.max_revise_rounds))
                     threshold = float(req.revise_threshold)
-                    previous_blocking_violations: set[str] = set()
 
                     accepted_final = False
                     aborted_with_blocking = False
@@ -697,29 +693,7 @@ async def generate_chapter(
                                 round_idx, persist_err,
                             )
 
-                        # 2) Threshold / no-lottery gates.
-                        if False and should_stop_random_retry(eval_result, previous_blocking_violations):
-                            repair_plan = build_root_cause_repair_plan(
-                                eval_result,
-                                previous_blocking_violations=previous_blocking_violations,
-                            )
-                            gate_payload = json.dumps({
-                                "event": "root_cause_repair_required",
-                                "round": round_idx,
-                                "overall": eval_result.overall,
-                                "threshold": threshold,
-                                "violations": sorted(blocking_contract_violation_set(eval_result)),
-                                "repeated_violations": sorted(
-                                    blocking_contract_violation_set(eval_result)
-                                    & previous_blocking_violations
-                                ),
-                                "repair_plan": repair_plan,
-                            }, ensure_ascii=False)
-                            yield f"data: {gate_payload}\n\n"
-                            aborted_with_blocking = True
-                            break
-                        previous_blocking_violations = blocking_contract_violation_set(eval_result)
-
+                        # 2) Threshold gate.
                         if not should_revise(eval_result, threshold=threshold):
                             _x4_inc_revise("skipped")  # v1.6.0 X4 metric: revise round outcome
                             skipped_payload = json.dumps({
