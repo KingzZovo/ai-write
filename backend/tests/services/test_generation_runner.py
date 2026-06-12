@@ -121,3 +121,14 @@ async def test_phase_planning_requires_chapter_id(monkeypatch):
 
     with pytest.raises(ValueError, match="chapter_id"):
         await generation_runner._phase_planning(run, db)
+
+
+def test_context_pack_builder_signature_pinned():
+    """If build()'s signature changes, the runner stub in this file must be updated too."""
+    import inspect
+
+    from app.services.context_pack import ContextPackBuilder
+
+    assert list(inspect.signature(ContextPackBuilder.build).parameters) == [
+        "self", "project_id", "volume_id", "chapter_idx", "db",
+    ]

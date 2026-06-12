@@ -15,6 +15,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 import app
 
 _APP_DIR = Path(app.__file__).resolve().parent
@@ -85,4 +87,118 @@ def test_sse_ingestion_not_in_persist_helper_and_single_call_site():
         "api.generate must ingest into the cognition ledger exactly once "
         f"(after the final text is settled); found {len(all_calls)} call(s) "
         f"at line(s) {[n.lineno for n in all_calls]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task A4 — remaining evaluate() callers must feed the cognition ledger
+# ---------------------------------------------------------------------------
+
+
+def _call_name(node: ast.Call) -> str | None:
+    return getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+
+
+def test_standalone_evaluation_task_passes_cognition_ledger():
+    """tasks/evaluation_tasks: evaluate() gets cognition_ledger_text from a
+    real load_ledger call (chapter -> volume -> project_id reverse lookup).
+
+    The Celery entry opens/closes its own sessions around the LLM call, so
+    this is a source tripwire in the same style as the tests above.
+    """
+    tree = _parse("tasks/evaluation_tasks.py")
+
+    eval_calls = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and _call_name(n) == "evaluate"
+    ]
+    assert eval_calls, "expected an evaluator.evaluate(...) call in evaluation_tasks"
+    missing = [
+        n.lineno for n in eval_calls
+        if "cognition_ledger_text" not in {kw.arg for kw in n.keywords}
+    ]
+    assert not missing, (
+        "evaluator.evaluate(...) without cognition_ledger_text= at line(s) "
+        f"{missing} — the standalone evaluation path must feed the ledger to "
+        "the cognition_violation check"
+    )
+
+    load_calls = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and _call_name(n) == "load_ledger"
+    ]
+    assert load_calls, (
+        "expected a load_ledger(...) call in evaluation_tasks — the ledger "
+        "text must be loaded from the DB inside the step-1 session"
+    )
+
+
+@pytest.mark.asyncio
+async def test_manual_evaluate_endpoint_passes_cognition_ledger(monkeypatch):
+    """api/versions POST /evaluate: ledger is loaded via the volume reverse
+    lookup and handed to ChapterEvaluator.evaluate as cognition_ledger_text."""
+    import uuid
+    from types import SimpleNamespace
+
+    from app.api import versions as versions_api
+    from app.models.project import Chapter, Volume
+    from app.services import character_cognition
+    from app.services.chapter_evaluator import ChapterEvaluator, EvaluationResult
+
+    project_id = uuid.uuid4()
+    volume_id = uuid.uuid4()
+    chapter = SimpleNamespace(
+        id=uuid.uuid4(),
+        volume_id=volume_id,
+        content_text="他推开门，看见了不该看见的东西。" * 10,
+        outline_json={"beats": []},
+    )
+    volume = SimpleNamespace(id=volume_id, project_id=project_id)
+
+    class _FakeDB:
+        async def get(self, model, pk):
+            if model is Chapter:
+                return chapter
+            if model is Volume:
+                return volume if pk == volume_id else None
+            return None
+
+        def add(self, obj):
+            pass
+
+        async def flush(self):
+            pass
+
+        async def refresh(self, obj):
+            pass
+
+    ledger_loads: list = []
+
+    async def _fake_load_ledger(db, pid):
+        ledger_loads.append(pid)
+        return {"林动": {"knows": ["秘密A"], "does_not_know": ["秘密B"]}}
+
+    monkeypatch.setattr(character_cognition, "load_ledger", _fake_load_ledger)
+
+    captured: dict = {}
+
+    async def _fake_evaluate(self, **kwargs):
+        captured.update(kwargs)
+        return EvaluationResult(overall=4.0)
+
+    monkeypatch.setattr(ChapterEvaluator, "evaluate", _fake_evaluate)
+
+    await versions_api.evaluate_chapter(
+        chapter_id=str(chapter.id),
+        body=versions_api.EvaluateRequest(),
+        db=_FakeDB(),
+    )
+
+    assert ledger_loads == [project_id], (
+        "manual /evaluate must reverse-look-up project_id via the chapter's "
+        "volume and load the cognition ledger for it"
+    )
+    assert captured.get("cognition_ledger_text"), (
+        "manual /evaluate must pass a non-empty cognition_ledger_text to "
+        "ChapterEvaluator.evaluate"
     )
