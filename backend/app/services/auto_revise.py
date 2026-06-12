@@ -191,7 +191,19 @@ def should_revise(
     repair rounds once the chapter reaches the target score. The goal is to
     move those diagnostics into pre-generation constraints so the first draft
     is already compliant.
+
+    B2 hotfix: when the evaluator could not parse the LLM response
+    (``parse_failed=True``), its all-zero scores are sentinels, not a real
+    verdict. Acting on the fake overall=0 used to trigger a revision round
+    whose synthetic quote-less issue defeated targeted revision and forced a
+    full-chapter rewrite (~10 min wasted). When the evaluation is untrusted
+    we must not touch the text -- skipping this revision round is strictly
+    cheaper and safer than rewriting on garbage signal.
     """
+    if getattr(eval_obj, "parse_failed", False):
+        return False
+    if isinstance(eval_obj, dict) and eval_obj.get("parse_failed"):
+        return False
     overall = _coerce_overall(eval_obj)
     return overall < float(threshold)
 

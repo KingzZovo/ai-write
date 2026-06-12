@@ -16,12 +16,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 from app.services.model_router import get_model_router_async
 from app.services.narrative_contract import EVALUATOR_CONTRACT_PROMPT
 
 logger = logging.getLogger(__name__)
+
+# B2 hotfix: bare control characters to strip on the JSON repair retry.
+# Keeps \t (\x09), \n (\x0a) and \r (\x0d) -- those are legitimate inside
+# string values once strict=False is in effect.
+_BARE_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 EVALUATION_SYSTEM_PROMPT = """\
 你是小说章节质量评审。只输出合法 JSON，不要输出解释、Markdown 或正文摘录。
@@ -103,6 +109,11 @@ class EvaluationResult:
     foreshadow_handling: float = 0.0
     overall: float = 0.0
     issues: list[dict] = field(default_factory=list)
+    # B2 hotfix: True when the LLM response could not be parsed at all, so
+    # the all-zero scores are sentinels rather than a real verdict. Callers
+    # (auto_revise.should_revise) must not treat such results as "bad
+    # chapter" -- a fake overall=0 previously forced a full-chapter rewrite.
+    parse_failed: bool = False
 
     def to_dict(self) -> dict:
         """Convert to a serializable dictionary."""
@@ -114,6 +125,7 @@ class EvaluationResult:
             "foreshadow_handling": self.foreshadow_handling,
             "overall": self.overall,
             "issues": self.issues,
+            "parse_failed": self.parse_failed,
         }
 
 
@@ -129,7 +141,28 @@ def _parse_evaluation_response(raw_text: str) -> EvaluationResult:
         text = text[: -3]
     text = text.strip()
 
-    data: dict = json.loads(text)
+    # B2 hotfix: evaluation LLMs sometimes emit RAW control characters inside
+    # JSON string values (typically a literal newline in an issue `quote`
+    # excerpt). json.loads defaults to strict=True and rejects those, which
+    # previously zeroed the whole evaluation and triggered a wasted
+    # full-chapter rewrite round. strict=False accepts control chars inside
+    # string values -- exactly this failure shape.
+    try:
+        data: dict = json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        # Minimal repair retry: slice from the first '{' to the last '}'
+        # (drops LLM prose/chatter around the JSON object) and drop bare
+        # control chars (keeping \n \t \r, which strict=False already
+        # tolerates), then try once more. Anything still unparseable
+        # propagates to evaluate()'s except branch, which marks the result
+        # parse_failed.
+        cleaned = text
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end > start:
+            cleaned = cleaned[start : end + 1]
+        cleaned = _BARE_CONTROL_CHARS_RE.sub("", cleaned)
+        data = json.loads(cleaned, strict=False)
 
     dimensions = [
         "plot_coherence",
@@ -263,7 +296,11 @@ class ChapterEvaluator:
 
         except json.JSONDecodeError as exc:
             logger.error("Failed to parse evaluation response as JSON: %s", exc)
+            # parse_failed marks the zero scores as untrusted sentinels:
+            # should_revise() skips revision instead of treating overall=0
+            # as a genuinely terrible chapter.
             return EvaluationResult(
+                parse_failed=True,
                 issues=[
                     {
                         "dimension": "system",

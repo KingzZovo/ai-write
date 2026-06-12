@@ -974,6 +974,11 @@ async def generate_chapter(
 
                                 if (
                                     final_eval_row_id is not None
+                                    # B2 hotfix: a parse_failed evaluation
+                                    # carries sentinel overall=0, not a real
+                                    # verdict -- never plan a cascade
+                                    # regeneration on garbage signal.
+                                    and not getattr(final_eval, "parse_failed", False)
                                     and should_trigger_cascade(
                                         overall=final_eval.overall,
                                         rounds_exhausted=True,
