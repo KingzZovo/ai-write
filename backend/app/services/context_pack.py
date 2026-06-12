@@ -669,10 +669,32 @@ class ContextPackBuilder:
 
         pack = ContextPack()
 
+        # Task A2: ``chapter_idx`` is the volume-local DB ``Chapter.chapter_idx``
+        # (all build() callers pass it straight from the Chapter row), while
+        # ``Foreshadow.planted_chapter`` is book-global. Convert once here so
+        # the foreshadow debt computation compares like with like; from
+        # volume 2 onward the local value made ages negative and silently
+        # suppressed every debt alert. Proximity windows / golden-three-chapter
+        # logic intentionally stay in the volume-local domain. Fail-safe:
+        # fall back to the local value rather than blocking generation
+        # (debt may under-report, never crash).
+        try:
+            global_chapter_idx = await self._resolve_global_chapter_idx(
+                project_id, volume_id, chapter_idx
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Global chapter idx resolution failed, falling back to local %s: %s",
+                chapter_idx, exc,
+            )
+            global_chapter_idx = int(chapter_idx)
+
         # Layer 1: Proximity
         await self._build_proximity(pack, project_id, volume_id, chapter_idx)
         # Layer 2: Facts
-        await self._build_facts(pack, project_id, chapter_idx)
+        await self._build_facts(
+            pack, project_id, chapter_idx, global_chapter_idx=global_chapter_idx
+        )
         # Layer 3: RAG
         await self._build_rag(pack, project_id, chapter_idx)
 
@@ -714,6 +736,53 @@ class ContextPackBuilder:
                 logger.debug("ctxpack invalidation clear failed: %s", exc)
 
         return pack
+
+    async def _resolve_global_chapter_idx(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+    ) -> int:
+        """Convert the volume-local ``chapter_idx`` into a book-global index.
+
+        Convention, verified against the write side (Task A2): the
+        ``foreshadows.planted_chapter`` column is populated through
+        ``foreshadow_lifecycle.chapter_global_idx(db, pid, vol.volume_idx,
+        chapter.chapter_idx)`` — see api/generate.py (chapter content save)
+        and chapter_outline_expander.py L238 — where ``chapter.chapter_idx``
+        is the DB value materialized 1-based per volume (api/volumes.py
+        uses ``i + 1``; the lifecycle docstrings say "0-based" but the code
+        never re-bases). ``build()`` receives that same volume-local DB
+        value, so applying the *identical* conversion (chapter-count offset
+        of earlier volumes + local idx) lands in the same domain as
+        ``planted_chapter`` regardless of the 0/1-base of the local index.
+        Example: vol 1 has 10 chapters -> vol 2 ch 1 (local) -> global 11.
+
+        Fail-safe: returns ``chapter_idx`` unchanged on any error (debt may
+        under-report, but context building never breaks).
+        """
+        try:
+            db = await self._get_db()
+            vol_idx = (
+                await db.execute(
+                    select(Volume.volume_idx).where(Volume.id == str(volume_id))
+                )
+            ).scalar_one_or_none()
+            if vol_idx is None:
+                return int(chapter_idx)
+            from app.services.foreshadow_lifecycle import chapter_global_idx
+
+            return int(
+                await chapter_global_idx(
+                    db, str(project_id), int(vol_idx), int(chapter_idx)
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to resolve global chapter idx (volume_id=%s, local=%s): %s",
+                volume_id, chapter_idx, exc,
+            )
+            return int(chapter_idx)
 
     # ------------------------------------------------------------------
     # Layer 1: Proximity
@@ -877,8 +946,17 @@ class ContextPackBuilder:
         pack: ContextPack,
         project_id: str | UUID,
         chapter_idx: int,
+        global_chapter_idx: int | None = None,
     ) -> None:
-        """Build Layer 2: world rules, character cards, foreshadows, timeline."""
+        """Build Layer 2: world rules, character cards, foreshadows, timeline.
+
+        ``chapter_idx`` is volume-local (DB ``Chapter.chapter_idx``) and keeps
+        driving every local-domain query here. ``global_chapter_idx`` is the
+        book-global equivalent (see ``_resolve_global_chapter_idx``) and is
+        used only where the comparison target is book-global —
+        ``Foreshadow.planted_chapter`` in the debt computation. Defaults to
+        ``chapter_idx`` when not provided (legacy behavior).
+        """
         db = await self._get_db()
         pid = str(project_id)
 
@@ -997,7 +1075,16 @@ class ContextPackBuilder:
                     render_debt_warning,
                 )
 
-                debt = compute_debt_score(fs_rows, int(chapter_idx))
+                # Task A2: debt ages compare against ``planted_chapter``,
+                # which is book-global — use the resolved global idx, not
+                # the volume-local one (the local value made ages negative
+                # from volume 2 onward, silently suppressing all alerts).
+                debt_idx = (
+                    global_chapter_idx
+                    if global_chapter_idx is not None
+                    else chapter_idx
+                )
+                debt = compute_debt_score(fs_rows, int(debt_idx))
                 pack.foreshadow_debt_warning = render_debt_warning(debt)
             except Exception as e:
                 logger.warning("Failed to compute foreshadow debt: %s", e)

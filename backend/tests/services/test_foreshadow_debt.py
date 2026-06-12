@@ -259,3 +259,194 @@ class TestBuildFactsWiring:
             "stub foreshadow rows should reach the foreshadow block"
         )
         assert pack.foreshadow_debt_warning == expected
+
+
+class _FakeForeshadowRow:
+    """Minimal ORM-shaped foreshadow row for stub db sessions."""
+
+    status = "planted"
+    type = "plot"
+    resolved_chapter = None
+    narrative_proximity = 0.5
+
+    def __init__(self, description: str, planted_chapter: int = 0) -> None:
+        self.description = description
+        self.planted_chapter = planted_chapter
+        self.resolve_conditions_json: list = []
+        self.resolution_blueprint_json: dict = {}
+
+
+def _stub_db_with_foreshadows(fs_rows):
+    """Async-execute stub: Foreshadow ORM queries return ``fs_rows``,
+    everything else returns empty results (every block is fail-safe)."""
+    from app.models.project import Foreshadow
+
+    async def _fake_execute(stmt, *args, **kwargs):
+        try:
+            entities = [d.get("entity") for d in stmt.column_descriptions]
+        except Exception:
+            entities = []
+        rows = fs_rows if Foreshadow in entities else []
+        result = MagicMock()
+        result.all = MagicMock(return_value=[])
+        result.scalar_one_or_none = MagicMock(return_value=None)
+        scalars = MagicMock()
+        scalars.all = MagicMock(return_value=rows)
+        result.scalars = MagicMock(return_value=scalars)
+        return result
+
+    fake_db = MagicMock()
+    fake_db.execute = _fake_execute
+    return fake_db
+
+
+def _make_builder(fake_db):
+    """ContextPackBuilder on a stub db with Neo4j/strand sub-builders nooped."""
+    from app.services.context_pack import ContextPackBuilder
+
+    builder = ContextPackBuilder.__new__(ContextPackBuilder)
+    builder._db = fake_db
+    builder._owns_db = False
+
+    async def _noop(*args, **kwargs):
+        return None
+
+    builder._enrich_characters_from_neo4j = _noop
+    builder._build_strand_tracker = _noop
+    return builder
+
+
+class TestDebtUsesGlobalChapterIdx:
+    """Task A2: foreshadow debt must compare against book-global chapter idx.
+
+    Convention (verified against the codebase, despite docstrings claiming
+    0-based): ``Foreshadow.planted_chapter`` is written via
+    ``foreshadow_lifecycle.chapter_global_idx(db, pid, vol.volume_idx,
+    chapter.chapter_idx)`` (api/generate.py ~L502, chapter_outline_expander
+    L238) where ``chapter.chapter_idx`` is the DB value materialized 1-based
+    per volume (api/volumes.py ``i + 1``). ``ContextPackBuilder.build()``
+    receives that same volume-local DB value, so applying the identical
+    conversion (earlier-volume chapter-count offset + local idx) lands in
+    the same domain as ``planted_chapter``. Example: vol1 has 10 chapters,
+    vol2 ch1 (local 1) -> global 11.
+
+    Before the fix the volume-local idx was fed to ``compute_debt_score``,
+    making ages negative from volume 2 onward and silently suppressing all
+    debt alerts.
+    """
+
+    @pytest.mark.asyncio
+    async def test_build_facts_debt_uses_global_chapter_idx(self):
+        from app.services.context_pack import ContextPack
+
+        # vol 2 (volume_idx=2) chapter 1 (local chapter_idx=1); vol 1 has
+        # 10 chapters -> global idx 11. Three foreshadows planted at global
+        # ch3, still "planted": age = 11 - 3 = 8 >= 5 -> 3 criticals ->
+        # score 55 < 60 -> debt warning non-empty.
+        fs_rows = [_FakeForeshadowRow(f"卷一伏笔{i}", planted_chapter=3) for i in range(3)]
+        local_chapter_idx = 1
+        global_chapter_idx = 11
+
+        # Regression doc: with the local idx, age = 1 - 3 = -2 -> skipped.
+        assert render_debt_warning(
+            compute_debt_score(fs_rows, local_chapter_idx)
+        ) == "", "precondition: local idx must NOT trip the gate"
+        expected = render_debt_warning(
+            compute_debt_score(fs_rows, global_chapter_idx)
+        )
+        assert expected, "precondition: global idx must trip the gate"
+
+        builder = _make_builder(_stub_db_with_foreshadows(fs_rows))
+        pack = ContextPack()
+        await builder._build_facts(
+            pack, "proj-1", local_chapter_idx,
+            global_chapter_idx=global_chapter_idx,
+        )
+        assert pack.foreshadow_debt_warning == expected
+
+    @pytest.mark.asyncio
+    async def test_build_wires_resolved_global_idx_into_debt(self):
+        """``build()`` must resolve the global idx and feed it to the debt
+        computation (mutation guard for the wiring, resolver monkeypatched)."""
+        fs_rows = [_FakeForeshadowRow(f"卷一伏笔{i}", planted_chapter=3) for i in range(3)]
+        builder = _make_builder(_stub_db_with_foreshadows(fs_rows))
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        builder._build_proximity = _noop
+        builder._build_rag = _noop
+
+        async def _fake_resolve(project_id, volume_id, chapter_idx):
+            return 11
+
+        builder._resolve_global_chapter_idx = _fake_resolve
+
+        pack = await builder.build("proj-1", "vol-2", 1)
+
+        expected = render_debt_warning(compute_debt_score(fs_rows, 11))
+        assert expected, "precondition: global idx must trip the gate"
+        assert pack.foreshadow_debt_warning == expected
+
+    @pytest.mark.asyncio
+    async def test_resolve_global_chapter_idx_adds_prior_volume_offset(self):
+        """Resolver = Volume.volume_idx lookup + chapter_global_idx (sum of
+        chapter counts of volumes with volume_idx < current, then + local)."""
+
+        async def _fake_execute(stmt, *args, **kwargs):
+            result = MagicMock()
+            if "COUNT(" in str(stmt):
+                # get_volume_first_global_idx SQL: vol 1 has 10 chapters.
+                result.all = MagicMock(return_value=[(1, 10)])
+            else:
+                # select(Volume.volume_idx).where(Volume.id == ...)
+                result.scalar_one_or_none = MagicMock(return_value=2)
+            return result
+
+        fake_db = MagicMock()
+        fake_db.execute = _fake_execute
+        builder = _make_builder(fake_db)
+
+        gidx = await builder._resolve_global_chapter_idx("proj-1", "vol-2", 1)
+        assert gidx == 11
+
+    @pytest.mark.asyncio
+    async def test_resolve_global_chapter_idx_fail_safe_returns_local(self):
+        """DB error during resolution -> fall back to the local idx (debt may
+        under-report but context building never breaks)."""
+
+        async def _boom(stmt, *args, **kwargs):
+            raise RuntimeError("db down")
+
+        fake_db = MagicMock()
+        fake_db.execute = _boom
+        builder = _make_builder(fake_db)
+
+        assert await builder._resolve_global_chapter_idx("proj-1", "vol-2", 7) == 7
+
+    @pytest.mark.asyncio
+    async def test_build_survives_resolver_exception_and_uses_local_idx(self):
+        """Even if the resolver itself raises, build() must not crash and the
+        debt falls back to the old local-idx behavior."""
+        fs_rows = [_FakeForeshadowRow(f"超期伏笔{i}", planted_chapter=3) for i in range(3)]
+        builder = _make_builder(_stub_db_with_foreshadows(fs_rows))
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        builder._build_proximity = _noop
+        builder._build_rag = _noop
+
+        async def _broken_resolve(project_id, volume_id, chapter_idx):
+            raise RuntimeError("resolver exploded")
+
+        builder._resolve_global_chapter_idx = _broken_resolve
+
+        local_chapter_idx = 20
+        pack = await builder.build("proj-1", "vol-2", local_chapter_idx)
+
+        expected = render_debt_warning(
+            compute_debt_score(fs_rows, local_chapter_idx)
+        )
+        assert expected, "precondition: local idx 20 trips the gate"
+        assert pack.foreshadow_debt_warning == expected
