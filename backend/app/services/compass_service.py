@@ -240,12 +240,27 @@ def _book_outline_text(content_json: Any) -> str:
 
 
 async def initialize_from_book_outline(db, project_id, content_json, target_word_count=None) -> dict:
-    """Initialize the compass from the book outline. Fail-safe: never raises."""
+    """Initialize the compass from the book outline. Fail-safe: never raises.
+
+    The deterministic scale is persisted FIRST so it survives even when the LLM
+    enrichment (ending_direction / open_threads) is unavailable -- the scale
+    range alone already powers the completion-readiness floor/ceiling checks and
+    the generation anchor's scale line.
+    """
+    compass: dict = {}
     try:
         compass = await load_compass(db, project_id)
         scale = derive_estimated_scale(target_word_count)
         if scale:
             compass["estimated_scale"] = scale
+            # Persist the deterministic part immediately (LLM-independent).
+            await save_compass(db, project_id, compass)
+    except Exception as exc:
+        logger.warning("compass scale init failed (project=%s): %s", project_id, exc)
+        return compass
+
+    # LLM enrichment is best-effort on top of the persisted scale.
+    try:
         text = _book_outline_text(content_json)
         if text.strip():
             data = await _llm_json(_INIT_PROMPT, f"【全书大纲】\n{text}")
@@ -258,11 +273,12 @@ async def initialize_from_book_outline(db, project_id, content_json, target_word
                      "status": t.get("status", "active")}
                     for t in threads if isinstance(t, dict) and t.get("thread")
                 ][:8]
-        await save_compass(db, project_id, compass)
-        return compass
+            await save_compass(db, project_id, compass)
     except Exception as exc:
-        logger.warning("compass initialize failed (project=%s): %s", project_id, exc)
-        return {}
+        logger.warning(
+            "compass LLM enrichment failed (project=%s, scale kept): %s", project_id, exc
+        )
+    return compass
 
 
 async def update_on_new_volume(db, project_id, volume_outline_json) -> dict:
