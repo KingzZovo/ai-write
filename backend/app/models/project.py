@@ -351,6 +351,41 @@ class StyleStat(Base):
     )
 
 
+class CharacterAppearance(Base):
+    """Secondary-cast roster (C3 / F4, ainovel).
+
+    One row per (project, character_name). Tracks first/last appearance chapter
+    (book-global idx) and total appearance count, populated by the deterministic
+    recompute task. Used to remind generation to re-read a long-absent
+    character's last appearance, and as the "character last seen" signal for
+    deterministic related-chapter recall.
+
+    Separate table (not the Neo4j-projected ``characters``) so the write path is
+    pure PG, zero LLM, and never collides with entity materialization.
+    """
+
+    __tablename__ = "character_appearances"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    character_name = Column(String(128), nullable=False)
+    first_seen_chapter = Column(Integer, default=0)
+    last_seen_chapter = Column(Integer, default=0)
+    appearance_count = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "character_name", name="uq_character_appearances_key"
+        ),
+    )
+
+
 class StyleProfile(Base):
     """A writing style profile that can be bound to a book/chapter/generation."""
 

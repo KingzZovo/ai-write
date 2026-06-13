@@ -224,6 +224,9 @@ class ContextPack:
     # C2/F1 v1.9.2: book-level style-tic mirror (dampen your own high-frequency
     # phrasings). Pre-rendered by style_stat.render_style_mirror_block.
     style_tic_mirror: str = ""
+    # C3/F4 v1.9.2: deterministic related-chapter recall + secondary-cast roster.
+    # Pre-rendered by related_chapters/character_roster render functions.
+    related_chapter_recall: str = ""
 
     # Layer 3: RAG (~20%)
     rag_snippets: list[str] = field(default_factory=list)
@@ -463,6 +466,12 @@ class ContextPack:
                 f"后续第{i}章方向: {o}" for i, o in enumerate(self.future_outlines, 1)
             )
             l1_parts.append(f"【后续走向(参考)】\n{future_text}")
+
+        # C3/F4: deterministic related-chapter recall + cast roster at the L1
+        # tail (survives keep-tail truncation; the token_budget bump protects
+        # the L1 head outline/summary blocks above).
+        if self.related_chapter_recall:
+            l1_parts.append(self.related_chapter_recall)
 
         l1_text = "\n\n".join(l1_parts)
         l1_text = self._truncate_to_budget(l1_text, budget_l1)
@@ -1162,6 +1171,49 @@ class ContextPackBuilder:
                 pack.style_tic_mirror = render_style_mirror_block(row[0], max_chars=800)
         except Exception as e:
             logger.warning("Failed to load style stats: %s", e)
+
+        # C3/F4: deterministic related-chapter recall + secondary-cast roster.
+        try:
+            from app.services.character_roster import render_roster_block
+            from app.services.related_chapters import (
+                find_related_chapters,
+                render_recall_block,
+            )
+
+            related = await find_related_chapters(
+                db, pid, None, chapter_idx, pack.current_outline or {}
+            )
+            recall = render_recall_block(related, max_chars=600)
+
+            roster_block = ""
+            try:
+                from sqlalchemy import select as _select
+
+                from app.models.project import CharacterAppearance
+
+                cast_rows = (
+                    await db.execute(
+                        _select(
+                            CharacterAppearance.character_name,
+                            CharacterAppearance.last_seen_chapter,
+                        ).where(CharacterAppearance.project_id == pid)
+                    )
+                ).all()
+                cast = [
+                    {"character_name": n, "last_seen_chapter": ls}
+                    for n, ls in cast_rows
+                ]
+                roster_block = render_roster_block(
+                    cast, (global_chapter_idx or chapter_idx), max_chars=600
+                )
+            except Exception as e:
+                logger.warning("Failed to render cast roster: %s", e)
+
+            pack.related_chapter_recall = "\n\n".join(
+                b for b in (recall, roster_block) if b
+            )
+        except Exception as e:
+            logger.warning("Failed to build related-chapter recall: %s", e)
 
         # Build strand tracker from recent chapters
         await self._build_strand_tracker(pack, pid, chapter_idx)

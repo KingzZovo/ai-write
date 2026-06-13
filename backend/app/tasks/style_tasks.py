@@ -202,6 +202,20 @@ async def _recompute_style_stats_async(project_id: str, caller: str) -> dict:
 
         stats = compute_style_stats(chapters, names)
 
+        # C3/F4: refresh the secondary-cast roster from the same chapter pull
+        # (one read serves both features). Best-effort; never blocks stats.
+        try:
+            from app.services.character_roster import update_roster_for_chapter
+
+            for global_idx, content in chapters:
+                await update_roster_for_chapter(
+                    db, project_id, global_idx, content, names
+                )
+        except Exception as roster_err:
+            logger.warning(
+                "roster update failed (project=%s): %s", project_id, roster_err
+            )
+
         await db.execute(
             insert(StyleStat)
             .values(
