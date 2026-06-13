@@ -312,7 +312,13 @@ class ChapterEvaluator:
             )
         except Exception as exc:
             logger.error("Chapter evaluation failed: %s", exc, exc_info=True)
+            # parse_failed marks the zero scores as untrusted: this branch also
+            # catches non-dict JSON (AttributeError), bare-fence ValueError, and
+            # router/network errors. Without the flag, overall=0 would pass
+            # should_revise() and trigger a wasted full-chapter rewrite -- the
+            # exact bug B2 fixed for the JSONDecodeError path.
             return EvaluationResult(
+                parse_failed=True,
                 issues=[
                     {
                         "dimension": "system",

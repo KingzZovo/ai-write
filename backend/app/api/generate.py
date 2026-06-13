@@ -732,10 +732,20 @@ async def generate_chapter(
 
                         # 2) Threshold gate.
                         if not should_revise(eval_result, threshold=threshold):
-                            _x4_inc_revise("skipped")  # v1.6.0 X4 metric: revise round outcome
+                            # B2: distinguish "good enough to accept" from
+                            # "evaluation untrustworthy, don't act on it" -- the
+                            # latter has overall=0, so reporting it as
+                            # score_above_threshold is self-contradictory.
+                            _parse_failed = getattr(eval_result, "parse_failed", False)
+                            _x4_inc_revise(
+                                "skipped_parse_failed" if _parse_failed else "skipped"
+                            )  # v1.6.0 X4 metric: revise round outcome
                             skipped_payload = json.dumps({
                                 "event": "revise_skipped",
-                                "reason": "score_above_threshold",
+                                "reason": (
+                                    "evaluation_parse_failed" if _parse_failed
+                                    else "score_above_threshold"
+                                ),
                                 "overall": eval_result.overall,
                                 "threshold": threshold,
                             })

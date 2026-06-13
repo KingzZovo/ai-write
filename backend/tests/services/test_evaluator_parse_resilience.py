@@ -88,7 +88,13 @@ def test_parse_survives_control_chars_in_quote():
     quotes = [i.get("quote", "") for i in result.issues]
     surviving = [q for q in quotes if "他忽然出现在" in q]
     assert surviving, f"quote locator lost during tolerant parse: {quotes}"
-    # The \x0b must be gone or harmless; \n may be kept or stripped.
+    # Pin that we took layer 1 (strict=False), which preserves control chars
+    # verbatim. The strip-and-retry layer would remove \x0b via the bare-control
+    # regex, so asserting \x0b survived fails the mutation strict=False->strict=True.
+    assert "\x0b" in surviving[0], (
+        "expected layer-1 strict=False to preserve \\x0b verbatim; "
+        f"got {surviving[0]!r}"
+    )
     assert "城东的仓库" in surviving[0].replace("\x0b", "")
 
 
@@ -115,11 +121,26 @@ def test_parse_extracts_json_from_surrounding_prose():
     assert result.overall == pytest.approx(7.4)
 
 
-def test_parse_strip_retry_handles_other_bare_control_chars():
-    """Even \\x00-style control chars (rejected by some decoders) survive via
-    the strip-and-retry layer without zeroing the evaluation."""
-    raw = _five_dim_payload_with_raw_quote("证物\x01凭空\x1f出现")
-    result = _parse_evaluation_response(raw)
+def test_parse_strip_retry_handles_structural_control_chars():
+    """A control char in a STRUCTURAL position (not inside a string value) is
+    rejected by json.loads even with strict=False, so only the strip-and-retry
+    layer -- which removes bare control chars -- can recover it. This genuinely
+    exercises the second parse layer (unlike in-string control chars, which
+    layer-1 strict=False already tolerates)."""
+    payload = _five_dim_payload_with_raw_quote("证物凭空出现")
+    # Inject \x0b right after a dimension object's closing brace -- a structural
+    # position between value and comma, where strict=False does NOT help.
+    marker = '"issues": []}'
+    idx = payload.find(marker)
+    assert idx != -1
+    insert_at = idx + len(marker)
+    structural = payload[:insert_at] + "\x0b" + payload[insert_at:]
+
+    # Sanity: layer 1 (strict=False) really does reject a structural control char.
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(structural, strict=False)
+
+    result = _parse_evaluation_response(structural)
     assert result.parse_failed is False
     assert result.overall == pytest.approx(7.4)
 
@@ -148,6 +169,36 @@ async def test_parse_failed_flag_set_on_garbage():
 
     assert result.parse_failed is True
     assert result.overall == 0.0
+
+
+@pytest.mark.asyncio
+async def test_parse_failed_flag_set_on_non_dict_json():
+    """Valid JSON that is not a dict (e.g. a list) crashes _parse_evaluation_response
+    at .get() -> generic except branch must ALSO set parse_failed, otherwise the
+    overall=0 result passes should_revise and triggers a wasted rewrite (same bug
+    as the JSONDecodeError path, different trigger)."""
+    fake_router = MagicMock()
+    fake_router.generate_with_tier_fallback = AsyncMock(
+        return_value=GenerationResult(
+            text="[1, 2, 3]",
+            usage=TokenUsage(input_tokens=10, output_tokens=20),
+            model="stub",
+            provider="stub",
+        )
+    )
+
+    with patch(
+        "app.services.chapter_evaluator.get_model_router_async",
+        AsyncMock(return_value=fake_router),
+    ):
+        result = await ChapterEvaluator().evaluate(
+            chapter_text="本章测试内容。" * 50,
+            chapter_outline={"summary": "测试章节大纲"},
+        )
+
+    assert result.parse_failed is True
+    assert result.overall == 0.0
+    assert should_revise(result, threshold=8.2) is False
 
 
 def test_should_revise_skips_parse_failed():
