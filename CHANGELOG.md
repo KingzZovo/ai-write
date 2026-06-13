@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.9.2] - 2026-06-13
+
+遗留项修复 + ainovel-cli 借鉴四件套（12 commits）。调研 voocel/ainovel-cli（Go/TUI，473★）后引入 4 个我们没有等价物的机制；同时修掉 v1.9.1 记录的 3 个遗留项 + 真实生成冒烟发现的 2 个 bug。计划见 `.claude/plans/ai-https-github-com-mochocyang-qmai-groovy-garden.md`。
+
+### 遗留项修复（A）
+
+- **test_relationships_crud 重写**：v1.9 起 PG settings 写端点已故意 410（Neo4j 为唯一真源），旧测试按 PG 直写契约写已过时。改为断言写端点 410 + 只读端点 200，并清理 dev 库 44 个测试残留项目。全套自此 0 失败。
+- **伏笔债务全局章号**：`ContextPackBuilder` 内部用 `chapter_global_idx` 把卷内局部章号换算为书级全局号再算债务，修掉第 2 卷起 age 偏小/为负导致的漏报（调用方零改动，写读两侧同换算同域可比）。
+- **generation_runner 签名对齐**：`build(project_id, chapter_id=...)` 与现签名 `(project_id, volume_id, chapter_idx)` 不匹配的 TypeError 暗债，新增 `_resolve_chapter_coords` 反查修复。
+- **认知账本补全两个 evaluate 调用方**：`evaluation_tasks` 独立评估任务 + `versions` 手动评估端点现在也注入认知账本（反查 chapter→volume→project_id）。
+
+### 生成冒烟发现的修复（B）
+
+- **真实生成冒烟**（流程测试2，550 章/5 卷）验证 A 阶段修复，并抓到：评估 LLM 在 JSON 字符串里输出原始控制符 → `json.loads` strict=True 抛错 → overall=0 假评分 → 整章重写（烧 2/3 修订轮）。
+- **评估解析容错**：`strict=False` + 修复重试（剥围栏/截首尾大括号/剥裸控制符）；新增 `EvaluationResult.parse_failed`，解析失败时 `should_revise` 跳过修订（不在垃圾信号上动文），泛型 except 也置标志，cascade 触发点加闸。
+
+### 新功能（ainovel-cli 借鉴，均注明出处）
+
+- **C1 评审防过度返工校准**（`EVALUATOR_CALIBRATION_PROMPT` 六条 + `REVISE_CALIBRATION_PROMPT`）：「accept 是最常见结果」「审美 warning 不构成返工理由」「对话区分度测试」「平淡必须 quote 指出 1-2 处」。封顶规则与 8.2 阈值逻辑不变，只把审美噪音从分数里拿掉。
+- **C2 全书文风统计 stylestat**（表 `style_stats`，迁移 a1001911）：纯 Python 零 LLM 统计句式 tic 章均频率、最近 20 章 n-gram 高频短语（实体名做停用词）、跨章逐字重复句、章末同构、开篇时间词率。双向反馈：生成端注入「文风镜像（主动压低）」，评分端给统计数字由 LLM 裁定。补「单章评审窗口对全书级文风固化失明」盲区。
+- **C3 确定性相关章反查 + 配角名册**（表 `character_appearances`，迁移 a1001912）：从伏笔埋设章（全局号）+ 配角 last_seen 反查相关历史章强制回读（与向量检索互补，零嵌入）；配角 first_seen/last_seen/出场数台账，长期未出场角色提示回读对齐。状态变化路因 chapter_start 是卷内局部域 V1 跳过。
+- **C4 叙事方向锚 Compass + 完结判定**（表 `narrative_compass`，迁移 a1001913）：ending_direction（终局命题）+ open_threads（长线台账）+ estimated_scale（规模区间，禁单值）。规模纯代码派生（确定性优先持久化），终局/长线 LLM 抽取；新卷生成时更新（带 ±30% clamp）；完结六条清单（规模未达下限/活跃长线/未回收伏笔→阻断，终局是否回答→人工核对，日常稳态启发式告警）。API `/compass`、`/compass/refresh`、`/compass/completion-readiness`。生成时注入方向锚。
+
+### prompt 预算
+
+- `ContextPack.to_system_prompt` 默认 token_budget 8000→9500，覆盖三个新注入块（文风镜像 L2 尾 ≤800、相关章回读 L1 尾 ≤600、方向锚 L1 尾 ≤400），保护 L1/L2 头部世界规则不被截断（keep-tail 截断语义）。
+
+### 测试与验证
+
+- pytest **598 passed**（本轮新增 ~60 个测试，纯函数 + 注入 tripwire + 变异自查；评估解析/校准/stylestat/反查/Compass 各有覆盖）；唯一历史失败 test_relationships_crud 已在 A1 修复，全套 0 失败。
+- 迁移 a1001911→a1001913 已实跑到 head；部署冒烟 /api/health 200、启动无错误。
+- C 特性真实数据验证（流程测试2 550 章）：文风镜像正确识别 time_quantifier 1.76/章 + 北山殡仪馆/七号线等高频地名 + 68% 短句章末；配角名册 150 行；Compass 派生规模 637-862 章 + LLM 抽出终局命题，completion-readiness 正确阻断（550<637 下限 + 8 条活跃长线）。
+
+### Breaking / 注意
+
+- 新增 3 张表，需 `alembic upgrade head`（a1001913，幂等，本机已执行）。
+- 子代理派发本轮持续 429（服务过载），A1-A4/B/C 全部内联实现 + 自审 + 变异验证，无独立审查代理。
+- **已知遗留**：① stylestat n-gram 停用词只过滤含全名的 gram，昵称短形（"见月把"）会漏入高频短语，待加昵称 skiplist；② C3 状态变化反查路（chapter_start 卷内局部域）V1 未启用，待 CharacterState 加卷标识；③ Compass 自动初始化仅在 `/compass/refresh` 与卷重生时触发，book 大纲首次生成的深层异步/SSE 保存点未挂钩（避免深嵌套回归风险）；④ B1 另曝 scene_planner 结构化输出 6/6 失败走兜底、质量门 rewrite 与长度地板打架，属既有行为，待后续任务。
+
 ## [1.9.1] - 2026-06-11
 
 质量加固 + QMAI 借鉴迭代（28 commits）：先把积压的进行中改动按语义拆分提交锁定，随后修复 8 个后端 + 6 个前端正确性 bug，并落地 4 项借鉴自 QMAI（MIT, github.com/Mochocyang/QMAI）的特性。计划与逐任务审查记录见 `docs/superpowers/plans/2026-06-10-quality-hardening-and-qmai-adoption.md`。
