@@ -221,6 +221,9 @@ class ContextPack:
     # Q3 v1.9.1: serialized character cognition ledger (who knows what /
     # reader-only facts). Pre-rendered by character_cognition.serialize_for_prompt.
     cognition_boundaries: str = ""
+    # C2/F1 v1.9.2: book-level style-tic mirror (dampen your own high-frequency
+    # phrasings). Pre-rendered by style_stat.render_style_mirror_block.
+    style_tic_mirror: str = ""
 
     # Layer 3: RAG (~20%)
     rag_snippets: list[str] = field(default_factory=list)
@@ -413,7 +416,7 @@ class ContextPack:
             parts.append("本卷世界逻辑合同：\n" + "\n".join(vc_lines))
         return "\n\n".join(parts)
 
-    def to_system_prompt(self, token_budget: int = 8000) -> str:
+    def to_system_prompt(self, token_budget: int = 9500) -> str:
         """Build the system prompt from all layers with budget allocation.
 
         Budget distribution:
@@ -509,6 +512,14 @@ class ContextPack:
         if strand_warnings:
             sw_text = "\n".join(strand_warnings)
             l2_parts.append(f"【线索平衡提醒】\n{sw_text}")
+
+        # C2/F1: book-level style-tic mirror at the L2 tail. _truncate_to_budget
+        # keeps the *tail*, so a tail block survives; the token_budget bump
+        # (8000->9500) is what keeps the L2 *head* (world rules) from being
+        # dropped when the fact-constraint block is large. The mirror is a
+        # "dampen your tics" hint, safe to lose under extreme budget pressure.
+        if self.style_tic_mirror:
+            l2_parts.append(self.style_tic_mirror)
 
         l2_text = "\n\n".join(l2_parts)
         l2_text = self._truncate_to_budget(l2_text, budget_l2)
@@ -1134,6 +1145,23 @@ class ContextPackBuilder:
             )
         except Exception as e:
             logger.warning("Failed to load character cognition ledger: %s", e)
+
+        # C2/F1 v1.9.2: whole-book style-tic mirror -> 文风镜像 section (L2 tail).
+        try:
+            from sqlalchemy import select as _select
+
+            from app.models.project import StyleStat
+            from app.services.style_stat import render_style_mirror_block
+
+            row = (
+                await db.execute(
+                    _select(StyleStat.stats_json).where(StyleStat.project_id == pid)
+                )
+            ).first()
+            if row and row[0]:
+                pack.style_tic_mirror = render_style_mirror_block(row[0], max_chars=800)
+        except Exception as e:
+            logger.warning("Failed to load style stats: %s", e)
 
         # Build strand tracker from recent chapters
         await self._build_strand_tracker(pack, pid, chapter_idx)

@@ -320,6 +320,37 @@ class CharacterCognition(Base):
     )
 
 
+class StyleStat(Base):
+    """Whole-book style statistics (C2 / F1, ainovel stylestat).
+
+    One row per project. ``stats_json`` is the deterministic output of
+    ``style_stat.compute_style_stats`` (tic frequencies, recent n-gram tics,
+    cross-chapter repeated sentences, ending/opening shape). Recomputed in the
+    background after a chapter is finalized; consumed both at generation time
+    (a "dampen your own tics" mirror block) and at evaluation time (raw numbers
+    for the LLM to adjudicate).
+
+    Adapted from voocel/ainovel-cli stylestat (design idea; wording our own).
+    """
+
+    __tablename__ = "style_stats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stats_json = Column(JSON, default=dict)
+    chapter_count = Column(Integer, default=0)
+    computed_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_style_stats_project"),
+    )
+
+
 class StyleProfile(Base):
     """A writing style profile that can be bound to a book/chapter/generation."""
 

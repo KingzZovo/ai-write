@@ -64,6 +64,7 @@ def _build_user_prompt(
     style_profile: str,
     active_foreshadows: list[str] | None,
     cognition_ledger_text: str = "",
+    style_stats_text: str = "",
 ) -> str:
     """Build the user prompt with all context for evaluation."""
     parts: list[str] = []
@@ -90,6 +91,12 @@ def _build_user_prompt(
             "列表中的信息（除非本章写明获知路径）；不要无故抹平「读者已知-角色未知」的信息差。\n"
         )
         parts.append(_limit_text(cognition_ledger_text, 1200))
+
+    # C2/F1: whole-book style statistics (deterministic numbers; the LLM
+    # decides whether this chapter over-reuses book-level tics).
+    if style_stats_text:
+        parts.append("\n\n")
+        parts.append(_limit_text(style_stats_text, 600))
 
     if active_foreshadows:
         parts.append("\n\n## 当前活跃伏笔\n")
@@ -245,6 +252,7 @@ class ChapterEvaluator:
         style_profile: str = "",
         active_foreshadows: list[str] | None = None,
         cognition_ledger_text: str = "",
+        style_stats_text: str = "",
     ) -> EvaluationResult:
         """
         Evaluate a chapter using task_type='evaluation'.
@@ -257,6 +265,8 @@ class ChapterEvaluator:
             active_foreshadows: List of currently active foreshadow descriptions.
             cognition_ledger_text: Serialized character cognition ledger
                 (who knows what / reader-only facts) for cognition_violation checks.
+            style_stats_text: Whole-book style statistics block (C2/F1) for the
+                LLM to judge book-level tic over-reuse.
 
         Returns:
             EvaluationResult with scores across 5 dimensions and specific issues.
@@ -272,6 +282,7 @@ class ChapterEvaluator:
             style_profile=style_profile,
             active_foreshadows=active_foreshadows,
             cognition_ledger_text=cognition_ledger_text,
+            style_stats_text=style_stats_text,
         )
 
         messages = [

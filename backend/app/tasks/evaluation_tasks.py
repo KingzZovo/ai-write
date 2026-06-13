@@ -88,6 +88,7 @@ async def _run_evaluate_task_async(
         # plain string, safe to carry out of this session into the LLM step.
         # Best-effort; "" on any failure (never block evaluation).
         cognition_ledger_text = ""
+        style_stats_text = ""
         try:
             from app.models.project import Volume
             from app.services import character_cognition as _cognition
@@ -97,9 +98,12 @@ async def _run_evaluate_task_async(
                 cognition_ledger_text = _cognition.serialize_for_prompt(
                     await _cognition.load_ledger(db, volume.project_id)
                 )
+                # C2/F1: whole-book style statistics for the evaluator.
+                from app.services.style_stat import load_style_stats_text
+                style_stats_text = await load_style_stats_text(db, volume.project_id)
         except Exception as _cog_err:
             logger.warning(
-                "evaluate_chapter_task: cognition ledger load failed: %s",
+                "evaluate_chapter_task: cognition/style context load failed: %s",
                 _cog_err,
             )
 
@@ -115,6 +119,7 @@ async def _run_evaluate_task_async(
             chapter_text=chapter_text,
             chapter_outline=chapter_outline,
             cognition_ledger_text=cognition_ledger_text,
+            style_stats_text=style_stats_text,
         )
     except Exception as exc:
         # Persist failure status before re-raising so celery retry sees state.

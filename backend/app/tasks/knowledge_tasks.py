@@ -1131,6 +1131,16 @@ async def _run_async_generation_impl(task_id: str):
                         "Async generation: cognition ledger load failed: %s", _cog_err
                     )
 
+                # C2/F1: whole-book style statistics for evaluator adjudication.
+                style_stats_text = ""
+                try:
+                    from app.services.style_stat import load_style_stats_text
+                    style_stats_text = await load_style_stats_text(db, project_id)
+                except Exception as _style_err:
+                    logger.warning(
+                        "Async generation: style stats load failed: %s", _style_err
+                    )
+
                 for round_idx in range(1, max_rounds + 2):
                     task.status = "evaluating"
                     task.progress_text = current_text
@@ -1151,6 +1161,7 @@ async def _run_async_generation_impl(task_id: str):
                                 previous_summary=prev_context,
                                 style_profile=style_text,
                                 cognition_ledger_text=cognition_ledger_text,
+                                style_stats_text=style_stats_text,
                             ),
                             timeout=_eval_timeout,
                         )
@@ -1477,6 +1488,13 @@ async def _run_async_generation_impl(task_id: str):
                         await extract_and_update(db, project_id, full_text)
                     except Exception as cog_err:
                         logger.warning("Cognition ledger update failed after evaluation: %s", cog_err)
+                    # C2/F1: recompute whole-book style stats in the background
+                    # (deterministic, non-blocking, celery-optional).
+                    try:
+                        from app.services.style_stat import dispatch_style_recompute
+                        dispatch_style_recompute(project_id, caller="knowledge_tasks.chapter")
+                    except Exception as style_err:
+                        logger.warning("Style stats dispatch failed: %s", style_err)
                 else:
                     logger.debug(
                         "Skipping cognition ledger ingestion for needs_review chapter %s (overall below threshold)",

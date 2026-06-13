@@ -1144,6 +1144,13 @@ async def generate_chapter(
                         "Cognition ledger update after final save failed: %s",
                         cog_err,
                     )
+                # C2/F1: recompute whole-book style stats in the background
+                # (deterministic, non-blocking, celery-optional).
+                try:
+                    from app.services.style_stat import dispatch_style_recompute
+                    dispatch_style_recompute(req.project_id, caller="api.generate.chapter")
+                except Exception as style_err:
+                    logger.warning("Style stats dispatch failed: %s", style_err)
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
             yield "data: [DONE]\n\n"
