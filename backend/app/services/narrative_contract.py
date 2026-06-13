@@ -133,6 +133,30 @@ REVISE_CONTRACT_PROMPT = """\
 """
 
 
+# C1 (ainovel editor doctrine): calibration against over-revision. The
+# score->auto-revise loop's main operational risk is thrashing / rewriting for
+# the sake of rewriting. These principles pull the verdict back toward "accept
+# is the common result" without touching the 8.2 threshold logic. The hard caps
+# in EVALUATOR_CONTRACT_PROMPT (>=high-severity violation -> dimension <=7.5/6.5)
+# still backstop genuinely broken chapters, so calibration only loosens the
+# aesthetic-warning noise, never the world-logic floor.
+EVALUATOR_CALIBRATION_PROMPT = """\
+【评审校准（防过度返工）】
+- 没有高严重度合同违规时，accept（不触发返工）是最常见、最正确的结果；不要为显得严格而系统性压分。
+- 纯审美/风格偏好类问题只能记为 warning（severity=low），不计入维度封顶规则，也不构成返工理由。
+- 大纲/契约写得更激进、而章节做出了更合理的叙事取舍时，优先判可接受，在 issue 里说明取舍即可，不得仅因“偏离大纲”重判重写。
+- 每条 issue 必须带 quote 逐字证据；给不出 quote 的审美评价不要列入 issues；禁止用“整体流畅/文笔不错”一类空洞表扬占用 issue 配额。
+- 对话区分度测试：摘除说话人标记后仍无法分辨是谁在说话，记一条 character_consistency issue（带 quote）。
+- 整章平淡时禁止只写“节奏平淡”：必须用 quote 指出最该加强的 1-2 处，并给具体手法（加冲突压力 / 换感官承载 / 砍内省重复等）。
+"""
+
+
+REVISE_CALIBRATION_PROMPT = """\
+【修订校准】
+审美类 warning 不强制重写对应段落；只有高严重度违规和明显低分维度才动结构。保留原稿中可取的段落与表达，禁止为改而改——重写后若并未修复具体违规，宁可保留原文。
+"""
+
+
 def contract_block(*, include_scene_fields: bool = False, include_writer: bool = False) -> str:
     """Compose a compact contract prompt block for generation paths."""
     parts = [WORLD_LOGIC_CONTRACT, contract_hard_gate_prompt()]

@@ -20,7 +20,10 @@ import re
 from dataclasses import dataclass, field
 
 from app.services.model_router import get_model_router_async
-from app.services.narrative_contract import EVALUATOR_CONTRACT_PROMPT
+from app.services.narrative_contract import (
+    EVALUATOR_CALIBRATION_PROMPT,
+    EVALUATOR_CONTRACT_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,7 @@ JSON 格式必须是：
   "narrative_pacing": {"score": 0, "issues": []},
   "foreshadow_handling": {"score": 0, "issues": []}
 }
-""" + EVALUATOR_CONTRACT_PROMPT
+""" + EVALUATOR_CONTRACT_PROMPT + EVALUATOR_CALIBRATION_PROMPT
 
 
 def _limit_text(text: str, max_chars: int) -> str:

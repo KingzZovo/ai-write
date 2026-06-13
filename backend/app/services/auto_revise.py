@@ -33,7 +33,10 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Awaitable, Callable
 
-from app.services.narrative_contract import REVISE_CONTRACT_PROMPT
+from app.services.narrative_contract import (
+    REVISE_CALIBRATION_PROMPT,
+    REVISE_CONTRACT_PROMPT,
+)
 from app.services.narrative_quality_gates import (
     BLOCKING_CONTRACT_VIOLATION_TYPES,
     QUALITY_GATE_RULES,
@@ -199,6 +202,12 @@ def should_revise(
     full-chapter rewrite (~10 min wasted). When the evaluation is untrusted
     we must not touch the text -- skipping this revision round is strictly
     cheaper and safer than rewriting on garbage signal.
+
+    C1 note: the 8.2 threshold is paired with the evaluator/revise calibration
+    prompts (narrative_contract.EVALUATOR_CALIBRATION_PROMPT). Score semantics
+    are "publishable line": calibration pulls aesthetic noise out of the score
+    so below-8.2 reflects real world-logic/consistency gaps, not nitpicks. The
+    threshold logic itself is unchanged.
     """
     if getattr(eval_obj, "parse_failed", False):
         return False
@@ -286,6 +295,7 @@ def issues_to_revise_instruction(
     )
     lines.append("")
     lines.append(REVISE_CONTRACT_PROMPT)
+    lines.append(REVISE_CALIBRATION_PROMPT)
     return "\n".join(lines)
 
 

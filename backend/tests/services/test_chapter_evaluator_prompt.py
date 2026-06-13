@@ -34,3 +34,20 @@ def test_evaluation_max_tokens_not_truncating():
     src = inspect.getsource(chapter_evaluator)
     assert "max_tokens=900" not in src
     assert "max_tokens=2400" in src
+
+
+def test_system_prompt_contains_calibration():
+    """C1 (ainovel editor doctrine): the over-revision calibration block must be
+    spliced into the evaluator system prompt so the verdict regresses toward
+    'accept is the common result' rather than systematic score-lowering."""
+    from app.services.chapter_evaluator import EVALUATION_SYSTEM_PROMPT
+
+    for marker in (
+        "评审校准",          # block header
+        "accept",            # "accept is the most common, correct result"
+        "最常见",
+        "对话区分度",        # dialogue-distinctness test
+        "1-2 处",            # "must point at the 1-2 spots to strengthen"
+        "quote",             # every issue needs verbatim evidence
+    ):
+        assert marker in EVALUATION_SYSTEM_PROMPT, f"missing calibration marker: {marker}"

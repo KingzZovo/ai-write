@@ -345,3 +345,12 @@ def test_dispatch_evaluate_task_returns_true_on_success(monkeypatch) -> None:
     assert captured["kwargs"]["chapter_id"] == "chap-xyz"
     assert captured["kwargs"]["caller"] == "unit_test"
     assert captured["countdown"] == 5
+
+
+def test_issues_to_revise_instruction_contains_calibration() -> None:
+    """C1: the revise instruction must carry the over-revision calibration so
+    aesthetic warnings don't force rewrites and clean passages are preserved."""
+    e = EvaluationLite(overall=7.0, issues=[{"description": "节奏略平", "suggestion": "加冲突"}])
+    instr = issues_to_revise_instruction(e, round_idx=1)
+    assert "修订校准" in instr
+    assert "禁止为改而改" in instr

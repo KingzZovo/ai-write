@@ -77,3 +77,26 @@ def test_version_single_source() -> None:
     blueprint = _blueprint()
     assert set(re.findall(r"v4\.\d+", blueprint)) == {nqg.BLUEPRINT_VERSION}
     assert f"direct_generation_first_{nqg.BLUEPRINT_VERSION}" in blueprint
+
+
+def test_calibration_prompts_single_source() -> None:
+    """C1: the over-revision calibration prompts live only in narrative_contract;
+    chapter_evaluator and auto_revise must import (not re-define) them, so the
+    wording has one source of truth."""
+    import inspect
+
+    import app.services.narrative_contract as nc
+    import app.services.chapter_evaluator as ce
+    import app.services.auto_revise as ar
+
+    assert nc.EVALUATOR_CALIBRATION_PROMPT.strip()
+    assert nc.REVISE_CALIBRATION_PROMPT.strip()
+
+    # The literal block headers must not be redefined in the consumer modules.
+    ce_src = inspect.getsource(ce)
+    ar_src = inspect.getsource(ar)
+    assert "EVALUATOR_CALIBRATION_PROMPT =" not in ce_src
+    assert "REVISE_CALIBRATION_PROMPT =" not in ar_src
+    # Consumers reference the imported names.
+    assert "EVALUATOR_CALIBRATION_PROMPT" in ce_src
+    assert "REVISE_CALIBRATION_PROMPT" in ar_src
