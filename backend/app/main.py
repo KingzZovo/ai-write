@@ -16,6 +16,7 @@ from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshado
 from app.api.auth import verify_token
 from app.api import admin_entities, admin_usage
 from app.api import export as export_api
+from app.api import compass as compass_api
 from app.middlewares.quota import QuotaMiddleware
 from app.middlewares.request_logging import RequestLoggingMiddleware
 from app.db.neo4j import close_neo4j, init_neo4j
@@ -247,6 +248,7 @@ app.include_router(chapters.router)
 app.include_router(generate.router)
 app.include_router(knowledge.router)
 app.include_router(foreshadows.router)
+app.include_router(compass_api.router)
 app.include_router(settings.router)
 app.include_router(neo4j_settings.router)
 app.include_router(versions.router)

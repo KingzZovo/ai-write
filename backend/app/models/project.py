@@ -351,6 +351,38 @@ class StyleStat(Base):
     )
 
 
+class NarrativeCompass(Base):
+    """Per-project direction anchor + completion gate (C4 / F3, ainovel compass).
+
+    One row per project. ``ending_direction`` is the thematic terminus (one
+    sentence). ``open_threads`` is the live long-line ledger
+    (``[{thread, since_chapter, status}]``). ``estimated_scale`` is a *range*
+    (never a single number) so mid-book adjustment stays possible. Updated when
+    a new volume is planned; consumed by generation (don't drift off the
+    ending) and by the completion-readiness checklist.
+
+    Adapted from voocel/ainovel-cli compass (design idea; wording our own).
+    """
+
+    __tablename__ = "narrative_compass"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ending_direction = Column(Text, default="")
+    open_threads = Column(JSON, default=list)
+    estimated_scale = Column(JSON, default=dict)
+    last_updated = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_narrative_compass_project"),
+    )
+
+
 class CharacterAppearance(Base):
     """Secondary-cast roster (C3 / F4, ainovel).
 

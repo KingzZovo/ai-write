@@ -326,6 +326,21 @@ async def regenerate_volume(
                         ch_row.target_word_count = int(wc)
                 await save_db.commit()
 
+            # C4/F3: update the narrative compass when a new volume is planned
+            # (threads + scale). Fresh session, fail-safe -- never blocks the
+            # volume regeneration stream.
+            try:
+                from app.db.session import async_session_factory
+                from app.services.compass_service import update_on_new_volume
+
+                async with async_session_factory() as compass_db:
+                    await update_on_new_volume(compass_db, project_id, parsed)
+            except Exception as _compass_err:
+                import logging as _clg
+                _clg.getLogger(__name__).warning(
+                    "compass update after volume regen failed: %s", _compass_err
+                )
+
             yield f"data: {json.dumps({'status': 'done', 'chapters_created': chapters_created, 'volume_target': volume_target, 'chapter_word_counts': chapter_word_counts})}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:

@@ -227,6 +227,9 @@ class ContextPack:
     # C3/F4 v1.9.2: deterministic related-chapter recall + secondary-cast roster.
     # Pre-rendered by related_chapters/character_roster render functions.
     related_chapter_recall: str = ""
+    # C4/F3 v1.9.2: narrative compass direction anchor (ending + active threads
+    # + scale range). Pre-rendered by compass_service.render_compass_anchor.
+    compass_anchor: str = ""
 
     # Layer 3: RAG (~20%)
     rag_snippets: list[str] = field(default_factory=list)
@@ -468,10 +471,13 @@ class ContextPack:
             l1_parts.append(f"【后续走向(参考)】\n{future_text}")
 
         # C3/F4: deterministic related-chapter recall + cast roster at the L1
-        # tail (survives keep-tail truncation; the token_budget bump protects
-        # the L1 head outline/summary blocks above).
+        # tail. C4/F3: the compass direction anchor goes *after* it (most
+        # tail-ward) so under keep-tail truncation the higher-priority direction
+        # anchor survives first; the token_budget bump protects the L1 head.
         if self.related_chapter_recall:
             l1_parts.append(self.related_chapter_recall)
+        if self.compass_anchor:
+            l1_parts.append(self.compass_anchor)
 
         l1_text = "\n\n".join(l1_parts)
         l1_text = self._truncate_to_budget(l1_text, budget_l1)
@@ -1214,6 +1220,17 @@ class ContextPackBuilder:
             )
         except Exception as e:
             logger.warning("Failed to build related-chapter recall: %s", e)
+
+        # C4/F3: narrative compass direction anchor.
+        try:
+            from app.services.compass_service import load_compass, render_compass_anchor
+
+            compass = await load_compass(db, pid)
+            pack.compass_anchor = render_compass_anchor(
+                compass, (global_chapter_idx or chapter_idx), max_chars=400
+            )
+        except Exception as e:
+            logger.warning("Failed to load narrative compass: %s", e)
 
         # Build strand tracker from recent chapters
         await self._build_strand_tracker(pack, pid, chapter_idx)
