@@ -62,6 +62,13 @@ def test_has_meaningful_outline_content_rejects_empty_shells():
     assert not has_meaningful_outline_content({})
     assert not has_meaningful_outline_content({"raw_text": ""})
     assert not has_meaningful_outline_content({"chapter_summaries": []})
+    assert not has_meaningful_outline_content(
+        {
+            "raw_text": "结构字段齐全但不是终稿",
+            "volume_plan": [{"idx": 1, "est_chapters": 150}],
+            "_quality_status": "degraded_structural_draft",
+        }
+    )
 
 
 def test_has_meaningful_outline_content_accepts_structured_outline():
@@ -122,6 +129,56 @@ async def test_readiness_requires_matching_volume_idx():
 
     assert report.ready is False
     assert report.missing_layers == ["volume"]
+    assert report.layers["chapter"].ready is True
+
+
+@pytest.mark.asyncio
+async def test_readiness_rejects_degraded_outline_scaffolds():
+    chapter = SimpleNamespace(
+        id="chapter-1",
+        volume_id="volume-1",
+        chapter_idx=3,
+        outline_json={"summary": "章节大纲"},
+    )
+    volume = SimpleNamespace(id="volume-1", volume_idx=2, title="第二卷")
+    degraded_book_outline = SimpleNamespace(
+        id="book-1",
+        content_json={
+            "raw_text": "全书大纲结构草稿",
+            "volume_plan": [{"idx": 2, "est_chapters": 150}],
+            "_quality_status": "degraded_structural_draft",
+        },
+    )
+    degraded_volume_outline = SimpleNamespace(
+        id="volume-outline-2",
+        content_json={
+            "volume_idx": 2,
+            "title": "第二卷",
+            "chapter_summaries": [{"summary": "x"}],
+            "_quality_status": "degraded_structural_draft",
+        },
+    )
+    db = _FakeDB(
+        objects={
+            ("Chapter", "chapter-1"): chapter,
+            ("Volume", "volume-1"): volume,
+        },
+        execute_results=[
+            _FakeResult([degraded_book_outline]),
+            _FakeResult([degraded_volume_outline]),
+        ],
+    )
+
+    report = await build_outline_readiness_report(
+        db,
+        project_id=PID,
+        chapter_id="chapter-1",
+    )
+
+    assert report.ready is False
+    assert report.missing_layers == ["book", "volume"]
+    assert "降级结构草稿" in report.layers["book"].detail
+    assert "降级结构草稿" in report.layers["volume"].detail
     assert report.layers["chapter"].ready is True
 
 

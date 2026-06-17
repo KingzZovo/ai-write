@@ -59,7 +59,8 @@ async def test_retry_attempts_kwarg_honored_for_evaluation():
 
 @pytest.mark.asyncio
 async def test_default_attempts_unchanged_without_kwarg():
-    # No retry_attempts passed: evaluation=1, everything else=4 (status quo).
+    # No retry_attempts passed: non-stream/evaluation calls stay single-shot;
+    # streaming generation keeps the broader retry envelope.
     provider = OpenAIProvider(api_key="test")
 
     captured: dict = {}
@@ -71,7 +72,7 @@ async def test_default_attempts_unchanged_without_kwarg():
             messages=[{"role": "user", "content": "hi"}],
             model="m", task_type="chapter", stream=False,
         )
-    assert captured["attempts"] == 4
+    assert captured["attempts"] == 1
 
     captured = {}
     with patch(
@@ -84,10 +85,22 @@ async def test_default_attempts_unchanged_without_kwarg():
         )
     assert captured["attempts"] == 1
 
+    captured = {}
+    with patch(
+        "app.services.llm_retry.call_with_retry",
+        side_effect=_fake_retry(captured),
+    ):
+        await provider.generate(
+            messages=[{"role": "user", "content": "hi"}],
+            model="m", task_type="chapter", stream=True,
+        )
+    assert captured["attempts"] == 4
+
 
 @pytest.mark.asyncio
 async def test_non_positive_retry_attempts_falls_back_to_default():
-    # retry_attempts=0 (or negative) is not a valid attempt count: keep default.
+    # retry_attempts=0 (or negative) is not a valid attempt count: keep the
+    # resolved default for this call mode.
     provider = OpenAIProvider(api_key="test")
     captured: dict = {}
 
@@ -99,7 +112,7 @@ async def test_non_positive_retry_attempts_falls_back_to_default():
             messages=[{"role": "user", "content": "hi"}],
             model="m", task_type="chapter", retry_attempts=0, stream=False,
         )
-    assert captured["attempts"] == 4
+    assert captured["attempts"] == 1
 
 
 # ---- B3: evaluation timeout must be env-configurable (45s -> default 120s) ----

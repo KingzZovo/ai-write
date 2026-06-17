@@ -574,7 +574,13 @@ async def _run_async_generation_impl(task_id: str):
                 async for chunk in await generator.generate_book_outline(
                     user_input=enhanced, stream=True
                 ):
-                    _append_chunk(chunk)
+                    if isinstance(chunk, dict) and chunk.get("event") == "done":
+                        full_outline = chunk.get("full_outline")
+                        if isinstance(full_outline, str) and full_outline.strip():
+                            collected.clear()
+                            collected.append(full_outline)
+                    else:
+                        _append_chunk(chunk)
                     # Update progress every 20 chunks
                     if len(collected) % 5 == 0:
                         task.progress_text = _joined_collected()
@@ -1440,11 +1446,97 @@ async def _run_async_generation_impl(task_id: str):
                             logger.warning("Auto chapter summarize failed after quality-gate error save: %s", sum_err)
                         return
 
+                try:
+                    from app.services.fact_contract import (
+                        build_fact_contract,
+                        validate_text_against_fact_contract,
+                    )
+
+                    fact_contract = await build_fact_contract(db, project_id)
+                    fact_report = validate_text_against_fact_contract(full_text, fact_contract)
+                    task.params_json = {
+                        **(task.params_json or {}),
+                        "fact_contract_gate": fact_report.to_dict(),
+                    }
+                    if not fact_report.ok:
+                        full_text = _stage_needs_review_chapter_text(
+                            task,
+                            ch,
+                            full_text,
+                            error_message="fact_contract_gate blocked: role/entity drift",
+                        )
+                        db.add(ChapterVersion(
+                            chapter_id=chapter_id_for_eval,
+                            parent_id=None,
+                            branch_name="main",
+                            content_text=full_text,
+                            content_diff="",
+                            word_count=len(full_text),
+                            is_active=0,
+                            source="ai_generation",
+                            metadata_json={
+                                "caller": "tasks.run_async_generation",
+                                "auto_evaluated": True,
+                                "revise_threshold": threshold,
+                                "final_overall": getattr(final_eval, "overall", None),
+                                "issue_count": len(getattr(final_eval, "issues", []) or []),
+                                "passed": False,
+                                "quality_gate": (task.params_json or {}).get("quality_gate") or {},
+                                "fact_contract_gate": fact_report.to_dict(),
+                            },
+                        ))
+                        await db.commit()
+                        try:
+                            await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                        except Exception as sum_err:
+                            logger.warning("Auto chapter summarize failed after fact-contract review save: %s", sum_err)
+                        return
+                except Exception as fact_err:
+                    logger.warning(
+                        "Fact contract gate failed; blocking chapter save task_id=%s chapter_id=%s err=%s",
+                        task_id,
+                        chapter_id_for_eval,
+                        fact_err,
+                    )
+                    full_text = _stage_needs_review_chapter_text(
+                        task,
+                        ch,
+                        full_text,
+                        error_message=f"fact_contract_gate blocked: {type(fact_err).__name__}",
+                    )
+                    db.add(ChapterVersion(
+                        chapter_id=chapter_id_for_eval,
+                        parent_id=None,
+                        branch_name="main",
+                        content_text=full_text,
+                        content_diff="",
+                        word_count=len(full_text),
+                        is_active=0,
+                        source="ai_generation",
+                        metadata_json={
+                            "caller": "tasks.run_async_generation",
+                            "auto_evaluated": True,
+                            "revise_threshold": threshold,
+                            "final_overall": getattr(final_eval, "overall", None),
+                            "issue_count": len(getattr(final_eval, "issues", []) or []),
+                            "passed": False,
+                            "quality_gate": (task.params_json or {}).get("quality_gate") or {},
+                            "fact_contract_gate": {"error": type(fact_err).__name__},
+                        },
+                    ))
+                    await db.commit()
+                    try:
+                        await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                    except Exception as sum_err:
+                        logger.warning("Auto chapter summarize failed after fact-contract error save: %s", sum_err)
+                    return
+
                 ch.content_text = full_text
                 ch.word_count = len(full_text)
                 passed = bool(final_eval and getattr(final_eval, "overall", 0) >= threshold)
                 ch.status = "completed" if passed else "needs_review"
                 quality_gate_summary = (task.params_json or {}).get("quality_gate")
+                fact_contract_summary = (task.params_json or {}).get("fact_contract_gate")
                 if passed:
                     await db.execute(
                         _sql_update(ChapterVersion)
@@ -1468,6 +1560,7 @@ async def _run_async_generation_impl(task_id: str):
                         "issue_count": len(getattr(final_eval, "issues", []) or []),
                         "passed": passed,
                         "quality_gate": quality_gate_summary or {},
+                        "fact_contract_gate": fact_contract_summary or {},
                     },
                 ))
                 await db.commit()
@@ -1593,6 +1686,9 @@ async def _run_async_generation_impl(task_id: str):
                     _content = {"raw_text": full_text_clean}
                     if _vol_plan:
                         _content["volume_plan"] = _vol_plan
+                    from app.services.outline_consistency_gate import validate_outline_consistency
+                    _consistency = validate_outline_consistency(_content, level="book")
+                    _content["_consistency_report"] = _consistency.to_dict()
                     db.add(
                         Outline(
                             project_id=project_id,

@@ -24,10 +24,25 @@ LAYER_LABELS = {
     "chapter": "本章大纲",
 }
 
+DEGRADED_OUTLINE_STATUSES = {
+    "degraded_structural_draft",
+    "invalidated_degraded_draft",
+    "invalidated_consistency_failed",
+}
+
+
+def is_degraded_outline(content: Any) -> bool:
+    """Return True when an outline is only a diagnostic scaffold."""
+    if not isinstance(content, dict):
+        return False
+    return str(content.get("_quality_status") or "") in DEGRADED_OUTLINE_STATUSES
+
 
 def has_meaningful_outline_content(content: Any) -> bool:
     """Return True when an outline-like JSON payload carries usable content."""
     if not isinstance(content, dict) or not content:
+        return False
+    if is_degraded_outline(content):
         return False
     for value in content.values():
         if isinstance(value, str) and value.strip():
@@ -107,6 +122,10 @@ def _first_meaningful_outline(rows: list[Any]) -> Any | None:
     return None
 
 
+def _has_degraded_outline(rows: list[Any]) -> bool:
+    return any(is_degraded_outline(getattr(row, "content_json", None)) for row in rows)
+
+
 def _outline_title(content: Any) -> str | None:
     if not isinstance(content, dict):
         return None
@@ -181,9 +200,12 @@ async def build_outline_readiness_report(
             .order_by(Outline.is_confirmed.desc(), Outline.created_at.asc())
         )
     ).scalars().all()
-    book_outline = _first_meaningful_outline(list(book_rows))
+    book_rows_list = list(book_rows)
+    book_outline = _first_meaningful_outline(book_rows_list)
+    has_degraded_book = _has_degraded_outline(book_rows_list)
 
     volume_outline = None
+    has_degraded_volume = False
     if resolved_volume_idx is not None:
         volume_rows = (
             await db.execute(
@@ -200,6 +222,8 @@ async def build_outline_readiness_report(
                 row_volume_idx = int(content.get("volume_idx") or 0)
             except (TypeError, ValueError):
                 row_volume_idx = 0
+            if row_volume_idx == resolved_volume_idx and is_degraded_outline(content):
+                has_degraded_volume = True
             if (
                 row_volume_idx == resolved_volume_idx
                 and has_meaningful_outline_content(content)
@@ -214,13 +238,25 @@ async def build_outline_readiness_report(
     layers = {
         "book": OutlineLayerReadiness(
             ready=book_outline is not None,
-            detail="已找到有效全书大纲" if book_outline is not None else "未找到有效全书大纲",
+            detail=(
+                "已找到有效全书大纲"
+                if book_outline is not None
+                else "当前全书大纲是降级结构草稿，需要重新生成高质量版本"
+                if has_degraded_book
+                else "未找到有效全书大纲"
+            ),
             outline_id=str(getattr(book_outline, "id", "")) if book_outline is not None else None,
             title=_outline_title(getattr(book_outline, "content_json", None)) if book_outline is not None else None,
         ),
         "volume": OutlineLayerReadiness(
             ready=volume_outline is not None,
-            detail="已找到当前卷分卷大纲" if volume_outline is not None else "未找到当前卷的分卷大纲",
+            detail=(
+                "已找到当前卷分卷大纲"
+                if volume_outline is not None
+                else "当前卷大纲是降级结构草稿，需要重新生成高质量版本"
+                if has_degraded_volume
+                else "未找到当前卷的分卷大纲"
+            ),
             outline_id=str(getattr(volume_outline, "id", "")) if volume_outline is not None else None,
             title=_outline_title(getattr(volume_outline, "content_json", None)) if volume_outline is not None else None,
             volume_idx=resolved_volume_idx,

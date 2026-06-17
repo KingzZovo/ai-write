@@ -54,6 +54,7 @@ from app.models.project import (
     WorldRule,
 )
 from app.services.narrative_contract import WORLD_LOGIC_CONTRACT
+from app.services.fact_contract import build_fact_contract
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,7 @@ class ContextPack:
     volume_outline: dict = field(default_factory=dict)
 
     # Layer 2: Facts (~33%)
+    authoritative_fact_contract: str = ""
     world_rules: list[str] = field(default_factory=list)
     character_cards: list[CharacterCard] = field(default_factory=list)
     foreshadow_triplets: list[CFPGTriplet] = field(default_factory=list)
@@ -487,6 +489,12 @@ class ContextPack:
         # ---- Layer 2: Facts ----
         l2_parts: list[str] = []
 
+        if self.authoritative_fact_contract:
+            l2_parts.append(
+                "【权威事实契约(高于向量检索/角色卡/大纲节选)】\n"
+                f"{self.authoritative_fact_contract}"
+            )
+
         if self.world_rules:
             rules_text = "\n".join(f"- {r}" for r in self.world_rules)
             l2_parts.append(f"【世界规则(不可违反)】\n{rules_text}")
@@ -721,6 +729,11 @@ class ContextPackBuilder:
         await self._build_facts(
             pack, project_id, chapter_idx, global_chapter_idx=global_chapter_idx
         )
+        try:
+            contract = await build_fact_contract(await self._get_db(), str(project_id))
+            pack.authoritative_fact_contract = contract.to_prompt()
+        except Exception as contract_err:
+            logger.warning("Failed to build authoritative fact contract: %s", contract_err)
         # Layer 3: RAG
         await self._build_rag(pack, project_id, chapter_idx)
 

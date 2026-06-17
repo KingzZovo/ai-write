@@ -146,6 +146,68 @@ import os as _os_cache
 _ANTHROPIC_CACHE_ENABLED = _os_cache.getenv("ANTHROPIC_PROMPT_CACHE_ENABLED", "true").lower() in ("1", "true", "yes")
 _ANTHROPIC_CACHE_MIN_CHARS = int(_os_cache.getenv("ANTHROPIC_CACHE_MIN_CHARS", "4096"))  # ~1024 tokens
 _OPENAI_CACHE_ENABLED = _os_cache.getenv("OPENAI_PROMPT_CACHE_ENABLED", "true").lower() in ("1", "true", "yes")
+_OPENAI_COMPAT_RATE_LIMIT_ENABLED = _os_cache.getenv("OPENAI_COMPAT_RATE_LIMIT_ENABLED", "true").lower() in ("1", "true", "yes")
+_OPENAI_COMPAT_MIN_INTERVAL_SECONDS = float(_os_cache.getenv("OPENAI_COMPAT_MIN_INTERVAL_SECONDS", "8"))
+_OPENAI_COMPAT_EMPTY_COOLDOWN_SECONDS = float(_os_cache.getenv("OPENAI_COMPAT_EMPTY_COOLDOWN_SECONDS", "25"))
+_OPENAI_COMPAT_CLIENT_MAX_RETRIES = int(_os_cache.getenv("OPENAI_COMPAT_CLIENT_MAX_RETRIES", "0"))
+
+_OPENAI_COMPAT_RATE_LOCKS: dict[str, asyncio.Lock] = {}
+_OPENAI_COMPAT_NEXT_AT: dict[str, float] = {}
+_OPENAI_COMPAT_REGISTRY_LOCK = asyncio.Lock()
+
+
+def _openai_compat_rate_key(base_url: str, model: str) -> str:
+    return f"{(base_url or 'openai').rstrip('/')}::{model or 'default'}"
+
+
+async def _get_openai_compat_lock(key: str) -> asyncio.Lock:
+    async with _OPENAI_COMPAT_REGISTRY_LOCK:
+        lock = _OPENAI_COMPAT_RATE_LOCKS.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _OPENAI_COMPAT_RATE_LOCKS[key] = lock
+        return lock
+
+
+async def _wait_openai_compat_turn(base_url: str, model: str, task_type: str) -> None:
+    """Serialize OpenAI-compatible endpoints that may soft-limit rapid calls."""
+    if not _OPENAI_COMPAT_RATE_LIMIT_ENABLED or not base_url:
+        return
+    key = _openai_compat_rate_key(base_url, model)
+    lock = await _get_openai_compat_lock(key)
+    async with lock:
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        wait_for = max((_OPENAI_COMPAT_NEXT_AT.get(key, 0.0) - now), 0.0)
+        if wait_for > 0:
+            logger.info(
+                "OpenAI-compatible endpoint throttle sleeping %.1fs (task=%s model=%s base_url=%s)",
+                wait_for,
+                task_type,
+                model,
+                base_url,
+            )
+            await asyncio.sleep(wait_for)
+        _OPENAI_COMPAT_NEXT_AT[key] = loop.time() + max(_OPENAI_COMPAT_MIN_INTERVAL_SECONDS, 0.0)
+
+
+async def _cooldown_openai_compat_empty(base_url: str, model: str, task_type: str) -> None:
+    """Back off after HTTP-200 empty completions, common with soft rate limits."""
+    if not _OPENAI_COMPAT_RATE_LIMIT_ENABLED or not base_url:
+        return
+    key = _openai_compat_rate_key(base_url, model)
+    lock = await _get_openai_compat_lock(key)
+    async with lock:
+        loop = asyncio.get_running_loop()
+        cooldown_until = loop.time() + max(_OPENAI_COMPAT_EMPTY_COOLDOWN_SECONDS, 0.0)
+        _OPENAI_COMPAT_NEXT_AT[key] = max(_OPENAI_COMPAT_NEXT_AT.get(key, 0.0), cooldown_until)
+    logger.warning(
+        "OpenAI-compatible endpoint returned empty text; cooling down %.1fs (task=%s model=%s base_url=%s)",
+        _OPENAI_COMPAT_EMPTY_COOLDOWN_SECONDS,
+        task_type,
+        model,
+        base_url,
+    )
 
 
 def _record_cache_tokens(task_type: str, provider: str, model: str, *, create: int = 0, read: int = 0, uncached: int = 0) -> None:
@@ -264,7 +326,10 @@ class OpenAIProvider(BaseProvider):
     def client(self):
         if self._client is None:
             import openai
-            kw: dict = {"api_key": self.api_key or "not-needed"}
+            kw: dict = {
+                "api_key": self.api_key or "not-needed",
+                "max_retries": max(_OPENAI_COMPAT_CLIENT_MAX_RETRIES, 0),
+            }
             if self.base_url:
                 kw["base_url"] = self.base_url
             self._client = openai.AsyncOpenAI(**kw)
@@ -291,6 +356,7 @@ class OpenAIProvider(BaseProvider):
             # Evaluation expects one bounded JSON object. For direct chapter
             # generation we now honor `stream=False` so callers can opt into a
             # full non-streaming completion and avoid transport-side SSE issues.
+            await _wait_openai_compat_turn(self.base_url, model, task_type)
             if task_type == "evaluation" or stream_mode is False:
                 timeout = _resolve_nonstream_timeout(request_timeout, task_type)
                 resp = await self.client.chat.completions.create(
@@ -303,6 +369,8 @@ class OpenAIProvider(BaseProvider):
                 text = ""
                 if resp.choices and resp.choices[0].message:
                     text = resp.choices[0].message.content or ""
+                if not text.strip():
+                    await _cooldown_openai_compat_empty(self.base_url, model, task_type)
                 u = getattr(resp, "usage", None)
                 usage = TokenUsage(
                     getattr(u, 'prompt_tokens', 0) or 0,
@@ -337,9 +405,11 @@ class OpenAIProvider(BaseProvider):
                 _record_cache_tokens(task_type, self.name, model,
                                      read=cached_tokens, uncached=uncached)
             text = "".join(chunks)
+            if not text.strip():
+                await _cooldown_openai_compat_empty(self.base_url, model, task_type)
             return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
-        attempts = 1 if task_type == "evaluation" else 4
+        attempts = 1 if task_type == "evaluation" or stream_mode is False else 4
         if retry_attempts is not None and int(retry_attempts) > 0:
             attempts = int(retry_attempts)
         return await call_with_retry(
@@ -351,15 +421,21 @@ class OpenAIProvider(BaseProvider):
                               temperature=0.7, max_tokens=8192, **kw):
         # v1.6.0 Y2: prompt_cache_key on stream too
         extra_body = {}
+        task_type = kw.get('task_type', 'unknown')
         if _OPENAI_CACHE_ENABLED:
-            extra_body["prompt_cache_key"] = f"{kw.get('task_type','unknown')}:{model}"
+            extra_body["prompt_cache_key"] = f"{task_type}:{model}"
+        await _wait_openai_compat_turn(self.base_url, model, task_type)
         stream = await self.client.chat.completions.create(
             model=model, messages=messages,
             temperature=temperature, max_tokens=max_tokens, stream=True,
             extra_body=extra_body or None)
+        saw_content = False
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
+                saw_content = True
                 yield chunk.choices[0].delta.content
+        if not saw_content:
+            await _cooldown_openai_compat_empty(self.base_url, model, task_type)
 
 
 class EmbeddingProvider:

@@ -300,11 +300,21 @@ def test_all_generation_quality_gate_calls_pass_target_word_count() -> None:
     import ast
     from pathlib import Path
 
-    repo_root = Path(__file__).resolve().parents[2]
-    files = [
-        repo_root / "backend/app/api/generate.py",
-        repo_root / "backend/app/tasks/knowledge_tasks.py",
+    test_path = Path(__file__).resolve()
+    candidates = [
+        (
+            parent / "backend/app/api/generate.py",
+            parent / "backend/app/tasks/knowledge_tasks.py",
+        )
+        for parent in (test_path, *test_path.parents)
+    ] + [
+        (
+            parent / "app/api/generate.py",
+            parent / "app/tasks/knowledge_tasks.py",
+        )
+        for parent in (test_path, *test_path.parents)
     ]
+    files = next(pair for pair in candidates if all(path.exists() for path in pair))
     missing: list[str] = []
     for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"))

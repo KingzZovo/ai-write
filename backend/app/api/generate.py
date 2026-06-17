@@ -1566,6 +1566,10 @@ async def generate_outline(
                                     _content_json.setdefault(_k, _v)
                         except Exception as _ps_err:
                             logger.warning("PR-FACTS-PARSE-VOL parse failed: %s", _ps_err)
+                    if req.level in ("book", "volume"):
+                        from app.services.outline_consistency_gate import validate_outline_consistency
+                        _consistency = validate_outline_consistency(_content_json, level=req.level)
+                        _content_json["_consistency_report"] = _consistency.to_dict()
                     async with async_session_factory() as save_db:
                         outline = Outline(
                             project_id=req.project_id,

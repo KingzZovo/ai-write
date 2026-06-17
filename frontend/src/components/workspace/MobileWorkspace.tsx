@@ -43,7 +43,7 @@ interface OutlineReadinessInfo {
 
 interface AsyncTaskSummary {
   task_id: string
-  status: 'pending' | 'running' | 'polishing' | 'completed' | 'failed' | string
+  status: 'pending' | 'running' | 'polishing' | 'completed' | 'failed' | 'needs_review' | string
   task_type?: string | null
 }
 
@@ -368,10 +368,27 @@ export default function MobileWorkspace() {
         alert(`生成失败: ${status.error_message || '未知错误'}`)
       }
     } else {
-      setEditorContent(status.progress_text || '')
+      const draftText = status.progress_text || status.result_text || ''
+      setEditorContent(draftText)
       if (status.status === 'completed') {
         finish()
         setEditorContent(status.result_text || '')
+        setSelectedChapter((prev) => prev ? { ...prev, content_text: status.result_text || '', status: 'completed' } : prev)
+        setChapters((prev) => prev.map((chapter) => (
+          chapter.id === selectedChapter?.id
+            ? { ...chapter, content_text: status.result_text || '', status: 'completed' }
+            : chapter
+        )))
+      } else if (status.status === 'needs_review') {
+        finish()
+        setEditorContent(draftText)
+        setSelectedChapter((prev) => prev ? { ...prev, content_text: draftText, status: 'needs_review' } : prev)
+        setChapters((prev) => prev.map((chapter) => (
+          chapter.id === selectedChapter?.id
+            ? { ...chapter, content_text: draftText, status: 'needs_review' }
+            : chapter
+        )))
+        alert(`需要复核: ${status.error_message || '质量门禁阻断保存，草稿已放入编辑器。'}`)
       } else if (status.status === 'failed') {
         finish()
         alert(`生成失败: ${status.error_message || '未知错误'}`)

@@ -743,14 +743,13 @@ export default function DesktopWorkspace() {
         }
 
         setWizardProgress(`正在生成第 ${i}/${count} 卷大纲...`)
-        let { text: volumeOutlineText, outlineId: volumeOutlineId, parsed } = await runOnce()
+        let { outlineId: volumeOutlineId, parsed } = await runOnce()
         if (isEmptyOrInvalid(parsed)) {
           // An unmount abort truncates the stream, which looks like an
           // invalid outline — don't start a retry stream after unmount.
           if (unmountedRef.current) return
           setWizardProgress((prev) => prev + `\n第 ${i} 卷首次生成无效，重试中...`)
           const retry = await runOnce()
-          volumeOutlineText = retry.text
           volumeOutlineId = retry.outlineId
           parsed = retry.parsed
         }
@@ -948,6 +947,7 @@ export default function DesktopWorkspace() {
         setIsGenerating(false)
         if (generationFailedRef.current) {
           updateChapterStatus(selectedChapterId, 'needs_review')
+          lastSavedRef.current = generationBufferRef.current
           return
         }
         if (generationSavedRef.current) {
@@ -995,14 +995,32 @@ export default function DesktopWorkspace() {
           return
         }
         if (eventName === 'quality_failed') {
-          const baseline = generationBaselineRef.current
           generationFailedRef.current = true
-          generationBufferRef.current = baseline?.content ?? ''
+          const blockedDraft =
+            typeof evt.content_text === 'string'
+              ? evt.content_text
+              : typeof evt.final_text === 'string'
+                ? evt.final_text
+                : generationBufferRef.current
+          generationBufferRef.current = blockedDraft
           resetStreamContent()
           if (generationBufferRef.current) appendStreamContent(generationBufferRef.current)
           setEditorContent(generationBufferRef.current)
           updateChapterContent(selectedChapterId, generationBufferRef.current)
           updateChapterStatus(selectedChapterId, 'needs_review')
+          lastSavedRef.current = generationBufferRef.current
+          if (generationBufferRef.current.trim()) {
+            void apiFetch<ChapterRes>(
+              `/api/projects/${currentProject.id}/chapters/${selectedChapterId}`,
+              {
+                method: 'PUT',
+                body: JSON.stringify({
+                  content_text: generationBufferRef.current,
+                  status: 'needs_review',
+                }),
+              },
+            ).catch((err) => console.error('Failed to stage review draft:', err))
+          }
           const report = evt.report as Record<string, unknown> | undefined
           const reason = String(evt.reason ?? 'quality_gate_blocked')
           const summary = report
