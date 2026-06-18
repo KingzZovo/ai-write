@@ -446,16 +446,31 @@ class SceneOrchestrator:
                     ),
                     timeout=timeout_s,
                 )
-                # scene_planner is expected to output a JSON array.
-                if isinstance(parsed_any, list) and parsed_any:
-                    parsed = parsed_any
+                # run_structured_prompt ALWAYS returns a dict:
+                #   * a bare JSON array  -> {"items": [...]}  (_normalize_structured)
+                #   * {"scenes": [...]}  passed through unchanged
+                #   * a parse failure    -> {"raw_text": ..., "parse_error": True}
+                # Extract the scene array from whichever wrapper key is present
+                # (mirrors beat_extractor's tolerance). A bare list is accepted
+                # defensively in case the contract ever changes back.
+                scene_list: list | None = None
+                if isinstance(parsed_any, list):
+                    scene_list = parsed_any
+                elif isinstance(parsed_any, dict):
+                    for _key in ("items", "scenes", "scene_briefs", "scene_list"):
+                        _v = parsed_any.get(_key)
+                        if isinstance(_v, list) and _v:
+                            scene_list = _v
+                            break
+                    if scene_list is None:
+                        # Debuggability: capture raw model text when the
+                        # structured parser fell back to {raw_text, parse_error}.
+                        rt = parsed_any.get("raw_text")
+                        if isinstance(rt, str) and rt.strip():
+                            last_raw_text = rt.strip()
+                if scene_list:
+                    parsed = scene_list
                     break
-                # Debuggability: capture raw model text when the structured
-                # parser falls back to {raw_text, parse_error}.
-                if isinstance(parsed_any, dict):
-                    rt = parsed_any.get("raw_text")
-                    if isinstance(rt, str) and rt.strip():
-                        last_raw_text = rt.strip()
                 logger.warning(
                     "scene_planner returned non-list/empty structured output (attempt=%d/%d); retrying",
                     attempt,

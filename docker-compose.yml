@@ -107,17 +107,12 @@ services:
       dockerfile: Dockerfile
     env_file: .env
     ports:
-      # Bound to loopback: this is a direct backdoor that skips nginx's
-      # security headers. nginx serves the UI at / anyway, so nothing is lost.
-      - "127.0.0.1:3100:3000"
+      - "3100:3000"
 
   nginx:
     image: nginx:alpine
     ports:
-      # Bound to loopback (2026-06-18 hardening). Reach it remotely via an
-      # SSH tunnel:  ssh -L 8080:127.0.0.1:8080 <server>
-      # To restore public access, change back to "8080:80".
-      - "127.0.0.1:8080:80"
+      - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

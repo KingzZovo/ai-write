@@ -262,7 +262,7 @@ async def test_plan_scenes_uses_llm_when_json_parses():
     ]
     with patch(
         "app.services.prompt_registry.run_structured_prompt",
-        new=AsyncMock(return_value=fake_briefs),
+        new=AsyncMock(return_value={"items": fake_briefs}),
     ) as mocked:
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
@@ -290,7 +290,7 @@ async def test_plan_scenes_keeps_more_than_six_scenes_for_long_targets():
     fake_briefs[-1]["hook"] = ""
     with patch(
         "app.services.prompt_registry.run_structured_prompt",
-        new=AsyncMock(return_value=fake_briefs),
+        new=AsyncMock(return_value={"items": fake_briefs}),
     ):
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
@@ -323,7 +323,7 @@ async def test_plan_scenes_keeps_all_scenes_when_planner_exceeds_soft_hint():
     fake_briefs[-1]["hook"] = ""
     with patch(
         "app.services.prompt_registry.run_structured_prompt",
-        new=AsyncMock(return_value=fake_briefs),
+        new=AsyncMock(return_value={"items": fake_briefs}),
     ):
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
@@ -373,7 +373,7 @@ async def test_plan_scenes_falls_back_when_contract_fields_missing():
     ]
     with patch(
         "app.services.prompt_registry.run_structured_prompt",
-        new=AsyncMock(return_value=incomplete_briefs),
+        new=AsyncMock(return_value={"items": incomplete_briefs}),
     ):
         orch = SceneOrchestrator()
         out = await orch.plan_scenes(
