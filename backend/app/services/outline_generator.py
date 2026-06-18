@@ -678,7 +678,15 @@ class OutlineGenerator:
 
     @staticmethod
     def _fallback_book_skeleton(user_input: str, scale: dict | None = None) -> str:
-        """Deterministic stage-A skeleton used when the model returns an empty success."""
+        """Deterministic stage-A skeleton used when the model returns an empty success.
+
+        Canon-neutral: it echoes the caller's ``user_input`` (which carries the
+        authoritative premise / fact-lock) and lays down a generic structural
+        scaffold. It must NOT hardcode any book-specific protagonist name,
+        world noun, or plot device — doing so would contradict the project's
+        own facts (and corrupt every other project that hits this path when the
+        endpoint is slow).
+        """
         expected = int(scale.get("n_volumes") or 5) if scale else 5
         chapters_per_volume = int(scale.get("chapters_per_volume") or 150) if scale else 150
         total_chapters = int(scale.get("n_chapters") or expected * chapters_per_volume) if scale else expected * chapters_per_volume
@@ -691,28 +699,82 @@ class OutlineGenerator:
             volume_plan.append(
                 {
                     "idx": idx,
-                    "title": f"第{idx}卷：血印第{idx}阶",
+                    "title": f"第{idx}卷",
                     "theme": "身份追索、证据推进与代价升级",
-                    "core_conflict": "主角用行动和证据撕开血税制度的一层合法外衣，同时付出关系、身体或筹码代价。",
+                    "core_conflict": "主角用行动和代价推进一个可验证目标，并留下进入下一卷的债务或伏笔。",
                     "est_chapters": est_chapters,
                 }
             )
         return (
             "一、作品定位与核心卖点\n"
-            f"项目基础：{user_input}\n"
-            "故事以神裔血脉、王朝祭制和被篡改的家族旧案为主轴。主角不是靠奇遇一路碾压，而是在每次取证、救人、交易和战斗中付出清晰代价，逐步弄清血税制度如何把个人命运变成可计算资源。核心卖点是血脉力量的代价、档案证据链、人物关系的利益变化，以及每卷任务推进带来的制度真相。\n\n"
+            f"项目基础（须严格遵守，不得改写其中的人物名、地名与设定）：\n{user_input}\n"
+            "主角不是靠奇遇一路碾压，而是在每次取证、救人、交易和战斗中付出清晰代价，"
+            "逐步逼近上面项目基础设定的核心真相。核心卖点是力量的代价、证据链、"
+            "人物关系的利益变化，以及每卷任务推进带来的真相揭示。\n\n"
             "三、主线剧情总览\n"
-            "开局主角因家族名籍异常被卷入验血审查，为保住亲族和旧识，他必须拿到第一份被改写的祭印档案。中段主角从地方审查进入王朝档案、边境祭台和宗族议事层级，逐步发现血税不是单个反派牟利，而是一整套用合法名义维持的资源分配。后段他需要在公开证据、保护盟友和保留血印力量之间选择，最终把私人复仇推进为制度审判。每一卷都要完成一个可验证任务，并留下下一卷必须偿还的代价或伏笔。\n\n"
+            "开局主角因一桩与自身相关的异常被卷入冲突，为保住身边人与线索，必须拿到第一份关键证据。"
+            "中段主角从局部冲突进入更高层级，逐步发现敌对方不是单点作恶，而是一整套用合法名义维持的结构。"
+            "后段他需要在公开真相、保护盟友和保留自身力量之间选择，最终把私人动机推进为更大的对抗。"
+            "每一卷都要完成一个可验证任务，并留下下一卷必须偿还的代价或伏笔。\n\n"
             "七、分卷规划\n"
             "<volume-plan>\n"
             f"{json.dumps(volume_plan, ensure_ascii=False, indent=2)}\n"
             "</volume-plan>\n"
-            "第一卷建立验血危机、亲族债务和第一份档案线索；第二卷进入档案司，暴露盟友权限风险；第三卷扩展到边境祭台，确认血税流向；第四卷把宗族、王朝和祭司三方关系推到公开冲突；第五卷围绕祭台合法性和血税废立完成终局对抗。\n\n"
+            "各卷依次建立危机、暴露盟友风险、扩展冲突范围、把多方关系推到公开冲突、完成终局对抗；"
+            "具体人物、地点与机制一律以上面的项目基础设定为准。\n\n"
             "八、长期伏笔与回收计划\n"
-            "伏笔围绕父辈失踪、血契名籍、祭印旁注、导师封禁手法和终局对手的合法性解释权流转。早期每个线索必须对应后续行动：档案编号用于进入禁库，旧识债务用于打开地方证词，血印副作用迫使主角共享判断权，盟友权限暴露推动关系变化。\n\n"
+            "伏笔围绕项目基础中给出的核心谜团（如失踪、身份、被改写的记录、导师手法与终局对手的合法性）展开。"
+            "早期每个线索必须对应后续行动，并在指定卷数回收。\n\n"
             "九、主题与情感曲线\n"
             "主题不是抽象成长，而是主角从只想保住家人，走到愿意承担公开真相的代价。情感曲线依次经历互相利用、证据共享、代价分担、立场冲突和共同承担。"
         )
+
+    @staticmethod
+    def _fallback_small_stage_text(stage_name: str, user_input: str) -> str:
+        """Canon-neutral fallback for the B2/B4/B5/C book-outline sub-stages.
+
+        These fire only when the model endpoint is slow/empty. They must NOT
+        hardcode a specific protagonist, ally, faction or world noun — the
+        earlier version baked in a stale 神裔 conception (沈砚 / 血印 / 王朝档案司
+        / 祭台) that contradicted the project's own canonical-facts lock and
+        produced an outline naming two different protagonists. Instead we emit
+        a structural scaffold that explicitly defers every concrete name and
+        device to the project's ``user_input``.
+        """
+        anchor = (
+            "（注意：以下为结构骨架，所有具体人物名、地名、组织名与力量机制，"
+            "必须严格采用本项目设定，不得另造名字。本项目设定如下）\n"
+            f"{user_input}\n"
+        )
+        scaffolds = {
+            "B2/characters": (
+                "二、主要角色与小传\n" + anchor +
+                "请按上述设定给出：主角（动机、初始处境、力量及其代价、核心局限）；"
+                "关键救助者/引路人（身份、目标、与主角的筹码交换、首次登场情境）；"
+                "导师型角色（提供的能力或方法、附带的代价测试）；"
+                "阶段性敌人与终局对手（各自掌握的资源/权力、与主角冲突的根源）。"
+            ),
+            "B4/relationships": (
+                "四、主要矛盾与关系网络\n" + anchor +
+                "请按上述设定写清：主角与救助者/引路人之间的信任如何在共同承担代价中建立与裂变；"
+                "主角与导师的带条件关系（每次获得能力要放弃什么）；"
+                "主角与阶段敌人、终局对手之间的追逐/受害-维护关系，"
+                "以及这些关系如何承载核心真相的回收。"
+            ),
+            "B5/factions": (
+                "五、势力格局\n" + anchor +
+                "请按上述设定列出：主导秩序的官方/机构方（掌握的记录与权力、公开目标与隐藏筹码）；"
+                "筛选或评估主角的组织（评估标准、代表人物）；受压迫的弱势群体（保存的线索）；"
+                "终局制度敌人；以及灰色中介网络（既可助力也会抬高代价）。"
+            ),
+            "C/world": (
+                "六、世界观设定集\n" + anchor +
+                "请按上述设定写清：地理与信息/追捕的流动方式（时间成本如何影响行动结果）；"
+                "历史与力量体系的来源、能力边界与代价；政治秩序由哪几方共同维护，"
+                "任何单方结论只能形成疑点、必须交叉验证才能推动强结果。世界观必须服务人物行动与伏笔回收。"
+            ),
+        }
+        return scaffolds.get(stage_name, "")
 
     async def _generate_book_outline_staged(self, user_input: str, *, scale: dict | None = None) -> dict:
         """Three-call staged book outline (A skeleton → B/C in parallel).
@@ -755,31 +817,7 @@ class OutlineGenerator:
             f"创意：\n{user_input}\n\n已生成的骨架：\n{skeleton_text}\n"
         )
         def _fallback_small_stage(stage_name: str) -> str:
-            fallbacks = {
-                "B2/characters": (
-                    "二、主要角色与小传\n"
-                    "主角暂名沈砚，公开身份是边境祭户出身的低阶血脉弟子，真实身份与神裔断代祭印有关。目标是查清父辈失踪、夺回被篡改的血契名籍，并阻断族人继续被血税制度抽取。代价是每次动用血印都会透支感知，使他在战斗或谈判后短暂失明，必须把一部分判断交给盟友。\n"
-                    "核心盟友暂名陆青棠，是王朝档案司校勘，目标是证明旧案卷宗被人改写。她的筹码是能读懂祭印旁注，代价是每解开一份档案就会暴露权限来源。她与主角从互相试探变成共享证据，首次登场是在审讯中指出证词时间线漏洞。\n"
-                    "导师暂名纪无尘，表面是废院看守，实际掌握血印封禁手法。他不替主角解决敌人，只设置代价测试，让主角明白力量、证据和人情债必须一起计算。阶段敌人严伯川是地方验血使，靠私卖血样升迁；终局对手太祝玄衡掌握祭台合法性解释权，最终冲突围绕血税制度是否继续存在展开。"
-                ),
-                "B4/relationships": (
-                    "四、主要矛盾与关系网络\n"
-                    "沈砚与陆青棠的关系从证据交易开始，陆青棠需要主角提供血印样本验证旧案，主角需要她进入档案司内库。两人的信任不是口头建立，而是在一次追捕中共同承担证据暴露的代价。\n"
-                    "沈砚与纪无尘是带条件的师徒关系，纪无尘每给一次封印手法，都要求主角放弃一次立刻复仇的机会，关系矛盾集中在力量使用边界上。沈砚与严伯川是制度追捕者和被追捕者，冲突来自验血名册和族人安全。沈砚与太祝玄衡是旧约受害者和旧约维护者，终局关系承担神裔源头真相的回收。"
-                ),
-                "B5/factions": (
-                    "五、势力格局\n"
-                    "王朝档案司掌握旧案卷宗、名籍流转和审讯记录，公开目标是维护文书秩序，隐藏筹码是部分官员参与改写神裔血税账册。它与主角既有交易也有追捕压力。\n"
-                    "宗门戒律堂掌握验印权和试炼名额，目标是筛出可利用的稳定血脉，代表人物包括裴照霜与白珩。边境祭户是受压迫群体，资源弱但保存口传线索。太祝祭司体系控制祭台和旧约解释权，是终局制度敌人。黑市印匠网络掌握伪印、病案和血样去向，既能帮助主角，也会抬高代价。"
-                ),
-                "C/world": (
-                    "六、世界观设定集\n"
-                    "地理上，故事核心区域分为边境祭户村、王朝档案司所在的玄京、宗门试炼山门和废都祭台。消息、证据和追捕都必须沿驿路、关牒和宗门传令流动，因此时间成本会影响每次行动结果。\n"
-                    "历史上，神裔并非天授贵种，而是战争后被迫绑定旧神契约的守约者；后世王朝和宗门把守约责任改写成血脉等级，形成血税制度。力量体系围绕血印展开，血印能打开祭台、读取旧约和增强感知，但代价是伤势、寿数、身份暴露或被祭台反向定位。\n"
-                    "政治秩序由王朝文书、宗门验印和太祝祭司三方共同维护，任何一方单独给出的结论都只能形成疑点，必须用账册、血样、见证人和祭印反应交叉验证，才能推动强结果。世界观设定必须服务人物行动和伏笔回收。"
-                ),
-            }
-            return fallbacks.get(stage_name, "")
+            return self._fallback_small_stage_text(stage_name, user_input)
 
         async def _generate_small_stage(stage_name: str, messages: list[dict], min_chars: int = 0) -> str:
             last_text = ""
