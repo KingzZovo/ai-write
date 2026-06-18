@@ -219,11 +219,14 @@ def test_scene_contract_validator_rejects_missing_ledger():
     assert _has_valid_scene_contract(bad) is False
 
 
-def test_scene_contract_validator_rejects_missing_action_budget_or_inference_ledger():
+def test_scene_contract_validator_accepts_missing_conditional_fields():
+    # action_budget / inference_ledger are conditional (high-pressure scenes
+    # only) per SCENE_CONTRACT_FIELDS_PROMPT; a calm scene may omit them and
+    # must still pass the gate (otherwise a good plan is forced to fallback).
     missing_action = _scene_contract(action_budget="")
     missing_inference = _scene_contract(inference_ledger="")
-    assert _has_valid_scene_contract([SceneBrief.from_dict(1, missing_action)]) is False
-    assert _has_valid_scene_contract([SceneBrief.from_dict(1, missing_inference)]) is False
+    assert _has_valid_scene_contract([SceneBrief.from_dict(1, missing_action)]) is True
+    assert _has_valid_scene_contract([SceneBrief.from_dict(1, missing_inference)]) is True
 
 
 def test_scene_contract_validator_accepts_complete_generic_contract():

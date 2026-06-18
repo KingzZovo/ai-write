@@ -290,6 +290,8 @@ def _scene_budget_reaches_target(briefs: list[SceneBrief], target_words: int) ->
     return sum(max(0, int(brief.target_words or 0)) for brief in briefs) >= int(target * 0.85)
 
 
+# Always-applicable continuity-contract fields: every scene must carry these
+# (time/space/entity/information/result ledgers) regardless of genre or pace.
 _REQUIRED_CONTRACT_FIELDS: tuple[str, ...] = (
     "start_state",
     "time_delta",
@@ -301,13 +303,26 @@ _REQUIRED_CONTRACT_FIELDS: tuple[str, ...] = (
     "result_strength",
     "transition_bridge",
     "continuity_ledger",
+)
+
+# Conditional fields: SCENE_CONTRACT_FIELDS_PROMPT marks these as required only
+# for high-pressure/close-combat/inference-heavy scenes ("高压/追捕/近身冲突场景
+# 必须..."). A legitimately calm scene may omit them, so the gate must NOT flag
+# them missing — otherwise a good plan is needlessly forced into template
+# fallback (observed on 神裔 ch2/ch3). They still get written when present.
+_CONDITIONAL_CONTRACT_FIELDS: tuple[str, ...] = (
     "action_budget",
     "inference_ledger",
 )
 
 
 def _missing_contract_fields(brief: SceneBrief) -> list[str]:
-    """Return missing generic continuity-contract fields for a planned scene."""
+    """Return missing *always-applicable* continuity-contract fields.
+
+    Conditional fields (action_budget / inference_ledger) are not flagged when
+    absent — they are only mandatory for high-pressure scenes per the planner
+    prompt, and forcing them on every scene drove avoidable fallbacks.
+    """
     missing: list[str] = []
     for field in _REQUIRED_CONTRACT_FIELDS:
         if not str(getattr(brief, field, "") or "").strip():
