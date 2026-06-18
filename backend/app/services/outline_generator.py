@@ -648,7 +648,7 @@ class OutlineGenerator:
 
         if stream:
             return self.router.generate_stream(
-                task_type="outline",
+                task_type="outline_book",
                 messages=messages,
                 _log_meta=self._log_meta("outline_book"),
             )
@@ -657,7 +657,7 @@ class OutlineGenerator:
             return await self._generate_book_outline_staged(user_input, scale=scale)
 
         result = await self.router.generate(
-            task_type="outline",
+            task_type="outline_book",
             messages=messages,
             _log_meta=self._log_meta("outline_book"),
         )
@@ -1323,7 +1323,7 @@ class OutlineGenerator:
             # Legacy single-call streaming path. Kept for callers that
             # explicitly disable staged mode.
             return self.router.generate_stream(
-                task_type="outline",
+                task_type="outline_volume",
                 messages=messages,
                 _log_meta=self._log_meta("outline_volume"),
             )
@@ -1337,7 +1337,7 @@ class OutlineGenerator:
             )
 
         result = await self.router.generate(
-            task_type="outline",
+            task_type="outline_volume",
             messages=messages,
         )
         return self._parse_json(result.text)
@@ -1630,13 +1630,13 @@ class OutlineGenerator:
 
         if stream:
             return self.router.generate_stream(
-                task_type="outline",
+                task_type="outline_chapter",
                 messages=messages,
                 _log_meta=self._log_meta("outline_chapter"),
             )
 
         result = await self.router.generate(
-            task_type="outline",
+            task_type="outline_chapter",
             messages=messages,
             _log_meta=self._log_meta("outline_chapter"),
         )

@@ -15,6 +15,30 @@ from app.models.call_log import LLMCallLog
 logger = logging.getLogger(__name__)
 
 
+def _coerce_uuid_or_none(value: Any) -> Any:
+    """Return value if it is a valid UUID (or UUID-shaped str), else None.
+
+    ``endpoint_id`` is a UUID FK column. When model_router falls back to the
+    env-based provider, the provider key is a plain string like ``env_openai``.
+    Passing that straight to asyncpg raises DataError, which ABORTS the whole
+    session transaction (not just the log insert) and closes the connection,
+    cascading into unrelated rollback failures downstream. Coerce any
+    non-UUID endpoint id to None (the column is nullable) so a fallback call
+    logs cleanly instead of poisoning the request's DB session.
+    """
+    if value is None:
+        return None
+    import uuid as _uuid
+
+    if isinstance(value, _uuid.UUID):
+        return value
+    try:
+        return _uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+
 @dataclass
 class CallContext:
     """Accumulates chunks + token usage during a streaming call."""
@@ -87,7 +111,7 @@ async def log_llm_call(
                 output_tokens=ctx.output_tokens,
                 latency_ms=latency_ms,
                 model=model,
-                endpoint_id=endpoint_id,
+                endpoint_id=_coerce_uuid_or_none(endpoint_id),
                 status=status,
                 error_message=error_message,
                 tier_used=tier_used,
