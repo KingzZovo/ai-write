@@ -40,3 +40,12 @@
 1. **scene_planner 偶发丢合同字段**：planner 返回的场景偶尔缺 `action_budget`/`inference_ledger` 等 1-2 个字段（安静场景模型判定 N/A 而略过）。`_has_valid_scene_contract` 要求 12 字段全在每个场景→不匹配→fallback。prompt 用的是"高压场景必须"的条件措辞，gate 却按无条件全要求——**gate 比 prompt 自身更严**。建议：要么 gate 改为条件式（仅高压场景要 action_budget），要么 prompt 强化为无条件全填。生产默认 `ALLOW_SCENE_PLANNER_FALLBACK=1` 已优雅兜底，非阻塞。
 2. **OUTLINE_FAST_CALL_TIMEOUT_SECONDS=120 偏紧**：characters/world 段落经常 >120s，每轮稳定双超时再 fallback。relay 快时无碍，慢时拉长~4min/书。可调高或改流式。
 3. **ch3 章节大纲 JSON 解析失败**：单章 outline 落 raw_text。章节大纲也应像 scene_planner 一样有 json_repair+strict retry 兜底。
+
+## 更新（同轮后续修复 + 复测）
+
+- **待办#1 已修** (`fb74b56`)：把合同字段拆成"始终必填的 10 个连续性字段"+"条件字段 action_budget/inference_ledger"，gate 只校验前者，与 prompt 的条件措辞一致。**复测（run3，gate 修复后）**：ch3 由 fallback→**真规划**（场景名 夹角濒死/二十分钟撤离/安全屋锁定，fallback=False），正文紧接 ch2 折叠空间、右臂银色纹路析出，逻辑连续在设定内。ch1 仍真规划。
+- **新发现（待办#1 的更深层根因，未改 live 配置）**：ch2 仍 fallback，但这次缺的是 `mechanism_limits/result_strength/transition_bridge/continuity_ledger` 这些**始终必填**字段——root cause 是 `scene_planner.max_tokens=4096`（DB prompt_assets 配置）有时不够装 3-6 个写满合同字段的场景，末场被截断、json_repair 只救回残缺对象。探针实测：明确要求写满时 3 场≈4852 字符（恰好够），但更长/更多场景会溢出。**建议**：把 DB 里 scene_planner 的 max_tokens 调到 6144（动 live 配置，待确认）。生产 fallback 已兜底，非阻塞。
+
+## 最终结论
+
+全流程（书→卷→章大纲→3 章正文）端到端跑通。本轮修了 5 个真 bug（scene_planner 契约、大纲 fallback 偏离设定、大纲 task 路由 502、call-log 毒化连接、合同 gate 过严），均 TDD + 全套 631 绿 + live relay 复测。正文质量达人类作家水准、在设定内、逻辑自洽不瞎编（ch1/ch3 真规划，ch2 fallback 仍优秀）。剩余 3 项为非阻塞优化（max_tokens 调高、outline 超时、章节大纲 json 兜底），生产 fallback 均已覆盖。
