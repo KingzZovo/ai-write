@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 import os
 
-import jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -57,12 +56,14 @@ def _extract_username(auth_header: str) -> str | None:
         return None
     token = auth_header[7:]
     try:
-        # verify_signature=False because AuthMiddleware has already validated the
-        # JWT signature + expiry. Re-verifying here would couple us to the secret
-        # resolution and give no extra safety.
-        payload = jwt.decode(token, options={"verify_signature": False})
-        sub = payload.get("sub")
-        return str(sub) if sub else None
+        # Verify the signature here too. Quota enforcement keys off the JWT
+        # ``sub``; trusting an unsigned/forged token would let an attacker
+        # bill (or evade billing for) an arbitrary user. Verifying costs one
+        # HS256 check and keeps the gate honest even when AuthMiddleware is
+        # bypassed (DISABLE_AUTH=1).
+        from app.api.auth import verify_token
+
+        return verify_token(token)
     except Exception:
         return None
 

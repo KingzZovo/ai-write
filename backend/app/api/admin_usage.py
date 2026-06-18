@@ -16,11 +16,11 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import verify_token
 from app.db.session import get_db
 from app.services.usage_service import (
     current_month_ym,
@@ -41,9 +41,11 @@ def _caller_username(request: Request) -> Optional[str]:
         return None
     token = auth[7:]
     try:
-        payload = jwt.decode(token, options={"verify_signature": False})
-        sub = payload.get("sub")
-        return str(sub) if sub else None
+        # Verify the signature here rather than trusting AuthMiddleware: the
+        # admin gate must hold even when AuthMiddleware is bypassed (e.g.
+        # DISABLE_AUTH=1) or for paths it doesn't cover. A forged/unsigned
+        # token must never resolve to an admin subject.
+        return verify_token(token)
     except Exception:
         return None
 
