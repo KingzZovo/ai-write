@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.9.3] - 2026-06-25
+
+Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能体章节管线（子项目 B）设计与计划。详见 `docs/HANDOFF_2026-06-25_humanizer-and-outline-fix.md`。
+
+### 修复
+
+- **大纲生成回退到 prompt（恶性 bug，根治）**：`OutlineGenerator.__init__` 用同步 `get_model_router()`，在 SSE 异步事件循环里命中 `loop.is_running()` 分支不加载 DB 配置，只回退到 env provider；而本部署 env LLM key 全空 → router providers 为空 → `_get_route` 抛 `No model configured for 'outline_book'`，该错误被 SSE 当内容下发，前端渲染成"回退到 prompt 提示词"。修复：`generate_outline` 在实例化 `OutlineGenerator` 前 `await get_model_router_async()`，治愈共享单例（同一 `_router` 对象，sync getter 随后返回 DB-loaded 实例）。这是唯一用同步 router 的生成路径，其余生成端走 `run_text_prompt → get_model_router_async` 不受影响。`tests/test_outline_router_preload.py`（源码契约断言 + 单例治愈证明）。
+- **测试套件确定性**：`conftest.py` 在 import 前钉 `CHAPTER_MAX_REWRITE_ROUNDS=2`，消除全套跑 vs 单文件跑因 `.env` 加载顺序导致的两个 `chapter_quality_gate` 用例时挂时过（pre-existing 隔离 bug，非本轮代码引入）。
+
+### 新功能
+
+- **Humanizer-zh 结构性去AI味规则**（`services/prompts/humanizer_zh_rules.py`，源自 op7418/Humanizer-zh，基于 Wikipedia「Signs of AI writing」）：补现有两层去AI味（QMAI 词表 `anti_ai_rules_zh` 管网文腔 + `AntiAIChecker` 管密度统计）查不到的**句法骨架级** AI 指纹。7 条规则：否定式排比、句尾强行升华、虚假范围、系动词回避、过度限定（5 条可确定性正则检测）+ 同义词循环/同画面重述、三段式法则（2 条仅 prompt 引导）。`synonym_cycling` 段落级语义判重正对神裔 ch1「骨架画面二次重述」根因。
+  - **prompt 侧**：`render_humanizer_prompt_block()`（≤1400 字预算截断）追加进 `render_prose_quality_prompt()` 单一注入点，同时进生成与润色 prompt（blueprint 里精确出现 1 次）。
+  - **检测侧**：`scan_humanizer_structural()` 接入 `AntiAIChecker`，产 `humanizer_*` issue，仅 low/medium 不做硬门（诊断不阻断，避免过度返工）。
+  - 测试 `tests/services/test_humanizer_zh_rules.py`（17 例：检测命中/清洁文本零误报/预算/正交契约/端到端 wiring）。
+
+### 设计与计划（未实现，待执行）
+
+- **子项目 B：多智能体章节质量管线**（spec `docs/superpowers/specs/2026-06-23-multi-agent-chapter-pipeline-design.md` + 计划 `docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`，12 个 TDD 任务）：串行三角色 drafter→logic_critic→prose_polish，新增「逻辑与剧情核查」专查神裔 ch1 三类章内缺陷（空间方向矛盾/画面重述/跨度突变），隔离上下文 echo 终稿不污染主流程，`CHAPTER_PIPELINE_ENABLED` 一键回退，`apply_chapter_quality_gate` 零改动作第三棒。限流约束下选串行而非并行扇出。
+
+### 测试与验证
+
+- pytest **644 passed**（642 基线 + 本轮 2 个 outline router 测试；Humanizer 17 例含在内）。前端无需改动（仅可选新增 `logic_critic_done` 事件，子项目 B 实现时引入）。
+- 大纲修复已在容器内端到端验证（`_router=None` 前置失败态下，补丁路径恢复 2 provider + outline_book 路由）。**注意：live 容器跑旧码，修复生效需 `docker compose up -d --build backend`（待授权）**。
+
+### 调研（未引入代码，仅记录可学点）
+
+- **worldwonderer/oh-story-claudecode**：文件系统即记忆、`guard-outline-before-prose` 钩子（无章节大纲禁止写正文，强制大纲先行）、7 agent 按模型分层——印证子项目 A（增量弧式循环）与 B（串行三角色）方向。
+- **dama-cyber/magic-distillation**：七步单任务 prompt 拆分、可量化原创性闸（5-gram 重叠<5%/最长公共子串<8字）、分级黑名单、逐段字数预算 ±5%。其"反 AI 检测"目标不采纳。
+
 ## [1.9.2] - 2026-06-13
 
 遗留项修复 + ainovel-cli 借鉴四件套（12 commits）。调研 voocel/ainovel-cli（Go/TUI，473★）后引入 4 个我们没有等价物的机制；同时修掉 v1.9.1 记录的 3 个遗留项 + 真实生成冒烟发现的 2 个 bug。计划见 `.claude/plans/ai-https-github-com-mochocyang-qmai-groovy-garden.md`。
