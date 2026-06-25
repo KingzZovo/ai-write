@@ -453,12 +453,26 @@ async def generate_chapter(
                             )
                         quality_gate_meta = quality_gate_result.to_safe_metadata()
                         if quality_gate_result.status != "passed":
-                            yield f"data: {json.dumps({'event': 'quality_failed', 'status': quality_gate_result.status, 'reason': quality_gate_result.warning_reason, 'rounds': quality_gate_result.rewrite_rounds, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
-                            yield "data: [DONE]\n\n"
-                            return
-                        if quality_gate_result.rewrite_rounds > 0:
+                            # PERSIST-ON-BLOCK (env-gated, default off): when the
+                            # gate cannot reach a clean pass, optionally keep its
+                            # best improved text (with a quality warning) instead
+                            # of discarding it and stranding stale/placeholder prose.
+                            import os as _pob_os
+                            _persist_on_block = _pob_os.getenv("QUALITY_GATE_PERSIST_ON_BLOCK") == "1"
+                            _pob_text = quality_gate_result.final_text or ""
+                            if _persist_on_block and _pob_text.strip():
+                                yield f"data: {json.dumps({'event': 'quality_failed', 'status': quality_gate_result.status, 'reason': quality_gate_result.warning_reason, 'rounds': quality_gate_result.rewrite_rounds, 'persisted_on_block': True, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                                full_text = _pob_text
+                                if isinstance(quality_gate_meta, dict):
+                                    quality_gate_meta = {**quality_gate_meta, "persisted_on_block": True}
+                            else:
+                                yield f"data: {json.dumps({'event': 'quality_failed', 'status': quality_gate_result.status, 'reason': quality_gate_result.warning_reason, 'rounds': quality_gate_result.rewrite_rounds, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+                        elif quality_gate_result.rewrite_rounds > 0:
                             yield f"data: {json.dumps({'event': 'quality_rewrite_done', 'status': quality_gate_result.status, 'rounds': quality_gate_result.rewrite_rounds, 'content_text': quality_gate_result.final_text, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
-                        full_text = quality_gate_result.final_text
+                        if quality_gate_result.status == "passed":
+                            full_text = quality_gate_result.final_text
                     except Exception as quality_err:
                         logger.warning(
                             "chapter quality gate failed; blocking save: %s",
@@ -1054,9 +1068,26 @@ async def generate_chapter(
                             )
                         final_quality_meta = final_quality_result.to_safe_metadata()
                         if final_quality_result.status != "passed":
-                            accepted_final = False
-                            aborted_with_blocking = True
-                            yield f"data: {json.dumps({'event': 'quality_failed', 'status': final_quality_result.status, 'reason': final_quality_result.warning_reason, 'rounds': final_quality_result.rewrite_rounds, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                            import os as _pob_os2
+                            _persist_on_block2 = _pob_os2.getenv("QUALITY_GATE_PERSIST_ON_BLOCK") == "1"
+                            _pob_text2 = final_quality_result.final_text or ""
+                            if _persist_on_block2 and _pob_text2.strip():
+                                if isinstance(final_quality_meta, dict):
+                                    final_quality_meta = {**final_quality_meta, "persisted_on_block": True}
+                                yield f"data: {json.dumps({'event': 'quality_failed', 'status': final_quality_result.status, 'reason': final_quality_result.warning_reason, 'rounds': final_quality_result.rewrite_rounds, 'persisted_on_block': True, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
+                                current_text = _pob_text2
+                                full_text = current_text
+                                _chsave_taskb = asyncio.create_task(_persist_chapter_now(current_text, final_quality_meta))
+                                _CHAPTER_SAVE_BG_TASKS.add(_chsave_taskb)
+                                _chsave_taskb.add_done_callback(_CHAPTER_SAVE_BG_TASKS.discard)
+                                try:
+                                    await asyncio.shield(_chsave_taskb)
+                                except Exception:
+                                    pass
+                            else:
+                                accepted_final = False
+                                aborted_with_blocking = True
+                                yield f"data: {json.dumps({'event': 'quality_failed', 'status': final_quality_result.status, 'reason': final_quality_result.warning_reason, 'rounds': final_quality_result.rewrite_rounds, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
                         elif final_quality_result.rewrite_rounds > 0:
                             yield f"data: {json.dumps({'event': 'quality_rewrite_done', 'status': final_quality_result.status, 'rounds': final_quality_result.rewrite_rounds, 'content_text': final_quality_result.final_text, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
 
@@ -1394,6 +1425,17 @@ async def generate_outline(
                                 _chapter_naming_directive = _fmt_naming(_profile.config_json) or ""
                 except Exception as _cnd_err:
                     logger.warning("PR-CHAPTER-NAMING directive load failed: %s", _cnd_err)
+            # BUGFIX (2026-06-25): force the shared model-router singleton to
+            # load its DB config BEFORE OutlineGenerator grabs it via the sync
+            # get_model_router(). Inside this running SSE event loop the sync
+            # getter takes the `loop.is_running()` branch and returns WITHOUT a
+            # DB load, falling back to env providers. This deployment configures
+            # LLMs in the DB (env keys empty), so the unhealed router has zero
+            # providers and outline routing raised "No model configured for
+            # 'outline_book'" into the stream (the "回退到 prompt" symptom).
+            # Awaiting the async getter heals the singleton both functions share.
+            from app.services.model_router import get_model_router_async
+            await get_model_router_async()
             generator = OutlineGenerator(project_id=req.project_id, chapter_naming_directive=_chapter_naming_directive)
 
             yield f"data: {json.dumps({'status': 'generating', 'level': req.level})}\n\n"
