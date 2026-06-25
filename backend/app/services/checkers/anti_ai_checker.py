@@ -19,6 +19,10 @@ from collections import Counter
 from app.services.checkers.base import BaseChecker, CheckResult
 from app.services.context_pack import ContextPack
 from app.services.prompts.anti_ai_rules_zh import AI_PHRASE_BLACKLIST
+from app.services.prompts.humanizer_zh_rules import (
+    rule_by_id as humanizer_rule_by_id,
+    scan_humanizer_structural,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,8 +193,40 @@ class AntiAIChecker(BaseChecker):
         # 8. Formality level
         self._check_formality(chapter_text, result)
 
+        # 9. Humanizer-zh structural tells (negative parallelism, shallow
+        #    significance, synonym cycling, false range, copula avoidance...)
+        self._check_humanizer_structural(chapter_text, result)
+
         result.score = self._compute_score(result)
         return result
+
+    def _check_humanizer_structural(
+        self,
+        text: str,
+        result: CheckResult,
+    ) -> None:
+        """Detect Humanizer-zh structural AI tells.
+
+        These are syntactic scaffolds (Wikipedia "Signs of AI writing")
+        that the lexical word lists above cannot catch: 否定式排比,
+        句尾强行升华, 虚假范围, 系动词回避, 过度限定. Each finding is
+        advisory (low/medium) — diagnosis for the rewrite loop, not a
+        hard gate, to avoid the over-rewrite churn we already fight.
+        """
+        for finding in scan_humanizer_structural(text):
+            examples = finding.get("examples") or ()
+            example_text = "，".join(f"'{e}'" for e in examples)  # type: ignore[arg-type]
+            rule = humanizer_rule_by_id(str(finding["rule_id"]))
+            result.add_issue(
+                type=f"humanizer_{finding['rule_id']}",
+                severity=str(finding["severity"]),
+                location="多处",
+                description=(
+                    f"结构性AI痕迹·{finding['title']}（{finding['hits']}处）：{rule.problem}"
+                    + (f" 命中: {example_text}" if example_text else "")
+                ),
+                suggestion=str(finding.get("suggestion") or rule.suggestion),
+            )
 
     def _check_ai_words(
         self,

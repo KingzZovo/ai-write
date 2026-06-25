@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.prompts.anti_ai_rules_zh import render_anti_ai_prompt_block
+from app.services.prompts.humanizer_zh_rules import render_humanizer_prompt_block
 
 
 @dataclass(frozen=True)
@@ -217,4 +218,9 @@ def render_prose_quality_prompt() -> str:
     # point: this prompt feeds both contract_hard_gate_prompt and the
     # preflight blueprint, each of which renders it exactly once).
     lines.append(render_anti_ai_prompt_block())
+    # Humanizer-zh structural tells (Wikipedia "Signs of AI writing"):
+    # negative parallelism, shallow significance, synonym cycling, etc.
+    # Orthogonal to the QMAI phrase blacklist above — that catches lexical
+    # 网文腔, this catches syntactic AI scaffolding the word lists miss.
+    lines.append(render_humanizer_prompt_block())
     return "\n".join(lines)

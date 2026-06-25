@@ -11,6 +11,14 @@ os.environ.setdefault("AUTH_USERNAME", "king")
 os.environ.setdefault("AUTH_PASSWORD", "testpass")
 os.environ.setdefault("AUTH_PASSWORD_HASH", hashlib.sha256(b"testpass").hexdigest())
 
+# chapter_quality_gate reads CHAPTER_MAX_REWRITE_ROUNDS via os.getenv at import
+# time. In a single-file run .env (which pins 2) is loaded first; in a full-suite
+# run the module imports before .env, falling back to the 5 default — so the gate
+# round-count tests (which assert 2) pass alone but fail in the suite. Pin the
+# production value here, before any app import, to make the suite deterministic.
+# setdefault means an explicit override still wins.
+os.environ.setdefault("CHAPTER_MAX_REWRITE_ROUNDS", "2")
+
 import asyncio
 import pytest
 import pytest_asyncio
