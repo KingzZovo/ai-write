@@ -51,3 +51,27 @@ async def test_apply_targeted_rewrite_degrades_to_none(monkeypatch) -> None:
         text="原文", issues=issues, db=object(), project_id="p", chapter_id="c"
     )
     assert out is None  # 失败返回 None（保留上一稿）
+
+
+def test_pipeline_result_echo_report() -> None:
+    from app.services.chapter_pipeline import ChapterPipelineResult
+    from types import SimpleNamespace
+
+    qg = SimpleNamespace(status="passed", final_text="终稿", to_safe_metadata=lambda: {"status": "passed"})
+    res = ChapterPipelineResult(
+        final_text="终稿",
+        quality_gate_result=qg,
+        logic_rounds=1,
+        logic_issues_remaining=0,
+        logic_available=True,
+    )
+    echo = res.to_echo_report()
+    # echo 只含约定字段，不含中间稿/角色推理。
+    assert echo == {
+        "logic_rounds": 1,
+        "logic_issues_remaining": 0,
+        "logic_available": True,
+        "prose_gate_status": "passed",
+    }
+    assert "intermediate_text" not in echo
+    assert "issues" not in echo

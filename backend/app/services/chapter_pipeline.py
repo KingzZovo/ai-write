@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from app.services.logic_critic import LogicIssue
 from app.services.prompt_registry import run_text_prompt
+
+if TYPE_CHECKING:
+    from app.services.chapter_quality_gate import ChapterQualityGateResult
 
 logger = logging.getLogger(__name__)
 
@@ -62,3 +67,21 @@ async def apply_targeted_logic_rewrite(
         return None
     candidate = (result.text or "").strip()
     return candidate or None
+
+
+@dataclass
+class ChapterPipelineResult:
+    final_text: str
+    quality_gate_result: "ChapterQualityGateResult | Any"
+    logic_rounds: int
+    logic_issues_remaining: int
+    logic_available: bool
+
+    def to_echo_report(self) -> dict:
+        """不污染主流程的精简报告：只回约定字段。"""
+        return {
+            "logic_rounds": self.logic_rounds,
+            "logic_issues_remaining": self.logic_issues_remaining,
+            "logic_available": self.logic_available,
+            "prose_gate_status": getattr(self.quality_gate_result, "status", "unknown"),
+        }
