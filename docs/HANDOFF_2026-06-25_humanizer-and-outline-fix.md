@@ -49,8 +49,8 @@
 ### 测试
 `tests/test_outline_router_preload.py`（2 例：源码断言 preload 存在 + 证明 async-load 治愈 sync getter）。全套 **644 pytest 绿**，零回归。
 
-### ⚠️ 部署待办
-**live 容器跑旧码**（4 天前镜像，无 `--reload`），修复未生效。需用户授权 `docker compose up -d --build backend`（celery 勿动）后才在线上修好。
+### ✅ 部署完成
+已 `docker compose up -d --build backend`（celery 未动），live 端到端验证 outline 流恢复正常正文输出，不再回退 prompt。
 
 ---
 
@@ -62,14 +62,23 @@
 
 ---
 
-## 4. 子项目 B：多智能体章节质量管线（设计+计划已就绪，**未实现**）
+## 4. 子项目 B：多智能体章节质量管线（**已实现 + 已部署 live**）
 
 - **设计 spec**：`docs/superpowers/specs/2026-06-23-multi-agent-chapter-pipeline-design.md`
-- **实现计划**：`docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`（12 个 TDD 任务）
+- **实现计划**：`docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`（12 个 TDD 任务，全部完成并勾选）
 
-**要点**：串行三角色 `drafter → logic_critic → prose_polish`，新增「逻辑与剧情核查」角色专查神裔 ch1 暴露的章内缺陷（空间方向矛盾/画面重述/跨度突变/动作因果/道具状态）——这些是现有 checker（geo_jump/continuity 跨章、mechanics 抓解释重复）的真实盲区。串行因 relay 限流（并行扇出撞墙）。`apply_chapter_quality_gate` 零改动作第三棒。`CHAPTER_PIPELINE_ENABLED=0` 一键回退。echo 只回 `{logic_rounds, logic_issues_remaining, prose_gate_status}` 不污染主流程。
+**要点**：串行三角色 `drafter → logic_critic → prose_polish`，新增「逻辑与剧情核查」角色专查神裔 ch1 暴露的章内缺陷（空间方向矛盾/画面重述/跨度突变/动作因果/道具状态）——这些是现有 checker（geo_jump/continuity 跨章、mechanics 抓解释重复）的真实盲区。串行因 relay 限流（并行扇出撞墙）。`apply_chapter_quality_gate` 零改动作第三棒。`CHAPTER_PIPELINE_ENABLED=0` 一键回退。echo 只回 `{logic_rounds, logic_issues_remaining, logic_available, prose_gate_status}` 不污染主流程。
 
-**实现顺序**：B（质量管线）先于 A（弧式增量循环）——A 的「写一章」步骤将直接复用 B 的 `run_chapter_pipeline()`。
+**落地文件**：
+- `backend/app/services/logic_critic.py`：`LogicIssue`/`LogicCriticReport`、隔离 context 构造、结构化输出解析（unlocatable quote 标记）、`run_logic_critic`（短稿跳过 + 任何失败降级 available=False）。
+- `backend/app/services/chapter_pipeline.py`：`ChapterPipelineResult.to_echo_report()`、`build_targeted_rewrite_content`（只列 locatable）、`apply_targeted_logic_rewrite`（失败返 None）、`run_chapter_pipeline`（clean 快路径/定向改写/plateau/`LOGIC_CRITIC_MAX_ROUNDS` 封顶/降级/开关旁路）。
+- `prompt_registry._TASK_TYPE_FALLBACK`：`logic_critic→critic`、`drafter→rewrite`（未配 PromptAsset 时开箱即用）。
+- `generate.py:445`：质量环节从直调 gate 改为 `run_chapter_pipeline`，新增 `logic_critic_done` SSE 事件；下游 persist-on-block 逻辑零改动（`quality_gate_result = pipeline_result.quality_gate_result`）。
+- `conftest.py`：钉 `LOGIC_CRITIC_MAX_ROUNDS=2` / `CHAPTER_PIPELINE_ENABLED=1`。
+
+**测试**：`tests/services/test_logic_critic.py`（10 例）+ `tests/services/test_chapter_pipeline.py`（12 例）。全套 **666 pytest 绿**。`test_generate_sse_fallback` 因 gate 下沉一层，patch 点同步加 `chapter_pipeline.apply_chapter_quality_gate`（架构反映性更新，非回归）。
+
+**实现顺序**：B（质量管线）已先于 A（弧式增量循环）落地——A 的「写一章」步骤将直接复用 B 的 `run_chapter_pipeline()`。
 
 ---
 
@@ -80,6 +89,7 @@
 ---
 
 ## 下一步（建议优先级）
-1. **部署 outline 修复**：`docker compose up -d --build backend`（需授权）。
-2. **执行子项目 B 计划**：12 个 TDD 任务，inline 执行（relay 限流下比子代理派发可靠）。
-3. **子项目 A**（弧式增量循环）：B 落地后开新 spec→plan→实现循环。
+1. ~~部署 outline 修复~~ ✅ 已 `docker compose up -d --build backend` 部署并端到端验证。
+2. ~~执行子项目 B 计划~~ ✅ 12 个 TDD 任务全部完成、666 pytest 绿、已部署 live。
+3. **子项目 A**（弧式增量循环）：B 已落地，可开新 spec→plan→实现循环。A 的「写一章」步骤直接复用 `run_chapter_pipeline()`。
+4. **配 logic_critic / drafter 专属 PromptAsset**（可选）：当前走 fallback（→critic/→rewrite），可在 `/prompts` 为这两个 task_type 绑定专用 prompt + endpoint 以进一步调优逻辑核查质量。

@@ -1,6 +1,6 @@
 # 多智能体章节质量管线 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在 `generate_chapter` 的质量环节前插入一个串行三角色管线（drafter→logic_critic→prose_polish），新增「逻辑与剧情核查」角色专查章内空间方向矛盾/画面重述/跨度突变，把终稿与精简报告 echo 回主流程而不污染上下文。
 
@@ -43,7 +43,7 @@
 - Create: `backend/app/services/logic_critic.py`
 - Test: `backend/tests/services/test_logic_critic.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/services/test_logic_critic.py
@@ -76,12 +76,12 @@ def test_logic_issue_and_report_shape() -> None:
     assert report.issue_count == 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py::test_logic_issue_and_report_shape -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.services.logic_critic'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # backend/app/services/logic_critic.py
@@ -135,12 +135,12 @@ class LogicCriticReport:
         return len(self.issues)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py::test_logic_issue_and_report_shape -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/logic_critic.py backend/tests/services/test_logic_critic.py
@@ -155,7 +155,7 @@ git commit -m "feat(logic_critic): LogicIssue/LogicCriticReport data structures"
 - Modify: `backend/app/services/logic_critic.py`
 - Test: `backend/tests/services/test_logic_critic.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_build_user_content_is_isolated() -> None:
@@ -190,12 +190,12 @@ def test_build_user_content_tolerates_missing_optionals() -> None:
     assert "clean" in content
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py -k build_user_content -v`
 Expected: FAIL with `ImportError: cannot import name 'build_logic_critic_user_content'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/logic_critic.py`:
 
@@ -254,12 +254,12 @@ def build_logic_critic_user_content(
     return "\n\n".join(parts)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py -k build_user_content -v`
 Expected: PASS (2 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/logic_critic.py backend/tests/services/test_logic_critic.py
@@ -274,7 +274,7 @@ git commit -m "feat(logic_critic): isolated-context user-content builder"
 - Modify: `backend/app/services/logic_critic.py`
 - Test: `backend/tests/services/test_logic_critic.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_parse_clean_output() -> None:
@@ -334,12 +334,12 @@ def test_parse_garbage_returns_unavailable() -> None:
     assert parse_logic_critic_output(None, chapter_text="正文").available is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py -k parse -v`
 Expected: FAIL with `ImportError: cannot import name 'parse_logic_critic_output'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/logic_critic.py`:
 
@@ -388,12 +388,12 @@ def parse_logic_critic_output(parsed: object, *, chapter_text: str) -> LogicCrit
     return LogicCriticReport(available=True, clean=clean, issues=issues)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py -k parse -v`
 Expected: PASS (4 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/logic_critic.py backend/tests/services/test_logic_critic.py
@@ -408,7 +408,7 @@ git commit -m "feat(logic_critic): structured-output parser with unlocatable-quo
 - Modify: `backend/app/services/logic_critic.py`
 - Test: `backend/tests/services/test_logic_critic.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -496,12 +496,12 @@ async def test_run_logic_critic_skips_short_text(monkeypatch) -> None:
     assert report.clean is True
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py -k run_logic_critic -v`
 Expected: FAIL with `AttributeError: module 'app.services.logic_critic' has no attribute 'run_logic_critic'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/logic_critic.py` (add the import near the top imports too):
 
@@ -551,12 +551,12 @@ async def run_logic_critic(
 
 Note: `run_structured_prompt` is patched per-test via `monkeypatch.setattr(lc, "run_structured_prompt", ...)`, which works because it is imported into the module namespace here.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py -v`
 Expected: PASS (all logic_critic tests green)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/logic_critic.py backend/tests/services/test_logic_critic.py
@@ -571,7 +571,7 @@ git commit -m "feat(logic_critic): run_logic_critic with rate-limit degradation 
 - Modify: `backend/app/services/prompt_registry.py:520`
 - Test: `backend/tests/services/test_logic_critic.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_task_type_fallbacks_registered() -> None:
@@ -582,12 +582,12 @@ def test_task_type_fallbacks_registered() -> None:
     assert _TASK_TYPE_FALLBACK.get("drafter") == "rewrite"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py::test_task_type_fallbacks_registered -v`
 Expected: FAIL with `AssertionError: assert None == 'critic'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `backend/app/services/prompt_registry.py`, locate the `_TASK_TYPE_FALLBACK` dict (around line 520) and add two entries:
 
@@ -607,12 +607,12 @@ _TASK_TYPE_FALLBACK: dict[str, str] = {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_logic_critic.py::test_task_type_fallbacks_registered -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/prompt_registry.py backend/tests/services/test_logic_critic.py
@@ -627,7 +627,7 @@ git commit -m "feat(pipeline): register logic_critic/drafter task_type fallbacks
 - Create: `backend/app/services/chapter_pipeline.py`
 - Test: `backend/tests/services/test_chapter_pipeline.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/services/test_chapter_pipeline.py
@@ -686,12 +686,12 @@ async def test_apply_targeted_rewrite_degrades_to_none(monkeypatch) -> None:
     assert out is None  # 失败返回 None（保留上一稿）
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k targeted -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.services.chapter_pipeline'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # backend/app/services/chapter_pipeline.py
@@ -761,12 +761,12 @@ async def apply_targeted_logic_rewrite(
     return candidate or None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k targeted -v`
 Expected: PASS (3 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/chapter_pipeline.py backend/tests/services/test_chapter_pipeline.py
@@ -781,7 +781,7 @@ git commit -m "feat(pipeline): targeted logic-rewrite helper (locatable-only, de
 - Modify: `backend/app/services/chapter_pipeline.py`
 - Test: `backend/tests/services/test_chapter_pipeline.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_pipeline_result_echo_report() -> None:
@@ -808,12 +808,12 @@ def test_pipeline_result_echo_report() -> None:
     assert "issues" not in echo
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k echo -v`
 Expected: FAIL with `ImportError: cannot import name 'ChapterPipelineResult'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/chapter_pipeline.py` (add `dataclass` import + `TYPE_CHECKING`):
 
@@ -843,12 +843,12 @@ class ChapterPipelineResult:
         }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k echo -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/chapter_pipeline.py backend/tests/services/test_chapter_pipeline.py
@@ -863,7 +863,7 @@ git commit -m "feat(pipeline): ChapterPipelineResult + sanitized echo report"
 - Modify: `backend/app/services/chapter_pipeline.py`
 - Test: `backend/tests/services/test_chapter_pipeline.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -900,12 +900,12 @@ async def test_pipeline_disabled_delegates_to_quality_gate(monkeypatch) -> None:
     assert seen["target_word_count"] == 3000
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k disabled -v`
 Expected: FAIL with `AttributeError: ... has no attribute 'run_chapter_pipeline'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/chapter_pipeline.py` (add imports for the gate + critic into module namespace so tests can monkeypatch them):
 
@@ -972,12 +972,12 @@ async def run_chapter_pipeline(
 
 Note: `apply_chapter_quality_gate` and `run_logic_critic` are imported at module level so `monkeypatch.setattr(cp, "...", ...)` works in tests.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k disabled -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/chapter_pipeline.py backend/tests/services/test_chapter_pipeline.py
@@ -992,7 +992,7 @@ git commit -m "feat(pipeline): run_chapter_pipeline skeleton with CHAPTER_PIPELI
 - Modify: `backend/app/services/chapter_pipeline.py`
 - Test: `backend/tests/services/test_chapter_pipeline.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def _qg(final_text="终稿", status="passed"):
@@ -1173,12 +1173,12 @@ async def test_max_rounds_cap(monkeypatch) -> None:
     assert res.logic_rounds == 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k "clean_draft or high_issue or plateau or unavailable or max_rounds" -v`
 Expected: FAIL (current skeleton ignores logic loop; `logic_rounds`/`final_text` assertions fail)
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Replace the body of `run_chapter_pipeline` (the part after the `if not _pipeline_enabled()` block) in `backend/app/services/chapter_pipeline.py` with the full logic loop:
 
@@ -1254,12 +1254,12 @@ async def run_chapter_pipeline(
 
 Remove the Task-8 placeholder duplicate (the second `apply_chapter_quality_gate` block that followed the comment "完整管线在 Task 9 实现"). There must be exactly one `run_chapter_pipeline` definition.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -v`
 Expected: PASS (all pipeline tests, including the Task-8 disabled test)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/chapter_pipeline.py backend/tests/services/test_chapter_pipeline.py
@@ -1273,7 +1273,7 @@ git commit -m "feat(pipeline): logic loop — clean fast-path, targeted rewrite,
 **Files:**
 - Modify: `backend/tests/conftest.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # Append to backend/tests/services/test_chapter_pipeline.py
@@ -1284,12 +1284,12 @@ def test_pipeline_env_defaults_pinned_for_tests() -> None:
     assert os.environ.get("CHAPTER_PIPELINE_ENABLED") == "1"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py::test_pipeline_env_defaults_pinned_for_tests -v`
 Expected: FAIL with `AssertionError: assert None == '2'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `backend/tests/conftest.py`, find the existing env-pin block (where `CHAPTER_MAX_REWRITE_ROUNDS` / auth creds are set with `os.environ.setdefault(...)` before `from app.main import app`) and add two lines in that same block:
 
@@ -1302,12 +1302,12 @@ os.environ.setdefault("CHAPTER_PIPELINE_ENABLED", "1")
 
 Note: the Task-9 tests use `monkeypatch.setenv` which overrides these per-test; these defaults only govern tests that don't set them explicitly.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py::test_pipeline_env_defaults_pinned_for_tests -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/tests/conftest.py backend/tests/services/test_chapter_pipeline.py
@@ -1321,12 +1321,12 @@ git commit -m "test(pipeline): pin LOGIC_CRITIC_MAX_ROUNDS/CHAPTER_PIPELINE_ENAB
 **Files:**
 - Modify: `backend/app/api/generate.py:444-475`
 
-- [ ] **Step 1: Read the current call site**
+- [x] **Step 1: Read the current call site**
 
 Run: `cd /root/ai-write && sed -n '440,476p' backend/app/api/generate.py`
 Confirm the block matches the "关键既有事实" description (the `async with async_session_factory() as quality_db:` wrapping `apply_chapter_quality_gate`).
 
-- [ ] **Step 2: Replace the gate call with the pipeline call**
+- [x] **Step 2: Replace the gate call with the pipeline call**
 
 In `backend/app/api/generate.py`, within the `if not req.skip_polish:` try-block, replace:
 
@@ -1368,7 +1368,7 @@ with:
 
 All downstream references to `quality_gate_result` / `quality_gate_meta` (the `if quality_gate_result.status != "passed":` branch and below) remain unchanged — `quality_gate_result` is still a `ChapterQualityGateResult`.
 
-- [ ] **Step 3: Verify import + syntax**
+- [x] **Step 3: Verify import + syntax**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -c "import ast; ast.parse(open('app/api/generate.py').read()); print('OK')"`
 Expected: `OK`
@@ -1376,12 +1376,12 @@ Expected: `OK`
 Run: `cd /root/ai-write/backend && .venv/bin/python -c "from app.api import generate; print('import OK')"`
 Expected: `import OK`
 
-- [ ] **Step 4: Run the chapter-generation API tests (regression on the call site)**
+- [x] **Step 4: Run the chapter-generation API tests (regression on the call site)**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/ -k "generate or chapter_quality_gate" -v`
 Expected: PASS (no regression; `CHAPTER_PIPELINE_ENABLED=1` default means pipeline wraps the gate, and with no logic_critic PromptAsset the critic degrades → behavior equals old gate path for tests that hit real routing; unit tests mock as needed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/api/generate.py
@@ -1394,26 +1394,26 @@ git commit -m "feat(generate): route chapter polish through run_chapter_pipeline
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Full backend suite**
+- [x] **Step 1: Full backend suite**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest`
 Expected: all green (previous baseline 642 + new logic_critic/pipeline tests). If any pre-existing-unrelated failure appears, confirm it also fails on `git stash` (do not attribute to this work).
 
-- [ ] **Step 2: Frontend typecheck (no new errors)**
+- [x] **Step 2: Frontend typecheck (no new errors)**
 
 Run: `cd /root/ai-write/frontend && npx tsc --noEmit`
 Expected: zero output (no new TS errors; we added an optional SSE event, no frontend change required).
 
-- [ ] **Step 3: Confirm one-key rollback works**
+- [x] **Step 3: Confirm one-key rollback works**
 
 Run: `cd /root/ai-write/backend && CHAPTER_PIPELINE_ENABLED=0 .venv/bin/python -m pytest tests/services/test_chapter_pipeline.py -k disabled -v`
 Expected: PASS — pipeline delegates straight to `apply_chapter_quality_gate`, behavior identical to today.
 
-- [ ] **Step 4: Update project memory**
+- [x] **Step 4: Update project memory**
 
 Append a one-line pointer + a short project memory note recording: subproject B (multi-agent chapter pipeline) landed, files `logic_critic.py` + `chapter_pipeline.py`, switch `CHAPTER_PIPELINE_ENABLED`, rounds `LOGIC_CRITIC_MAX_ROUNDS`, task_types `logic_critic`/`drafter` (with fallbacks), live container still runs old code until `docker compose up -d --build backend`.
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 cd /root/ai-write && git add -A

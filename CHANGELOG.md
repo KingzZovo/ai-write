@@ -2,7 +2,7 @@
 
 ## [1.9.3] - 2026-06-25
 
-Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能体章节管线（子项目 B）设计与计划。详见 `docs/HANDOFF_2026-06-25_humanizer-and-outline-fix.md`。
+Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能体章节质量管线（子项目 B）落地。详见 `docs/HANDOFF_2026-06-25_humanizer-and-outline-fix.md`。
 
 ### 修复
 
@@ -16,14 +16,13 @@ Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能
   - **检测侧**：`scan_humanizer_structural()` 接入 `AntiAIChecker`，产 `humanizer_*` issue，仅 low/medium 不做硬门（诊断不阻断，避免过度返工）。
   - 测试 `tests/services/test_humanizer_zh_rules.py`（17 例：检测命中/清洁文本零误报/预算/正交契约/端到端 wiring）。
 
-### 设计与计划（未实现，待执行）
-
-- **子项目 B：多智能体章节质量管线**（spec `docs/superpowers/specs/2026-06-23-multi-agent-chapter-pipeline-design.md` + 计划 `docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`，12 个 TDD 任务）：串行三角色 drafter→logic_critic→prose_polish，新增「逻辑与剧情核查」专查神裔 ch1 三类章内缺陷（空间方向矛盾/画面重述/跨度突变），隔离上下文 echo 终稿不污染主流程，`CHAPTER_PIPELINE_ENABLED` 一键回退，`apply_chapter_quality_gate` 零改动作第三棒。限流约束下选串行而非并行扇出。
+- **子项目 B：多智能体章节质量管线（已实现，12 个 TDD 任务全绿）**（spec `docs/superpowers/specs/2026-06-23-multi-agent-chapter-pipeline-design.md` + 计划 `docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`）：串行三角色 drafter→logic_critic→prose_polish，新增「逻辑与剧情核查」（`services/logic_critic.py`）专查神裔 ch1 三类章内缺陷（空间方向矛盾/画面重述/跨度突变 + 动作因果/道具状态），隔离上下文（仅本章正文+本章大纲+前章末尾 1500 字，不喂全书记忆）echo 终稿不污染主流程。编排器 `services/chapter_pipeline.py`：clean 快路径（0 改写）、定向改写只动 locatable quote、2 轮封顶 + plateau 终止、逐棒降级不丢整章。`apply_chapter_quality_gate` 零改动作第三棒。`generate.py` 调用点切到 `run_chapter_pipeline`，新增可选 `logic_critic_done` SSE 事件。`CHAPTER_PIPELINE_ENABLED=0` 一键回退、`LOGIC_CRITIC_MAX_ROUNDS` 调轮次、`logic_critic`/`drafter` task_type 带 fallback（→critic/rewrite）。限流约束下选串行而非并行扇出。
 
 ### 测试与验证
 
-- pytest **644 passed**（642 基线 + 本轮 2 个 outline router 测试；Humanizer 17 例含在内）。前端无需改动（仅可选新增 `logic_critic_done` 事件，子项目 B 实现时引入）。
-- 大纲修复已在容器内端到端验证（`_router=None` 前置失败态下，补丁路径恢复 2 provider + outline_book 路由）。**注意：live 容器跑旧码，修复生效需 `docker compose up -d --build backend`（待授权）**。
+- pytest **666 passed**（642 基线 + outline router 2 + 子项目 B 的 logic_critic/chapter_pipeline 共 22 例；Humanizer 17 例含在内）。前端 `tsc --noEmit` 零输出（仅可选新增 `logic_critic_done` 事件，前端可选消费）。
+- 子项目 B 回退路径已验证（`CHAPTER_PIPELINE_ENABLED=0` 直通 `apply_chapter_quality_gate`，行为与今日一致）。
+- 大纲修复已部署 live 并端到端验证（outline 流恢复正常正文输出，不再回退 prompt）。多智能体管线已 `docker compose up -d --build backend` 部署。
 
 ### 调研（未引入代码，仅记录可学点）
 
