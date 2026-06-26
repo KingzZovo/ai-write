@@ -85,3 +85,65 @@ class ChapterPipelineResult:
             "logic_available": self.logic_available,
             "prose_gate_status": getattr(self.quality_gate_result, "status", "unknown"),
         }
+
+
+from app.services.chapter_quality_gate import apply_chapter_quality_gate
+from app.services.logic_critic import run_logic_critic
+
+
+def _pipeline_enabled() -> bool:
+    return os.getenv("CHAPTER_PIPELINE_ENABLED", "1") != "0"
+
+
+def _max_logic_rounds() -> int:
+    return int(os.getenv("LOGIC_CRITIC_MAX_ROUNDS", "2"))
+
+
+async def run_chapter_pipeline(
+    *,
+    text: str,
+    db: object,
+    project_id: object = None,
+    chapter_id: object = None,
+    target_word_count: int | None = None,
+    chapter_outline: dict | None = None,
+    prev_chapter_tail: str = "",
+    skip_polish: bool = False,
+) -> ChapterPipelineResult:
+    """串行三角色管线。开关关闭时等价于直调 apply_chapter_quality_gate。
+
+    完整逻辑回环在 Task 9 实现；此处先落开关旁路 + 最小直通路径。
+    """
+    if not _pipeline_enabled():
+        qg = await apply_chapter_quality_gate(
+            text=text,
+            db=db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            target_word_count=target_word_count,
+            skip_polish=skip_polish,
+        )
+        return ChapterPipelineResult(
+            final_text=qg.final_text,
+            quality_gate_result=qg,
+            logic_rounds=0,
+            logic_issues_remaining=0,
+            logic_available=False,
+        )
+
+    # Task 9 会在此插入 logic 回环；当前先直通第三棒。
+    qg = await apply_chapter_quality_gate(
+        text=text,
+        db=db,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        target_word_count=target_word_count,
+        skip_polish=skip_polish,
+    )
+    return ChapterPipelineResult(
+        final_text=qg.final_text,
+        quality_gate_result=qg,
+        logic_rounds=0,
+        logic_issues_remaining=0,
+        logic_available=False,
+    )

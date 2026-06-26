@@ -75,3 +75,37 @@ def test_pipeline_result_echo_report() -> None:
     }
     assert "intermediate_text" not in echo
     assert "issues" not in echo
+
+
+@pytest.mark.asyncio
+async def test_pipeline_disabled_delegates_to_quality_gate(monkeypatch) -> None:
+    import app.services.chapter_pipeline as cp
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "0")
+
+    qg = SimpleNamespace(status="passed", final_text="QG终稿",
+                         to_safe_metadata=lambda: {"status": "passed"})
+    seen = {}
+
+    async def fake_gate(**kwargs):
+        seen.update(kwargs)
+        return qg
+
+    monkeypatch.setattr(cp, "apply_chapter_quality_gate", fake_gate)
+
+    # logic_critic 不应被调用（开关关闭）。
+    async def must_not_call(*a, **k):
+        raise AssertionError("logic_critic must not run when pipeline disabled")
+
+    monkeypatch.setattr(cp, "run_logic_critic", must_not_call)
+
+    res = await cp.run_chapter_pipeline(
+        text="初稿正文", db=object(), project_id="p", chapter_id="c",
+        target_word_count=3000, chapter_outline=None, prev_chapter_tail="",
+    )
+    assert res.final_text == "QG终稿"
+    assert res.logic_available is False
+    assert res.logic_rounds == 0
+    assert seen["text"] == "初稿正文"
+    assert seen["target_word_count"] == 3000
