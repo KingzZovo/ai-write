@@ -442,15 +442,21 @@ async def generate_chapter(
                         if not pre_quality_report.passed:
                             yield f"data: {json.dumps({'event': 'quality_rewrite_start', 'rounds': 2}, ensure_ascii=False)}\n\n"
                         from app.db.session import async_session_factory
+                        from app.services.chapter_pipeline import run_chapter_pipeline
                         async with async_session_factory() as quality_db:
-                            quality_gate_result = await apply_chapter_quality_gate(
+                            pipeline_result = await run_chapter_pipeline(
                                 text=full_text,
                                 db=quality_db,
                                 project_id=req.project_id,
                                 chapter_id=req.chapter_id,
                                 target_word_count=target_words,
+                                chapter_outline=chapter_outline,
+                                prev_chapter_tail=(previous_text or "")[-1500:],
                                 skip_polish=False,
                             )
+                        # logic_critic 报告作为独立可选事件（前端可选消费，不破坏既有事件）。
+                        yield f"data: {json.dumps({'event': 'logic_critic_done', **pipeline_result.to_echo_report()}, ensure_ascii=False)}\n\n"
+                        quality_gate_result = pipeline_result.quality_gate_result
                         quality_gate_meta = quality_gate_result.to_safe_metadata()
                         if quality_gate_result.status != "passed":
                             # PERSIST-ON-BLOCK (env-gated, default off): when the

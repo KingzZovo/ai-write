@@ -106,6 +106,15 @@ async def test_scene_fallback_discards_partial_scene_text(auth_client, monkeypat
             return _FakeGateResult(text)
 
         monkeypatch.setattr(gen_mod, "apply_chapter_quality_gate", _fake_quality_gate)
+        # generate.py now routes polish through run_chapter_pipeline, which calls
+        # apply_chapter_quality_gate from its OWN module namespace. Patch there too
+        # so this test observes the text handed to the gate (the pipeline's logic
+        # critic is skipped for sub-200-char fallback text, so it goes straight here).
+        import app.services.chapter_pipeline as pipeline_mod
+
+        monkeypatch.setattr(
+            pipeline_mod, "apply_chapter_quality_gate", _fake_quality_gate
+        )
 
         resp = await auth_client.post(
             "/api/generate/chapter",
