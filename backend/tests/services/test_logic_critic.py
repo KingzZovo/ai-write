@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_logic_issue_and_report_shape() -> None:
     from app.services.logic_critic import LogicCriticReport, LogicIssue
@@ -109,3 +111,85 @@ def test_parse_garbage_returns_unavailable() -> None:
 
     assert parse_logic_critic_output({}, chapter_text="正文").available is False
     assert parse_logic_critic_output(None, chapter_text="正文").available is False
+
+
+@pytest.mark.asyncio
+async def test_run_logic_critic_happy_path(monkeypatch) -> None:
+    import app.services.logic_critic as lc
+
+    async def fake_structured(task_type, user_content, db, **kwargs):
+        assert task_type == "logic_critic"
+        assert "本章正文" in user_content
+        return {
+            "clean": False,
+            "issues": [
+                {
+                    "dimension": "spatial_direction",
+                    "severity": "high",
+                    "quote": "往下跑",
+                    "problem": "方向矛盾",
+                    "fix_hint": "删去",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(lc, "run_structured_prompt", fake_structured)
+
+    report = await lc.run_logic_critic(
+        chapter_text="他往下跑。" + "x" * 300,
+        chapter_outline=None,
+        prev_chapter_tail="",
+        db=object(),
+        project_id="p",
+        chapter_id="c",
+    )
+    assert report.available is True
+    assert report.high_issues[0].dimension == "spatial_direction"
+
+
+@pytest.mark.asyncio
+async def test_run_logic_critic_degrades_on_exception(monkeypatch) -> None:
+    import app.services.logic_critic as lc
+
+    async def boom(*a, **k):
+        raise RuntimeError("relay 503")
+
+    monkeypatch.setattr(lc, "run_structured_prompt", boom)
+
+    report = await lc.run_logic_critic(
+        chapter_text="正文" + "x" * 300,
+        chapter_outline=None,
+        prev_chapter_tail="",
+        db=object(),
+        project_id="p",
+        chapter_id="c",
+    )
+    # 异常 → 不可用 → 降级，绝不抛出。
+    assert report.available is False
+
+
+@pytest.mark.asyncio
+async def test_run_logic_critic_skips_short_text(monkeypatch) -> None:
+    import app.services.logic_critic as lc
+
+    called = False
+
+    async def tracker(*a, **k):
+        nonlocal called
+        called = True
+        return {"issues": [], "clean": True}
+
+    monkeypatch.setattr(lc, "run_structured_prompt", tracker)
+
+    report = await lc.run_logic_critic(
+        chapter_text="太短",
+        chapter_outline=None,
+        prev_chapter_tail="",
+        db=object(),
+        project_id="p",
+        chapter_id="c",
+    )
+    # 超短稿跳过核查（无意义），不调 LLM，返回 clean+available。
+    assert called is False
+    assert report.available is True
+    assert report.clean is True

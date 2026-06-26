@@ -8,7 +8,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
+
+from app.services.prompt_registry import run_structured_prompt
+
+logger = logging.getLogger(__name__)
+
+_MIN_LOGIC_CHARS = 200  # 短于此跳过核查（无意义，省一次限流调用）
 
 # 五个检测维度（与 spec 一一对应）。
 LOGIC_DIMENSIONS: tuple[str, ...] = (
@@ -144,3 +151,40 @@ def parse_logic_critic_output(parsed: object, *, chapter_text: str) -> LogicCrit
 
     clean = len(issues) == 0
     return LogicCriticReport(available=True, clean=clean, issues=issues)
+
+
+_MIN_LOGIC_CHARS = 200  # 短于此跳过核查（无意义，省一次限流调用）
+
+
+async def run_logic_critic(
+    *,
+    chapter_text: str,
+    chapter_outline: dict | None,
+    prev_chapter_tail: str,
+    db: object,
+    project_id: object = None,
+    chapter_id: object = None,
+) -> LogicCriticReport:
+    """跑一次逻辑核查。任何失败都降级为 available=False，绝不抛出。"""
+    if not chapter_text or len(chapter_text.strip()) < _MIN_LOGIC_CHARS:
+        # 超短稿无核查意义，视作干净（不消耗 LLM 调用）。
+        return LogicCriticReport(available=True, clean=True, issues=[])
+
+    user_content = build_logic_critic_user_content(
+        chapter_text=chapter_text,
+        chapter_outline=chapter_outline,
+        prev_chapter_tail=prev_chapter_tail,
+    )
+    try:
+        parsed = await run_structured_prompt(
+            "logic_critic",
+            user_content,
+            db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — 任何 relay/路由/解析失败都降级
+        logger.warning("logic_critic LLM call failed; degrading: %s", exc)
+        return LogicCriticReport(available=False, clean=False, issues=[])
+
+    return parse_logic_critic_output(parsed, chapter_text=chapter_text)
