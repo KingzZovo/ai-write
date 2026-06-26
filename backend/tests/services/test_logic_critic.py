@@ -54,3 +54,58 @@ def test_build_user_content_tolerates_missing_optionals() -> None:
     )
     assert "正文。" in content
     assert "clean" in content
+
+
+def test_parse_clean_output() -> None:
+    from app.services.logic_critic import parse_logic_critic_output
+
+    report = parse_logic_critic_output({"issues": [], "clean": True}, chapter_text="任意正文")
+    assert report.available is True
+    assert report.clean is True
+    assert report.issues == []
+
+
+def test_parse_marks_unlocatable_quote() -> None:
+    from app.services.logic_critic import parse_logic_critic_output
+
+    chapter = "台阶向上倾斜，通向地面层出口。他迈开步子往下跑。"
+    parsed = {
+        "clean": False,
+        "issues": [
+            {
+                "dimension": "spatial_direction",
+                "severity": "high",
+                "quote": "他迈开步子往下跑",
+                "problem": "方向矛盾",
+                "fix_hint": "删去往下跑",
+            },
+            {
+                "dimension": "span_jump",
+                "severity": "high",
+                "quote": "他乘电梯直达顶楼",
+                "problem": "臆造",
+                "fix_hint": "x",
+            },
+        ],
+    }
+    report = parse_logic_critic_output(parsed, chapter_text=chapter)
+    assert report.available is True
+    assert report.clean is False
+    assert len(report.issues) == 2
+    locatable = report.locatable_issues
+    assert len(locatable) == 1
+    assert locatable[0].quote == "他迈开步子往下跑"
+
+
+def test_parse_clean_false_but_no_issues_is_clean() -> None:
+    from app.services.logic_critic import parse_logic_critic_output
+
+    report = parse_logic_critic_output({"issues": [], "clean": False}, chapter_text="正文")
+    assert report.clean is True
+
+
+def test_parse_garbage_returns_unavailable() -> None:
+    from app.services.logic_critic import parse_logic_critic_output
+
+    assert parse_logic_critic_output({}, chapter_text="正文").available is False
+    assert parse_logic_critic_output(None, chapter_text="正文").available is False

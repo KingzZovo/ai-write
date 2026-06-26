@@ -100,3 +100,47 @@ def build_logic_critic_user_content(
     parts.append(f"【本章正文（核查对象）】\n{chapter_text}")
     parts.append(_OUTPUT_CONTRACT)
     return "\n\n".join(parts)
+
+
+_VALID_SEVERITY = {"high", "medium", "low"}
+
+
+def parse_logic_critic_output(parsed: object, *, chapter_text: str) -> LogicCriticReport:
+    """把 run_structured_prompt 的 dict 解析为 LogicCriticReport。
+
+    - 非 dict 或缺 issues 键 → available=False（核查不可用，触发降级）。
+    - issues 为空 → clean=True（不论模型给的 clean 字段）。
+    - 每个 issue 的 quote 若不在正文中 → locatable=False（臆造，不参与定向改写）。
+    """
+    if not isinstance(parsed, dict) or "issues" not in parsed:
+        return LogicCriticReport(available=False, clean=False, issues=[])
+
+    raw_issues = parsed.get("issues")
+    if not isinstance(raw_issues, list):
+        return LogicCriticReport(available=False, clean=False, issues=[])
+
+    issues: list[LogicIssue] = []
+    for raw in raw_issues:
+        if not isinstance(raw, dict):
+            continue
+        dimension = str(raw.get("dimension") or "").strip()
+        if dimension not in LOGIC_DIMENSIONS:
+            dimension = "action_causality"  # 兜底归一，避免丢弃可用诊断
+        severity = str(raw.get("severity") or "medium").strip().lower()
+        if severity not in _VALID_SEVERITY:
+            severity = "medium"
+        quote = str(raw.get("quote") or "").strip()
+        locatable = bool(quote) and quote in chapter_text
+        issues.append(
+            LogicIssue(
+                dimension=dimension,
+                severity=severity,
+                quote=quote,
+                problem=str(raw.get("problem") or "").strip(),
+                fix_hint=str(raw.get("fix_hint") or "").strip(),
+                locatable=locatable,
+            )
+        )
+
+    clean = len(issues) == 0
+    return LogicCriticReport(available=True, clean=clean, issues=issues)
