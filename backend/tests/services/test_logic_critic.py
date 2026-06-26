@@ -193,3 +193,11 @@ async def test_run_logic_critic_skips_short_text(monkeypatch) -> None:
     assert called is False
     assert report.available is True
     assert report.clean is True
+
+
+def test_task_type_fallbacks_registered() -> None:
+    from app.services.prompt_registry import _TASK_TYPE_FALLBACK
+
+    # 未注册 PromptAsset 时，新角色应回退到既有 prompt，开箱即用。
+    assert _TASK_TYPE_FALLBACK.get("logic_critic") == "critic"
+    assert _TASK_TYPE_FALLBACK.get("drafter") == "rewrite"
