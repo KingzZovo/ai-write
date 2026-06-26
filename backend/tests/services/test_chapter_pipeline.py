@@ -284,3 +284,10 @@ async def test_max_rounds_cap(monkeypatch) -> None:
     )
     assert rewrite_calls == 2
     assert res.logic_rounds == 2
+
+
+def test_pipeline_env_defaults_pinned_for_tests() -> None:
+    import os
+    # conftest 必须在 import 前钉死，保证全套跑时确定（参照 CHAPTER_MAX_REWRITE_ROUNDS）。
+    assert os.environ.get("LOGIC_CRITIC_MAX_ROUNDS") == "2"
+    assert os.environ.get("CHAPTER_PIPELINE_ENABLED") == "1"

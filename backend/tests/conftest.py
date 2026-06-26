@@ -18,6 +18,10 @@ os.environ.setdefault("AUTH_PASSWORD_HASH", hashlib.sha256(b"testpass").hexdiges
 # production value here, before any app import, to make the suite deterministic.
 # setdefault means an explicit override still wins.
 os.environ.setdefault("CHAPTER_MAX_REWRITE_ROUNDS", "2")
+# Subproject B (multi-agent chapter pipeline) reads these at runtime. Pin them
+# so suite-wide runs are deterministic; per-test monkeypatch.setenv still wins.
+os.environ.setdefault("LOGIC_CRITIC_MAX_ROUNDS", "2")
+os.environ.setdefault("CHAPTER_PIPELINE_ENABLED", "1")
 
 import asyncio
 import pytest
