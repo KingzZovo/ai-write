@@ -131,9 +131,47 @@ async def run_chapter_pipeline(
             logic_available=False,
         )
 
-    # Task 9 会在此插入 logic 回环；当前先直通第三棒。
+    current_text = text
+    logic_rounds = 0
+    logic_available = True
+    issues_remaining = 0
+    prev_high: int | None = None
+    max_rounds = _max_logic_rounds()
+
+    for _round in range(1, max(0, max_rounds) + 1):
+        report = await run_logic_critic(
+            chapter_text=current_text,
+            chapter_outline=chapter_outline,
+            prev_chapter_tail=prev_chapter_tail,
+            db=db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+        )
+        if not report.available:
+            logic_available = False
+            break
+        high = report.high_issues
+        issues_remaining = len(high)
+        if report.clean or not high:
+            break
+        cur = len(high)
+        if prev_high is not None and cur >= prev_high:
+            break  # plateau：无改善，停止空耗 throttle
+        rewritten = await apply_targeted_logic_rewrite(
+            text=current_text,
+            issues=report.locatable_issues,
+            db=db,
+            project_id=project_id,
+            chapter_id=chapter_id,
+        )
+        if rewritten is None:
+            break  # 改写失败：保留上一稿
+        current_text = rewritten
+        logic_rounds += 1
+        prev_high = cur
+
     qg = await apply_chapter_quality_gate(
-        text=text,
+        text=current_text,
         db=db,
         project_id=project_id,
         chapter_id=chapter_id,
@@ -143,7 +181,7 @@ async def run_chapter_pipeline(
     return ChapterPipelineResult(
         final_text=qg.final_text,
         quality_gate_result=qg,
-        logic_rounds=0,
-        logic_issues_remaining=0,
-        logic_available=False,
+        logic_rounds=logic_rounds,
+        logic_issues_remaining=issues_remaining,
+        logic_available=logic_available,
     )

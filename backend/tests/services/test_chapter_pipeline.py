@@ -109,3 +109,178 @@ async def test_pipeline_disabled_delegates_to_quality_gate(monkeypatch) -> None:
     assert res.logic_rounds == 0
     assert seen["text"] == "初稿正文"
     assert seen["target_word_count"] == 3000
+
+
+def _qg(final_text="终稿", status="passed"):
+    from types import SimpleNamespace
+    return SimpleNamespace(status=status, final_text=final_text,
+                           to_safe_metadata=lambda: {"status": status})
+
+
+@pytest.mark.asyncio
+async def test_clean_draft_skips_rewrite(monkeypatch) -> None:
+    import app.services.chapter_pipeline as cp
+    from app.services.logic_critic import LogicCriticReport
+
+    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
+    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "2")
+
+    async def clean_critic(**k):
+        return LogicCriticReport(available=True, clean=True, issues=[])
+
+    rewrite_calls = 0
+
+    async def count_rewrite(**k):
+        nonlocal rewrite_calls
+        rewrite_calls += 1
+        return "不该被调用"
+
+    async def gate(**k):
+        return _qg(final_text=k["text"])
+
+    monkeypatch.setattr(cp, "run_logic_critic", clean_critic)
+    monkeypatch.setattr(cp, "apply_targeted_logic_rewrite", count_rewrite)
+    monkeypatch.setattr(cp, "apply_chapter_quality_gate", gate)
+
+    res = await cp.run_chapter_pipeline(
+        text="x" * 500, db=object(), project_id="p", chapter_id="c",
+    )
+    assert rewrite_calls == 0
+    assert res.logic_rounds == 0
+    assert res.logic_issues_remaining == 0
+    assert res.logic_available is True
+
+
+@pytest.mark.asyncio
+async def test_high_issue_rewrites_then_verifies_clean(monkeypatch) -> None:
+    import app.services.chapter_pipeline as cp
+    from app.services.logic_critic import LogicCriticReport, LogicIssue
+
+    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
+    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "2")
+
+    issue = LogicIssue("spatial_direction", "high", "往下跑", "矛盾", "删", True)
+    seq = [
+        LogicCriticReport(available=True, clean=False, issues=[issue]),
+        LogicCriticReport(available=True, clean=True, issues=[]),
+    ]
+
+    async def critic(**k):
+        return seq.pop(0)
+
+    async def rewrite(**k):
+        return "改写后正文" + "y" * 500
+
+    async def gate(**k):
+        return _qg(final_text=k["text"])
+
+    monkeypatch.setattr(cp, "run_logic_critic", critic)
+    monkeypatch.setattr(cp, "apply_targeted_logic_rewrite", rewrite)
+    monkeypatch.setattr(cp, "apply_chapter_quality_gate", gate)
+
+    res = await cp.run_chapter_pipeline(
+        text="x" * 500, db=object(), project_id="p", chapter_id="c",
+    )
+    assert res.logic_rounds == 1
+    assert res.logic_issues_remaining == 0
+    assert res.final_text.startswith("改写后正文")
+
+
+@pytest.mark.asyncio
+async def test_plateau_stops_loop(monkeypatch) -> None:
+    import app.services.chapter_pipeline as cp
+    from app.services.logic_critic import LogicCriticReport, LogicIssue
+
+    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
+    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "3")
+
+    issue = LogicIssue("span_jump", "high", "跨度", "突变", "补衔接", True)
+
+    async def critic(**k):
+        return LogicCriticReport(available=True, clean=False, issues=[issue])
+
+    rewrite_calls = 0
+
+    async def rewrite(**k):
+        nonlocal rewrite_calls
+        rewrite_calls += 1
+        return "改" + "z" * 500
+
+    async def gate(**k):
+        return _qg(final_text=k["text"])
+
+    monkeypatch.setattr(cp, "run_logic_critic", critic)
+    monkeypatch.setattr(cp, "apply_targeted_logic_rewrite", rewrite)
+    monkeypatch.setattr(cp, "apply_chapter_quality_gate", gate)
+
+    res = await cp.run_chapter_pipeline(
+        text="x" * 500, db=object(), project_id="p", chapter_id="c",
+    )
+    assert rewrite_calls == 1
+    assert res.logic_issues_remaining == 1
+
+
+@pytest.mark.asyncio
+async def test_critic_unavailable_degrades(monkeypatch) -> None:
+    import app.services.chapter_pipeline as cp
+    from app.services.logic_critic import LogicCriticReport
+
+    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
+
+    async def down_critic(**k):
+        return LogicCriticReport(available=False, clean=False, issues=[])
+
+    async def rewrite(**k):
+        raise AssertionError("must not rewrite when critic unavailable")
+
+    async def gate(**k):
+        return _qg(final_text=k["text"])
+
+    monkeypatch.setattr(cp, "run_logic_critic", down_critic)
+    monkeypatch.setattr(cp, "apply_targeted_logic_rewrite", rewrite)
+    monkeypatch.setattr(cp, "apply_chapter_quality_gate", gate)
+
+    res = await cp.run_chapter_pipeline(
+        text="x" * 500, db=object(), project_id="p", chapter_id="c",
+    )
+    assert res.logic_available is False
+    assert res.logic_rounds == 0
+    assert res.final_text == "x" * 500
+
+
+@pytest.mark.asyncio
+async def test_max_rounds_cap(monkeypatch) -> None:
+    import app.services.chapter_pipeline as cp
+    from app.services.logic_critic import LogicCriticReport, LogicIssue
+
+    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
+    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "2")
+
+    reports = [
+        LogicCriticReport(available=True, clean=False, issues=[
+            LogicIssue("span_jump", "high", f"q{n}", "p", "f", True) for n in range(k)
+        ]) for k in (3, 2, 1)
+    ]
+
+    async def critic(**k):
+        return reports.pop(0)
+
+    rewrite_calls = 0
+
+    async def rewrite(**k):
+        nonlocal rewrite_calls
+        rewrite_calls += 1
+        return "改" + "w" * 500
+
+    async def gate(**k):
+        return _qg(final_text=k["text"])
+
+    monkeypatch.setattr(cp, "run_logic_critic", critic)
+    monkeypatch.setattr(cp, "apply_targeted_logic_rewrite", rewrite)
+    monkeypatch.setattr(cp, "apply_chapter_quality_gate", gate)
+
+    res = await cp.run_chapter_pipeline(
+        text="x" * 500, db=object(), project_id="p", chapter_id="c",
+    )
+    assert rewrite_calls == 2
+    assert res.logic_rounds == 2
