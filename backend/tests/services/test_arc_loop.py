@@ -144,3 +144,56 @@ async def test_generate_arc_outline_degrades(monkeypatch) -> None:
         target_chapters=20, db=object(), project_id="p",
     )
     assert result["available"] is False
+
+
+@pytest.mark.asyncio
+async def test_kickoff_questions_happy_and_degrade(monkeypatch) -> None:
+    import app.services.arc_loop as al
+
+    async def fake_structured(task_type, user_content, db, **kwargs):
+        assert task_type == "arc_kickoff"
+        return {"questions": ["主角的金手指是什么？", "边境小城的大敌叫什么？"]}
+
+    monkeypatch.setattr(al, "run_structured_prompt", fake_structured)
+    qs = await al.build_arc_kickoff_questions(
+        idea="玄幻穿越", background="体系XX", db=object(), project_id="p",
+    )
+    assert len(qs) == 2
+
+    async def boom(*a, **k):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(al, "run_structured_prompt", boom)
+    qs2 = await al.build_arc_kickoff_questions(
+        idea="x", background="y", db=object(), project_id="p",
+    )
+    assert qs2 == []
+
+
+@pytest.mark.asyncio
+async def test_completion_suggestions(monkeypatch) -> None:
+    import app.services.arc_loop as al
+
+    async def fake_structured(task_type, user_content, db, **kwargs):
+        assert task_type == "arc_suggest"
+        return {"suggestions": ["进城拜师", "被仇家追杀", "捡到秘籍"]}
+
+    monkeypatch.setattr(al, "run_structured_prompt", fake_structured)
+    sugg = await al.build_arc_completion_suggestions(
+        background="体系XX", running_outline="边境御敌已了",
+        db=object(), project_id="p",
+    )
+    assert len(sugg) == 3
+
+
+def test_build_next_chapter_brief() -> None:
+    from app.services.arc_loop import ArcState, build_next_chapter_brief
+
+    state = ArcState(title="边境御敌", core_setup="有大敌", opening_scene="上门找茬",
+                     target_chapters=20, status="active", chapters_written=1,
+                     running_outline="第1章：主角穿越。",
+                     next_direction="狐假虎威吓退对手")
+    brief = build_next_chapter_brief(state, arc_beats=[{"chapter": 2, "beat": "对峙"}])
+    assert "边境御敌" in brief
+    assert "第1章：主角穿越" in brief
+    assert "狐假虎威" in brief
