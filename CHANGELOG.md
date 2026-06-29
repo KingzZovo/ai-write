@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.9.4] - 2026-06-26
+
+弧式增量创作循环（子项目 A）落地。详见 `docs/superpowers/specs/2026-06-26-incremental-arc-writing-loop-design.md` 与 `docs/HANDOFF_2026-06-26_incremental-arc-loop.md`。
+
+### 新功能
+
+- **弧式增量创作循环（子项目 A）**：实现用户的核心创作哲学——从一个点子出发，一弧（≈20 章一段连贯故事）一弧地写，**绝不预先规划几百几千章的大伏笔**。与旧的"全书 750 章大纲→批量生成"相反，旧流程降级保留。
+  - **零迁移设计**：弧物理复用 `Volume` 表（一弧 = 一卷，`volume_idx` = 弧序号），弧状态寄存 volume-level `Outline.content_json` 的 `_arc` 命名空间（`level`/`content_json` 均自由结构，无需建表/迁移）。旧项目无 `_arc` 标记 → `/api/arc/{pid}/current` 返回 `null`，前端回退旧 wizard，互不干扰。
+  - **状态机层** `services/arc_loop.py`（新）：`ArcState` 解析/序列化、`advance_arc_state` 纯状态机（active→awaiting_direction→active→completed，可无 LLM 单测）、`generate_arc_outline`（哲学约束 prompt：只规划本弧、禁止跨弧长线伏笔）、`build_arc_kickoff_questions`（补全设定问答）、`build_arc_completion_suggestions`（弧末给下一弧建议）、`build_next_chapter_brief`（组装下一章 brief：本弧标题+到目前故事线+作者下一步方向+本章 beat）。`target_chapters` 4–40 夹紧（默认 20）。
+  - **编排 API** `api/arc.py`（新，`/api/arc`）：`POST /{pid}/start`（建第一弧 Volume+Outline，大纲失败 502 回滚不建半截）、`GET /{pid}/current`、`POST /{pid}/chapter-written`（写章后推进状态）、`POST /{pid}/next-direction`（作者给下一章方向→active）、`GET /{pid}/chapter-brief`（组装下一章 brief）、`POST /{pid}/complete`（生成下一弧建议）、`POST /{pid}/next-arc`（建 volume_idx+1 新弧，要求当前弧 completed 否则 409）。
+  - **复用子项目 B**：章节正文仍走既有 `/api/generate/chapter`（内部 `run_chapter_pipeline` 三角色管线）；A 只负责弧编排 + 下一章 brief，不重复实现生成。
+  - **降级**：kickoff 问题/弧末建议生成失败 → 空列表（跳过，不阻断）；弧大纲失败 → 502 + 事务不建半截 Volume。task_type `arc_outline`/`arc_kickoff`/`arc_suggest` 未配 PromptAsset 时回退到 `outline_volume`/`critic`。
+
+### 测试与验证
+
+- pytest **685 passed**（666 基线 + 弧状态机/大纲/问答/brief 12 例 + 弧 API 7 例），零回归。零新增数据库迁移。
+- 部署：`docker compose up -d --build backend`。
+
+### 非目标（YAGNI）
+
+- 前端向导未改（API 完备，前端可后续按既有 wizard 模式接；本环境无法有效测前端）。
+- 未改子项目 B 的 `run_chapter_pipeline` 内部；未动旧 `outline_generator` 全量大纲路径（降级保留）。
+- 不做跨弧大伏笔管理（与本子项目哲学相悖）。
+
 ## [1.9.3] - 2026-06-25
 
 Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能体章节质量管线（子项目 B）落地。详见 `docs/HANDOFF_2026-06-25_humanizer-and-outline-fix.md`。

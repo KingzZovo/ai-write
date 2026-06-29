@@ -1,6 +1,6 @@
 # 弧式增量创作循环 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 实现"点子→补全设定→一章一章写→一弧结束给建议问下一段"的增量创作编排层，弧物理复用 Volume 表、章节复用 B 的 `run_chapter_pipeline`，状态寄存 volume-level `Outline.content_json._arc`，零数据库迁移。
 
@@ -44,7 +44,7 @@
 - Create: `backend/app/services/arc_loop.py`
 - Test: `backend/tests/services/test_arc_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/services/test_arc_loop.py
@@ -92,12 +92,12 @@ def test_parse_arc_state_returns_none_for_non_arc() -> None:
     assert parse_arc_state(None) is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k arc_state -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.services.arc_loop'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # backend/app/services/arc_loop.py
@@ -184,12 +184,12 @@ def serialize_arc_state(state: ArcState, *, volume_idx: int) -> dict:
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k arc_state -v`
 Expected: PASS (2 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/arc_loop.py backend/tests/services/test_arc_loop.py
@@ -204,7 +204,7 @@ git commit -m "feat(arc): ArcState parse/serialize with _arc namespace (zero mig
 - Modify: `backend/app/services/arc_loop.py`
 - Test: `backend/tests/services/test_arc_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_advance_after_writing_chapter_awaits_direction() -> None:
@@ -254,12 +254,12 @@ def test_advance_set_direction_blocked_when_completed() -> None:
     assert new.status == ARC_STATUS_COMPLETED
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k advance -v`
 Expected: FAIL with `ImportError: cannot import name 'advance_arc_state'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/arc_loop.py`:
 
@@ -308,12 +308,12 @@ def advance_arc_state(
     return s
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k advance -v`
 Expected: PASS (4 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/arc_loop.py backend/tests/services/test_arc_loop.py
@@ -328,7 +328,7 @@ git commit -m "feat(arc): advance_arc_state pure state machine"
 - Modify: `backend/app/services/arc_loop.py`
 - Test: `backend/tests/services/test_arc_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -393,12 +393,12 @@ async def test_generate_arc_outline_degrades(monkeypatch) -> None:
     assert result["available"] is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k arc_outline -v`
 Expected: FAIL with `ImportError: cannot import name 'build_arc_outline_prompt'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/arc_loop.py` (add `run_structured_prompt` import at top):
 
@@ -478,12 +478,12 @@ Also add to the top import block of `arc_loop.py`:
 from app.services.prompt_registry import run_structured_prompt, run_text_prompt
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k arc_outline -v`
 Expected: PASS (3 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/arc_loop.py backend/tests/services/test_arc_loop.py
@@ -498,7 +498,7 @@ git commit -m "feat(arc): generate_arc_outline with anti-long-range philosophy +
 - Modify: `backend/app/services/arc_loop.py`
 - Test: `backend/tests/services/test_arc_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -556,12 +556,12 @@ def test_build_next_chapter_brief() -> None:
     assert "狐假虎威" in brief
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -k "kickoff or completion or next_chapter_brief" -v`
 Expected: FAIL with `ImportError: cannot import name 'build_arc_kickoff_questions'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/services/arc_loop.py`:
 
@@ -637,12 +637,12 @@ def build_next_chapter_brief(state: ArcState, *, arc_beats: list[dict] | None = 
 
 Note: `build_next_chapter_brief` uses keyword-only `arc_beats` — the test calls it `build_next_chapter_brief(state, arc_beats=[...])`. Update the Step-1 test to match keyword form (already written with `arc_beats=`).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py -v`
 Expected: PASS (all arc_loop tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/arc_loop.py backend/tests/services/test_arc_loop.py
@@ -657,7 +657,7 @@ git commit -m "feat(arc): kickoff questions, completion suggestions, next-chapte
 - Modify: `backend/app/services/prompt_registry.py:520`
 - Test: `backend/tests/services/test_arc_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_arc_task_type_fallbacks_registered() -> None:
@@ -668,12 +668,12 @@ def test_arc_task_type_fallbacks_registered() -> None:
     assert _TASK_TYPE_FALLBACK.get("arc_suggest") == "critic"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py::test_arc_task_type_fallbacks_registered -v`
 Expected: FAIL with `AssertionError: assert None == 'outline_volume'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `backend/app/services/prompt_registry.py`, find `_TASK_TYPE_FALLBACK` (~line 520) and add three entries (after the existing logic_critic/drafter entries from subproject B):
 
@@ -684,12 +684,12 @@ In `backend/app/services/prompt_registry.py`, find `_TASK_TYPE_FALLBACK` (~line 
     "arc_suggest": "critic",
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/services/test_arc_loop.py::test_arc_task_type_fallbacks_registered -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/services/prompt_registry.py backend/tests/services/test_arc_loop.py
@@ -705,7 +705,7 @@ git commit -m "feat(arc): register arc_outline/arc_kickoff/arc_suggest task_type
 - Modify: `backend/app/main.py`
 - Test: `backend/tests/api/test_arc_api.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # backend/tests/api/test_arc_api.py
@@ -787,12 +787,12 @@ async def test_start_arc_rolls_back_on_outline_failure(auth_client, monkeypatch)
         await auth_client.delete(f"/api/projects/{pid}?purge=true")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/api/test_arc_api.py -k "start_arc or non_arc" -v`
 Expected: FAIL (404 — route not registered / module missing)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `backend/app/api/arc.py`:
 
@@ -937,12 +937,12 @@ app.include_router(arc_api.router)
 
 (Put the import with the other `from app.api import ...` imports at the top, matching the file's existing import style, and the `include_router` line in the registration block.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/api/test_arc_api.py -k "start_arc or non_arc or rolls_back" -v`
 Expected: PASS (3 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/api/arc.py backend/app/main.py backend/tests/api/test_arc_api.py
@@ -957,7 +957,7 @@ git commit -m "feat(arc): /start + /current endpoints (Volume+Outline arc, rollb
 - Modify: `backend/app/api/arc.py`
 - Test: `backend/tests/api/test_arc_api.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -1005,12 +1005,12 @@ async def test_next_direction_and_chapter_brief(auth_client, monkeypatch):
         await auth_client.delete(f"/api/projects/{pid}?purge=true")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/api/test_arc_api.py -k next_direction -v`
 Expected: FAIL (404 — endpoints not defined)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/api/arc.py`:
 
@@ -1078,12 +1078,12 @@ async def chapter_brief(project_id: str, db: AsyncSession = Depends(get_db)) -> 
     return {"volume_idx": vidx, "brief": brief, "next_chapter_idx": state.chapters_written + 1}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/api/test_arc_api.py -k next_direction -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/api/arc.py backend/tests/api/test_arc_api.py
@@ -1098,7 +1098,7 @@ git commit -m "feat(arc): /chapter-written + /next-direction + /chapter-brief en
 - Modify: `backend/app/api/arc.py`
 - Test: `backend/tests/api/test_arc_api.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -1168,12 +1168,12 @@ async def test_next_arc_blocked_when_current_not_completed(auth_client, monkeypa
         await auth_client.delete(f"/api/projects/{pid}?purge=true")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/api/test_arc_api.py -k "complete_and_next or blocked_when" -v`
 Expected: FAIL (404 — endpoints not defined)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `backend/app/api/arc.py`:
 
@@ -1238,12 +1238,12 @@ async def next_arc(
     return {"volume_idx": new_idx, "arc": _arc_dict(new_state)}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest tests/api/test_arc_api.py -v`
 Expected: PASS (all arc API tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add backend/app/api/arc.py backend/tests/api/test_arc_api.py
@@ -1256,26 +1256,26 @@ git commit -m "feat(arc): /complete (suggestions) + /next-arc (volume_idx+1, com
 
 **Files:** CHANGELOG.md / README.md / handoff doc
 
-- [ ] **Step 1: Full backend suite**
+- [x] **Step 1: Full backend suite**
 
 Run: `cd /root/ai-write/backend && .venv/bin/python -m pytest`
 Expected: all green (666 baseline + new arc_loop/arc_api tests). Pre-existing-unrelated failures: confirm they also fail on `git stash`.
 
-- [ ] **Step 2: Frontend typecheck (unaffected)**
+- [x] **Step 2: Frontend typecheck (unaffected)**
 
 Run: `cd /root/ai-write/frontend && npx tsc --noEmit`
 Expected: zero output (this subproject is backend-only).
 
-- [ ] **Step 3: Deploy**
+- [x] **Step 3: Deploy**
 
 Run: `cd /root/ai-write && docker compose up -d --build backend`
 Then verify live: `curl -s http://127.0.0.1:8000/api/health` → `{"status":"ok"}` and confirm arc router registered (`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/arc/<bogus-uuid>/current` with auth → 200 with `{"arc": null}` or 404, not 404-route-missing).
 
-- [ ] **Step 4: Docs**
+- [x] **Step 4: Docs**
 
 Update `CHANGELOG.md` (new entry under `[1.9.3]` or bump), `README.md` (add 弧式增量创作 to feature list), and write `docs/HANDOFF_2026-06-26_arc-loop.md` recording the design, endpoints, reuse of B, zero-migration arc storage, and the philosophy constraint.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /root/ai-write && git add CHANGELOG.md README.md docs/HANDOFF_2026-06-26_arc-loop.md docs/superpowers/plans/2026-06-26-incremental-arc-writing-loop.md
