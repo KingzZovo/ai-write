@@ -113,3 +113,69 @@ async def test_next_direction_and_chapter_brief(auth_client, monkeypatch):
         assert "第1章：主角穿越" in brief
     finally:
         await auth_client.delete(f"/api/projects/{pid}?purge=true")
+
+
+@pytest.mark.asyncio
+async def test_complete_and_next_arc(auth_client, monkeypatch):
+    import app.api.arc as arc_mod
+
+    async def fake_outline(**kwargs):
+        return {"available": True, "title": "弧一", "beats": []}
+
+    async def fake_suggest(**kwargs):
+        return ["进城拜师", "仇家追杀", "捡到秘籍"]
+
+    monkeypatch.setattr(arc_mod, "generate_arc_outline", fake_outline)
+    monkeypatch.setattr(arc_mod, "build_arc_completion_suggestions", fake_suggest)
+
+    resp = await auth_client.post("/api/projects", json={"title": "弧完结", "genre": "x"})
+    pid = resp.json()["id"]
+    try:
+        await auth_client.post(f"/api/arc/{pid}/start", json={
+            "idea": "i", "background": "b", "core_setup": "c",
+            "opening_scene": "o", "target_chapters": 4,
+        })
+        # target 夹紧下限 4（spec：4–40）；写满 4 章 → completed
+        await auth_client.post(f"/api/arc/{pid}/chapter-written", json={"chapter_summary": "第1章"})
+        await auth_client.post(f"/api/arc/{pid}/chapter-written", json={"chapter_summary": "第2章"})
+        await auth_client.post(f"/api/arc/{pid}/chapter-written", json={"chapter_summary": "第3章"})
+        w2 = await auth_client.post(f"/api/arc/{pid}/chapter-written", json={"chapter_summary": "第4章"})
+        assert w2.json()["arc"]["status"] == "completed"
+
+        comp = await auth_client.post(f"/api/arc/{pid}/complete")
+        assert comp.status_code == 200, comp.text
+        assert len(comp.json()["arc"]["suggestions"]) == 3
+
+        n = await auth_client.post(f"/api/arc/{pid}/next-arc", json={
+            "idea": "i2", "background": "b", "core_setup": "新威胁",
+            "opening_scene": "进城遇贵人", "target_chapters": 20,
+        })
+        assert n.status_code == 201, n.text
+        assert n.json()["volume_idx"] == 2
+        assert n.json()["arc"]["status"] == "active"
+    finally:
+        await auth_client.delete(f"/api/projects/{pid}?purge=true")
+
+
+@pytest.mark.asyncio
+async def test_next_arc_blocked_when_current_not_completed(auth_client, monkeypatch):
+    import app.api.arc as arc_mod
+
+    async def fake_outline(**kwargs):
+        return {"available": True, "title": "弧一", "beats": []}
+
+    monkeypatch.setattr(arc_mod, "generate_arc_outline", fake_outline)
+
+    resp = await auth_client.post("/api/projects", json={"title": "弧守卫", "genre": "x"})
+    pid = resp.json()["id"]
+    try:
+        await auth_client.post(f"/api/arc/{pid}/start", json={
+            "idea": "i", "background": "b", "core_setup": "c",
+            "opening_scene": "o", "target_chapters": 20,
+        })
+        n = await auth_client.post(f"/api/arc/{pid}/next-arc", json={
+            "idea": "i2", "background": "b", "core_setup": "c2", "opening_scene": "o2",
+        })
+        assert n.status_code == 409
+    finally:
+        await auth_client.delete(f"/api/projects/{pid}?purge=true")

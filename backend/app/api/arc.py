@@ -223,3 +223,63 @@ async def chapter_brief(project_id: str, db: AsyncSession = Depends(get_db)) -> 
     beats = (ol.content_json or {}).get("beats", [])
     brief = build_next_chapter_brief(state, arc_beats=beats)
     return {"volume_idx": vidx, "brief": brief, "next_chapter_idx": state.chapters_written + 1}
+
+
+@router.post("/{project_id}/complete")
+async def complete_arc(project_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    vidx, ol, state = await _load_current_arc(db, project_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No active arc")
+    project = await db.get(Project, project_id)
+    background = ""
+    if project and isinstance(project.settings_json, dict):
+        background = str(project.settings_json.get("background") or "")
+    suggestions = await build_arc_completion_suggestions(
+        background=background, running_outline=state.running_outline,
+        db=db, project_id=project_id,
+    )
+    state.status = "completed"
+    state.suggestions = suggestions
+    await _persist_arc(db, ol, state, vidx)
+    return {"volume_idx": vidx, "arc": _arc_dict(state)}
+
+
+@router.post("/{project_id}/next-arc", status_code=201)
+async def next_arc(
+    project_id: str,
+    body: StartArcBody,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    vidx, _ol, state = await _load_current_arc(db, project_id)
+    if state is not None and state.status != "completed":
+        raise HTTPException(status_code=409, detail="Current arc not completed")
+
+    target = clamp_target_chapters(body.target_chapters)
+    outline = await generate_arc_outline(
+        idea=body.idea, background=body.background, core_setup=body.core_setup,
+        opening_scene=body.opening_scene, target_chapters=target,
+        db=db, project_id=project_id,
+    )
+    if not outline.get("available"):
+        raise HTTPException(status_code=502, detail="Arc outline generation failed")
+
+    new_idx = (vidx or 0) + 1
+    volume = Volume(
+        project_id=project_id, title=outline.get("title") or f"第{new_idx}弧",
+        volume_idx=new_idx, summary=body.core_setup,
+    )
+    db.add(volume)
+    await db.flush()
+
+    new_state = ArcState(
+        title=outline.get("title") or f"第{new_idx}弧",
+        core_setup=body.core_setup, opening_scene=body.opening_scene,
+        target_chapters=target, status="active", chapters_written=0,
+        running_outline="", next_direction=body.opening_scene or None,
+    )
+    content_json = serialize_arc_state(new_state, volume_idx=new_idx)
+    content_json["beats"] = outline.get("beats", [])
+    db.add(Outline(project_id=project_id, level="volume",
+                   content_json=content_json, is_confirmed=1))
+    await db.flush()
+    return {"volume_idx": new_idx, "arc": _arc_dict(new_state)}
