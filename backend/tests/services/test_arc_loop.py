@@ -197,3 +197,11 @@ def test_build_next_chapter_brief() -> None:
     assert "边境御敌" in brief
     assert "第1章：主角穿越" in brief
     assert "狐假虎威" in brief
+
+
+def test_arc_task_type_fallbacks_registered() -> None:
+    from app.services.prompt_registry import _TASK_TYPE_FALLBACK
+
+    assert _TASK_TYPE_FALLBACK.get("arc_outline") == "outline_volume"
+    assert _TASK_TYPE_FALLBACK.get("arc_kickoff") == "critic"
+    assert _TASK_TYPE_FALLBACK.get("arc_suggest") == "critic"
