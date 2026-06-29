@@ -71,3 +71,45 @@ async def test_start_arc_rolls_back_on_outline_failure(auth_client, monkeypatch)
         assert c.json()["arc"] is None
     finally:
         await auth_client.delete(f"/api/projects/{pid}?purge=true")
+
+
+@pytest.mark.asyncio
+async def test_next_direction_and_chapter_brief(auth_client, monkeypatch):
+    import app.api.arc as arc_mod
+
+    async def fake_outline(**kwargs):
+        return {"available": True, "title": "边境御敌",
+                "beats": [{"chapter": 1, "beat": "穿越"}, {"chapter": 2, "beat": "对峙"}]}
+
+    monkeypatch.setattr(arc_mod, "generate_arc_outline", fake_outline)
+
+    resp = await auth_client.post("/api/projects", json={"title": "弧方向", "genre": "x"})
+    pid = resp.json()["id"]
+    try:
+        await auth_client.post(f"/api/arc/{pid}/start", json={
+            "idea": "i", "background": "b", "core_setup": "c",
+            "opening_scene": "o", "target_chapters": 20,
+        })
+
+        w = await auth_client.post(f"/api/arc/{pid}/chapter-written", json={
+            "chapter_summary": "第1章：主角穿越遇挑衅。",
+        })
+        assert w.status_code == 200, w.text
+        assert w.json()["arc"]["status"] == "awaiting_direction"
+        assert w.json()["arc"]["chapters_written"] == 1
+
+        d = await auth_client.post(f"/api/arc/{pid}/next-direction", json={
+            "direction": "主角发现跑不了，狐假虎威",
+        })
+        assert d.status_code == 200
+        assert d.json()["arc"]["status"] == "active"
+        assert d.json()["arc"]["next_direction"] == "主角发现跑不了，狐假虎威"
+
+        b = await auth_client.get(f"/api/arc/{pid}/chapter-brief")
+        assert b.status_code == 200
+        brief = b.json()["brief"]
+        assert "边境御敌" in brief
+        assert "狐假虎威" in brief
+        assert "第1章：主角穿越" in brief
+    finally:
+        await auth_client.delete(f"/api/projects/{pid}?purge=true")

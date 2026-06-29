@@ -160,3 +160,66 @@ async def current_arc(project_id: str, db: AsyncSession = Depends(get_db)) -> di
     if state is None:
         return {"arc": None}
     return {"volume_idx": vidx, "arc": _arc_dict(state)}
+
+
+class ChapterWrittenBody(BaseModel):
+    chapter_summary: str = ""
+
+
+class NextDirectionBody(BaseModel):
+    direction: str
+
+
+async def _persist_arc(db: AsyncSession, outline: Outline, state: ArcState, volume_idx: int) -> None:
+    content_json = serialize_arc_state(state, volume_idx=volume_idx)
+    # 保留 beats（不在 ArcState 里）
+    existing = outline.content_json or {}
+    if "beats" in existing:
+        content_json["beats"] = existing["beats"]
+    outline.content_json = content_json
+    # SQLAlchemy JSON 列就地改不脏标记，显式 flag
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(outline, "content_json")
+    await db.flush()
+
+
+@router.post("/{project_id}/chapter-written")
+async def chapter_written(
+    project_id: str,
+    body: ChapterWrittenBody,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """章节写完后推进弧状态（chapters_written+1，更新 running_outline）。"""
+    vidx, ol, state = await _load_current_arc(db, project_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No active arc")
+    new_state = advance_arc_state(
+        state, event="chapter_written",
+        running_outline_append=body.chapter_summary,
+    )
+    await _persist_arc(db, ol, new_state, vidx)
+    return {"volume_idx": vidx, "arc": _arc_dict(new_state)}
+
+
+@router.post("/{project_id}/next-direction")
+async def next_direction(
+    project_id: str,
+    body: NextDirectionBody,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    vidx, ol, state = await _load_current_arc(db, project_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No active arc")
+    new_state = advance_arc_state(state, event="set_direction", next_direction=body.direction)
+    await _persist_arc(db, ol, new_state, vidx)
+    return {"volume_idx": vidx, "arc": _arc_dict(new_state)}
+
+
+@router.get("/{project_id}/chapter-brief")
+async def chapter_brief(project_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    vidx, ol, state = await _load_current_arc(db, project_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No active arc")
+    beats = (ol.content_json or {}).get("beats", [])
+    brief = build_next_chapter_brief(state, arc_beats=beats)
+    return {"volume_idx": vidx, "brief": brief, "next_chapter_idx": state.chapters_written + 1}
