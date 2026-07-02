@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import json
 import logging
+import os
 import re
 from typing import Any, Literal
 
@@ -34,8 +35,36 @@ QualityGateStatus = Literal[
 
 _MIN_LENGTH_RATIO = 0.70
 _MIN_TARGET_WORD_RATIO = 0.50
-_DEFAULT_MAX_REWRITE_ROUNDS = 2
+_DEFAULT_MAX_REWRITE_ROUNDS = int(os.getenv("CHAPTER_MAX_REWRITE_ROUNDS", "5"))
 _DEFAULT_MAX_TOKENS = 4096
+
+# PR-CH-TRUNCATION (2026-06-29): scene_writer sometimes hits its max_tokens
+# ceiling; the OpenAI-compat stream ends mid-sentence and model_router's
+# generate_stream never inspects finish_reason, so the partial scene is appended
+# and the chapter is saved "completed" while ending on a dangling half-sentence.
+# A finished Chinese chapter ends on sentence-terminal punctuation. Anything else
+# on the final non-empty line means the tail was cut off.
+_SENTENCE_TERMINALS = "。！？…”』」）】》—"
+_TRAILING_FENCE_RE = re.compile(r"```[a-zA-Z]*\s*$")
+
+
+def looks_truncated(text: str) -> bool:
+    """Return True when the chapter body appears cut off mid-sentence.
+
+    A complete Chinese chapter ends on terminal punctuation (。！？…) possibly
+    followed by a closing quote/bracket. We strip trailing blank lines and a
+    stray closing code fence, then check the last non-empty line's final char.
+    Empty/blank text is NOT flagged here (that's a separate empty-output path).
+    """
+    if not text or not text.strip():
+        return False
+    cleaned = _TRAILING_FENCE_RE.sub("", text).strip()
+    if not cleaned:
+        return False
+    last_char = cleaned[-1]
+    return last_char not in _SENTENCE_TERMINALS
+
+
 _LEXICAL_CLEANUP_REPLACEMENTS = {
     "半寸": "一点",
     "半息": "一瞬",

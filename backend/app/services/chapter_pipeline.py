@@ -42,6 +42,13 @@ def build_targeted_rewrite_content(text: str, issues: list[LogicIssue]) -> str:
     return "\n".join(lines)
 
 
+# 定向改写应只动命中处、保持篇幅。drafter 偶尔会「只回被点名片段附近的一小段」
+# 而把整章其余正文丢弃（线上 ch2/ch3 真实故障：完整章被压成 ~500 字残片）。
+# 残片随后被 persist-on-block 当成终稿存库并标 completed = 静默数据丢失。
+# 任何掉到原文这个比例以下的候选都视为「内容被丢弃」而非「定向修订」，拒绝并保留上一稿。
+_MIN_REWRITE_LENGTH_RATIO = 0.70
+
+
 async def apply_targeted_logic_rewrite(
     *,
     text: str,
@@ -50,7 +57,7 @@ async def apply_targeted_logic_rewrite(
     project_id: object = None,
     chapter_id: object = None,
 ) -> str | None:
-    """调 drafter 做定向改写。失败返回 None（调用方保留上一稿）。"""
+    """调 drafter 做定向改写。失败或残片返回 None（调用方保留上一稿）。"""
     if not any(i.locatable for i in issues):
         return None
     user_content = build_targeted_rewrite_content(text, issues)
@@ -66,7 +73,21 @@ async def apply_targeted_logic_rewrite(
         logger.warning("targeted logic rewrite failed; keeping prior draft: %s", exc)
         return None
     candidate = (result.text or "").strip()
-    return candidate or None
+    if not candidate:
+        return None
+    # 篇幅守门：定向改写不应明显缩短全文。掉到阈值以下=drafter 丢了正文，
+    # 不是修订，拒绝以免残片被当成终稿存库。
+    original_len = len(text.strip())
+    if original_len > 0 and len(candidate) < int(original_len * _MIN_REWRITE_LENGTH_RATIO):
+        logger.warning(
+            "targeted logic rewrite collapsed text (%d -> %d chars, < %.0f%%); "
+            "keeping prior draft",
+            original_len,
+            len(candidate),
+            _MIN_REWRITE_LENGTH_RATIO * 100,
+        )
+        return None
+    return candidate
 
 
 @dataclass

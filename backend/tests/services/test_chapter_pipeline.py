@@ -38,6 +38,49 @@ async def test_apply_targeted_rewrite_returns_text(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_apply_targeted_rewrite_rejects_collapsed_draft(monkeypatch) -> None:
+    """定向改写若把整章塌缩成残片（drafter 只回片段、丢弃其余），
+    必须拒绝并返回 None，保留上一稿；否则 persist-on-block 会把残片当成稿存库。"""
+    import app.services.chapter_pipeline as cp
+    from types import SimpleNamespace
+
+    original = "原文正文。" * 400  # ~2400 chars 的完整章
+
+    async def collapsing_drafter(task_type, user_content, db, **kwargs):
+        # 模拟 drafter 只回了被点名片段附近的一小段（线上 ch2/ch3 真实故障形态）。
+        return SimpleNamespace(text="只改了开头这一小段往下跑。")
+
+    monkeypatch.setattr(cp, "run_text_prompt", collapsing_drafter)
+
+    issues = [LogicIssue("spatial_direction", "high", "往下跑", "矛盾", "删", True)]
+    out = await cp.apply_targeted_logic_rewrite(
+        text=original, issues=issues, db=object(), project_id="p", chapter_id="c"
+    )
+    assert out is None  # 残片被拒，调用方保留 original
+
+
+@pytest.mark.asyncio
+async def test_apply_targeted_rewrite_accepts_minor_trim(monkeypatch) -> None:
+    """合法的定向改写允许小幅缩短（删掉矛盾短语），不应被长度门误杀。"""
+    import app.services.chapter_pipeline as cp
+    from types import SimpleNamespace
+
+    original = "原文正文。" * 400
+
+    async def minor_editor(task_type, user_content, db, **kwargs):
+        return SimpleNamespace(text="原文正文。" * 380)  # 95% 保留
+
+    monkeypatch.setattr(cp, "run_text_prompt", minor_editor)
+
+    issues = [LogicIssue("spatial_direction", "high", "往下跑", "矛盾", "删", True)]
+    out = await cp.apply_targeted_logic_rewrite(
+        text=original, issues=issues, db=object(), project_id="p", chapter_id="c"
+    )
+    assert out is not None
+    assert out.startswith("原文正文。")
+
+
+@pytest.mark.asyncio
 async def test_apply_targeted_rewrite_degrades_to_none(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
 

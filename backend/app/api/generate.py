@@ -18,7 +18,7 @@ from app.services.chapter_target_words import (
     CHAPTER_DEFAULT_WORD_COUNT,
     resolve_chapter_target_word_count,
 )
-from app.services.chapter_quality_gate import apply_chapter_quality_gate
+from app.services.chapter_quality_gate import apply_chapter_quality_gate, looks_truncated
 from app.services.chapter_generator import ChapterGenerator
 from app.services.chinese_prose_mechanics_checker import analyze_chinese_prose_mechanics
 from app.services.outline_readiness import (
@@ -63,6 +63,32 @@ def _inc_chapter_auto_save(kind: str, outcome: str, reason: str) -> None:
         ).inc()
     except Exception:
         pass
+
+
+def resolve_rollback_text(
+    *,
+    baseline_text: str,
+    current_text: str,
+    persist_on_block: bool,
+) -> str:
+    """Decide what content a chapter rolls back to when auto-revise aborts.
+
+    The rollback exists to stop a known-bad new draft from replacing a
+    known-GOOD prior chapter. That only applies when a prior chapter exists:
+
+    - baseline non-empty  -> restore the baseline (prior confirmed chapter).
+    - baseline empty (FRESH chapter):
+        * persist_on_block + non-empty current draft -> KEEP the best saved
+          draft. Wiping it would strand the chapter at len=0/draft and defeat
+          QUALITY_GATE_PERSIST_ON_BLOCK (live ch3: 5003-char on-genre draft
+          scored ~8.0 was clobbered to empty).
+        * otherwise -> empty (legacy behaviour).
+    """
+    if (baseline_text or "").strip():
+        return baseline_text
+    if persist_on_block and (current_text or "").strip():
+        return current_text
+    return baseline_text or ""
 
 
 def _sync_single_shot_llm_kwargs() -> dict[str, float | int | bool]:
@@ -506,9 +532,15 @@ async def generate_chapter(
                             target_chapter = lookup.scalar_one_or_none()
                         if target_chapter is None:
                             return None, 0, True
+                        # PR-CH-TRUNCATION (2026-06-29): a chapter whose body ends
+                        # mid-sentence (last scene_writer call hit max_tokens; the
+                        # stream ended with no terminal punctuation) must NOT be
+                        # silently marked completed. Persist the text (nothing is
+                        # lost) but downgrade status to draft and surface the signal.
+                        _truncated = looks_truncated(text_to_save)
                         target_chapter.content_text = text_to_save
                         target_chapter.word_count = len(text_to_save)
-                        target_chapter.status = "completed"
+                        target_chapter.status = "draft" if _truncated else "completed"
                         await save_db.commit()
                         # PR-FORESHADOW-LIFECYCLE: persist foreshadows from chapter outline_json after content saved
                         try:
@@ -615,6 +647,8 @@ async def generate_chapter(
                         yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
                     else:
                         cognition_ingest_text = full_text
+                        if looks_truncated(full_text):
+                            yield f"data: {json.dumps({'event': 'truncated', 'status': 'draft', 'reason': 'midsentence_ending', 'chapter_id': _saved_id, 'word_count': _wc}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'status': 'saved', 'chapter_id': _saved_id, 'word_count': _wc})}\n\n"
                 except asyncio.CancelledError:
                     # SSE pipe cancelled mid-save; bg task continues commit independently.
@@ -895,15 +929,22 @@ async def generate_chapter(
                             async with async_session_factory() as save_db2:
                                 ch2 = await save_db2.get(_Chapter, revise_chapter_id)
                                 if ch2 is not None:
+                                    # PR-CH-TRUNCATION: the revised text can also end
+                                    # mid-sentence (scene_writer hit max_tokens). Keep the
+                                    # text but downgrade to draft so a dangling revision is
+                                    # never silently promoted to completed (parity with the
+                                    # initial-save path in _persist_chapter_now).
+                                    _rev_truncated = looks_truncated(revised_text)
                                     ch2.content_text = revised_text
                                     ch2.word_count = len(revised_text)
-                                    ch2.status = "completed"
+                                    ch2.status = "draft" if _rev_truncated else "completed"
                                     await save_db2.commit()
                                     saved_payload = json.dumps({
                                         "status": "saved",
                                         "chapter_id": revise_chapter_id,
                                         "word_count": len(revised_text),
                                         "revise_round": round_idx,
+                                        **({"truncated": True} if _rev_truncated else {}),
                                     })
                                     yield f"data: {saved_payload}\n\n"
                         except Exception as save2_err:
@@ -1140,16 +1181,31 @@ async def generate_chapter(
                 # draft does not become the active chapter.
                 if (not accepted_final) and aborted_with_blocking:
                     try:
+                        import os as _rb_os
+                        _rb_persist_on_block = _rb_os.getenv("QUALITY_GATE_PERSIST_ON_BLOCK") == "1"
+                        _rb_text = resolve_rollback_text(
+                            baseline_text=baseline_text_before_run or "",
+                            current_text=current_text or "",
+                            persist_on_block=_rb_persist_on_block,
+                        )
                         from app.db.session import async_session_factory
                         from app.models.project import Chapter as _ChapterRollback
                         async with async_session_factory() as rb_db:
                             ch_rb = await rb_db.get(_ChapterRollback, req.chapter_id)
                             if ch_rb is not None:
-                                ch_rb.content_text = baseline_text_before_run or ""
+                                ch_rb.content_text = _rb_text
                                 ch_rb.word_count = len(ch_rb.content_text or "")
-                                ch_rb.status = "draft"
+                                # A kept best-draft stays usable; a true wipe
+                                # (empty result) OR a mid-sentence truncated
+                                # draft downgrades to draft rather than passing
+                                # off a dangling chapter as completed.
+                                ch_rb.status = (
+                                    "completed"
+                                    if (_rb_text or "").strip() and not looks_truncated(_rb_text)
+                                    else "draft"
+                                )
                                 await rb_db.commit()
-                                yield f"data: {json.dumps({'event': 'rollback_applied', 'reason': 'auto_revise_blocking_or_timeout', 'chapter_id': req.chapter_id})}\n\n"
+                                yield f"data: {json.dumps({'event': 'rollback_applied', 'reason': 'auto_revise_blocking_or_timeout', 'chapter_id': req.chapter_id, 'kept_best_draft': bool((_rb_text or '').strip()) and not (baseline_text_before_run or '').strip()})}\n\n"
                     except Exception:
                         logger.warning("Auto-revise rollback failed", exc_info=True)
 
@@ -1731,47 +1787,62 @@ async def generate_outline(
                                 _fl_err,
                             )
                         if req.level == "chapter" and req.chapter_idx:
+                            # PR-CH-OUTLINE-ENRICH (2026-06-29): locate the chapter row and
+                            # (1) splice the freshly generated per-chapter outline INTO
+                            # chapters.outline_json (what the prose generator + readiness
+                            # gate actually read — previously left as the thin volume-batch
+                            # skeleton), and (2) write back a clean parsed title. Enrichment
+                            # runs regardless of whether a clean title parsed.
                             try:
-                                _parsed = _OG()._parse_json(full_text)
-                                if isinstance(_parsed, dict) and not _parsed.get("_parse_error"):
-                                    _t = _parsed.get("title")
-                                    if isinstance(_t, str):
-                                        _t = _t.strip()
-                                        import re as _re_pr_ol13
-                                        if (
-                                            2 <= len(_t) <= 30
-                                            and not _re_pr_ol13.fullmatch(r"第\d+章", _t)
-                                            and not _re_pr_ol13.fullmatch(r"\d+", _t)
-                                        ):
-                                            from app.models.project import Volume as _Vol2, Chapter as _Ch2
-                                            _vol_idx2 = None
-                                            if isinstance(volume_outline, dict):
-                                                try:
-                                                    _vol_idx2 = int(volume_outline.get("volume_idx") or 0) or None
-                                                except (TypeError, ValueError):
-                                                    _vol_idx2 = None
-                                            if _vol_idx2:
-                                                _vq = await save_db.execute(
-                                                    select(_Vol2).where(
-                                                        _Vol2.project_id == req.project_id,
-                                                        _Vol2.volume_idx == _vol_idx2,
-                                                    )
-                                                )
-                                                _v2 = _vq.scalar_one_or_none()
-                                                if _v2 is not None:
-                                                    _cq = await save_db.execute(
-                                                        select(_Ch2).where(
-                                                            _Ch2.volume_id == _v2.id,
-                                                            _Ch2.chapter_idx == int(req.chapter_idx),
-                                                        )
-                                                    )
-                                                    _ch2 = _cq.scalar_one_or_none()
-                                                    if _ch2 is not None and (_ch2.title or "").strip() != _t:
+                                from app.models.project import Volume as _Vol2, Chapter as _Ch2
+                                _vol_idx2 = None
+                                if isinstance(volume_outline, dict):
+                                    try:
+                                        _vol_idx2 = int(volume_outline.get("volume_idx") or 0) or None
+                                    except (TypeError, ValueError):
+                                        _vol_idx2 = None
+                                if _vol_idx2:
+                                    _vq = await save_db.execute(
+                                        select(_Vol2).where(
+                                            _Vol2.project_id == req.project_id,
+                                            _Vol2.volume_idx == _vol_idx2,
+                                        )
+                                    )
+                                    _v2 = _vq.scalar_one_or_none()
+                                    if _v2 is not None:
+                                        _cq = await save_db.execute(
+                                            select(_Ch2).where(
+                                                _Ch2.volume_id == _v2.id,
+                                                _Ch2.chapter_idx == int(req.chapter_idx),
+                                            )
+                                        )
+                                        _ch2 = _cq.scalar_one_or_none()
+                                        if _ch2 is not None:
+                                            from app.services.outline_generator import (
+                                                merge_chapter_outline_enrichment as _merge_enrich,
+                                            )
+                                            _ch2.outline_json = _merge_enrich(
+                                                _ch2.outline_json, _content_json
+                                            )
+                                            # PR-OL13: title write-back — only when a clean,
+                                            # non-generic title parsed from the outline.
+                                            _parsed = _OG()._parse_json(full_text)
+                                            if isinstance(_parsed, dict) and not _parsed.get("_parse_error"):
+                                                _t = _parsed.get("title")
+                                                if isinstance(_t, str):
+                                                    _t = _t.strip()
+                                                    import re as _re_pr_ol13
+                                                    if (
+                                                        2 <= len(_t) <= 30
+                                                        and not _re_pr_ol13.fullmatch(r"第\d+章", _t)
+                                                        and not _re_pr_ol13.fullmatch(r"\d+", _t)
+                                                        and (_ch2.title or "").strip() != _t
+                                                    ):
                                                         _ch2.title = _t
-                                                        await save_db.commit()
                                                         written_title_local = _t
+                                            await save_db.commit()
                             except Exception as _title_err:
-                                logger.warning("PR-OL13 chapter title write-back failed: %s", _title_err)
+                                logger.warning("PR-CH-OUTLINE-ENRICH/OL13 chapter enrich+title failed: %s", _title_err)
                     return saved_outline_id_local, written_title_local
 
                 _save_task = asyncio.create_task(_persist_outline_now())

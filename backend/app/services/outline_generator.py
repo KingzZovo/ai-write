@@ -553,6 +553,43 @@ def extract_chapter_breakdown(volume_outline: dict | list | None) -> dict[int, d
     return out
 
 
+# PR-CH-OUTLINE-ENRICH (2026-06-29): generating a level=chapter outline used to
+# write only the ``outlines`` table; ``chapters.outline_json`` (what the prose
+# generator + readiness gate actually read) kept the thin volume-batch skeleton.
+# This splices the freshly generated per-chapter content INTO that skeleton so
+# prose sees the rich outline, while keeping the skeleton's authoritative
+# chapter_idx and never regressing a populated field back to empty/garbage.
+def merge_chapter_outline_enrichment(skeleton: dict | None, generated: dict | None) -> dict:
+    """Merge a freshly generated chapter outline into the existing skeleton.
+
+    Rules:
+      - Start from the skeleton (the row already stored on ``chapters``).
+      - ``chapter_idx`` is always taken from the skeleton (LLM must not renumber).
+      - A generated field overwrites the skeleton ONLY when it carries real
+        content (non-empty str / non-empty list-or-dict / non-None scalar).
+      - ``_parse_error`` payloads and the bare ``raw_text`` blob are ignored so
+        a parse failure never poisons a usable skeleton.
+    """
+    merged: dict = dict(skeleton) if isinstance(skeleton, dict) else {}
+    if not isinstance(generated, dict) or generated.get("_parse_error"):
+        return merged
+    _skeleton_idx = merged.get("chapter_idx")
+    for key, value in generated.items():
+        if key in ("chapter_idx", "_parse_error", "raw_text"):
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                merged[key] = value
+        elif isinstance(value, (list, dict)):
+            if value:
+                merged[key] = value
+        elif value is not None:
+            merged[key] = value
+    if _skeleton_idx is not None:
+        merged["chapter_idx"] = _skeleton_idx
+    return merged
+
+
 class OutlineGenerator:
     """Generates hierarchical outlines: book → volume → chapter."""
 
@@ -1446,6 +1483,13 @@ class OutlineGenerator:
             "emotional_arc": _compact(meta_for_ctx.get("emotional_arc", ""), 260),
             "transition_to_next": _compact(meta_for_ctx.get("transition_to_next", ""), 260),
         }
+        # PR-VOL-PREMISE-ANCHOR (2026-06-29): the batch prompt MUST carry the
+        # book premise. When V1 meta JSON fails to parse, meta degrades to an
+        # empty fallback (_meta_fallback) — and a batch prompt that sees only
+        # that empty meta lets the model drift completely off-genre (live: a
+        # 近未来科幻 book produced generic 武侠 chapter summaries). Anchor each
+        # batch to a compact book premise so genre/characters stay fixed.
+        book_premise_anchor = _compact(self._book_premise_digest(book_outline), 600)
         all_summaries: list[dict] = []
 
         for b in range(batches):
@@ -1477,6 +1521,7 @@ class OutlineGenerator:
                 )
                 retry_note = "" if attempt == 1 else "\n上一次返回格式不合格。请只返回 JSON，顶层必须包含 batch 数组，且数组长度必须准确。"
                 batch_ctx = (
+                    f"全书前提（必须严格遵守，章节必须发生在这个世界观/题材/人物范围内）：\n{book_premise_anchor}\n\n"
                     f"卷元信息（已压缩）：\n{json.dumps(compact_meta_for_batch, ensure_ascii=False, indent=2)}\n\n"
                     f"已生成的最近几章摘要：\n{tail_str}\n\n"
                     f"start={start}, end={end}, count={end - start + 1}。"
@@ -1674,6 +1719,34 @@ class OutlineGenerator:
         text = re.sub(r'(?<=")：(?=\s*)', ':', text)
         text = re.sub(r',\s*([}\]])', r'\1', text)
         return text
+
+    @staticmethod
+    def _book_premise_digest(book_outline: dict) -> str:
+        """Extract a compact, genre/character-bearing premise from the book
+        outline for anchoring volume batch prompts.
+
+        The book outline can be either a structured dict (title/core_concept/
+        main_plot/...) or a thin ``{"raw_text": "..."}`` blob (staged stream
+        fallback). Pull whatever premise-bearing fields exist; fall back to the
+        raw text head so the anchor is never empty.
+        """
+        if not isinstance(book_outline, dict):
+            return str(book_outline or "")
+        parts: list[str] = []
+        for key in ("title", "core_concept", "core_idea", "genre", "main_plot",
+                    "premise", "logline", "themes"):
+            val = book_outline.get(key)
+            if not val:
+                continue
+            if isinstance(val, str):
+                parts.append(val.strip())
+            else:
+                parts.append(json.dumps(val, ensure_ascii=False))
+        digest = " / ".join(p for p in parts if p)
+        if digest.strip():
+            return digest
+        # Thin outline: defer to raw_text head (carries the user's premise).
+        return str(book_outline.get("raw_text") or "")
 
     @staticmethod
     def _fallback_volume_meta(book_outline: dict, volume_idx: int, user_notes: str = "") -> dict:
