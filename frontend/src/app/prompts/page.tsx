@@ -500,7 +500,7 @@ function PromptForm({
           <label className="block text-xs font-medium text-gray-600 mb-1">分类</label>
           <input
             value={category} onChange={e => setCategory(e.target.value)}
-            placeholder="Core / Outline / Extraction / Editing"
+            placeholder="核心 / 大纲 / 提取 / 编辑"
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
           />
         </div>

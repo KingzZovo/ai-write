@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
 
 interface StyleProfile {
   id: string
@@ -18,6 +19,7 @@ interface StylePanelProps {
 }
 
 export function StylePanel({ value, onChange }: StylePanelProps) {
+  const t = useT()
   const [mode, setMode] = useState<'profile' | 'manual'>('profile')
   const [profiles, setProfiles] = useState<StyleProfile[]>([])
   const [selectedProfileId, setSelectedProfileId] = useState<string>('')
@@ -40,7 +42,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load style profiles')
+          setError(err instanceof Error ? err.message : t('style.loadError'))
           setLoading(false)
         }
       })
@@ -101,7 +103,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Style Profile
+            {t('style.profileMode')}
           </button>
           <button
             onClick={() => handleModeToggle('manual')}
@@ -111,7 +113,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Manual
+            {t('style.manualMode')}
           </button>
         </div>
       </div>
@@ -121,7 +123,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
           {/* Profile selector */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Select Profile
+              {t('style.selectProfile')}
             </label>
             {loading ? (
               <p className="text-xs text-gray-400">加载写法...</p>
@@ -150,7 +152,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
               {selectedProfile.description && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Description
+                    {t('style.description')}
                   </label>
                   <p className="text-xs text-gray-700 bg-gray-50 rounded-lg p-2.5 leading-relaxed">
                     {selectedProfile.description}
@@ -162,7 +164,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
               {Object.keys(selectedProfile.sentenceRatios).length > 0 && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Sentence Length Ratios
+                    {t('style.sentenceRatios')}
                   </label>
                   <div className="space-y-1.5">
                     {Object.entries(selectedProfile.sentenceRatios).map(
@@ -190,7 +192,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
               {/* Dialogue ratio */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Dialogue Ratio
+                  {t('style.dialogueRatio')}
                 </label>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-gray-100 rounded-full h-1.5">
@@ -211,7 +213,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
               {selectedProfile.topWords.length > 0 && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Top Words
+                    {t('style.topWords')}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {selectedProfile.topWords.map((word, idx) => (
@@ -233,7 +235,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
       {mode === 'manual' && (
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            Style Description
+            {t('style.styleDescription')}
           </label>
           <textarea
             value={manualDescription}
@@ -242,7 +244,7 @@ export function StylePanel({ value, onChange }: StylePanelProps) {
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none h-32 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <p className="text-xs text-gray-400 mt-1">
-            This description will be used as-is for style guidance during generation.
+            {t('style.manualHelp')}
           </p>
         </div>
       )}

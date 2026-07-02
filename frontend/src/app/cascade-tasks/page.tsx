@@ -25,10 +25,10 @@ function CascadeTasksContent() {
   if (!projectId) {
     return (
       <div className="max-w-3xl mx-auto p-6">
-        <h1 className="text-lg font-semibold text-gray-900 mb-2">Cascade Tasks</h1>
+        <h1 className="text-lg font-semibold text-gray-900 mb-2">联动任务</h1>
         <p className="text-sm text-gray-600">
-          Provide <code className="bg-gray-100 px-1 rounded">?project_id=&lt;uuid&gt;</code>{' '}
-          in the URL to view cascade task queue state.
+          请在 URL 中提供 <code className="bg-gray-100 px-1 rounded">?project_id=&lt;uuid&gt;</code>{' '}
+          以查看联动任务队列状态。
         </p>
       </div>
     )
@@ -43,7 +43,7 @@ function CascadeTasksContent() {
 
 export default function CascadeTasksPage() {
   return (
-    <Suspense fallback={<p className="p-6 text-sm text-gray-500">Loading…</p>}>
+    <Suspense fallback={<p className="p-6 text-sm text-gray-500">加载中…</p>}>
       <CascadeTasksContent />
     </Suspense>
   )

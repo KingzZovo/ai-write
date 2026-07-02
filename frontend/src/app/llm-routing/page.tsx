@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
+import type { MessageKey } from '@/lib/i18n/messages'
 
 // v1.4 — LLM tier-routing matrix page.
 // Consumes GET /api/llm-routing/matrix to show the effective tier routing
@@ -31,13 +33,13 @@ interface MatrixResponse {
 const MODE_LABELS: Record<string, string> = { text: '文本', structured: '结构化(JSON)' }
 
 // Matches settings/prompts pages (chunk-12 / chunk-13).
-const TIER_OPTIONS = [
-  { value: '', label: '全部 tier' },
-  { value: 'flagship', label: 'Flagship' },
-  { value: 'standard', label: 'Standard' },
-  { value: 'small', label: 'Small' },
-  { value: 'distill', label: 'Distill' },
-  { value: 'embedding', label: 'Embedding' },
+const TIER_OPTIONS: { value: string; labelKey: MessageKey }[] = [
+  { value: '', labelKey: 'llmRouting.allTiers' },
+  { value: 'flagship', labelKey: 'llmRouting.tier.flagship' },
+  { value: 'standard', labelKey: 'llmRouting.tier.standard' },
+  { value: 'small', labelKey: 'llmRouting.tier.small' },
+  { value: 'distill', labelKey: 'llmRouting.tier.distill' },
+  { value: 'embedding', labelKey: 'llmRouting.tier.embedding' },
 ]
 const TIER_BADGE_CLASS: Record<string, string> = {
   flagship: 'bg-purple-50 text-purple-700',
@@ -70,6 +72,7 @@ function TierBadge({ tier, testId }: { tier: string | null | undefined; testId?:
 }
 
 export default function LlmRoutingPage() {
+  const t = useT()
   const [rows, setRows] = useState<MatrixRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -134,7 +137,7 @@ export default function LlmRoutingPage() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4">
         <label className="flex items-center gap-2 text-sm text-gray-700">
-          <span>过滤 tier：</span>
+          <span>{t('llmRouting.filterTierLabel')}</span>
           <select
             data-testid="llm-routing-tier-filter"
             className="rounded-md border border-gray-300 px-2 py-1 text-sm"
@@ -142,7 +145,7 @@ export default function LlmRoutingPage() {
             onChange={(e) => setTierFilter(e.target.value)}
           >
             {TIER_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
             ))}
           </select>
         </label>
@@ -193,11 +196,11 @@ export default function LlmRoutingPage() {
               <table className="w-full text-sm">
                 <thead className="bg-white text-left text-xs uppercase tracking-wide text-gray-500">
                   <tr>
-                    <th className="px-4 py-2 font-medium">Mode</th>
-                    <th className="px-4 py-2 font-medium">Prompt</th>
-                    <th className="px-4 py-2 font-medium">Endpoint (tier)</th>
-                    <th className="px-4 py-2 font-medium">Model</th>
-                    <th className="px-4 py-2 font-medium">Effective tier</th>
+                    <th className="px-4 py-2 font-medium">{t('llmRouting.col.mode')}</th>
+                    <th className="px-4 py-2 font-medium">{t('llmRouting.col.prompt')}</th>
+                    <th className="px-4 py-2 font-medium">{t('llmRouting.col.endpoint')}</th>
+                    <th className="px-4 py-2 font-medium">{t('llmRouting.col.model')}</th>
+                    <th className="px-4 py-2 font-medium">{t('llmRouting.col.effectiveTier')}</th>
                   </tr>
                 </thead>
                 <tbody>

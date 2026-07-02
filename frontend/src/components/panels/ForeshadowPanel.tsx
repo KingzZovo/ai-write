@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
 
 interface Foreshadow {
   id: string
@@ -44,6 +45,7 @@ const TYPE_CFG: Record<string, { label: string; color: string }> = {
 }
 
 export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
+  const t = useT()
   const [foreshadows, setForeshadows] = useState<Foreshadow[]>([])
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -88,8 +90,8 @@ export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
       </div>
 
       <div className="flex items-center gap-1">
-        <button onClick={() => setFilter('active')} className={`px-2 py-1 text-xs rounded ${filter === 'active' ? 'bg-blue-100 text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="排除已收的伏笔">未收 Active</button>
-        <button onClick={() => setFilter('all')} className={`px-2 py-1 text-xs rounded ${filter === 'all' ? 'bg-blue-100 text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="含已收的全部伏笔">全部 All</button>
+        <button onClick={() => setFilter('active')} className={`px-2 py-1 text-xs rounded ${filter === 'active' ? 'bg-blue-100 text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="排除已收的伏笔">{t('foreshadow.filter.active')}</button>
+        <button onClick={() => setFilter('all')} className={`px-2 py-1 text-xs rounded ${filter === 'all' ? 'bg-blue-100 text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="含已收的全部伏笔">{t('foreshadow.filter.all')}</button>
         {typeOptions.length > 1 && (
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="ml-auto text-xs border border-stone-200 rounded px-1.5 py-1">
             <option value="all">全类型</option>
@@ -116,10 +118,10 @@ export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
         <p className="text-xs text-gray-400">暂无伏笔。</p>
       ) : (
         <div className="space-y-3">
-          {grouped.ready.length    > 0 && <Section title="该收了·Ready"   items={grouped.ready} />}
-          {grouped.ripening.length > 0 && <Section title="酝酿中·Ripening" items={grouped.ripening} />}
-          {grouped.planted.length  > 0 && <Section title="已埋·Planted"     items={grouped.planted} />}
-          {filter === 'all' && grouped.resolved.length > 0 && <Section title="已收·Resolved" items={grouped.resolved} />}
+          {grouped.ready.length    > 0 && <Section title={t('foreshadow.section.ready')}   items={grouped.ready} />}
+          {grouped.ripening.length > 0 && <Section title={t('foreshadow.section.ripening')} items={grouped.ripening} />}
+          {grouped.planted.length  > 0 && <Section title={t('foreshadow.section.planted')}     items={grouped.planted} />}
+          {filter === 'all' && grouped.resolved.length > 0 && <Section title={t('foreshadow.section.resolved')} items={grouped.resolved} />}
         </div>
       )}
     </div>
@@ -172,6 +174,7 @@ function ForeshadowCard({ foreshadow: f }: { foreshadow: Foreshadow }) {
 }
 
 function ForeshadowForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
+  const t = useT()
   const [desc, setDesc] = useState('')
   const [type, setType] = useState('plot')
   const [conditions, setConditions] = useState('')
@@ -190,10 +193,10 @@ function ForeshadowForm({ projectId, onCreated }: { projectId: string; onCreated
   return (
     <div className="bg-stone-50 rounded-lg p-3 space-y-2">
       <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded">
-        <option value="plot">主线 plot</option>
-        <option value="character">人物 character</option>
-        <option value="worldbuilding">设定 worldbuilding</option>
-        <option value="mystery">谜团 mystery</option>
+        <option value="plot">{t('foreshadow.type.plot')}</option>
+        <option value="character">{t('foreshadow.type.character')}</option>
+        <option value="worldbuilding">{t('foreshadow.type.worldbuilding')}</option>
+        <option value="mystery">{t('foreshadow.type.mystery')}</option>
       </select>
       <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="描述伏笔..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16" />
       <textarea value={conditions} onChange={e => setConditions(e.target.value)} placeholder="收线条件 (一行一条)..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-12" />

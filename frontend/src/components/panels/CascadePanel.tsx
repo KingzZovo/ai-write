@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
+import type { MessageKey } from '@/lib/i18n/messages'
 
 interface AffectedChapter {
   id: string
@@ -21,13 +23,14 @@ interface CascadePanelProps {
   chapterId: string
 }
 
-const IMPACT_CONFIG = {
-  high: { color: 'bg-red-100 text-red-700 border-red-200', label: 'High' },
-  medium: { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', label: 'Medium' },
-  low: { color: 'bg-gray-100 text-gray-600 border-gray-200', label: 'Low' },
+const IMPACT_CONFIG: Record<string, { color: string; labelKey: MessageKey }> = {
+  high: { color: 'bg-red-100 text-red-700 border-red-200', labelKey: 'cascade.regen.priority.high' },
+  medium: { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', labelKey: 'cascade.regen.priority.medium' },
+  low: { color: 'bg-gray-100 text-gray-600 border-gray-200', labelKey: 'cascade.regen.priority.low' },
 }
 
 export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
+  const t = useT()
   const [analysis, setAnalysis] = useState<CascadeAnalysis | null>(null)
   const [loading, setLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
@@ -96,11 +99,11 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
       })
       setDismissed(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Regeneration failed')
+      setError(err instanceof Error ? err.message : t('cascade.regen.failed'))
     } finally {
       setRegenerating(false)
     }
-  }, [analysis, regenerating, projectId, chapterId])
+  }, [analysis, regenerating, projectId, chapterId, t])
 
   const handleRegenerateSelected = useCallback(async () => {
     if (selectedIds.size === 0 || regenerating) return
@@ -116,11 +119,11 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
       })
       setDismissed(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Regeneration failed')
+      setError(err instanceof Error ? err.message : t('cascade.regen.failed'))
     } finally {
       setRegenerating(false)
     }
-  }, [selectedIds, regenerating, projectId, chapterId])
+  }, [selectedIds, regenerating, projectId, chapterId, t])
 
   if (dismissed) return null
 
@@ -139,18 +142,17 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
         <button
           onClick={() => setDismissed(true)}
           className="text-xs text-gray-400 hover:text-gray-600"
-          title="Dismiss"
+          title={t('cascade.regen.dismiss')}
         >
-          Dismiss
+          {t('cascade.regen.dismiss')}
         </button>
       </div>
 
       {/* Info banner */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
-        <p className="font-medium mb-0.5">Chapter edited - downstream impact detected</p>
+        <p className="font-medium mb-0.5">{t('cascade.regen.bannerTitle')}</p>
         <p className="text-amber-600">
-          {analysis.affectedChapters.length} subsequent chapter
-          {analysis.affectedChapters.length !== 1 ? 's' : ''} may need regeneration.
+          {analysis.affectedChapters.length} {t('cascade.regen.affectedSummary')}
         </p>
       </div>
 
@@ -158,13 +160,13 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-gray-500 uppercase font-medium">
-            Affected Chapters
+            {t('cascade.regen.affectedChapters')}
           </span>
           <button
             onClick={selectAll}
             className="text-[10px] text-blue-600 hover:text-blue-700"
           >
-            Select All
+            {t('cascade.regen.selectAll')}
           </button>
         </div>
 
@@ -186,12 +188,12 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="flex-1 text-gray-800 truncate">
-                Ch.{chapter.chapterIdx} - {chapter.title}
+                {t('cascade.regen.chapterPrefix')}{chapter.chapterIdx}{t('cascade.regen.chapterSuffix')} · {chapter.title}
               </span>
               <span
                 className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${impact.color}`}
               >
-                {impact.label}
+                {t(impact.labelKey)}
               </span>
             </label>
           )
@@ -207,14 +209,14 @@ export function CascadePanel({ projectId, chapterId }: CascadePanelProps) {
           disabled={regenerating}
           className="w-full px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
-          {regenerating ? 'Regenerating...' : 'Regenerate All'}
+          {regenerating ? t('cascade.regen.regenerating') : t('cascade.regen.regenerateAll')}
         </button>
         <button
           onClick={handleRegenerateSelected}
           disabled={regenerating || selectedIds.size === 0}
           className="w-full px-3 py-1.5 text-xs bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
-          Regenerate Selected ({selectedIds.size})
+          {t('cascade.regen.regenerateSelected')} ({selectedIds.size})
         </button>
       </div>
     </div>

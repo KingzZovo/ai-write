@@ -25,6 +25,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
+import type { MessageKey } from '@/lib/i18n/messages'
+import { cascadeStatusLabel, severityLabel } from '@/lib/i18n/enumLabels'
 
 export interface CascadeTaskRow {
   id: string
@@ -72,15 +75,15 @@ const SEVERITY_STYLES: Record<CascadeTaskRow['severity'], string> = {
   critical: 'bg-red-50 text-red-700 border-red-200',
 }
 
-function relativeTime(iso: string | null): string {
+function relativeTime(iso: string | null, t: (key: MessageKey) => string): string {
   if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return ''
-  const diffSec = Math.round((Date.now() - t) / 1000)
-  if (diffSec < 60) return `${diffSec}s ago`
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`
-  return `${Math.floor(diffSec / 86400)}d ago`
+  const ms = new Date(iso).getTime()
+  if (Number.isNaN(ms)) return ''
+  const diffSec = Math.round((Date.now() - ms) / 1000)
+  if (diffSec < 60) return `${diffSec}${t('cascade.time.secondsAgo')}`
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}${t('cascade.time.minutesAgo')}`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}${t('cascade.time.hoursAgo')}`
+  return `${Math.floor(diffSec / 86400)}${t('cascade.time.daysAgo')}`
 }
 
 function truncate(s: string | null, n: number): string {
@@ -113,6 +116,7 @@ function CascadeTaskDetailModal({
   task: CascadeTaskRow
   onClose: () => void
 }) {
+  const t = useT()
   const [full, setFull] = useState<CascadeTaskRow>(task)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -129,7 +133,7 @@ function CascadeTaskDetailModal({
         if (!cancelled) setFull(row)
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load task detail')
+        if (!cancelled) setError(err instanceof Error ? err.message : t('cascade.detail.loadError'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -154,7 +158,7 @@ function CascadeTaskDetailModal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Cascade task detail"
+      aria-label={t('cascade.detail.ariaLabel')}
     >
       <div
         className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
@@ -166,22 +170,22 @@ function CascadeTaskDetailModal({
             <span
               className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-medium ${STATUS_STYLES[full.status]}`}
             >
-              {full.status}
+              {cascadeStatusLabel(full.status)}
             </span>
             <span
               className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-medium ${SEVERITY_STYLES[full.severity]}`}
             >
-              {full.severity}
+              {severityLabel(full.severity)}
             </span>
             <h3 className="text-sm font-semibold text-gray-900 truncate" title={full.id}>
-              Cascade task · {full.id.slice(0, 8)}
+              {t('cascade.detail.title')} · {full.id.slice(0, 8)}
             </h3>
-            {loading && <span className="text-[11px] text-gray-400">refreshing…</span>}
+            {loading && <span className="text-[11px] text-gray-400">{t('cascade.detail.refreshing')}</span>}
           </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-lg leading-none p-1"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             ×
           </button>
@@ -197,41 +201,41 @@ function CascadeTaskDetailModal({
 
           {/* Field grid */}
           <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-xs">
-            <dt className="text-gray-500">Target entity</dt>
+            <dt className="text-gray-500">{t('cascade.detail.targetEntity')}</dt>
             <dd className="col-span-2 text-gray-800 font-mono">
               {full.target_entity_type} · {full.target_entity_id}
             </dd>
 
-            <dt className="text-gray-500">Source chapter</dt>
+            <dt className="text-gray-500">{t('cascade.detail.sourceChapter')}</dt>
             <dd className="col-span-2 text-gray-800 font-mono">{full.source_chapter_id}</dd>
 
-            <dt className="text-gray-500">Source evaluation</dt>
+            <dt className="text-gray-500">{t('cascade.detail.sourceEvaluation')}</dt>
             <dd className="col-span-2 text-gray-800 font-mono">{full.source_evaluation_id}</dd>
 
-            <dt className="text-gray-500">Parent task</dt>
+            <dt className="text-gray-500">{t('cascade.detail.parentTask')}</dt>
             <dd className="col-span-2 text-gray-800 font-mono">
               {full.parent_task_id || <span className="text-gray-400">—</span>}
             </dd>
 
-            <dt className="text-gray-500">Attempts</dt>
+            <dt className="text-gray-500">{t('cascade.detail.attempts')}</dt>
             <dd className="col-span-2 text-gray-800">{full.attempt_count}</dd>
 
-            <dt className="text-gray-500">Created</dt>
+            <dt className="text-gray-500">{t('cascade.detail.created')}</dt>
             <dd className="col-span-2 text-gray-800">
-              {full.created_at} <span className="text-gray-400">({relativeTime(full.created_at)})</span>
+              {full.created_at} <span className="text-gray-400">({relativeTime(full.created_at, t)})</span>
             </dd>
 
-            <dt className="text-gray-500">Started</dt>
+            <dt className="text-gray-500">{t('cascade.detail.started')}</dt>
             <dd className="col-span-2 text-gray-800">
-              {full.started_at || <span className="text-gray-400">not started</span>}
+              {full.started_at || <span className="text-gray-400">{t('cascade.detail.notStarted')}</span>}
             </dd>
 
-            <dt className="text-gray-500">Completed</dt>
+            <dt className="text-gray-500">{t('cascade.detail.completed')}</dt>
             <dd className="col-span-2 text-gray-800">
-              {full.completed_at || <span className="text-gray-400">not completed</span>}
+              {full.completed_at || <span className="text-gray-400">{t('cascade.detail.notCompleted')}</span>}
             </dd>
 
-            <dt className="text-gray-500">Duration</dt>
+            <dt className="text-gray-500">{t('cascade.detail.duration')}</dt>
             <dd className="col-span-2 text-gray-800">
               {formatDuration(full.started_at, full.completed_at)}
             </dd>
@@ -239,7 +243,7 @@ function CascadeTaskDetailModal({
 
           {/* Issue summary */}
           <div>
-            <div className="text-xs text-gray-500 mb-1">Issue summary</div>
+            <div className="text-xs text-gray-500 mb-1">{t('cascade.detail.issueSummary')}</div>
             <div className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded p-2 whitespace-pre-wrap">
               {full.issue_summary || <span className="text-gray-400">—</span>}
             </div>
@@ -248,7 +252,7 @@ function CascadeTaskDetailModal({
           {/* Error message */}
           {full.error_message && (
             <div>
-              <div className="text-xs text-red-600 mb-1">Error</div>
+              <div className="text-xs text-red-600 mb-1">{t('cascade.detail.error')}</div>
               <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
                 {full.error_message}
               </div>
@@ -269,6 +273,7 @@ export function CascadeTasksPanel({
   chapterId,
   pollIntervalMs = 15000,
 }: CascadeTasksPanelProps) {
+  const t = useT()
   const [rows, setRows] = useState<CascadeTaskRow[]>([])
   const [summary, setSummary] = useState<CascadeTaskSummary | null>(null)
   const [loading, setLoading] = useState(false)
@@ -401,13 +406,13 @@ export function CascadeTasksPanel({
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-left">
-                <th className="px-2 py-1.5 font-medium text-gray-600">Status</th>
-                <th className="px-2 py-1.5 font-medium text-gray-600">Sev.</th>
-                <th className="px-2 py-1.5 font-medium text-gray-600">Target</th>
-                <th className="px-2 py-1.5 font-medium text-gray-600">Source ch.</th>
-                <th className="px-2 py-1.5 font-medium text-gray-600">Issue</th>
-                <th className="px-2 py-1.5 font-medium text-gray-600">Attempts</th>
-                <th className="px-2 py-1.5 font-medium text-gray-600">Created</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colStatus')}</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colSeverity')}</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colTarget')}</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colSourceChapter')}</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colIssue')}</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colAttempts')}</th>
+                <th className="px-2 py-1.5 font-medium text-gray-600">{t('cascade.tasks.colCreated')}</th>
               </tr>
             </thead>
             <tbody>
@@ -451,7 +456,7 @@ export function CascadeTasksPanel({
                   </td>
                   <td className="px-2 py-1.5 text-gray-600 text-center">{r.attempt_count}</td>
                   <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">
-                    {relativeTime(r.created_at)}
+                    {relativeTime(r.created_at, t)}
                   </td>
                 </tr>
               ))}
