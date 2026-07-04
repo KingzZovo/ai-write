@@ -255,6 +255,14 @@ celery -A app.tasks:celery_app worker --loglevel=info
 celery -A app.tasks:celery_app beat --loglevel=info
 ```
 
+## 已知问题 / 限制
+
+> 全流程测试暴露、根因在上游 LLM relay、产品侧尚待加固的问题。详见 `CHANGELOG.md [1.9.5]`。
+
+- **图像拒绝话术污染正文**（待修）：relay 偶尔把 scene_writer 的文本请求误路由到图像模型，返回拒绝语（如「我可以搜索图片，但目前似乎无法为您创建任何图片」），被当场景拼入正文。因其以句号结尾，骗过了截断检测（`looks_truncated`）。计划加「已知拒绝话术」检测门。
+- **relay 批次级 JSON 健壮性**（待修）：分卷大纲逐批生成时，单批 JSON 解析失败会令整卷大纲作废（`_parse_error` → 0 章物化）；卷越大（批次越多）越易中招。已用全书前提锚点缓解题材跑偏，但 json_repair + strict retry 的批次级恢复仍是深层待办。中短卷（≤3 批次/~12 章）实测稳定。
+- **章节字数方差**：`target_words`/`target_chapter_words` 只有下限门（< target×0.5）无上限；scene_writer 每场约 1850 字。`target_words=3200`（→3 场）落 4000–8000 带较稳，但仍有 LLM 方差（偶发短章）。截断/短章会被 persist-on-block 保留并标 draft，不会静默丢失。
+
 ## 路线图
 
 详见 [ITERATION_PLAN.md](ITERATION_PLAN.md)

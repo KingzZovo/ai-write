@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.9.5] - 2026-07-04
+
+全流程测试驱动的稳定性修复（分支 `rescue/2026-05-17-baseline`，全程 TDD，707 pytest 全绿）+ 前端全面汉化。
+
+### 修复
+
+- **prose 残片塌缩**（`services/chapter_pipeline.apply_targeted_logic_rewrite`）：logic_critic 定向改写时，drafter 偶尔只返回被点名片段附近的一小段、丢弃整章其余正文（实测 124 句 → 15 句残片），残片随后被 `persist-on-block` 当终稿存库、标 `completed` = 静默数据丢失。加篇幅守门 `_MIN_REWRITE_LENGTH_RATIO=0.70`：候选掉到原文 70% 以下视为内容丢弃，返回 None 保留上一稿。测 `tests/services/test_chapter_pipeline.py`。
+- **分卷大纲跑偏题材**（`services/outline_generator._generate_volume_outline_staged`）：V1 meta JSON 解析失败（relay 返回截断/未闭合字符串）→ 退回空 `_fallback_volume_meta` → V2 batch prompt 只带空 meta、完全不含全书前提 → 模型套用与题材无关的通用武侠桥段（林凡/天玄宗）。新增 `_book_premise_digest()` 抽全书前提，注入每个 batch prompt 顶部作锚。测 `tests/test_volume_batch_premise_anchor.py`。
+- **auto-revise 回滚清空新章**（`api/generate.py` rollback 站点）：C2 revise loop 对新章存了多版有效正文（4775→5003 字、评分 ~8.0），耗尽 max_rounds 未过 8.2 阈值后回滚到 `baseline_text_before_run`——新章该值为空——把好正文清成 len=0/draft，直接抵消 `QUALITY_GATE_PERSIST_ON_BLOCK=1`。抽纯函数 `resolve_rollback_text(baseline, current, persist_on_block)`：baseline 空 + persist_on_block + current 非空时保留 current。测 `tests/test_auto_revise_rollback_preserves_draft.py`。
+- **level=chapter 大纲从不回写 `chapters.outline_json`**（`api/generate.py._persist_outline_now` + `services/outline_generator.merge_chapter_outline_enrichment`）：SSE 章节大纲生成端点只写 `outlines` 表，而正文/readiness 读的 `chapters.outline_json` 一直是分卷批次的薄骨架（4 字段）。新增纯函数 `merge_chapter_outline_enrichment(skeleton, generated)`（skeleton 的 chapter_idx 权威、生成字段有内容才覆盖、`_parse_error`/`raw_text` 忽略），在 chapter 分支按 volume_idx+chapter_idx 定位 Chapter 行回写。实测 4 字段 → 19–21 字段。测 `tests/test_chapter_outline_enrichment.py`。
+  - **注意**：前端 UI 实际走的是 `POST /api/projects/{id}/chapters/{cid}/outline/expand`（`services/chapter_outline_expander`，会话前已存在，用 chapter_id 自动解析卷、直接写 `chapter_json`）——那条路本就能丰富。本修复补的是另一条 SSE 生成路径 `/api/generate/outline {level:chapter}`（前端不走，但确实之前不回写）。该 SSE 路径的 readiness 要求显式传 `parent_outline_id`（多卷时 chapter_idx 单值有歧义），否则 blocked「缺少当前卷大纲」。
+- **章节半句截断被静默标 completed**（`services/chapter_quality_gate.looks_truncated` + `api/generate.py` 三处存库站点）：scene_writer 最后一场撞 max_tokens 或 relay 中途断流，整章仍过 50% 长度地板 → 标 `completed`、结尾是半句话（`generate_stream` 从不读 finish_reason）。新增纯函数 `looks_truncated(text)` 查末字符是否终止标点（`。！？…"』」）】》—`，剔尾部空行/代码围栏）；初存、revise re-save、rollback 三处存库站点截断则标 `status="draft"` + SSE `truncated` 事件。测 `tests/test_chapter_truncation_detection.py`（11 case）。
+
+### 变更
+
+- **前端全面汉化**：内联硬编码英文迁移到 `src/lib/i18n/messages.ts`（zh/en catalog，145 键对齐）+ 新增 `src/lib/i18n/enumLabels.ts`（后端枚举值中文标签映射：状态/严重度/等级/actor/action）。覆盖编辑器（RewriteMenu/EditorView 的中英混排）、联动面板（CascadePanel/CascadeTasksPanel）、混排面板（Style/Foreshadow/Strand）、管理页（logs/changelog/llm-routing/settings/writing-engine/prompts/cascade-tasks）。`useT` 引用 5 → 15 文件，JSX 可见英文清零，`tsc --noEmit` 零输出，eslint 恰在基线 78。
+
+### 已知问题（待办，本轮全流程测试新暴露）
+
+- **图像拒绝话术污染正文**：relay 偶尔把 scene_writer 的文本调用误路由到图像模型，返回拒绝语（如「您登录了吗？我可以搜索图片，但目前似乎无法为您创建任何图片」），被当作场景拼进正文。因其以「。」结尾，骗过了 `looks_truncated` 截断检测。全流程测试中 1/5 章中招。根因在 relay 路由层，产品侧可加一道「已知拒绝话术」检测门（拦截后标 draft/触发重写）。**尚未修复**。
+- **relay JSON 健壮性**：分卷大纲逐批生成时，单个 batch 的 JSON 解析失败会使整卷大纲作废（`_parse_error` → 0 章物化）。大卷（如 14 批次）任一批次失败即毁全卷。`_book_premise_digest` 锚点缓解了跑偏，但 json_repair + strict retry 的批次级健壮性仍是深层待办。**尚未修复**。
+
 ## [1.9.4] - 2026-06-26
 
 弧式增量创作循环（子项目 A）落地。详见 `docs/superpowers/specs/2026-06-26-incremental-arc-writing-loop-design.md` 与 `docs/HANDOFF_2026-06-26_incremental-arc-loop.md`。
