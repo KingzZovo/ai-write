@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     OPENAI_COMPATIBLE_BASE_URL: str | None = None
     OPENAI_COMPATIBLE_API_KEY: str | None = None
 
+    # --- CORS ---
+    CORS_ORIGINS: str = "http://localhost:3100,http://localhost:8080"
+
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production"
 

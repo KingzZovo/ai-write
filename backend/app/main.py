@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
+from app.config import settings as app_settings
 from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshadows, generate, knowledge, lora, model_config, neo4j_settings, outlines, pipeline, projects, prompts, quality, rewrite, settings, styles, vector_store, versions, volumes
 from app.api.auth import verify_token
 from app.api import admin_entities, admin_usage
@@ -224,10 +225,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.environ.get("CORS_ORIGIN", "http://localhost:3100"),
-        "http://localhost:8080",
-    ],
+    allow_origins=[o.strip() for o in app_settings.CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
