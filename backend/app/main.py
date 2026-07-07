@@ -192,7 +192,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         # Test/dev escape hatch: allow running without auth while keeping the
         # middleware in place for production-like environments.
-        if os.getenv("DISABLE_AUTH", "0") == "1":
+        if app_settings.DISABLE_AUTH:
             return await call_next(request)
 
         path = request.url.path

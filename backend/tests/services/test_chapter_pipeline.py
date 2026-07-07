@@ -125,7 +125,7 @@ async def test_pipeline_disabled_delegates_to_quality_gate(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from types import SimpleNamespace
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "0")
+    monkeypatch.setattr("app.config.settings.CHAPTER_PIPELINE_ENABLED", False)
 
     qg = SimpleNamespace(status="passed", final_text="QG终稿",
                          to_safe_metadata=lambda: {"status": "passed"})

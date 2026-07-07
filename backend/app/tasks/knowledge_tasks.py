@@ -37,26 +37,18 @@ def _single_shot_llm_timeout_kwargs(fallback_timeout: float) -> dict[str, float 
     text in the database. The env toggle keeps the behavior reusable across
     chapters/projects without hard-coding a chapter-specific workaround.
     """
-    import os as _os
+    from app.config import settings
 
-    configured = float(_os.getenv("SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS", "840"))
-    retry_attempts = int(_os.getenv("SINGLE_SHOT_LLM_RETRY_ATTEMPTS", "1"))
-    stream_raw = str(_os.getenv("SINGLE_SHOT_LLM_STREAM", "0")).strip().lower()
-    use_stream = stream_raw in {"1", "true", "yes", "on"}
+    configured = settings.SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS
+    retry_attempts = settings.SINGLE_SHOT_LLM_RETRY_ATTEMPTS
+    use_stream = settings.SINGLE_SHOT_LLM_STREAM
     outer = max(float(fallback_timeout or 0), 60.0)
     leave_commit_margin = max(30.0, outer - 30.0)
 
-    # Non-streaming single-shot chapter generation only receives text after the
-    # whole draft is complete. Splitting the outer budget evenly across the
-    # tier-fallback endpoints made long chapter drafts fail deterministically at
-    # 0 chars: each endpoint timed out before it could return a full response.
-    # Prefer giving the primary route enough wall-clock budget to finish; tier
-    # fallback still works for fast failures while avoiding two guaranteed long
-    # timeouts. Streaming keeps the split budget because it can surface chunks.
     if use_stream:
-        assumed_endpoints = max(1, int(_os.getenv("SINGLE_SHOT_LLM_BUDGET_ENDPOINTS", "2")))
+        assumed_endpoints = max(1, settings.SINGLE_SHOT_LLM_BUDGET_ENDPOINTS)
     else:
-        assumed_endpoints = max(1, int(_os.getenv("SINGLE_SHOT_LLM_BUDGET_ENDPOINTS", "1")))
+        assumed_endpoints = max(1, settings.SINGLE_SHOT_LLM_BUDGET_ENDPOINTS)
     endpoint_budget = max(30.0, (outer - 50.0) / float(assumed_endpoints))
     request_timeout = max(30.0, min(configured, leave_commit_margin, endpoint_budget))
     return {"request_timeout": request_timeout, "retry_attempts": retry_attempts, "stream": use_stream}

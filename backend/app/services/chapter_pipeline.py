@@ -113,11 +113,13 @@ from app.services.logic_critic import run_logic_critic
 
 
 def _pipeline_enabled() -> bool:
-    return os.getenv("CHAPTER_PIPELINE_ENABLED", "1") != "0"
+    from app.config import settings
+    return settings.CHAPTER_PIPELINE_ENABLED
 
 
 def _max_logic_rounds() -> int:
-    return int(os.getenv("LOGIC_CRITIC_MAX_ROUNDS", "2"))
+    from app.config import settings
+    return settings.LOGIC_CRITIC_MAX_ROUNDS
 
 
 async def run_chapter_pipeline(

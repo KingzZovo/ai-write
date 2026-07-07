@@ -41,6 +41,46 @@ class Settings(BaseSettings):
 
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production"
+    AUTH_USERNAME: str = "king"
+    AUTH_PASSWORD_HASH: str = ""
+    DISABLE_AUTH: bool = False
+
+    # --- Generation ---
+    SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS: float = 840.0
+    SINGLE_SHOT_LLM_RETRY_ATTEMPTS: int = 1
+    SINGLE_SHOT_LLM_STREAM: bool = False
+    SINGLE_SHOT_LLM_BUDGET_ENDPOINTS: int = 2
+    SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS: float = 420.0
+    FORCE_DIRECT_CHAPTER: bool = False
+    SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS: float = 600.0
+    CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS: float = 420.0
+    CHAPTER_PIPELINE_ENABLED: bool = True
+    LOGIC_CRITIC_MAX_ROUNDS: int = 2
+    CHAPTER_MAX_REWRITE_ROUNDS: int = 5
+    QUALITY_GATE_PERSIST_ON_BLOCK: bool = False
+
+    # --- Reference Ingestor ---
+    REFERENCE_INGEST_CONCURRENCY: int = 3
+    STYLE_REDACTION_ENABLED: bool = True
+    SEMANTIC_CHUNKER_MAX_TOKENS: int = 800
+    SEMANTIC_CHUNKER_MIN_TOKENS: int = 80
+
+    # --- Retry ---
+    DECOMPILE_RETRY_LOCK_TTL: int = 10800
+    DECOMPILE_RETRY_FAST_DELAY: int = 30
+    DECOMPILE_RETRY_STALL_DELAY: int = 60
+
+    # --- Scene ---
+    ALLOW_SCENE_PLANNER_FALLBACK: bool = True
+    SCENE_PLANNER_TIMEOUT_SECONDS: float = 180.0
+    SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS: float = 240.0
+
+    # --- Feature flags ---
+    CONTEXT_PACK_V2_ENABLED: bool = False
+    RAG_QUERY_REWRITE_ENABLED: bool = False
+    TARGETED_REVISION_ENABLED: bool = True
+    BVSR_ENABLED: bool = False
+    BVSR_N: int = 3
 
 
 settings = Settings()

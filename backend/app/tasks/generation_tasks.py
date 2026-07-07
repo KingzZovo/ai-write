@@ -5,6 +5,7 @@ import json
 import logging
 
 from app.tasks import celery_app
+from app.config import settings
 from app.services.chapter_quality_gate import apply_chapter_quality_gate
 from app.tasks.knowledge_tasks import (
     _single_shot_llm_timeout_kwargs,
@@ -347,7 +348,7 @@ async def _run_async_generation_impl(task_id: str):
                 _force_direct = bool(
                     params.get("force_direct_chapter")
                     or params.get("skip_scene_planner")
-                    or _os.getenv("FORCE_DIRECT_CHAPTER", "0") == "1"
+                    or settings.FORCE_DIRECT_CHAPTER
                 )
                 last_scene_err: Exception | None = None
                 # v1.12 L2: Hard timeout guard to prevent Celery tasks from
@@ -357,7 +358,7 @@ async def _run_async_generation_impl(task_id: str):
                 # The API may request a very long scene timeout, but a chapter task must not
                 # sit at running+0 chars while planner/writer is stuck. Clamp by default and
                 # fall back to single-shot prose if scene-mode cannot emit.
-                _scene_timeout_cap = float(_os.getenv("SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS", "600"))
+                _scene_timeout_cap = settings.SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS
                 _scene_timeout = min(_scene_timeout_requested, _scene_timeout_cap)
 
                 if _force_direct:
@@ -375,7 +376,7 @@ async def _run_async_generation_impl(task_id: str):
                     try:
                         fallback_timeout = float(
                             params.get("fallback_timeout_seconds")
-                            or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                            or str(settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS)
                         )
                         llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                         fallback_instr = (
@@ -560,7 +561,7 @@ async def _run_async_generation_impl(task_id: str):
                     try:
                         fallback_timeout = float(
                             params.get("fallback_timeout_seconds")
-                            or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                            or str(settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS)
                         )
                         llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                         fallback_instr = (
@@ -627,7 +628,7 @@ async def _run_async_generation_impl(task_id: str):
                 logger.warning("Async generation: scene-mode completed with empty text; running direct fallback task_id=%s", task_id)
                 fallback_timeout = float(
                     params.get("fallback_timeout_seconds")
-                    or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                    or str(settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS)
                 )
                 llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                 fallback_text = await _asyncio.wait_for(
@@ -890,7 +891,7 @@ async def _run_async_generation_impl(task_id: str):
                         try:
                             fallback_timeout = float(
                                 params.get("fallback_timeout_seconds")
-                                or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                                or str(settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS)
                             )
                             llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                             force_revise_instr = (
@@ -981,7 +982,7 @@ async def _run_async_generation_impl(task_id: str):
 
                         quality_gate_timeout = float(
                             params.get("quality_gate_timeout_seconds")
-                            or _os.getenv("CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS", "420")
+                            or str(settings.CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS)
                         )
                         quality_result = await _asyncio_qg.wait_for(
                             apply_chapter_quality_gate(
