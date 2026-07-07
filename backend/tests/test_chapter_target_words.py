@@ -46,7 +46,7 @@ def test_celery_chapter_branch_wired_to_resolver() -> None:
     import inspect
     import re
 
-    from app.tasks import knowledge_tasks
+    from app.tasks import generation_tasks as knowledge_tasks
 
     src = re.sub(r"\s+", "", inspect.getsource(knowledge_tasks))
     assert (

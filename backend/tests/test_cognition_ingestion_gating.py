@@ -36,7 +36,7 @@ def _is_extract_call(node: ast.AST) -> bool:
 
 def test_celery_ingestion_wrapped_in_passed_guard():
     """knowledge_tasks: cognition ingestion is review-gated on `passed`."""
-    tree = _parse("tasks/knowledge_tasks.py")
+    tree = _parse("tasks/generation_tasks.py")
 
     guarded_ids: set[int] = set()
     for node in ast.walk(tree):

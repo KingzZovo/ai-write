@@ -289,7 +289,7 @@ def test_celery_revise_loop_wired_to_targeted_revision():
     import inspect
     import re
 
-    from app.tasks import knowledge_tasks
+    from app.tasks import generation_tasks as knowledge_tasks
 
     src = re.sub(r"\s+", "", inspect.getsource(knowledge_tasks))
     assert "revise_spans(" in src
