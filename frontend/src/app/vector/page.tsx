@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
+import { usePolling } from '@/lib/usePolling'
 
 interface CollectionStats {
   name: string
@@ -93,25 +94,26 @@ export default function VectorPage() {
       body: JSON.stringify({ force: false }),
     })
     setRebuildProgress({ status: 'running', done: 0, total: 0 })
-    pollProgress()
+    // Snapshot the project id so edits to the input don't redirect the poll.
+    setRebuildPollProjectId(projectIdForRebuild)
   }
 
-  const pollProgress = useCallback(() => {
-    const iv = setInterval(async () => {
-      try {
-        const r = await apiFetch<RebuildProgress>(
-          `/api/vector-store/rebuild-progress?project_id=${projectIdForRebuild}`
-        )
-        setRebuildProgress(r)
-        if (r.status === 'completed' || r.status === 'partial' || r.status === 'idle') {
-          clearInterval(iv)
-          loadCollections()
-        }
-      } catch {
-        clearInterval(iv)
-      }
-    }, 2000)
-  }, [projectIdForRebuild, loadCollections])
+  // Rebuild-progress polling: survives transient network errors, stops on
+  // terminal states (incl. `failed`), and is cleaned up on unmount.
+  const [rebuildPollProjectId, setRebuildPollProjectId] = useState<string | null>(null)
+
+  usePolling(async (stop) => {
+    if (!rebuildPollProjectId) return
+    const r = await apiFetch<RebuildProgress>(
+      `/api/vector-store/rebuild-progress?project_id=${rebuildPollProjectId}`
+    )
+    setRebuildProgress(r)
+    if (r.status === 'completed' || r.status === 'partial' || r.status === 'idle' || r.status === 'failed') {
+      stop()
+      setRebuildPollProjectId(null)
+      loadCollections()
+    }
+  }, 2000, rebuildPollProjectId !== null)
 
   return (
     <div className="pt-14 px-4 md:px-8 max-w-7xl mx-auto pb-12">

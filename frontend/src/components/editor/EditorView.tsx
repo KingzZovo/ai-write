@@ -11,6 +11,7 @@ import { baseKeymap } from 'prosemirror-commands'
 import { history, undo, redo } from 'prosemirror-history'
 import { dropCursor } from 'prosemirror-dropcursor'
 import { gapCursor } from 'prosemirror-gapcursor'
+import { useT } from '@/lib/i18n/I18nProvider'
 
 // Extended schema with AI-generated content marker
 const aiWriteSchema = new Schema({
@@ -35,6 +36,7 @@ export function ChapterEditor({
 }: ChapterEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const t = useT()
 
   // Initialize ProseMirror
   useEffect(() => {
@@ -90,7 +92,7 @@ export function ChapterEditor({
       />
       {isStreaming && (
         <div className="fixed bottom-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-full text-sm animate-pulse">
-          AI generating...
+          {t('editor.ai.generating')}
         </div>
       )}
       <style jsx global>{`

@@ -14,6 +14,7 @@ from app.services.auto_revise import (
     DEFAULT_MAX_REVISE_ROUNDS,
     DEFAULT_REVISE_THRESHOLD,
     EvaluationLite,
+    blocking_contract_violation_set,
     issues_to_revise_instruction,
     merge_revise_into_user_instruction,
     should_revise,
@@ -31,30 +32,47 @@ def test_should_revise_below_threshold_returns_true() -> None:
 
 
 def test_should_revise_at_threshold_returns_false() -> None:
-    # Exactly at threshold = quality bar met, accept.
-    e = EvaluationLite(overall=7.0)
-    assert should_revise(e, threshold=7.0) is False
+    # Exactly at threshold = quality bar met.
+    e = EvaluationLite(overall=8.2)
+    assert should_revise(e, threshold=8.2) is False
 
 
 def test_should_revise_above_threshold_returns_false() -> None:
-    e = EvaluationLite(overall=7.98)  # B1' baseline
-    assert should_revise(e, threshold=7.0) is False
+    e = EvaluationLite(overall=8.6)
+    assert should_revise(e, threshold=8.2) is False
 
 
-def test_should_revise_default_threshold_is_seven() -> None:
-    assert DEFAULT_REVISE_THRESHOLD == 7.0
-    e = EvaluationLite(overall=6.99)
+def test_should_revise_above_threshold_ignores_diagnostic_contract_label() -> None:
+    e = EvaluationLite(
+        overall=9.0,
+        issues=[{"description": "[space_rule_violation] 人物无路径到场"}],
+    )
+    assert should_revise(e, threshold=8.2) is False
+
+
+def test_should_revise_default_threshold_is_8_2() -> None:
+    assert DEFAULT_REVISE_THRESHOLD == 8.2
+    e = EvaluationLite(overall=8.19)
     assert should_revise(e) is True  # uses default threshold
 
 
-def test_should_revise_default_max_rounds_is_two() -> None:
-    assert DEFAULT_MAX_REVISE_ROUNDS == 2
+def test_should_revise_default_max_rounds_is_three() -> None:
+    assert DEFAULT_MAX_REVISE_ROUNDS == 3
 
 
 def test_should_revise_handles_dict_input() -> None:
     """Tolerates a plain dict (e.g. JSON deserialized from celery result)."""
     assert should_revise({"overall": 5.0}) is True
     assert should_revise({"overall": 9.0}) is False
+    assert (
+        should_revise(
+            {
+                "overall": 9.0,
+                "issues": [{"description": "[mechanism_rule_violation] 无触发条件"}],
+            }
+        )
+        is False
+    )
 
 
 def test_should_revise_handles_none_overall_as_zero() -> None:
@@ -67,6 +85,37 @@ def test_should_revise_handles_missing_overall() -> None:
     """Empty-ish input should default to 0 and trigger revise."""
     assert should_revise({}, threshold=7.0) is True
     assert should_revise(None, threshold=7.0) is True
+
+
+def test_blocking_contract_violation_extraction() -> None:
+    e = EvaluationLite(
+        overall=9.0,
+        issues=[
+            {"description": "[space_rule_violation] 人物无路径转移"},
+            {
+                "violation_type": "information_rule_violation",
+                "description": "弱信息推出强结论",
+            },
+        ],
+    )
+    assert blocking_contract_violation_set(e) == {
+        "space_rule_violation",
+        "information_rule_violation",
+    }
+
+
+def test_root_cause_instruction_contains_pre_generation_diagnostic_blueprint() -> None:
+    e = EvaluationLite(
+        overall=7.9,
+        issues=[{"description": "[mechanism_rule_violation] 机制无边界", "suggestion": "补成本或降级"}],
+    )
+    instr = issues_to_revise_instruction(e, round_idx=1)
+    assert "【生成前内化诊断蓝图】" in instr
+    assert "生成前写作决策优先选以下五类" in instr
+    assert "【改写前强制台账】" in instr
+    assert "action_budget" in instr
+    assert "inference_ledger" in instr
+    assert "mechanism_rule_violation" in instr
 
 
 # ---------------------------------------------------------------------------
@@ -207,11 +256,11 @@ def test_generate_chapter_request_c2_field_defaults() -> None:
     from app.api.generate import GenerateChapterRequest
 
     req = GenerateChapterRequest(project_id="p1")
-    assert req.auto_revise is False
-    assert req.revise_threshold == 7.0
-    assert req.max_revise_rounds == 2
-    # Existing C1 fields unchanged.
-    assert req.use_scene_mode is False
+    assert req.auto_revise is True
+    assert req.revise_threshold == 8.2
+    assert req.max_revise_rounds == 3
+    # Current generation defaults to scene mode + quality gate enabled.
+    assert req.use_scene_mode is True
     assert req.n_scenes_hint is None
     assert req.target_words is None
 
@@ -296,3 +345,12 @@ def test_dispatch_evaluate_task_returns_true_on_success(monkeypatch) -> None:
     assert captured["kwargs"]["chapter_id"] == "chap-xyz"
     assert captured["kwargs"]["caller"] == "unit_test"
     assert captured["countdown"] == 5
+
+
+def test_issues_to_revise_instruction_contains_calibration() -> None:
+    """C1: the revise instruction must carry the over-revision calibration so
+    aesthetic warnings don't force rewrites and clean passages are preserved."""
+    e = EvaluationLite(overall=7.0, issues=[{"description": "节奏略平", "suggestion": "加冲突"}])
+    instr = issues_to_revise_instruction(e, round_idx=1)
+    assert "修订校准" in instr
+    assert "禁止为改而改" in instr

@@ -12,10 +12,13 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
+from app.config import settings as app_settings
 from app.api import ask_user, auth, call_logs, chapters, filter_words, foreshadows, generate, knowledge, lora, model_config, neo4j_settings, outlines, pipeline, projects, prompts, quality, rewrite, settings, styles, vector_store, versions, volumes
 from app.api.auth import verify_token
 from app.api import admin_entities, admin_usage
 from app.api import export as export_api
+from app.api import compass as compass_api
+from app.api import arc as arc_api
 from app.middlewares.quota import QuotaMiddleware
 from app.middlewares.request_logging import RequestLoggingMiddleware
 from app.db.neo4j import close_neo4j, init_neo4j
@@ -187,6 +190,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Verify JWT token for all /api/* requests except public paths."""
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        # Test/dev escape hatch: allow running without auth while keeping the
+        # middleware in place for production-like environments.
+        if app_settings.DISABLE_AUTH:
+            return await call_next(request)
+
         path = request.url.path
 
         # Skip auth for public paths and non-API routes
@@ -217,10 +225,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.environ.get("CORS_ORIGIN", "http://localhost:3100"),
-        "http://localhost:8080",
-    ],
+    allow_origins=[o.strip() for o in app_settings.CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -242,6 +247,8 @@ app.include_router(chapters.router)
 app.include_router(generate.router)
 app.include_router(knowledge.router)
 app.include_router(foreshadows.router)
+app.include_router(compass_api.router)
+app.include_router(arc_api.router)
 app.include_router(settings.router)
 app.include_router(neo4j_settings.router)
 app.include_router(versions.router)

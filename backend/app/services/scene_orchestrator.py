@@ -6,7 +6,7 @@ Replaces the single-shot "generation" prompt with a two-stage pipeline:
    chapter outline + context pack -> list of 3-6 SceneBrief.
 2. ``scene_writer`` (flagship tier, streaming):
    per-scene, takes the SceneBrief + a rolling summary of already-written
-   scenes -> 800-1200 char prose.
+  scenes -> 800-1200 char prose.
 
 The orchestrator joins per-scene streams into one continuous chunk stream
 so the existing SSE infrastructure (api/generate.py event_stream + auto-save)
@@ -36,6 +36,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.context_pack import ContextPack, ContextPackBuilder
+from app.services.narrative_contract import (
+    SCENE_CONTRACT_FIELDS_PROMPT,
+    WRITER_CONTRACT_PROMPT,
+)
+from app.services.outline_readiness import build_outline_readiness_report
 from app.services.prompt_registry import run_text_prompt, stream_text_prompt
 
 logger = logging.getLogger(__name__)
@@ -44,6 +49,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TARGET_WORDS = 3500
 MIN_SCENE_WORDS = 800
 MAX_SCENE_WORDS = 1200
+MAX_SCENE_COUNT = 20
 
 
 @dataclass
@@ -57,6 +63,18 @@ class SceneBrief:
     key_action: str = ""
     target_words: int = 1000
     hook: str = ""
+    start_state: str = ""
+    time_delta: str = ""
+    location_path: str = ""
+    entity_transfers: str = ""
+    power_resource_map: str = ""
+    information_state: str = ""
+    mechanism_limits: str = ""
+    result_strength: str = ""
+    transition_bridge: str = ""
+    continuity_ledger: str = ""
+    action_budget: str = ""
+    inference_ledger: str = ""
 
     @classmethod
     def from_dict(cls, idx: int, raw: dict) -> "SceneBrief":
@@ -83,6 +101,22 @@ class SceneBrief:
             key_action=_s("key_action"),
             target_words=target_words,
             hook=_s("hook"),
+            start_state=_s("start_state"),
+            time_delta=_s("time_delta"),
+            location_path=_s("location_path"),
+            entity_transfers=_s("entity_transfers"),
+            power_resource_map=_s("power_resource_map"),
+            information_state=_s("information_state"),
+            mechanism_limits=_s("mechanism_limits"),
+            result_strength=_s("result_strength"),
+            transition_bridge=_s("transition_bridge") or _s("handoff_to_next"),
+            continuity_ledger=(
+                _s("continuity_ledger")
+                or _s("ledger")
+                or _s("连续性台账")
+            ),
+            action_budget=_s("action_budget") or _s("动作预算"),
+            inference_ledger=_s("inference_ledger") or _s("推理台账"),
         )
 
     def to_writer_user_content(self) -> str:
@@ -98,6 +132,23 @@ class SceneBrief:
             bullets.append(f"【时间】{self.time_cue}")
         if self.key_action:
             bullets.append(f"【主要动作】{self.key_action}")
+        contract_fields = [
+            ("开场承接", self.start_state),
+            ("时间成本", self.time_delta),
+            ("空间路径", self.location_path),
+            ("实体转移", self.entity_transfers),
+            ("权力/资源图", self.power_resource_map),
+            ("信息状态", self.information_state),
+            ("机制边界", self.mechanism_limits),
+            ("允许结果强度", self.result_strength),
+            ("下场交接", self.transition_bridge),
+            ("连续性台账", self.continuity_ledger),
+            ("动作预算", self.action_budget),
+            ("推理台账", self.inference_ledger),
+        ]
+        for label, value in contract_fields:
+            if value:
+                bullets.append(f"【{label}】{value}")
         bullets.append(f"【目标字数】约 {self.target_words} 字 (800-1200)")
         if self.hook:
             bullets.append(f"【场末过渡】{self.hook}")
@@ -168,14 +219,30 @@ def _x4_observe_scene_count(n: int) -> None:
         pass
 
 
+def _scene_count_for_target(target_words: int) -> int:
+    target = max(int(target_words or DEFAULT_TARGET_WORDS), MIN_SCENE_WORDS)
+    return max(3, min(MAX_SCENE_COUNT, round(target / 1000)))
+
+
+def _cap_parsed_scenes(parsed: list) -> list:
+    """Cap planner output at the hard MAX_SCENE_COUNT, never the soft hint.
+
+    When overflowing, keep the final scene: it carries the chapter ending/hook.
+    """
+    if len(parsed) <= MAX_SCENE_COUNT:
+        return parsed
+    return parsed[: MAX_SCENE_COUNT - 1] + parsed[-1:]
+
+
 def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list[SceneBrief]:
     """Build deterministic scene briefs when the planner LLM fails to JSON.
 
-    We pick N = round(target_words / 1000), clamp to [3, 6], then split the
+    We pick N = round(target_words / 1000), clamp to [3, MAX_SCENE_COUNT],
+    then split the
     chapter outline text into N roughly equal slices to seed the briefs so
     the writer still has *some* structural anchor per scene.
     """
-    n = max(3, min(6, round(max(target_words, MIN_SCENE_WORDS) / 1000)))
+    n = _scene_count_for_target(target_words)
     text = (chapter_outline_text or "").strip()
     if text:
         chunk_size = max(1, len(text) // n)
@@ -197,9 +264,81 @@ def _fallback_scene_briefs(target_words: int, chapter_outline_text: str) -> list
                 key_action="",
                 target_words=per_scene,
                 hook="" if i == n else "接下一场",
+                start_state="首场承接章节开局" if i == 1 else "承接上一场末尾状态",
+                time_delta="按本章大纲推导，不得跳过关键时间成本",
+                location_path="按本章大纲推导关键实体移动路径",
+                entity_transfers="列明本场关键人物/物件/信息/资源如何到场",
+                power_resource_map="按当前题材推导冲突双方权力与资源差",
+                information_state="只允许角色使用已获得且可信的信息",
+                mechanism_limits="任何改变局势的机制必须有成本和边界",
+                result_strength="支撑不足时降级为疑点/局部胜利/暂缓/后续线索",
+                transition_bridge="本场末尾交代交给下一场的状态" if i != n else "本章钩子必须由前文因果触发",
+                continuity_ledger="人物/物件/消息/证据/资源：场初承接上一场台账 -> 场末写清位置、持有人、知情人、转移路径和代价；新增实体必须写来源",
+                action_budget="高压场景列明可用时间窗口、身体姿态、双手是否受限、预先准备、最多连续动作数和代价；动作超预算则拆场或降级结果",
+                inference_ledger="关键判断列明感知来源/证据、结论强度、替代解释和允许写法；弱证据只能推出疑点",
             )
         )
     return briefs
+
+
+def _scene_budget_reaches_target(briefs: list[SceneBrief], target_words: int) -> bool:
+    if not briefs:
+        return False
+    target = int(target_words or 0)
+    if target <= 0:
+        return True
+    return sum(max(0, int(brief.target_words or 0)) for brief in briefs) >= int(target * 0.85)
+
+
+# Always-applicable continuity-contract fields: every scene must carry these
+# (time/space/entity/information/result ledgers) regardless of genre or pace.
+_REQUIRED_CONTRACT_FIELDS: tuple[str, ...] = (
+    "start_state",
+    "time_delta",
+    "location_path",
+    "entity_transfers",
+    "power_resource_map",
+    "information_state",
+    "mechanism_limits",
+    "result_strength",
+    "transition_bridge",
+    "continuity_ledger",
+)
+
+# Conditional fields: SCENE_CONTRACT_FIELDS_PROMPT marks these as required only
+# for high-pressure/close-combat/inference-heavy scenes ("高压/追捕/近身冲突场景
+# 必须..."). A legitimately calm scene may omit them, so the gate must NOT flag
+# them missing — otherwise a good plan is needlessly forced into template
+# fallback (observed on 神裔 ch2/ch3). They still get written when present.
+_CONDITIONAL_CONTRACT_FIELDS: tuple[str, ...] = (
+    "action_budget",
+    "inference_ledger",
+)
+
+
+def _missing_contract_fields(brief: SceneBrief) -> list[str]:
+    """Return missing *always-applicable* continuity-contract fields.
+
+    Conditional fields (action_budget / inference_ledger) are not flagged when
+    absent — they are only mandatory for high-pressure scenes per the planner
+    prompt, and forcing them on every scene drove avoidable fallbacks.
+    """
+    missing: list[str] = []
+    for field in _REQUIRED_CONTRACT_FIELDS:
+        if not str(getattr(brief, field, "") or "").strip():
+            missing.append(field)
+    return missing
+
+
+def _has_valid_scene_contract(briefs: list[SceneBrief]) -> bool:
+    """Reject planner output that lacks generic time/space/entity ledgers.
+
+    This is intentionally genre-agnostic: it checks abstract contract fields,
+    never a specific book, trope, role, location, prop, or plot symptom.
+    """
+    if not briefs:
+        return False
+    return all(not _missing_contract_fields(brief) for brief in briefs)
 
 
 class SceneOrchestrator:
@@ -222,15 +361,42 @@ class SceneOrchestrator:
         user_instruction: str = "",
     ) -> list[SceneBrief]:
         """Run scene_planner LLM call and return SceneBrief list (>=3, <=6)."""
+        # Root-cause guard (2026-05): do NOT proceed with chapter writing when
+        # scene_planner fails. Template fallback briefs are known to trigger
+        # continuity/time/space/information violations and cause quality collapse.
+        # Operators can override in emergencies via:
+        #   ALLOW_SCENE_PLANNER_FALLBACK=1
+        # Planner timeout can be tuned via:
+        #   SCENE_PLANNER_TIMEOUT_SECONDS=<float>
+        import os
+        # Safety valve: never let chapter generation block on planner JSON.
+        # If the planner is unstable (timeout/unparseable/missing fields), fall
+        # back to deterministic scene briefs so we can still produce full prose
+        # and then score/revise.
+        # Default: enabled. Set ALLOW_SCENE_PLANNER_FALLBACK=0 to force strict.
+        allow_fallback = (os.getenv("ALLOW_SCENE_PLANNER_FALLBACK", "1") != "0")
+        # Planner call is the main reliability bottleneck for reaching the
+        # quality bar (it gates all contract/ledger constraints). In practice
+        # 60s is too aggressive and causes empty output timeouts.
+        # Default bumped to 600s because scene_planner calls frequently exceed
+        # 180s on the current standard endpoint, which causes avoidable timeouts
+        # and blocks chapter generation.
+        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "180"))
+        # Hard cap keeps scene_planner from blocking the whole generation with 0 emitted chars.
+        # Operators may tune it, but default remains short enough to force deterministic fallback.
+        planner_timeout_cap_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS", "240"))
+        planner_timeout_s = min(planner_timeout_s, planner_timeout_cap_s)
         # Re-use ContextPack's system prompt as planner background, then
         # inject the planner-specific user instruction.
         background = pack.to_system_prompt()
         chapter_outline_text = self._extract_chapter_outline_text(pack)
         hint_line = (
             f"推荐场景数 = {n_scenes_hint}\n"
-            if isinstance(n_scenes_hint, int) and 3 <= n_scenes_hint <= 6
+            if isinstance(n_scenes_hint, int) and 3 <= n_scenes_hint <= MAX_SCENE_COUNT
             else ""
         )
+        if not hint_line:
+            hint_line = f"推荐场景数 = {_scene_count_for_target(target_words)}\n"
         instr_block = (
             f"【额外用户指令（改写要求）】\n{user_instruction.strip()}\n\n"
             if user_instruction and user_instruction.strip()
@@ -251,38 +417,119 @@ class SceneOrchestrator:
             "- 若同一线索需分阶段呈现，必须以可辨别的状态切片（前置铺垫 / 当下推进 / 后续余响），"
             "且 brief 中不得出现与前一 scene 相同的「动词 + 受事」组合。\n\n"
         )
+        contract_block = SCENE_CONTRACT_FIELDS_PROMPT + "\n"
+        bridge_block = (
+            "【章节过桥硬约束】\n"
+            "- scene 1 的 start_state 必须显式承接本章大纲 start_state / transition_bridge / 上章末尾状态；如果上章末尾有人物、物件、消息或风险停在别处，必须先写清到场路径、交接人、见证者、时间成本。\n"
+            "- 每个 scene 的 transition_bridge 必须把本场末状态完整交给下一场；禁止用省略句、抽象钩子或‘已经到了/转眼/不多时’跳过关键过桥。\n"
+            "- 若角色在本场使用信息，brief 必须能追溯信息来源；没有来源时只能写疑点、误判或局部尝试，不能写强结论。\n"
+            "- 每个 scene 必须输出 continuity_ledger 字段，结构为：人物/物件/消息/证据/资源：场初状态 -> 场末状态；新增实体必须写来源、入场路径、知情人和代价。\n"
+            "- continuity_ledger 与 start_state / entity_transfers / transition_bridge 必须互相一致；不一致时不得输出该规划。\n\n"
+        )
         user_content = (
             f"{instr_block}"
+            f"{contract_block}"
+            f"{bridge_block}"
             f"{mutex_block}"
             f"本章目标字数：约 {target_words} 字\n"
             f"{hint_line}"
-            f"请按系统提示输出严格 JSON。"
+            f"请按系统提示输出严格 JSON；每个 scene 必须包含场景合同字段，字段缺失视为规划失败。"
         )
-        try:
-            result = await run_text_prompt(
-                task_type="scene_planner",
-                user_content=user_content,
-                db=db,
-                extra_system=background,
-                project_id=str(project_id),
-                chapter_id=str(chapter_id) if chapter_id else None,
-                rag_hits=[],
-            )
-            raw_text = getattr(result, "text", "") or ""
-        except Exception as exc:  # broad: planner is best-effort, never block writer
-            logger.warning("scene_planner LLM call failed: %s", exc)
-            raw_text = ""
+        # Root-cause fix (planner reliability): run the planner as a structured
+        # prompt so we get JSON-parse defense (json_repair + one strict retry)
+        # instead of relying on best-effort parsing of arbitrary text.
+        import asyncio
+        from app.services.prompt_registry import run_structured_prompt
 
-        parsed = _try_parse_scene_array(raw_text)
+        last_exc: Exception | None = None
+        last_timeout_s: float = planner_timeout_s
+        last_raw_text: str = ""
+        parsed: list | None = None
+        for attempt in (1, 2):
+            try:
+                timeout_s = planner_timeout_s if attempt == 1 else max(planner_timeout_s, 240.0)
+                last_timeout_s = timeout_s
+                parsed_any = await asyncio.wait_for(
+                    run_structured_prompt(
+                        task_type="scene_planner",
+                        user_content=user_content,
+                        db=db,
+                        extra_system=background,
+                        project_id=str(project_id),
+                        chapter_id=str(chapter_id) if chapter_id else None,
+                        rag_hits=[],
+                    ),
+                    timeout=timeout_s,
+                )
+                # run_structured_prompt ALWAYS returns a dict:
+                #   * a bare JSON array  -> {"items": [...]}  (_normalize_structured)
+                #   * {"scenes": [...]}  passed through unchanged
+                #   * a parse failure    -> {"raw_text": ..., "parse_error": True}
+                # Extract the scene array from whichever wrapper key is present
+                # (mirrors beat_extractor's tolerance). A bare list is accepted
+                # defensively in case the contract ever changes back.
+                scene_list: list | None = None
+                if isinstance(parsed_any, list):
+                    scene_list = parsed_any
+                elif isinstance(parsed_any, dict):
+                    for _key in ("items", "scenes", "scene_briefs", "scene_list"):
+                        _v = parsed_any.get(_key)
+                        if isinstance(_v, list) and _v:
+                            scene_list = _v
+                            break
+                    if scene_list is None:
+                        # Debuggability: capture raw model text when the
+                        # structured parser fell back to {raw_text, parse_error}.
+                        rt = parsed_any.get("raw_text")
+                        if isinstance(rt, str) and rt.strip():
+                            last_raw_text = rt.strip()
+                if scene_list:
+                    parsed = scene_list
+                    break
+                logger.warning(
+                    "scene_planner returned non-list/empty structured output (attempt=%d/%d); retrying",
+                    attempt,
+                    2,
+                )
+            except asyncio.TimeoutError as exc:
+                last_exc = exc
+                logger.warning(
+                    "scene_planner structured call timed out (attempt=%d/%d timeout=%.1fs)",
+                    attempt,
+                    2,
+                    last_timeout_s,
+                )
+                parsed = None
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "scene_planner structured call failed/timeout (attempt=%d/%d timeout=%.1fs): %s",
+                    attempt,
+                    2,
+                    last_timeout_s,
+                    exc,
+                )
+                parsed = None
+
         if not parsed:
             logger.warning(
-                "scene_planner returned unparseable output (len=%d); using fallback",  # v1.6.0 X4 metric: planner fallback
-                len(raw_text),
+                "scene_planner returned no usable structured output; using fallback",
             )
-            return _fallback_scene_briefs(target_words, chapter_outline_text)
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            # Surface timeout vs unparseable as different root causes.
+            if isinstance(last_exc, asyncio.TimeoutError):
+                raise RuntimeError("scene_planner_failed: timeout")
+            if last_raw_text:
+                snippet = last_raw_text[:1200]
+                raise RuntimeError(
+                    "scene_planner_failed: unparseable_output. raw_text_snippet="
+                    + snippet.replace("\n", " ")
+                )
+            raise RuntimeError("scene_planner_failed: unparseable_output")
 
         briefs: list[SceneBrief] = []
-        for i, raw in enumerate(parsed[:6], start=1):
+        for i, raw in enumerate(_cap_parsed_scenes(parsed), start=1):
             if not isinstance(raw, dict):
                 continue
             briefs.append(SceneBrief.from_dict(i, raw))
@@ -292,7 +539,33 @@ class SceneOrchestrator:
                 len(briefs),
             )
             _x4_inc_fallback("too_few")
-            return _fallback_scene_briefs(target_words, chapter_outline_text)
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: too_few_briefs")
+        if not _scene_budget_reaches_target(briefs, target_words):
+            logger.warning(
+                "scene_planner returned insufficient scene budget for target_words=%s sum=%s; using fallback instead",
+                target_words,
+                sum(max(0, int(brief.target_words or 0)) for brief in briefs),
+            )
+            _x4_inc_fallback("insufficient_scene_budget")
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: insufficient_scene_budget")
+        if not _has_valid_scene_contract(briefs):
+            missing_by_scene = {
+                brief.idx: _missing_contract_fields(brief)
+                for brief in briefs
+                if _missing_contract_fields(brief)
+            }
+            logger.warning(
+                "scene_planner returned briefs with missing continuity contract fields: %s; using fallback instead",
+                missing_by_scene,
+            )
+            _x4_inc_fallback("missing_contract_fields")
+            if allow_fallback:
+                return _fallback_scene_briefs(target_words, chapter_outline_text)
+            raise RuntimeError("scene_planner_failed: missing_contract_fields")
         return briefs
 
     @staticmethod
@@ -341,7 +614,16 @@ class SceneOrchestrator:
             if user_instruction and user_instruction.strip()
             else ""
         )
-        user_content = ctx_block + prior_block + instr_block + "\n\n请开始写本场景。"
+        contract_block = "\n\n" + WRITER_CONTRACT_PROMPT
+        ledger_block = (
+            "\n\n【连续性台账写作硬约束】\n"
+            f"- 本场结构化台账：{scene.continuity_ledger or '必须从场景合同自行补齐连续性台账'}\n"
+            "- 写正文前先依据本场合同在心中核对人物、物件、消息、证据、资源的场初状态。\n"
+            "- 正文中任何到场、离场、换手、被看见、被误解、被封存、被消耗，都必须有可读路径或代价。\n"
+            "- 不能为增强压迫感临时增加人手/道具/能力；需要新增时必须在正文出现入场路径和见证信息。\n"
+            "- 场末只允许留下 transition_bridge 台账能解释的结果；支撑不足时降级为疑点或待验证线索。"
+        )
+        user_content = ctx_block + contract_block + ledger_block + prior_block + instr_block + "\n\n请开始写本场景。"
         async for chunk in stream_text_prompt(
             task_type="scene_writer",
             user_content=user_content,
@@ -373,6 +655,13 @@ class SceneOrchestrator:
         ``on_scene_start`` (if given) is awaited just before each scene's
         first chunk is emitted, with the SceneBrief as argument.
         """
+        await self._assert_outline_chain_ready(
+            db=db,
+            project_id=project_id,
+            volume_id=volume_id,
+            chapter_idx=chapter_idx,
+            chapter_id=chapter_id,
+        )
         pack = await ContextPackBuilder(db=db).build(
             project_id=project_id,
             volume_id=volume_id,
@@ -416,6 +705,30 @@ class SceneOrchestrator:
             prior_summary_parts.append(self._summarize_scene(scene, full_scene_text))
 
     @staticmethod
+    async def _assert_outline_chain_ready(
+        *,
+        db: AsyncSession | None,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_id: Optional[str | UUID] = None,
+    ) -> None:
+        if db is None:
+            return
+        readiness = await build_outline_readiness_report(
+            db,
+            project_id=str(project_id),
+            chapter_id=str(chapter_id) if chapter_id else None,
+            volume_id=str(volume_id),
+            chapter_idx=chapter_idx,
+        )
+        if not readiness.ready:
+            missing = ",".join(readiness.missing_layers)
+            raise RuntimeError(
+                f"outline_chain_incomplete: {readiness.block_message()} ({missing})"
+            )
+
+    @staticmethod
     def _summarize_scene(scene: SceneBrief, scene_text: str) -> str:
         """Cheap rolling summary: title + key_action + last 600 chars of prose."""
         tail = (scene_text or "").strip()
@@ -424,6 +737,10 @@ class SceneOrchestrator:
         head_line = f"[场 {scene.idx} | {scene.title}]"
         if scene.key_action:
             head_line += f" 主要动作：{scene.key_action}"
+        if scene.transition_bridge:
+            head_line += f" 交接：{scene.transition_bridge}"
+        elif scene.result_strength:
+            head_line += f" 结果强度：{scene.result_strength}"
         if not tail:
             return head_line
         return f"{head_line}\n末段：{tail}"

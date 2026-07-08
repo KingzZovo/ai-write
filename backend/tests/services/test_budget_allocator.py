@@ -151,6 +151,19 @@ def test_project_budget_preserves_user_override_without_force():
     assert plan["volumes_changed"] == 2
 
 
+def test_project_budget_treats_legacy_chapter_default_as_untouched():
+    chapters = [
+        _mk_ch("c1", 1, 50_000),
+        _mk_ch("c2", 2, 50_000),
+    ]
+    volumes = [_mk_vol("v1", 1, VOLUME_DEFAULT, chapters=chapters)]
+    plan = allocate_project_budget(
+        project_total=400_000, volumes=volumes, force=False
+    )
+    ch_new = [c["new_target"] for c in plan["volumes"][0]["chapters"]]
+    assert ch_new == [200_000, 200_000]
+
+
 def test_project_budget_force_overwrites_user_values():
     volumes = [
         _mk_vol("v1", 1, 999_999),
@@ -167,7 +180,7 @@ def test_project_budget_force_overwrites_user_values():
 def test_project_budget_chapters_allocated_from_volume_target():
     # 4 default-valued chapters under a default-valued volume;
     # project_total=400_000 -> volume 400_000 -> each chapter 100_000
-    # (different from 50_000 default, so chapters_changed must fire).
+    # (different from the 4_000 default, so chapters_changed must fire).
     chapters = [_mk_ch(f"c{i}", i, CHAPTER_DEFAULT) for i in range(1, 5)]
     volumes = [_mk_vol("v1", 1, VOLUME_DEFAULT, chapters=chapters)]
     plan = allocate_project_budget(
@@ -228,4 +241,4 @@ def test_project_budget_default_constants():
     # Guard against accidental change of the documented defaults.
     assert PROJECT_DEFAULT == 3_000_000
     assert VOLUME_DEFAULT == 200_000
-    assert CHAPTER_DEFAULT == 50_000
+    assert CHAPTER_DEFAULT == 4_000

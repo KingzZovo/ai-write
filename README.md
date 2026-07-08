@@ -94,16 +94,28 @@ docker compose exec backend alembic upgrade head
 | OOCChecker | 角色 Out-of-Character 检测（5 种性格原型） |
 | PacingChecker | 句长变化、张力曲线、信息密度波动 |
 | ReaderPullChecker | 开头吸引力、微兑现分布、结尾钩子 |
-| AntiAIChecker | 64 个 AI 高频词、四字成语密度、"的"字密度、句式单调性 |
+| AntiAIChecker | AI 高频词、四字成语密度、"的"字密度、句式单调性 + Humanizer-zh 结构性痕迹 |
 
 6 个 Checker 并行执行，加权评分。
+
+**去 AI 味三层正交体系：** ①词级网文腔黑名单（QMAI 派生：陈词滥调、机械小动作、情绪直陈）；②密度统计（AI 词密度、四字成语、"的"字、句式单调）；③结构性痕迹（Humanizer-zh，源自 Wikipedia「Signs of AI writing」：否定式排比、句尾强行升华、同义词循环/同画面重述、虚假范围、系动词回避、过度限定）。三层在生成与润色 prompt 单点注入，互不重复。
+
+### 多智能体章节质量管线
+
+串行三角色管线，取代单模型 inline 改写环节（开关 `CHAPTER_PIPELINE_ENABLED`，默认开，可一键回退）：
+
+1. **主写手 drafter** — 出全章初稿。
+2. **逻辑与剧情核查 logic_critic** — 隔离上下文（只读本章正文 + 本章大纲 + 紧邻前章末尾），专查现有 checker 漏掉的**章内**语义缺陷：空间方向矛盾、画面重述/草稿叠写残留、空间/时间跨度突变、动作因果断裂、道具状态连续性。产结构化 issue → 定向改写只动命中处（最多 2 轮、plateau 终止、尽力修不阻断）。
+3. **用词与格式核查 prose_polish** — 复用既有 `apply_chapter_quality_gate`（三层去 AI 味 + 机械痕迹门 + persist-on-block）作第三棒。
+
+限流约束下选串行而非并行扇出；各棒独立降级，绝不因一棒失败丢整章；终稿与精简报告 echo 回主流程，角色中间推理不污染上下文。
 
 ### 写作质量系统
 
 - **7 大写作模块：** 展示非讲述 / 场景沉浸 / 对话技巧 / 张力控制 / 微观张力 / 情感共鸣 / 信息编织
 - **13 种悬念钩子：** 突然揭示 / 紧急危机 / 身份反转 / 两难选择 / 留白钩子 等
 - **12 个题材模板：** 玄幻 / 仙侠 / 都市 / 言情 / 悬疑 / 科幻 / 历史 / 末世 / 系统流 / 知乎短篇 等
-- **12 条写作禁忌 + 64 个 AI 词库**
+- **12 条写作禁忌 + 三层去 AI 味体系**（词级黑名单 / 密度统计 / 结构性痕迹）
 
 ### 知识库与风格学习
 
@@ -242,6 +254,14 @@ celery -A app.tasks:celery_app worker --loglevel=info
 # Celery Beat (定时任务)
 celery -A app.tasks:celery_app beat --loglevel=info
 ```
+
+## 已知问题 / 限制
+
+> 全流程测试暴露、根因在上游 LLM relay、产品侧尚待加固的问题。详见 `CHANGELOG.md [1.9.5]`。
+
+- **图像拒绝话术污染正文**（待修）：relay 偶尔把 scene_writer 的文本请求误路由到图像模型，返回拒绝语（如「我可以搜索图片，但目前似乎无法为您创建任何图片」），被当场景拼入正文。因其以句号结尾，骗过了截断检测（`looks_truncated`）。计划加「已知拒绝话术」检测门。
+- **relay 批次级 JSON 健壮性**（待修）：分卷大纲逐批生成时，单批 JSON 解析失败会令整卷大纲作废（`_parse_error` → 0 章物化）；卷越大（批次越多）越易中招。已用全书前提锚点缓解题材跑偏，但 json_repair + strict retry 的批次级恢复仍是深层待办。中短卷（≤3 批次/~12 章）实测稳定。
+- **章节字数方差**：`target_words`/`target_chapter_words` 只有下限门（< target×0.5）无上限；scene_writer 每场约 1850 字。`target_words=3200`（→3 场）落 4000–8000 带较稳，但仍有 LLM 方差（偶发短章）。截断/短章会被 persist-on-block 保留并标 draft，不会静默丢失。
 
 ## 路线图
 

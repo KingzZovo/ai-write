@@ -30,13 +30,14 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   if (!(options?.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
+  const { headers: optionHeaders, ...rest } = options ?? {}
   // PR-FIX-NO-STORE: bypass browser HTTP cache for all /api fetches.
   // Previously stale 422 / empty chapters responses lingered in browser cache
   // even after backend was fixed.
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { ...headers, ...options?.headers },
+    ...rest,
     cache: 'no-store',
-    ...options,
+    headers: { ...headers, ...(optionHeaders as Record<string, string> | undefined) },
   })
   if (res.status === 401) {
     clearToken()
@@ -47,7 +48,17 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   }
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(error.detail || 'API Error')
+    const detail = error?.detail
+    if (typeof detail === 'string') {
+      throw new Error(detail)
+    }
+    if (detail && typeof detail.message === 'string') {
+      throw new Error(detail.message)
+    }
+    if (detail && typeof detail.code === 'string') {
+      throw new Error(detail.code)
+    }
+    throw new Error(error?.message || 'API Error')
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -59,8 +70,24 @@ export function apiSSE(
   onChunk: (text: string) => void,
   onDone: () => void,
   onEvent?: (event: Record<string, unknown>) => void,
+  onError?: (err: Error) => void,
 ) {
   const controller = new AbortController()
+  let finished = false
+  const finish = (err?: Error) => {
+    if (finished) return
+    finished = true
+    try {
+      if (err) {
+        console.error('SSE error:', err)
+        onError?.(err)
+      }
+    } finally {
+      // onDone must run even if onError throws: callers rely on it to clear
+      // isGenerating / busy flags.
+      onDone()
+    }
+  }
 
   fetch(`${API_BASE}${path}`, {
     method: 'POST',
@@ -73,10 +100,11 @@ export function apiSSE(
       if (typeof window !== 'undefined') {
         window.location.href = '/login'
       }
+      finish(new Error('Unauthorized'))
       return
     }
     if (!res.ok || !res.body) {
-      throw new Error('SSE connection failed')
+      throw new Error(`SSE connection failed (${res.status})`)
     }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -92,7 +120,10 @@ export function apiSSE(
         if (line.startsWith('data: ')) {
           const data = line.slice(6)
           if (data === '[DONE]') {
-            onDone()
+            // Early return path: release the HTTP connection. (The normal
+            // while-done exit below has already drained the stream.)
+            reader.cancel().catch(() => {})
+            finish()
             return
           }
           try {
@@ -108,9 +139,13 @@ export function apiSSE(
         }
       }
     }
-    onDone()
+    finish()
   }).catch((err) => {
-    if (err.name !== 'AbortError') console.error('SSE error:', err)
+    if (err.name === 'AbortError') {
+      finish() // user-initiated cancel still needs the UI to settle via onDone
+      return
+    }
+    finish(err instanceof Error ? err : new Error(String(err)))
   })
 
   return controller

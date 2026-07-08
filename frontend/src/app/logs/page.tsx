@@ -141,7 +141,7 @@ export default function LogsPage() {
               <div className="text-gray-500">
                 {l.model || '—'} · {l.input_tokens}+{l.output_tokens}t · {l.latency_ms}ms · RAG {l.rag_hits_count}
               </div>
-              <div className="text-gray-400 truncate mt-1">{l.response_preview || '(no response)'}</div>
+              <div className="text-gray-400 truncate mt-1">{l.response_preview || '（无响应）'}</div>
               <div className="text-gray-400 text-[10px] mt-1">{new Date(l.created_at).toLocaleString()}</div>
             </button>
           ))}
@@ -188,12 +188,12 @@ export default function LogsPage() {
                 ))}
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Response</h3>
+                <h3 className="font-semibold mb-1">响应</h3>
                 <pre className="whitespace-pre-wrap p-2 bg-gray-50 rounded break-all">{selected.response_text}</pre>
               </div>
               {selected.error_message && (
                 <div>
-                  <h3 className="font-semibold mb-1 text-red-600">Error</h3>
+                  <h3 className="font-semibold mb-1 text-red-600">错误</h3>
                   <pre className="whitespace-pre-wrap p-2 bg-red-50 rounded break-all">{selected.error_message}</pre>
                 </div>
               )}

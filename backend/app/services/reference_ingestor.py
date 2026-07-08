@@ -50,21 +50,14 @@ from app.services.style_abstractor import abstract_style
 
 logger = logging.getLogger(__name__)
 
-_REDACTION_ENABLED = os.getenv("STYLE_REDACTION_ENABLED", "true").lower() in ("1", "true", "yes")
-_CONCURRENCY = int(os.getenv("REFERENCE_INGEST_CONCURRENCY", "3"))
-# Maximum number of automatic retry waves scheduled by reprocess after a
-# partial run. The first retry runs ``DECOMPILE_RETRY_INITIAL_DELAY`` seconds
-# after the partial run completes; subsequent retries back off geometrically.
-_MAX_AUTO_RETRIES = int(os.getenv("DECOMPILE_MAX_AUTO_RETRIES", "5"))
-_RETRY_INITIAL_DELAY = int(os.getenv("DECOMPILE_RETRY_INITIAL_DELAY", "300"))
-_RETRY_BACKOFF_FACTOR = float(os.getenv("DECOMPILE_RETRY_BACKOFF_FACTOR", "2.0"))
-# v1.14 — cap how many slices one retry wave processes. With 20k-slice
-# books a single wave would take ~28h to drain at semaphore=3, which
-# exceeds celery ``visibility_timeout=7200`` and causes the worker to
-# silently re-enqueue the same task. A 250-slice wave at semaphore=3
-# lasts ~20–40 min, well under the visibility window; the task
-# self-reschedules until drained.
-_RETRY_WAVE_BATCH = int(os.getenv("DECOMPILE_RETRY_WAVE_BATCH", "250"))
+from app.config import settings as _settings
+
+_REDACTION_ENABLED = _settings.STYLE_REDACTION_ENABLED
+_CONCURRENCY = _settings.REFERENCE_INGEST_CONCURRENCY
+_MAX_AUTO_RETRIES = _settings.DECOMPILE_MAX_AUTO_RETRIES
+_RETRY_INITIAL_DELAY = _settings.DECOMPILE_RETRY_INITIAL_DELAY
+_RETRY_BACKOFF_FACTOR = _settings.DECOMPILE_RETRY_BACKOFF_FACTOR
+_RETRY_WAVE_BATCH = _settings.DECOMPILE_RETRY_WAVE_BATCH
 
 
 async def _qdrant_client() -> AsyncQdrantClient:
@@ -551,6 +544,19 @@ async def retry_missing_branches(
             missing_style_rows = missing_style_rows[:_RETRY_WAVE_BATCH]
             missing_beat_rows = missing_beat_rows[:_RETRY_WAVE_BATCH]
 
+        # v1.16: do not keep the snapshot session open while the wave does
+        # long-running LLM/Qdrant work. Postgres has
+        # idle_in_transaction_session_timeout=10min in this environment; a
+        # 50+50 retry wave under provider cooldown can exceed that window, so
+        # the final db.refresh(book) would fail with asyncpg "connection is
+        # closed" and the Celery task would not schedule the next wave.
+        # Branch writers below use their own short-lived sessions, so this
+        # session is only needed again for the final authoritative recount.
+        if owns:
+            await db.rollback()
+            await db.close()
+            db = None
+
         client = await _qdrant_client()
         store = QdrantStore(client)
         await store.ensure_collections()
@@ -584,13 +590,24 @@ async def retry_missing_branches(
         style_filled = sum(r for r in style_results if isinstance(r, int))
         beat_filled = sum(r for r in beat_results if isinstance(r, int))
 
-        # Detached `book` may now be stale; reload before refresh.
-        await db.refresh(book)
-        retry_state = await _refresh_book_status(
-            db, book, attempt=int(attempt),
-            note=f"retry attempt {attempt} filled style={style_filled}, beat={beat_filled}",
-        )
-        await db.commit()
+        # Re-open a fresh session for the final recount/status update. This
+        # avoids reusing a connection that may have been closed while the wave
+        # was doing long-running branch work.
+        final_db = async_session_factory() if owns else db
+        assert final_db is not None
+        try:
+            book = await final_db.get(ReferenceBook, book_id)
+            if book is None:
+                return {"status": "error", "error": "book not found after retry wave"}
+            retry_state = await _refresh_book_status(
+                final_db, book, attempt=int(attempt),
+                note=f"retry attempt {attempt} filled style={style_filled}, beat={beat_filled}",
+            )
+            await final_db.commit()
+        finally:
+            if owns:
+                await final_db.close()
+                db = None
 
         return {
             "status": book.status,
@@ -606,7 +623,7 @@ async def retry_missing_branches(
                 await client.close()
             except Exception:
                 pass
-        if owns:
+        if owns and db is not None:
             await db.close()
 
 

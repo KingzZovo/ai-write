@@ -25,12 +25,14 @@ async def test_login_wrong_password(client):
 
 
 @pytest.mark.asyncio
-async def test_protected_endpoint_no_token(client):
+async def test_protected_endpoint_no_token(client, monkeypatch):
+    monkeypatch.setenv("DISABLE_AUTH", "0")
     resp = await client.get("/api/projects")
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_protected_endpoint_with_token(auth_client):
+async def test_protected_endpoint_with_token(auth_client, monkeypatch):
+    monkeypatch.setenv("DISABLE_AUTH", "0")
     resp = await auth_client.get("/api/projects")
     assert resp.status_code == 200

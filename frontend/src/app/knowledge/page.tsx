@@ -4,6 +4,37 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import type { BookSource, ReferenceBook, CrawlTask } from '@/stores/knowledgeStore'
 import { apiFetch } from '@/lib/api'
+import { usePolling } from '@/lib/usePolling'
+
+/** Response from paginated sources list */
+interface SourcesPageResponse {
+  sources: BookSource[]
+  total: number
+  total_pages: number
+  groups?: string[]
+}
+
+/** Batch test progress/result */
+interface BatchTestProgress {
+  status?: string
+  total: number
+  tested: number
+  ok: number
+  failed: number
+  message?: string
+}
+
+/** A book result from search or ranking APIs */
+interface SearchBookResult {
+  title: string
+  author?: string
+  book_url?: string
+  source_id?: string
+  source_name?: string
+  kind?: string
+  intro?: string
+  word_count?: string
+}
 
 type TabKey = 'sources' | 'books' | 'crawl' | 'explore'
 
@@ -46,7 +77,7 @@ export default function KnowledgePage() {
 /* ─── Sources Tab ──────────────────────────────────────────── */
 
 function SourcesTab() {
-  const [sources, setSources] = useState<any[]>([])
+  const [sources, setSources] = useState<BookSource[]>([])
   const [loading, setLoading] = useState(true)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -63,7 +94,7 @@ function SourcesTab() {
   // Batch operations
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchTesting, setBatchTesting] = useState(false)
-  const [batchTestResult, setBatchTestResult] = useState<any>(null)
+  const [batchTestResult, setBatchTestResult] = useState<BatchTestProgress | null>(null)
 
   const fetchSources = useCallback(async (p = page, s = search, g = selectedGroup) => {
     setLoading(true)
@@ -71,7 +102,7 @@ function SourcesTab() {
       const params = new URLSearchParams({ page: String(p), page_size: '30' })
       if (s) params.set('search', s)
       if (g) params.set('group', g)
-      const data = await apiFetch<any>(`/api/knowledge/sources?${params}`)
+      const data = await apiFetch<SourcesPageResponse>(`/api/knowledge/sources?${params}`)
       setSources(data.sources || [])
       setTotal(data.total || 0)
       setTotalPages(data.total_pages || 1)
@@ -85,7 +116,7 @@ function SourcesTab() {
     fetchSources()
   }
 
-  const importSources = async (arr: any[]) => {
+  const importSources = async (arr: unknown[]) => {
     await apiFetch('/api/knowledge/sources/import', {
       method: 'POST', body: JSON.stringify({ sources_json: arr })
     })
@@ -134,7 +165,7 @@ function SourcesTab() {
     if (selected.size === sources.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(sources.map((s: any) => s.id)))
+      setSelected(new Set(sources.map((s) => s.id)))
     }
   }
 
@@ -148,31 +179,43 @@ function SourcesTab() {
     fetchSources()
   }
 
+  // Batch-test progress polling: starts when handleBatchTest records a start
+  // timestamp, stops when all sources are tested or after the 10-min safety
+  // timeout, and is cleaned up on unmount.
+  const [batchTestStartedAt, setBatchTestStartedAt] = useState<number | null>(null)
+
+  usePolling(async (stop) => {
+    if (batchTestStartedAt === null) return
+    // Safety: stop polling after 10 min
+    if (Date.now() - batchTestStartedAt >= 600000) {
+      stop()
+      setBatchTestStartedAt(null)
+      setBatchTesting(false)
+      return
+    }
+    const progress = await apiFetch<BatchTestProgress>('/api/knowledge/sources/test-progress')
+    setBatchTestResult((prev) => prev ? { ...prev, ...progress } : progress)
+    if (progress.tested >= progress.total) {
+      stop()
+      setBatchTestStartedAt(null)
+      setBatchTesting(false)
+      fetchSources()
+    }
+  }, 3000, batchTestStartedAt !== null)
+
   const handleBatchTest = async () => {
     const ids = selected.size > 0 ? Array.from(selected) : null
     setBatchTesting(true)
     setBatchTestResult(null)
     try {
-      const data = await apiFetch<any>('/api/knowledge/sources/batch-test', {
+      const data = await apiFetch<BatchTestProgress>('/api/knowledge/sources/batch-test', {
         method: 'POST',
         body: JSON.stringify(ids ? { source_ids: ids } : {}),
       })
       setBatchTestResult(data)
-      // Start polling for progress
+      // Start polling for progress (handled by the usePolling hook above)
       if (data.status === 'started') {
-        const poll = setInterval(async () => {
-          try {
-            const progress = await apiFetch<any>('/api/knowledge/sources/test-progress')
-            setBatchTestResult((prev: any) => ({ ...prev, ...progress }))
-            if (progress.tested >= progress.total) {
-              clearInterval(poll)
-              setBatchTesting(false)
-              fetchSources()
-            }
-          } catch { /* */ }
-        }, 3000)
-        // Safety: stop polling after 10 min
-        setTimeout(() => { clearInterval(poll); setBatchTesting(false) }, 600000)
+        setBatchTestStartedAt(Date.now())
       } else {
         setBatchTesting(false)
       }
@@ -181,7 +224,7 @@ function SourcesTab() {
 
   const handleDeleteFailed = async () => {
     if (!confirm('确定删除全部测试失败的书源？此操作不可撤销。')) return
-    const data = await apiFetch<any>('/api/knowledge/sources/delete-all-failed', { method: 'POST' })
+    const data = await apiFetch<{ deleted: number }>('/api/knowledge/sources/delete-all-failed', { method: 'POST' })
     alert(`已删除 ${data.deleted} 个失败书源`)
     setSelected(new Set())
     setBatchTestResult(null)

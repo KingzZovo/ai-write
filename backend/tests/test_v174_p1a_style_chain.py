@@ -53,7 +53,9 @@ def test_render_style_profile_full():
     assert "避免庄严抒情" in joined  # bare string entry
     assert "禁用:" in joined and "打字者心头一热" in joined
     assert "语气词汇" in joined and "市井" in joined
-    assert "路明非看着马尔安" in joined
+    # PR-NO-RAW-INJECT (2026-05-05): sample_passages are intentionally NOT
+    # raw-injected into the prompt; style is learned via rules/dosage/tone above.
+    assert "路明非看着马尔安" not in joined
 
 
 def test_render_style_profile_empty_returns_empty_list():

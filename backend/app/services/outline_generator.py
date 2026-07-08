@@ -17,8 +17,82 @@ import re
 from typing import AsyncIterator
 
 from app.services.model_router import get_model_router
+from app.services.narrative_contract import WORLD_LOGIC_CONTRACT
 
 logger = logging.getLogger(__name__)
+
+
+OUTLINE_LLM_CALL_TIMEOUT_SECONDS = 240
+OUTLINE_FAST_CALL_TIMEOUT_SECONDS = 120
+OUTLINE_TITLE_CHECK_TIMEOUT_SECONDS = 120
+OUTLINE_VOLUME_MAX_TOKENS = 8192
+OUTLINE_VOLUME_STAGED_TASK_TYPE = "outline_book"
+BOOK_STAGE_MIN_CHARS = {
+    "skeleton": 1200,
+    "characters": 1200,
+    "world": 1200,
+}
+
+OUTLINE_WRITING_QUALITY_PROMPT = """
+
+【写作质量准则】
+生成前先校准硬事实，再输出内容：人物身份、关系、动机、伤势、筹码、时间线不能自相矛盾。
+不要用大量环境描写、华丽词藻、比喻修辞凑字数；扩写必须靠具体行动、选择代价、人物关系变化、任务进度和伏笔流转。
+保持故事感和正在发生的动作感，语言直接自然，避免文艺腔、模板腔、机械总结。
+每段只围绕本段职责展开；发现问题时只修正问题点，不推翻已合格内容。
+"""
+
+
+OUTLINE_BOOK_CONTRACT_PROMPT = f"""
+
+{WORLD_LOGIC_CONTRACT}
+
+【大纲层合同要求】
+本合同必须上移到全书大纲，不允许只在正文阶段补救。全书大纲必须明确写出一组题材无关、但由当前项目动态推导出来的 world_logic_contract，至少包含：
+- time_rules：本书时间成本、传讯/移动/准备/恢复/流程消耗规则。
+- space_rules：人物、物件、消息、风险、资源的空间路径和进入门槛。
+- power_resource_rules：主要势力/角色的权力、资源、能力、声望、关系、技术或制度权限差。
+- information_rules：信息获得、验证、误判、证据强度和角色认知边界。
+- mechanism_rules：能力、技术、法术、制度工具、金钱/人脉/证据等的触发条件、成本、边界、反制。
+- result_strength_rules：什么支撑能达成强结果；支撑不足时必须降级为疑点、局部胜利、暂缓、误导、代价胜或后续线索。
+
+
+- semantic_anchor_rules：若线索要躲过删除/抹除/审查机制，必须说明它为何是低语义、非直白文字、非数据库字段，以及如何被转译成图形、噪声、物理痕迹、数值或操作记录。
+- faction_bargain_rules：高风险收容、担保、庇护或越权行动必须写清执行方获得的政治、技术、资源或制度筹码，不能只写善意保护。
+- physical_constraint_rules：核心地点若长期停滞、无法拆除、无法封锁或天然成为盲区，必须给出可验证的物理/工程/空间原因和强行处理的后果。
+- cross_volume_catalyst_rules：分卷之间从发现线索到高危行动，必须有外部压力、倒计时、证据衰变、追踪或资源窗口作为行动催化剂。
+"""
+
+OUTLINE_VOLUME_CONTRACT_PROMPT = """
+
+【分卷层世界逻辑合同】
+本卷大纲必须继承全书 world_logic_contract，并额外输出以下 JSON 字段，字段内容必须从当前题材/设定/全书大纲动态推导，禁止写固定题材补丁：
+- volume_start_state：本卷开头的人物、地点、资源、信息、冲突状态。
+- volume_end_state：本卷结束时允许达到的状态；必须与转折支撑相匹配。
+- volume_power_resource_map：本卷主要冲突各方可调用的权力/资源/能力/关系/信息优势与代价。
+- volume_information_map：本卷关键信息的持有者、传播路径、误判、验证方式。
+- volume_mechanism_limits：本卷会影响局势的能力/技术/制度/资源工具的触发条件、成本、边界、反制。
+- volume_result_strength_ladder：本卷结果强度阶梯，说明弱支撑只能导向疑点/局部胜利/暂缓，强支撑才能导向公开翻盘/定论/全面胜利。
+- foreshadow_progression：本卷伏笔从埋→推→收的状态推进，不得跳级。
+"""
+
+
+OUTLINE_CHAPTER_CONTRACT_PROMPT = """
+
+【章节大纲合同字段】
+每个章节摘要/章节详细大纲都必须变成“可执行剧情状态机”，不是单纯剧情摘要。除原有字段外，必须输出：
+- start_state：本章开头承接上一章的时间、空间、人物、物件、信息和冲突状态。
+- end_state：本章结束时实际交付给下一章的状态。
+- time_delta：距离上一章/上一关键场景过去多久，哪些流程/移动/准备消耗了时间。
+- location_path：关键人物、物件、消息、风险从上一地点到本章地点的路径；无移动也要写“同地承接”。
+- entity_transfers：关键人物、物件、尸体、文书、数据、法器、资源、消息等如何到场/转移/留置。
+- information_state：本章开始和结束时各方已知/未知/误解的信息；弱信息只能推出疑点或假设。
+- power_resource_map：本章冲突各方的权力/资源差、违抗成本、制衡条件。
+- mechanism_limits：本章使用的能力、技术、法术、制度工具、证据、资源调用的条件、成本、边界、反制。
+- result_strength：本章允许达成的结果强度；支撑不足时必须降级为疑点、局部胜利、暂缓、误导、代价胜或后续线索。
+- handoff_to_next：本章如何把时间、空间、人物、物件、信息状态交接给下一章。
+- transition_bridge：本章结尾到下一章开头之间必须显化的过桥过程。必须写清时间流逝、空间移动、人物/物件/消息交接、信息可见性和未解决风险；不得只写“进入下一章/继续追查”这类抽象钩子。
+"""
 
 BOOK_OUTLINE_SYSTEM = """你是小说策划师。直接输出大纲内容，不要说任何多余的话。
 
@@ -178,7 +252,7 @@ VOLUME_OUTLINE_SYSTEM = """你是一位经验丰富的小说策划师。根据�
     {
       "chapter_idx": 1,
       "title": "章名",
-      "summary": "本章概要（30-50字）",
+      "summary": "本章过程概要（160-240字）",
       "key_events": ["事件"]
     }
   ],
@@ -211,6 +285,14 @@ VOLUME_META_SYSTEM = """你是一位经验丰富的小说策划师。根据全�
 
 chapter_count 必须是一个整数，不要输出 chapter_summaries 字段。
 
+【深度硬约束】
+- core_conflict 不少于 180 个中文字符，必须写清本卷开局状态、对抗双方、资源差、误判来源、阶段性胜负条件。
+- turning_points 至少 5 个；每个转折点不少于 80 个中文字符，必须包含“触发事件 + 参与人物 + 付出代价 + 导向的新局面”。
+- emotional_arc 不少于 120 个中文字符，必须描述至少 3 次情绪/立场变化，不得只写一种基调。
+- transition_to_next 不少于 120 个中文字符，必须写清本卷结尾留下的未解决动作、信息差、资源变化和下一卷入口。
+- volume_start_state、volume_end_state、volume_power_resource_map、volume_information_map、volume_mechanism_limits、volume_result_strength_ladder、foreshadow_progression 都必须作为 JSON 字段输出；每个字段不少于 100 个中文字符。
+- 不允许用“略”“待补充”“继续推进”“逐步展开”“一系列事件”等空泛词代替具体剧情设计。
+
 【命名与质量要求（PR-OL11 + PR-AI1）】
 - title 为本卷卷名，4-8 字诗意短词（如《潮起》《骨灯》《城下》）。平铺直白的主题词不可代替卷名。
 - core_conflict、turning_points、foreshadows 都要仅限本卷，到本卷末必须交代清楚。
@@ -227,11 +309,11 @@ VOLUME_CHAPTERS_SYSTEM = """你是一位经验丰富的小说策划师。根据�
     {
       "chapter_idx": 整数,
       "title": "章名（见下方【章名规则】）",
-      "summary": "本章概要（60-100 字）",
-      "main_progress": "本章主线推进点（1 句）",
-      "side_progress": "本章支线/暗线推进点（1 句，本章无可填 无）",
-      "foreshadow_state": "本章埋下/活动/消解的伏笔，名称+状态“埋/推/收”，本章无可填 无",
-      "key_scene": "本章关键场景（1 个，一句话交代“在哪里 + 发生什么 + 主要人物”）",
+      "summary": "本章过程概要（160-240 字）",
+      "main_progress": "本章主线推进点（60-100 字）",
+      "side_progress": "本章支线/暗线推进点（40-80 字，本章无可填 无）",
+      "foreshadow_state": "本章埋下/活动/消解的伏笔，名称+状态“埋/推/收”，40-80 字，本章无可填 无",
+      "key_scene": "本章关键场景（60-100 字，交代“在哪里 + 发生什么 + 主要人物 + 场景结果”）",
       "characters_present": ["本章出场主要人物"],
       "key_events": ["本章关键事件一", "..."]
     }
@@ -252,13 +334,42 @@ VOLUME_CHAPTERS_SYSTEM = """你是一位经验丰富的小说策划师。根据�
 5) 字数以短为主、可长可短，不需全卷统一；只要避免把一句概述性句子当成标题（顶多不要超过 14 个汉字）。不要为凑字数而生造，也不要为凑短而丢主谓。
 
 【其它质量硬约束】
-- summary 严格 60-100 字，必须同时交代 人物+场景+事件+本章末状态。
+- summary 严格 160-240 字，必须同时交代 人物+场景+事件过程+转折+本章末状态。
+- main_progress、side_progress、foreshadow_state、key_scene 必须是可执行剧情设计，不得只写短标签。
 - chapter_idx 从用户指定的 start 开始，连续递增到 end，不跳号不超出区间。
 - main_progress / side_progress / foreshadow_state / key_scene 都不可留空；本章未使用可填「无」。
 - 所有自创器物/术语使用现代汉语真实词汇或含义可推测的复合词。
 - 同一伏笔 foreshadow_state 在本卷内状态只能是 埋→推→收 递进，不可后退。
 
 输出纯 JSON，不要包含 markdown 代码块标记。"""
+
+# v1.4.2 Task C hardening — the full VOLUME_CHAPTERS_SYSTEM plus the
+# chapter contract is useful for one-off detailed chapter outlines, but it is
+# too heavy for the 10-at-a-time volume skeleton path. That path first needs a
+# stable, complete set of chapter anchors; detailed state-machine fields are
+# generated later by generate_chapter_outline.
+VOLUME_CHAPTERS_SKELETON_SYSTEM = """你是一位经验丰富的中文长篇小说策划师。你的任务是批量生成分卷章节骨架，必须稳定、完整、可保存。
+
+只输出一个 JSON 对象，不要 markdown，不要解释，不要代码块：
+{
+  "batch": [
+    {
+      "chapter_idx": 整数,
+      "title": "章名",
+      "summary": "本章过程概要，80-140 个中文字符",
+      "key_events": ["关键事件一", "关键事件二"]
+    }
+  ]
+}
+
+硬性要求：
+- batch 数组长度必须等于用户要求的章节数。
+- chapter_idx 必须从 start 连续递增到 end，不跳号、不重复、不超出范围。
+- 每个 summary 用 80-140 个中文字符写清：人物、地点、动作、转折、章末状态。
+- 每章至少 2 个 key_events，每个事件必须是具体剧情动作，不要写“推进剧情”“揭开秘密”等空泛词。
+- title 使用 2-8 个汉字，优先选择本章关键人物动作、具象意象或章末状态；不要使用“第N章”、纯数字、冒号、工程化词汇或不可读生造词。
+- 只做骨架，不要输出 start_state、end_state、time_delta 等详细章节合同字段。
+"""
 
 # PR-OL17 + PR-OL18: SSE chapter outline path now produces a process-narrative
 # 300-500 字 summary instead of the legacy keyword schema, parity with
@@ -442,6 +553,43 @@ def extract_chapter_breakdown(volume_outline: dict | list | None) -> dict[int, d
     return out
 
 
+# PR-CH-OUTLINE-ENRICH (2026-06-29): generating a level=chapter outline used to
+# write only the ``outlines`` table; ``chapters.outline_json`` (what the prose
+# generator + readiness gate actually read) kept the thin volume-batch skeleton.
+# This splices the freshly generated per-chapter content INTO that skeleton so
+# prose sees the rich outline, while keeping the skeleton's authoritative
+# chapter_idx and never regressing a populated field back to empty/garbage.
+def merge_chapter_outline_enrichment(skeleton: dict | None, generated: dict | None) -> dict:
+    """Merge a freshly generated chapter outline into the existing skeleton.
+
+    Rules:
+      - Start from the skeleton (the row already stored on ``chapters``).
+      - ``chapter_idx`` is always taken from the skeleton (LLM must not renumber).
+      - A generated field overwrites the skeleton ONLY when it carries real
+        content (non-empty str / non-empty list-or-dict / non-None scalar).
+      - ``_parse_error`` payloads and the bare ``raw_text`` blob are ignored so
+        a parse failure never poisons a usable skeleton.
+    """
+    merged: dict = dict(skeleton) if isinstance(skeleton, dict) else {}
+    if not isinstance(generated, dict) or generated.get("_parse_error"):
+        return merged
+    _skeleton_idx = merged.get("chapter_idx")
+    for key, value in generated.items():
+        if key in ("chapter_idx", "_parse_error", "raw_text"):
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                merged[key] = value
+        elif isinstance(value, (list, dict)):
+            if value:
+                merged[key] = value
+        elif value is not None:
+            merged[key] = value
+    if _skeleton_idx is not None:
+        merged["chapter_idx"] = _skeleton_idx
+    return merged
+
+
 class OutlineGenerator:
     """Generates hierarchical outlines: book → volume → chapter."""
 
@@ -516,8 +664,14 @@ class OutlineGenerator:
         """
         from app.services.prompt_loader import load_prompt
         system = await load_prompt("outline_book", fallback=BOOK_OUTLINE_SYSTEM)
+        if not self._looks_like_full_book_outline_prompt(system):
+            logger.warning(
+                "outline_book PromptRegistry prompt is legacy/short; using built-in full outline contract"
+            )
+            system = BOOK_OUTLINE_SYSTEM
         # PR-OL10: replace free-form volume-count guidance with hard directive.
         system = self._apply_scale_to_prompt(system, scale)
+        system = system + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": f"请根据以下创意生成全书大纲：\n\n{user_input}"},
@@ -531,7 +685,7 @@ class OutlineGenerator:
 
         if stream:
             return self.router.generate_stream(
-                task_type="outline",
+                task_type="outline_book",
                 messages=messages,
                 _log_meta=self._log_meta("outline_book"),
             )
@@ -540,16 +694,124 @@ class OutlineGenerator:
             return await self._generate_book_outline_staged(user_input, scale=scale)
 
         result = await self.router.generate(
-            task_type="outline",
+            task_type="outline_book",
             messages=messages,
             _log_meta=self._log_meta("outline_book"),
         )
         return self._parse_json(result.text)
 
+    @staticmethod
+    def _looks_like_full_book_outline_prompt(prompt: str) -> bool:
+        """Detect whether a registry prompt carries the full book-outline contract."""
+        if not prompt:
+            return False
+        required = ("九", "主要角色与小传", "世界观设定集", "<volume-plan>")
+        return all(token in prompt for token in required)
+
     # ------------------------------------------------------------------
     # v1.4.2 — staged book outline implementation
     # ------------------------------------------------------------------
     _SECTION_NUMS = ("一", "二", "三", "四", "五", "六", "七", "八", "九")
+
+    @staticmethod
+    def _fallback_book_skeleton(user_input: str, scale: dict | None = None) -> str:
+        """Deterministic stage-A skeleton used when the model returns an empty success.
+
+        Canon-neutral: it echoes the caller's ``user_input`` (which carries the
+        authoritative premise / fact-lock) and lays down a generic structural
+        scaffold. It must NOT hardcode any book-specific protagonist name,
+        world noun, or plot device — doing so would contradict the project's
+        own facts (and corrupt every other project that hits this path when the
+        endpoint is slow).
+        """
+        expected = int(scale.get("n_volumes") or 5) if scale else 5
+        chapters_per_volume = int(scale.get("chapters_per_volume") or 150) if scale else 150
+        total_chapters = int(scale.get("n_chapters") or expected * chapters_per_volume) if scale else expected * chapters_per_volume
+        volume_plan: list[dict] = []
+        remaining = total_chapters
+        for idx in range(1, expected + 1):
+            left = expected - idx
+            est_chapters = remaining if left == 0 else min(chapters_per_volume, remaining - left)
+            remaining -= est_chapters
+            volume_plan.append(
+                {
+                    "idx": idx,
+                    "title": f"第{idx}卷",
+                    "theme": "身份追索、证据推进与代价升级",
+                    "core_conflict": "主角用行动和代价推进一个可验证目标，并留下进入下一卷的债务或伏笔。",
+                    "est_chapters": est_chapters,
+                }
+            )
+        return (
+            "一、作品定位与核心卖点\n"
+            f"项目基础（须严格遵守，不得改写其中的人物名、地名与设定）：\n{user_input}\n"
+            "主角不是靠奇遇一路碾压，而是在每次取证、救人、交易和战斗中付出清晰代价，"
+            "逐步逼近上面项目基础设定的核心真相。核心卖点是力量的代价、证据链、"
+            "人物关系的利益变化，以及每卷任务推进带来的真相揭示。\n\n"
+            "三、主线剧情总览\n"
+            "开局主角因一桩与自身相关的异常被卷入冲突，为保住身边人与线索，必须拿到第一份关键证据。"
+            "中段主角从局部冲突进入更高层级，逐步发现敌对方不是单点作恶，而是一整套用合法名义维持的结构。"
+            "后段他需要在公开真相、保护盟友和保留自身力量之间选择，最终把私人动机推进为更大的对抗。"
+            "每一卷都要完成一个可验证任务，并留下下一卷必须偿还的代价或伏笔。\n\n"
+            "七、分卷规划\n"
+            "<volume-plan>\n"
+            f"{json.dumps(volume_plan, ensure_ascii=False, indent=2)}\n"
+            "</volume-plan>\n"
+            "各卷依次建立危机、暴露盟友风险、扩展冲突范围、把多方关系推到公开冲突、完成终局对抗；"
+            "具体人物、地点与机制一律以上面的项目基础设定为准。\n\n"
+            "八、长期伏笔与回收计划\n"
+            "伏笔围绕项目基础中给出的核心谜团（如失踪、身份、被改写的记录、导师手法与终局对手的合法性）展开。"
+            "早期每个线索必须对应后续行动，并在指定卷数回收。\n\n"
+            "九、主题与情感曲线\n"
+            "主题不是抽象成长，而是主角从只想保住家人，走到愿意承担公开真相的代价。情感曲线依次经历互相利用、证据共享、代价分担、立场冲突和共同承担。"
+        )
+
+    @staticmethod
+    def _fallback_small_stage_text(stage_name: str, user_input: str) -> str:
+        """Canon-neutral fallback for the B2/B4/B5/C book-outline sub-stages.
+
+        These fire only when the model endpoint is slow/empty. They must NOT
+        hardcode a specific protagonist, ally, faction or world noun — the
+        earlier version baked in a stale 神裔 conception (沈砚 / 血印 / 王朝档案司
+        / 祭台) that contradicted the project's own canonical-facts lock and
+        produced an outline naming two different protagonists. Instead we emit
+        a structural scaffold that explicitly defers every concrete name and
+        device to the project's ``user_input``.
+        """
+        anchor = (
+            "（注意：以下为结构骨架，所有具体人物名、地名、组织名与力量机制，"
+            "必须严格采用本项目设定，不得另造名字。本项目设定如下）\n"
+            f"{user_input}\n"
+        )
+        scaffolds = {
+            "B2/characters": (
+                "二、主要角色与小传\n" + anchor +
+                "请按上述设定给出：主角（动机、初始处境、力量及其代价、核心局限）；"
+                "关键救助者/引路人（身份、目标、与主角的筹码交换、首次登场情境）；"
+                "导师型角色（提供的能力或方法、附带的代价测试）；"
+                "阶段性敌人与终局对手（各自掌握的资源/权力、与主角冲突的根源）。"
+            ),
+            "B4/relationships": (
+                "四、主要矛盾与关系网络\n" + anchor +
+                "请按上述设定写清：主角与救助者/引路人之间的信任如何在共同承担代价中建立与裂变；"
+                "主角与导师的带条件关系（每次获得能力要放弃什么）；"
+                "主角与阶段敌人、终局对手之间的追逐/受害-维护关系，"
+                "以及这些关系如何承载核心真相的回收。"
+            ),
+            "B5/factions": (
+                "五、势力格局\n" + anchor +
+                "请按上述设定列出：主导秩序的官方/机构方（掌握的记录与权力、公开目标与隐藏筹码）；"
+                "筛选或评估主角的组织（评估标准、代表人物）；受压迫的弱势群体（保存的线索）；"
+                "终局制度敌人；以及灰色中介网络（既可助力也会抬高代价）。"
+            ),
+            "C/world": (
+                "六、世界观设定集\n" + anchor +
+                "请按上述设定写清：地理与信息/追捕的流动方式（时间成本如何影响行动结果）；"
+                "历史与力量体系的来源、能力边界与代价；政治秩序由哪几方共同维护，"
+                "任何单方结论只能形成疑点、必须交叉验证才能推动强结果。世界观必须服务人物行动与伏笔回收。"
+            ),
+        }
+        return scaffolds.get(stage_name, "")
 
     async def _generate_book_outline_staged(self, user_input: str, *, scale: dict | None = None) -> dict:
         """Three-call staged book outline (A skeleton → B/C in parallel).
@@ -561,57 +823,164 @@ class OutlineGenerator:
         # Stage A — skeleton (一、三、七、八、九)
         # PR-OL10: inject hard volume-count directive into skeleton prompt.
         skeleton_system = self._apply_scale_to_prompt(BOOK_OUTLINE_SKELETON_SYSTEM, scale)
+        skeleton_system = skeleton_system + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
         skeleton_msgs = [
             {"role": "system", "content": skeleton_system},
             {"role": "user", "content": f"创意：\n{user_input}\n\n请生成骨架五段。"},
         ]
-        skeleton_result = await self.router.generate(
-            task_type="outline_book",
-            messages=skeleton_msgs,
-        )
-        skeleton_text = (getattr(skeleton_result, "text", "") or "").strip()
+        skeleton_text = ""
+        for attempt in range(1, 3):
+            try:
+                skeleton_result = await asyncio.wait_for(
+                    self.router.generate(
+                        task_type="outline_book",
+                        messages=skeleton_msgs,
+                        stream=False,
+                        request_timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
+                    ),
+                    timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
+                )
+                skeleton_text = (getattr(skeleton_result, "text", "") or "").strip()
+                if skeleton_text:
+                    break
+                logger.warning("Staged outline: stage A attempt %s returned empty text", attempt)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Staged outline: stage A attempt %s failed: %s", attempt, exc)
         if not skeleton_text:
-            logger.warning("Staged outline: stage A returned empty text")
-            return {"raw_text": "", "_parse_error": True, "_staged": True}
+            logger.warning("Staged outline: stage A returned empty text; using local structured fallback")
+            skeleton_text = self._fallback_book_skeleton(user_input, scale=scale)
 
         shared_context = (
             f"创意：\n{user_input}\n\n已生成的骨架：\n{skeleton_text}\n"
         )
-        characters_msgs = [
-            {"role": "system", "content": BOOK_OUTLINE_CHARACTERS_SYSTEM},
-            {"role": "user", "content": shared_context + "\n请生成二、四、五三段。"},
-        ]
-        world_msgs = [
-            {"role": "system", "content": BOOK_OUTLINE_WORLD_SYSTEM},
-            {"role": "user", "content": shared_context + "\n请生成六、世界观设定集。"},
-        ]
-        characters_result, world_result = await asyncio.gather(
-            self.router.generate(task_type="outline_book", messages=characters_msgs),
-            self.router.generate(task_type="outline_book", messages=world_msgs),
-            return_exceptions=True,
-        )
+        def _fallback_small_stage(stage_name: str) -> str:
+            return self._fallback_small_stage_text(stage_name, user_input)
 
-        def _safe_text(res, stage_name: str) -> str:
-            if isinstance(res, BaseException):
+        async def _generate_small_stage(stage_name: str, messages: list[dict], min_chars: int = 0) -> str:
+            last_text = ""
+            for attempt in range(1, 3):
+                try:
+                    retry_messages = messages
+                    if attempt > 1:
+                        retry_messages = [dict(item) for item in messages]
+                        retry_messages.append({
+                            "role": "user",
+                            "content": "上一轮返回为空或过短。请降低修辞密度，直接输出具体人物、目标、代价、关系变化、任务推进和伏笔流转；不要解释原因。",
+                        })
+                    result = await asyncio.wait_for(
+                        self.router.generate(
+                            task_type="outline_book",
+                            messages=retry_messages,
+                            stream=False,
+                            request_timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
+                        ),
+                        timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Staged outline: stage %s attempt %s failed: %s", stage_name, attempt, exc)
+                    continue
+                last_text = (getattr(result, "text", "") or "").strip()
+                if last_text and (not min_chars or len(last_text) >= min_chars):
+                    return last_text
                 logger.warning(
-                    "Staged outline: stage %s failed: %s", stage_name, res
+                    "Staged outline: stage %s attempt %s returned short text, length=%s",
+                    stage_name,
+                    attempt,
+                    len(last_text),
                 )
-                return ""
-            return (getattr(res, "text", "") or "").strip()
+            fallback_text = _fallback_small_stage(stage_name)
+            if fallback_text:
+                logger.warning("Staged outline: stage %s using local structured fallback", stage_name)
+                return fallback_text
+            return last_text
 
-        characters_text = _safe_text(characters_result, "B/characters")
-        world_text = _safe_text(world_result, "C/world")
+        characters_system = BOOK_OUTLINE_CHARACTERS_SYSTEM + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
+        world_system = BOOK_OUTLINE_WORLD_SYSTEM + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
+
+        section_two = await _generate_small_stage(
+            "B2/characters",
+            [
+                {"role": "system", "content": characters_system},
+                {
+                    "role": "user",
+                    "content": shared_context
+                    + "\n请只生成二、主要角色与小传。必须以“二、主要角色与小传”开头。"
+                    + "\n至少写 5 个关键角色；每个角色必须包含目标、代价、关系牵引、行动压力和后续伏笔，不要靠环境描写或华丽词藻凑字。"
+                    + "\n本段不少于 1000 个中文字符。",
+                },
+            ],
+            min_chars=1000,
+        )
+        section_four = await _generate_small_stage(
+            "B4/relationships",
+            [
+                {"role": "system", "content": characters_system},
+                {
+                    "role": "user",
+                    "content": shared_context
+                    + f"\n已生成的角色段：\n{section_two}\n"
+                    + "\n请只生成四、主要矛盾与关系网络。必须以“四、主要矛盾与关系网络”开头。"
+                    + "\n写清谁推动谁、谁付出代价、关系如何从利用/信任/背叛/同盟发生变化，并标明哪些关系承担伏笔流转。"
+                    + "\n本段不少于 500 个中文字符。",
+                },
+            ],
+            min_chars=500,
+        )
+        section_five = await _generate_small_stage(
+            "B5/factions",
+            [
+                {"role": "system", "content": characters_system},
+                {
+                    "role": "user",
+                    "content": shared_context
+                    + f"\n已生成的角色与关系段：\n{section_two}\n\n{section_four}\n"
+                    + "\n请只生成五、势力格局。必须以“五、势力格局”开头。"
+                    + "\n列出 3-5 个主要势力，写清核心利益、代表人物、可动用资源、制衡关系、与主角目标的冲突或交易。"
+                    + "\n本段不少于 500 个中文字符。",
+                },
+            ],
+            min_chars=500,
+        )
+        world_text = await _generate_small_stage(
+            "C/world",
+            [
+                {"role": "system", "content": world_system},
+                {
+                    "role": "user",
+                    "content": shared_context
+                    + "\n请只生成六、世界观设定集。必须以“六、世界观设定集”开头。"
+                    + "\n世界观设定必须服务人物行动、代价、资源限制、任务推进和伏笔回收，不要写与剧情无关的风景说明。",
+                },
+            ],
+            min_chars=900,
+        )
+        characters_text = "\n\n".join(
+            text for text in (section_two, section_four, section_five) if text
+        )
 
         combined = self._reassemble_sections(
             skeleton_text, characters_text, world_text
         )
+        _book_buckets = self._split_book_sections(
+            skeleton_text, characters_text, world_text
+        )
+        volume_plan = self._extract_volume_plan(combined)
+        combined = self._strip_volume_plan_tags(combined)
+        _structured = self._build_book_structured(_book_buckets)
         return {
             "raw_text": combined,
+            "volume_plan": volume_plan,
+            "structured": _structured,
             "_staged": True,
+            "_stage_lengths": {
+                "skeleton": len(skeleton_text),
+                "characters": len(characters_text),
+                "world": len(world_text),
+            },
             "_stages": {
-                "skeleton": bool(skeleton_text),
-                "characters": bool(characters_text),
-                "world": bool(world_text),
+                "skeleton": len(skeleton_text) >= BOOK_STAGE_MIN_CHARS["skeleton"],
+                "characters": len(characters_text) >= BOOK_STAGE_MIN_CHARS["characters"],
+                "world": len(world_text) >= BOOK_STAGE_MIN_CHARS["world"],
             },
         }
 
@@ -693,32 +1062,38 @@ class OutlineGenerator:
         """
         if not text:
             return None
-        m = re.search(r"<volume-plan>\s*(.+?)\s*</volume-plan>", text, re.DOTALL)
-        if not m:
+        matches = re.findall(r"<volume-plan>\s*(.+?)\s*</volume-plan>", text, re.DOTALL)
+        if not matches:
             return None
-        body = m.group(1).strip()
-        # Strip stray ```json ... ``` fences
-        body = re.sub(r"^```(?:json)?\s*", "", body)
-        body = re.sub(r"\s*```$", "", body)
-        try:
-            data = json.loads(body)
-        except Exception as exc:
-            logger.warning("_extract_volume_plan: JSON parse failed: %s", exc)
-            return None
-        if not isinstance(data, list) or not data:
-            return None
-        out: list[dict] = []
-        for i, item in enumerate(data, start=1):
-            if not isinstance(item, dict):
+        last_error: Exception | None = None
+        for raw_body in reversed(matches):
+            body = raw_body.strip()
+            # Strip stray ```json ... ``` fences
+            body = re.sub(r"^```(?:json)?\s*", "", body)
+            body = re.sub(r"\s*```$", "", body)
+            try:
+                data = json.loads(body)
+            except Exception as exc:
+                last_error = exc
                 continue
-            out.append({
-                "idx": int(item.get("idx") or i),
-                "title": str(item.get("title") or f"第{i}卷"),
-                "theme": str(item.get("theme") or ""),
-                "core_conflict": str(item.get("core_conflict") or ""),
-                "est_chapters": int(item.get("est_chapters") or 10),
-            })
-        return out or None
+            if not isinstance(data, list) or not data:
+                continue
+            out: list[dict] = []
+            for i, item in enumerate(data, start=1):
+                if not isinstance(item, dict):
+                    continue
+                out.append({
+                    "idx": int(item.get("idx") or i),
+                    "title": str(item.get("title") or f"第{i}卷"),
+                    "theme": str(item.get("theme") or ""),
+                    "core_conflict": str(item.get("core_conflict") or ""),
+                    "est_chapters": int(item.get("est_chapters") or 10),
+                })
+            if out:
+                return out
+        if last_error:
+            logger.warning("_extract_volume_plan: JSON parse failed: %s", last_error)
+        return None
 
     # ------------------------------------------------------------------
     # PR-OL15 — strip <volume-plan>...</volume-plan> tags from raw text.
@@ -760,6 +1135,7 @@ class OutlineGenerator:
         a_buf: list[str] = []
         # PR-OL10: inject hard volume-count directive into skeleton prompt.
         skeleton_system = self._apply_scale_to_prompt(BOOK_OUTLINE_SKELETON_SYSTEM, scale)
+        skeleton_system = skeleton_system + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
         skeleton_msgs = [
             {"role": "system", "content": skeleton_system},
             {
@@ -780,23 +1156,14 @@ class OutlineGenerator:
         except Exception as exc:  # noqa: BLE001 — surface as structured event
             logger.warning("Staged stream: stage A failed: %s", exc)
             yield {"event": "error", "stage": "A", "message": str(exc)}
-            yield {
-                "event": "done",
-                "full_outline": "",
-                "_stages": {"skeleton": False, "characters": False, "world": False},
-            }
-            return
+            a_buf = [self._fallback_book_skeleton(user_input, scale=scale)]
 
         skeleton_text = "".join(a_buf).strip()
-        yield {"event": "stage_end", "stage": "A", "full_text": skeleton_text}
-
         if not skeleton_text:
-            yield {
-                "event": "done",
-                "full_outline": "",
-                "_stages": {"skeleton": False, "characters": False, "world": False},
-            }
-            return
+            logger.warning("Staged stream: stage A returned empty text; using local structured fallback")
+            skeleton_text = self._fallback_book_skeleton(user_input, scale=scale)
+            yield {"event": "stage_chunk", "stage": "A", "delta": skeleton_text}
+        yield {"event": "stage_end", "stage": "A", "full_text": skeleton_text}
 
         shared_context = (
             f"创意：\n{user_input}\n\n已生成的骨架：\n{skeleton_text}\n"
@@ -809,11 +1176,13 @@ class OutlineGenerator:
                 "msgs": [
                     {
                         "role": "system",
-                        "content": BOOK_OUTLINE_CHARACTERS_SYSTEM,
+                        "content": BOOK_OUTLINE_CHARACTERS_SYSTEM + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT,
                     },
                     {
                         "role": "user",
-                        "content": shared_context + "\n请生成二、四、五三段。",
+                        "content": shared_context
+                        + "\n请生成二、四、五三段。必须包含：二、主要角色与小传；四、主要矛盾与关系网络；五、势力格局。"
+                        + "\n每一段都要可执行、具体，三段合计不少于 1800 个中文字符；扩写必须靠人物目标、选择代价、关系变化、任务推进和伏笔流转，不要只写提纲标题。",
                     },
                 ],
             },
@@ -824,11 +1193,11 @@ class OutlineGenerator:
                 "msgs": [
                     {
                         "role": "system",
-                        "content": BOOK_OUTLINE_WORLD_SYSTEM,
+                        "content": BOOK_OUTLINE_WORLD_SYSTEM + OUTLINE_BOOK_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT,
                     },
                     {
                         "role": "user",
-                        "content": shared_context + "\n请生成六、世界观设定集。",
+                        "content": shared_context + "\n请生成六、世界观设定集。世界观设定必须服务人物行动、代价、资源限制、任务推进和伏笔回收。",
                     },
                 ],
             },
@@ -861,6 +1230,35 @@ class OutlineGenerator:
                     await queue.put(
                         {"event": "stage_chunk", "stage": code, "delta": delta}
                     )
+                current_text = "".join(buffers[code]).strip()
+                min_chars = (
+                    BOOK_STAGE_MIN_CHARS["characters"]
+                    if code == "B"
+                    else BOOK_STAGE_MIN_CHARS["world"]
+                )
+                if len(current_text) < min_chars:
+                    logger.warning(
+                        "Staged stream: stage %s returned too little content (%d < %d); retrying non-stream",
+                        code,
+                        len(current_text),
+                        min_chars,
+                    )
+                    fallback = await asyncio.wait_for(
+                        self.router.generate(
+                            task_type="outline_book",
+                            messages=stage["msgs"],
+                            _log_meta=self._log_meta(f"outline_book_stage_{code}_fallback"),
+                            stream=False,
+                            request_timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
+                        ),
+                        timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
+                    )
+                    text = (fallback.text or "").strip()
+                    if len(text) > len(current_text):
+                        buffers[code] = [text]
+                        await queue.put(
+                            {"event": "stage_chunk", "stage": code, "delta": text}
+                        )
                 await queue.put(
                     {
                         "event": "stage_end",
@@ -915,10 +1313,15 @@ class OutlineGenerator:
             "full_outline": combined,
             "volume_plan": volume_plan,
             "structured": _structured,
+            "_stage_lengths": {
+                "skeleton": len(skeleton_text),
+                "characters": len(characters_text),
+                "world": len(world_text),
+            },
             "_stages": {
-                "skeleton": bool(skeleton_text),
-                "characters": bool(characters_text),
-                "world": bool(world_text),
+                "skeleton": len(skeleton_text) >= BOOK_STAGE_MIN_CHARS["skeleton"],
+                "characters": len(characters_text) >= BOOK_STAGE_MIN_CHARS["characters"],
+                "world": len(world_text) >= BOOK_STAGE_MIN_CHARS["world"],
             },
         }
 
@@ -938,7 +1341,7 @@ class OutlineGenerator:
         if user_notes:
             context += f"\n\n用户补充说明：{user_notes}"
 
-        _vol_sys = VOLUME_OUTLINE_SYSTEM
+        _vol_sys = VOLUME_OUTLINE_SYSTEM + OUTLINE_VOLUME_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
         if self.chapter_naming_directive:
             _vol_sys = _vol_sys + "\n\n" + self.chapter_naming_directive
         messages = [
@@ -946,11 +1349,18 @@ class OutlineGenerator:
             {"role": "user", "content": context},
         ]
 
+        if stream and staged:
+            return self._generate_volume_outline_staged_text_stream(
+                book_outline=book_outline,
+                volume_idx=volume_idx,
+                user_notes=user_notes,
+            )
+
         if stream:
-            # Legacy single-call streaming path. Kept for SSE callers that
-            # want text chunks; staged mode is non-stream for now.
+            # Legacy single-call streaming path. Kept for callers that
+            # explicitly disable staged mode.
             return self.router.generate_stream(
-                task_type="outline",
+                task_type="outline_volume",
                 messages=messages,
                 _log_meta=self._log_meta("outline_volume"),
             )
@@ -964,10 +1374,24 @@ class OutlineGenerator:
             )
 
         result = await self.router.generate(
-            task_type="outline",
+            task_type="outline_volume",
             messages=messages,
         )
         return self._parse_json(result.text)
+
+    async def _generate_volume_outline_staged_text_stream(
+        self,
+        book_outline: dict,
+        volume_idx: int,
+        user_notes: str = "",
+    ) -> AsyncIterator[str]:
+        """SSE-compatible wrapper for the staged volume-outline pipeline."""
+        result = await self._generate_volume_outline_staged(
+            book_outline=book_outline,
+            volume_idx=volume_idx,
+            user_notes=user_notes,
+        )
+        yield json.dumps(result, ensure_ascii=False, indent=2)
 
     # ------------------------------------------------------------------
     # v1.4.2 Task C — staged volume outline
@@ -981,8 +1405,8 @@ class OutlineGenerator:
         """Generate a volume outline in two stages to avoid long-output cliff.
 
         Stage V1: meta only (no chapter_summaries). chapter_count is an int.
-        Stage V2: loop ceil(chapter_count/10) batches, each returning at most
-        10 chapter summaries. Each batch sees V1 meta + the last 3 summaries
+        Stage V2: loop ceil(chapter_count/5) batches, each returning at most
+        5 chapter summaries. Each batch sees V1 meta + the last 2 summaries
         from the previous batch so adjacent batches stay consistent.
 
         Returns the merged dict with the same shape the legacy call produced:
@@ -997,21 +1421,25 @@ class OutlineGenerator:
             meta_ctx += f"\n\n用户补充说明：{user_notes}"
 
         try:
-            meta_result = await self.router.generate(
-                task_type="outline_volume",
-                messages=[
-                    {"role": "system", "content": VOLUME_META_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
-                    {"role": "user", "content": meta_ctx},
-                ],
+            meta_result = await asyncio.wait_for(
+                self.router.generate(
+                    task_type=OUTLINE_VOLUME_STAGED_TASK_TYPE,
+                    messages=[
+                        {"role": "system", "content": VOLUME_META_SYSTEM + OUTLINE_VOLUME_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
+                        {"role": "user", "content": meta_ctx},
+                    ],
+                    max_tokens=4096,
+                ),
+                timeout=OUTLINE_LLM_CALL_TIMEOUT_SECONDS,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Staged volume outline: meta call failed: %s", exc)
+            logger.warning("Staged volume outline: meta call failed: %r", exc)
             return {"_parse_error": True, "raw_text": str(exc)}
 
         meta = self._parse_json(meta_result.text)
         if not isinstance(meta, dict) or meta.get("_parse_error"):
-            logger.warning("Staged volume outline: meta parse failed")
-            return meta
+            logger.warning("Staged volume outline: meta parse failed; using fallback meta")
+            meta = self._fallback_volume_meta(book_outline, volume_idx, user_notes)
 
         # Normalize chapter_count to int; fall back gracefully.
         raw_cc = meta.get("chapter_count")
@@ -1031,53 +1459,139 @@ class OutlineGenerator:
             return meta
 
         # Stage V2 — batched chapter summaries.
-        BATCH = 10
+        # Five chapters per model call is slower than ten, but much more
+        # resilient for 150-chapter volumes: failed batches are cheaper to
+        # retry and the model is less likely to return empty JSON.
+        BATCH = 5
         batches = math.ceil(chapter_count / BATCH)
         meta_for_ctx = {
             k: v for k, v in meta.items() if k != "chapter_summaries"
         }
+        def _compact(value, limit: int = 420) -> str:
+            if isinstance(value, str):
+                text = value
+            else:
+                text = json.dumps(value, ensure_ascii=False)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text[:limit]
+
+        compact_meta_for_batch = {
+            "volume_idx": meta_for_ctx.get("volume_idx", volume_idx),
+            "title": _compact(meta_for_ctx.get("title", f"第{volume_idx}卷"), 80),
+            "core_conflict": _compact(meta_for_ctx.get("core_conflict", "")),
+            "turning_points": _compact(meta_for_ctx.get("turning_points", [])),
+            "emotional_arc": _compact(meta_for_ctx.get("emotional_arc", ""), 260),
+            "transition_to_next": _compact(meta_for_ctx.get("transition_to_next", ""), 260),
+        }
+        # PR-VOL-PREMISE-ANCHOR (2026-06-29): the batch prompt MUST carry the
+        # book premise. When V1 meta JSON fails to parse, meta degrades to an
+        # empty fallback (_meta_fallback) — and a batch prompt that sees only
+        # that empty meta lets the model drift completely off-genre (live: a
+        # 近未来科幻 book produced generic 武侠 chapter summaries). Anchor each
+        # batch to a compact book premise so genre/characters stay fixed.
+        book_premise_anchor = _compact(self._book_premise_digest(book_outline), 600)
         all_summaries: list[dict] = []
 
         for b in range(batches):
             start = b * BATCH + 1
             end = min((b + 1) * BATCH, chapter_count)
-            tail = all_summaries[-3:]
-            tail_str = (
-                json.dumps(tail, ensure_ascii=False, indent=2)
-                if tail
-                else "（无）"
-            )
-            batch_ctx = (
-                f"卷元信息：\n{json.dumps(meta_for_ctx, ensure_ascii=False, indent=2)}\n\n"
-                f"已生成的最近几章摘要：\n{tail_str}\n\n"
-                f"请生成第 {start} 章到第 {end} 章的摘要（共 {end - start + 1} 章）。"
-                f"chapter_idx 从 {start} 连续到 {end}。"
-            )
-            try:
-                batch_result = await self.router.generate(
-                    task_type="outline_volume",
-                    messages=[
-                        {"role": "system", "content": VOLUME_CHAPTERS_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
-                        {"role": "user", "content": batch_ctx},
-                    ],
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Staged volume outline: batch %d/%d failed: %s",
+            items: list | None = None
+            for attempt in range(1, 4):
+                logger.info(
+                    "Staged volume outline: batch %d/%d chapters %d-%d attempt %d start",
                     b + 1,
                     batches,
-                    exc,
+                    start,
+                    end,
+                    attempt,
                 )
-                continue
+                tail = [
+                    {
+                        "chapter_idx": item.get("chapter_idx"),
+                        "title": item.get("title"),
+                        "summary": _compact(item.get("summary", ""), 120),
+                    }
+                    for item in all_summaries[-2:]
+                    if isinstance(item, dict)
+                ]
+                tail_str = (
+                    json.dumps(tail, ensure_ascii=False, indent=2)
+                    if tail
+                    else "（无）"
+                )
+                retry_note = "" if attempt == 1 else "\n上一次返回格式不合格。请只返回 JSON，顶层必须包含 batch 数组，且数组长度必须准确。"
+                batch_ctx = (
+                    f"全书前提（必须严格遵守，章节必须发生在这个世界观/题材/人物范围内）：\n{book_premise_anchor}\n\n"
+                    f"卷元信息（已压缩）：\n{json.dumps(compact_meta_for_batch, ensure_ascii=False, indent=2)}\n\n"
+                    f"已生成的最近几章摘要：\n{tail_str}\n\n"
+                    f"start={start}, end={end}, count={end - start + 1}。"
+                    f"请生成第 {start} 章到第 {end} 章的章节骨架。"
+                    f"chapter_idx 必须从 {start} 连续到 {end}。"
+                    f"\n必须返回：{{\"batch\": [{{...}}]}}，batch 数组长度必须是 {end - start + 1}。"
+                    f"{retry_note}"
+                )
+                try:
+                    batch_result = await asyncio.wait_for(
+                        self.router.generate(
+                            task_type=OUTLINE_VOLUME_STAGED_TASK_TYPE,
+                            messages=[
+                                {"role": "system", "content": VOLUME_CHAPTERS_SKELETON_SYSTEM + (("\n\n" + self.chapter_naming_directive) if self.chapter_naming_directive else "")},
+                                {"role": "user", "content": batch_ctx},
+                            ],
+                            max_tokens=4096,
+                        ),
+                        timeout=OUTLINE_LLM_CALL_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Staged volume outline: batch %d/%d attempt %d failed: %r",
+                        b + 1,
+                        batches,
+                        attempt,
+                        exc,
+                    )
+                    continue
 
-            parsed = self._parse_json(batch_result.text)
-            items = parsed.get("batch") if isinstance(parsed, dict) else None
+                parsed = self._parse_json(batch_result.text)
+                if isinstance(parsed, dict):
+                    raw_items = (
+                        parsed.get("batch")
+                        or parsed.get("chapter_summaries")
+                        or parsed.get("chapters")
+                    )
+                elif isinstance(parsed, list):
+                    raw_items = parsed
+                else:
+                    raw_items = None
+                expected_len = end - start + 1
+                if isinstance(raw_items, list) and len(raw_items) >= expected_len:
+                    items = raw_items[:expected_len]
+                    logger.info(
+                        "Staged volume outline: batch %d/%d accepted %d items",
+                        b + 1,
+                        batches,
+                        len(items),
+                    )
+                    break
+                logger.warning(
+                    "Staged volume outline: batch %d/%d attempt %d returned invalid shape/count",
+                    b + 1,
+                    batches,
+                    attempt,
+                )
+
             if not isinstance(items, list):
                 logger.warning(
-                    "Staged volume outline: batch %d returned invalid shape",
+                    "Staged volume outline: batch %d/%d exhausted retries",
                     b + 1,
+                    batches,
                 )
-                continue
+                return {
+                    "_parse_error": True,
+                    "raw_text": f"volume batch {b + 1}/{batches} failed for chapters {start}-{end}",
+                    "meta": meta_for_ctx,
+                    "chapter_summaries": all_summaries,
+                }
 
             # Normalize chapter_idx in case the model drifts.
             expected = start
@@ -1091,6 +1605,19 @@ class OutlineGenerator:
                 if expected > end:
                     break
 
+        if len(all_summaries) != chapter_count:
+            logger.warning(
+                "Staged volume outline: expected %d chapter summaries, got %d",
+                chapter_count,
+                len(all_summaries),
+            )
+            return {
+                "_parse_error": True,
+                "raw_text": f"expected {chapter_count} chapter summaries, got {len(all_summaries)}",
+                "meta": meta_for_ctx,
+                "chapter_summaries": all_summaries,
+            }
+
         # PR-TITLE-Q1: rule-based title check + batch LLM rewrite for any
         # violators so the persisted vol outline never carries sloppy
         # titles. Failure here is non-fatal; original titles survive.
@@ -1098,10 +1625,13 @@ class OutlineGenerator:
             from app.services.title_quality_checker import (
                 check_and_rewrite_in_place as _tq_check,
             )
-            _tq_stats = await _tq_check(
-                all_summaries,
-                volume_meta=meta_for_ctx,
-                project_id=self.project_id,
+            _tq_stats = await asyncio.wait_for(
+                _tq_check(
+                    all_summaries,
+                    volume_meta=meta_for_ctx,
+                    project_id=self.project_id,
+                ),
+                timeout=OUTLINE_TITLE_CHECK_TIMEOUT_SECONDS,
             )
             logger.info(
                 "Staged volume outline: title quality check %s", _tq_stats,
@@ -1135,7 +1665,7 @@ class OutlineGenerator:
         if user_notes:
             context += f"\n\n用户补充说明：{user_notes}"
 
-        _ch_sys = CHAPTER_OUTLINE_SYSTEM
+        _ch_sys = CHAPTER_OUTLINE_SYSTEM + OUTLINE_CHAPTER_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
         if self.chapter_naming_directive:
             _ch_sys = _ch_sys + "\n\n" + self.chapter_naming_directive
         messages = [
@@ -1145,13 +1675,13 @@ class OutlineGenerator:
 
         if stream:
             return self.router.generate_stream(
-                task_type="outline",
+                task_type="outline_chapter",
                 messages=messages,
                 _log_meta=self._log_meta("outline_chapter"),
             )
 
         result = await self.router.generate(
-            task_type="outline",
+            task_type="outline_chapter",
             messages=messages,
             _log_meta=self._log_meta("outline_chapter"),
         )
@@ -1166,11 +1696,90 @@ class OutlineGenerator:
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]  # remove closing ```
             cleaned = "\n".join(lines)
+        cleaned = self._repair_json_text(cleaned)
         try:
             return json.loads(cleaned)
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse outline JSON, returning raw text")
+        except json.JSONDecodeError as exc:
+            preview = cleaned[:500].replace("\n", " ")
+            logger.warning("Failed to parse outline JSON: %s; preview=%s", exc, preview)
             return {"raw_text": text, "_parse_error": True}
+
+    @staticmethod
+    def _repair_json_text(text: str) -> str:
+        """Repair common LLM JSON slips without changing prose content."""
+        if not text:
+            return text
+        start_candidates = [idx for idx in (text.find("{"), text.find("[")) if idx >= 0]
+        if start_candidates:
+            start = min(start_candidates)
+            end = max(text.rfind("}"), text.rfind("]"))
+            if end > start:
+                text = text[start:end + 1]
+        text = re.sub(r'(?<=[}\]"\d])，(?=\s*["{\[])', ',', text)
+        text = re.sub(r'(?<=")：(?=\s*)', ':', text)
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+        return text
+
+    @staticmethod
+    def _book_premise_digest(book_outline: dict) -> str:
+        """Extract a compact, genre/character-bearing premise from the book
+        outline for anchoring volume batch prompts.
+
+        The book outline can be either a structured dict (title/core_concept/
+        main_plot/...) or a thin ``{"raw_text": "..."}`` blob (staged stream
+        fallback). Pull whatever premise-bearing fields exist; fall back to the
+        raw text head so the anchor is never empty.
+        """
+        if not isinstance(book_outline, dict):
+            return str(book_outline or "")
+        parts: list[str] = []
+        for key in ("title", "core_concept", "core_idea", "genre", "main_plot",
+                    "premise", "logline", "themes"):
+            val = book_outline.get(key)
+            if not val:
+                continue
+            if isinstance(val, str):
+                parts.append(val.strip())
+            else:
+                parts.append(json.dumps(val, ensure_ascii=False))
+        digest = " / ".join(p for p in parts if p)
+        if digest.strip():
+            return digest
+        # Thin outline: defer to raw_text head (carries the user's premise).
+        return str(book_outline.get("raw_text") or "")
+
+    @staticmethod
+    def _fallback_volume_meta(book_outline: dict, volume_idx: int, user_notes: str = "") -> dict:
+        plan_item: dict | None = None
+        raw_plan = book_outline.get("volume_plan") if isinstance(book_outline, dict) else None
+        if isinstance(raw_plan, list):
+            for item in raw_plan:
+                if isinstance(item, dict) and int(item.get("idx") or 0) == volume_idx:
+                    plan_item = item
+                    break
+
+        def _note_value(label: str) -> str:
+            match = re.search(rf"{re.escape(label)}：(.+?)。", user_notes or "")
+            return match.group(1).strip() if match else ""
+
+        title = _note_value("本卷标题") or (str(plan_item.get("title")) if plan_item and plan_item.get("title") else f"第{volume_idx}卷")
+        theme = _note_value("本卷主题") or (str(plan_item.get("theme")) if plan_item and plan_item.get("theme") else "")
+        conflict = _note_value("本卷核心冲突") or (str(plan_item.get("core_conflict")) if plan_item and plan_item.get("core_conflict") else theme)
+        chapter_match = re.search(r"chapter_count=(\d+)", user_notes or "")
+        chapter_count = int(chapter_match.group(1)) if chapter_match else int(plan_item.get("est_chapters") or 10) if plan_item else 10
+        return {
+            "volume_idx": volume_idx,
+            "title": title,
+            "core_conflict": conflict,
+            "turning_points": [conflict] if conflict else [],
+            "new_characters": [],
+            "departing_characters": [],
+            "foreshadows": {"planted": [], "resolved": []},
+            "emotional_arc": theme,
+            "chapter_count": chapter_count,
+            "transition_to_next": "承接下一卷计划。",
+            "_meta_fallback": True,
+        }
 
 def format_chapter_naming_directive(config_json: dict | None) -> str:
     """PR-CHAPTER-NAMING: render style_profile.config_json[chapter_naming_style]

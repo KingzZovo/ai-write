@@ -12,12 +12,14 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
+from app.services.chapter_target_words import CHAPTER_DEFAULT_WORD_COUNT
 
 
 def _utcnow() -> datetime:
@@ -108,7 +110,10 @@ class Chapter(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     target_word_count = Column(
-        Integer, nullable=False, server_default="50000", default=50000
+        Integer,
+        nullable=False,
+        server_default=str(CHAPTER_DEFAULT_WORD_COUNT),
+        default=CHAPTER_DEFAULT_WORD_COUNT,
     )
 
     volume = relationship("Volume", back_populates="chapters")
@@ -281,6 +286,136 @@ class CharacterState(Base):
     chapter_end = Column(Integer, nullable=True)
     status_json = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterCognition(Base):
+    """Per-character knowledge ledger (Task 17 / Q3, QMAI character-cognition).
+
+    One row per (project, character). ``knows`` / ``does_not_know`` are lists
+    of short fact strings. The pseudo character ``character_name='__reader__'``
+    stores reader-known facts (only ``knows`` is used) so the
+    reader-knows-but-character-doesn't gap — the basis of dramatic irony /
+    suspense — can be tracked and guarded during evaluation.
+    """
+
+    __tablename__ = "character_cognitions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    character_name = Column(String(128), nullable=False)
+    knows = Column(JSON, default=list)
+    does_not_know = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "character_name", name="uq_character_cognitions_key"
+        ),
+    )
+
+
+class StyleStat(Base):
+    """Whole-book style statistics (C2 / F1, ainovel stylestat).
+
+    One row per project. ``stats_json`` is the deterministic output of
+    ``style_stat.compute_style_stats`` (tic frequencies, recent n-gram tics,
+    cross-chapter repeated sentences, ending/opening shape). Recomputed in the
+    background after a chapter is finalized; consumed both at generation time
+    (a "dampen your own tics" mirror block) and at evaluation time (raw numbers
+    for the LLM to adjudicate).
+
+    Adapted from voocel/ainovel-cli stylestat (design idea; wording our own).
+    """
+
+    __tablename__ = "style_stats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stats_json = Column(JSON, default=dict)
+    chapter_count = Column(Integer, default=0)
+    computed_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_style_stats_project"),
+    )
+
+
+class NarrativeCompass(Base):
+    """Per-project direction anchor + completion gate (C4 / F3, ainovel compass).
+
+    One row per project. ``ending_direction`` is the thematic terminus (one
+    sentence). ``open_threads`` is the live long-line ledger
+    (``[{thread, since_chapter, status}]``). ``estimated_scale`` is a *range*
+    (never a single number) so mid-book adjustment stays possible. Updated when
+    a new volume is planned; consumed by generation (don't drift off the
+    ending) and by the completion-readiness checklist.
+
+    Adapted from voocel/ainovel-cli compass (design idea; wording our own).
+    """
+
+    __tablename__ = "narrative_compass"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ending_direction = Column(Text, default="")
+    open_threads = Column(JSON, default=list)
+    estimated_scale = Column(JSON, default=dict)
+    last_updated = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_narrative_compass_project"),
+    )
+
+
+class CharacterAppearance(Base):
+    """Secondary-cast roster (C3 / F4, ainovel).
+
+    One row per (project, character_name). Tracks first/last appearance chapter
+    (book-global idx) and total appearance count, populated by the deterministic
+    recompute task. Used to remind generation to re-read a long-absent
+    character's last appearance, and as the "character last seen" signal for
+    deterministic related-chapter recall.
+
+    Separate table (not the Neo4j-projected ``characters``) so the write path is
+    pure PG, zero LLM, and never collides with entity materialization.
+    """
+
+    __tablename__ = "character_appearances"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    character_name = Column(String(128), nullable=False)
+    first_seen_chapter = Column(Integer, default=0)
+    last_seen_chapter = Column(Integer, default=0)
+    appearance_count = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "character_name", name="uq_character_appearances_key"
+        ),
+    )
 
 
 class StyleProfile(Base):

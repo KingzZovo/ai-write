@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
 import { useT, useLocale } from '@/lib/i18n/I18nProvider'
-import { LOCALES, type Locale } from '@/lib/i18n/messages'
+import { LOCALES, type Locale, type MessageKey } from '@/lib/i18n/messages'
 
 // =========================================================================
 // Types
@@ -42,21 +42,21 @@ interface TestResult {
 // Constants
 // =========================================================================
 
-const PROVIDER_OPTIONS = [
+const PROVIDER_OPTIONS: { value: string; label: string; labelKey?: MessageKey }[] = [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'openai_compatible', label: 'OpenAI 兼容' },
   // v1.4 chunk-19 — NVIDIA embeddings (integrate.api.nvidia.com/v1)
-  { value: 'nvidia', label: 'NVIDIA Embeddings' },
+  { value: 'nvidia', label: 'NVIDIA Embeddings', labelKey: 'settings.endpoint.providerNvidia' },
 ]
 
 // v1.4 — LLM tier enum (matches backend LLMEndpoint.tier + prompt_assets.model_tier).
-const TIER_OPTIONS = [
-  { value: 'flagship', label: 'Flagship' },
-  { value: 'standard', label: 'Standard' },
-  { value: 'small', label: 'Small' },
-  { value: 'distill', label: 'Distill' },
-  { value: 'embedding', label: 'Embedding' },
+const TIER_OPTIONS: { value: string; labelKey: MessageKey }[] = [
+  { value: 'flagship', labelKey: 'llmRouting.tier.flagship' },
+  { value: 'standard', labelKey: 'llmRouting.tier.standard' },
+  { value: 'small', labelKey: 'llmRouting.tier.small' },
+  { value: 'distill', labelKey: 'llmRouting.tier.distill' },
+  { value: 'embedding', labelKey: 'llmRouting.tier.embedding' },
 ]
 
 const TIER_BADGE_CLASS: Record<string, string> = {
@@ -212,6 +212,7 @@ function EndpointsSection({
   endpoints: Endpoint[]
   onRefresh: () => void
 }) {
+  const t = useT()
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
@@ -379,7 +380,7 @@ function EndpointsSection({
               >
                 {PROVIDER_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {opt.labelKey ? t(opt.labelKey) : opt.label}
                   </option>
                 ))}
               </select>
@@ -396,7 +397,7 @@ function EndpointsSection({
               >
                 {TIER_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </option>
                 ))}
               </select>
@@ -476,7 +477,7 @@ function EndpointsSection({
                   type="text"
                   value={formData.default_model}
                   onChange={(e) => setFormData((d) => ({ ...d, default_model: e.target.value }))}
-                  placeholder="Model name"
+                  placeholder={t('settings.endpoint.modelNamePlaceholder')}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               )}

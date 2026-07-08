@@ -271,6 +271,26 @@ async def evaluate_chapter(
             status_code=400, detail="Chapter has no content to evaluate"
         )
 
+    # A4 (Q3): serialized cognition ledger for the evaluator's
+    # cognition_violation check. This endpoint only has chapter_id, so
+    # reverse-look-up project_id via the chapter's volume.
+    # Best-effort; "" on any failure (never block evaluation).
+    cognition_ledger_text = ""
+    try:
+        from app.models.project import Volume
+        from app.services import character_cognition as _cognition
+
+        volume = await db.get(Volume, chapter.volume_id)
+        if volume is not None:
+            cognition_ledger_text = _cognition.serialize_for_prompt(
+                await _cognition.load_ledger(db, volume.project_id)
+            )
+    except Exception as _cog_err:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Manual evaluate: cognition ledger load failed: %s", _cog_err
+        )
+
     evaluator = ChapterEvaluator()
     result: EvaluationResult = await evaluator.evaluate(
         chapter_text=chapter.content_text,
@@ -278,6 +298,7 @@ async def evaluate_chapter(
         previous_summary=body.previous_summary,
         style_profile=body.style_profile,
         active_foreshadows=body.active_foreshadows,
+        cognition_ledger_text=cognition_ledger_text,
     )
 
     # Persist evaluation result

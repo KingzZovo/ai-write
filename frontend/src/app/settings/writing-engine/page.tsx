@@ -60,7 +60,7 @@ type Tab = 'rules' | 'beats' | 'traps' | 'genres' | 'tools'
 
 const TABS: { key: Tab; label: string; path: string }[] = [
   { key: 'rules', label: '写作规则', path: '/api/writing-rules' },
-  { key: 'beats', label: 'Beat 节奏', path: '/api/beat-patterns' },
+  { key: 'beats', label: '节奏模板', path: '/api/beat-patterns' },
   { key: 'traps', label: '反 AI 陷阱', path: '/api/anti-ai-traps' },
   { key: 'genres', label: '题材画像', path: '/api/genre-profiles' },
   { key: 'tools', label: 'Agent 工具', path: '/api/tool-specs' },

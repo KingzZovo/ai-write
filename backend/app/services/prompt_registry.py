@@ -525,6 +525,14 @@ _TASK_TYPE_FALLBACK: dict[str, str] = {
     "characters_extraction": "extraction",
     "world_rules_extraction": "extraction",
     "relationships_extraction": "extraction",
+    # Multi-agent chapter pipeline (subproject B): degrade to existing
+    # prompts when no dedicated PromptAsset is configured.
+    "logic_critic": "critic",
+    "drafter": "rewrite",
+    # Incremental arc writing loop (subproject A): degrade to existing prompts.
+    "arc_outline": "outline_volume",
+    "arc_kickoff": "critic",
+    "arc_suggest": "critic",
 }
 
 

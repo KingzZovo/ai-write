@@ -8,7 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.project import Chapter, Volume
+from app.models.project import Chapter, Project, Volume
+from app.services.chapter_target_words import (
+    CHAPTER_DEFAULT_WORD_COUNT,
+    resolve_chapter_target_word_count,
+)
+from app.services.outline_readiness import LAYER_LABELS, build_outline_readiness_report
 
 router = APIRouter(prefix="/api/projects/{project_id}/chapters", tags=["chapters"])
 
@@ -47,9 +52,33 @@ class ChapterResponse(BaseModel):
     word_count: int | None = 0
     status: str
     summary: str | None = None
-    target_word_count: int | None = 50000
+    target_word_count: int | None = CHAPTER_DEFAULT_WORD_COUNT
 
     model_config = {"from_attributes": True}
+
+
+def _chapter_response_payload(
+    chapter: Chapter,
+    project_target_chapter_words: int | None,
+) -> dict:
+    payload = {
+        "id": chapter.id,
+        "volume_id": chapter.volume_id,
+        "title": chapter.title,
+        "chapter_idx": chapter.chapter_idx,
+        "outline_json": chapter.outline_json,
+        "content_text": chapter.content_text,
+        "word_count": chapter.word_count,
+        "status": chapter.status,
+        "summary": chapter.summary,
+        "target_word_count": resolve_chapter_target_word_count(
+            chapter.target_word_count,
+            project_target_chapter_words,
+        ),
+        "created_at": chapter.created_at,
+        "updated_at": chapter.updated_at,
+    }
+    return payload
 
 
 @router.get("")
@@ -76,6 +105,13 @@ async def list_chapters(
 
     result = await db.execute(query)
     chapters = result.scalars().all()
+    project_settings: dict | None = None
+    project_target_chapter_words: int | None = None
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+    if project is not None and isinstance(project.settings_json, dict):
+        project_settings = project.settings_json
+        project_target_chapter_words = project_settings.get("target_chapter_words")
     if lightweight:
         # PR-OUTLINE-BUTTONS: keep outline_json so OutlineTree's per-chapter
         # "⊶大纲" button can render. Drop only content_text (the heavy field).
@@ -87,13 +123,21 @@ async def list_chapters(
                 "chapter_idx": c.chapter_idx,
                 "word_count": c.word_count,
                 "status": c.status,
-                "target_word_count": c.target_word_count,
+                "target_word_count": resolve_chapter_target_word_count(
+                    c.target_word_count,
+                    project_target_chapter_words,
+                ),
                 "outline_json": c.outline_json,
                 "summary": c.summary,
             }
             for c in chapters
         ]
-    return [ChapterResponse.model_validate(c) for c in chapters]
+    return [
+        ChapterResponse.model_validate(
+            _chapter_response_payload(c, project_target_chapter_words)
+        )
+        for c in chapters
+    ]
 
 
 @router.post("", status_code=201)
@@ -112,7 +156,14 @@ async def create_chapter(
     db.add(chapter)
     await db.flush()
     await db.refresh(chapter)
-    return ChapterResponse.model_validate(chapter)
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+    project_target_chapter_words = None
+    if project is not None and isinstance(project.settings_json, dict):
+        project_target_chapter_words = project.settings_json.get("target_chapter_words")
+    return ChapterResponse.model_validate(
+        _chapter_response_payload(chapter, project_target_chapter_words)
+    )
 
 
 @router.get("/{chapter_id}")
@@ -125,7 +176,14 @@ async def get_chapter(
     chapter = await db.get(Chapter, chapter_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
-    return ChapterResponse.model_validate(chapter)
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+    project_target_chapter_words = None
+    if project is not None and isinstance(project.settings_json, dict):
+        project_target_chapter_words = project.settings_json.get("target_chapter_words")
+    return ChapterResponse.model_validate(
+        _chapter_response_payload(chapter, project_target_chapter_words)
+    )
 
 
 @router.put("/{chapter_id}")
@@ -206,7 +264,14 @@ async def update_chapter(
             caller="api.chapters.update_chapter",
             project_id_hint=project_id,
         )
-    return ChapterResponse.model_validate(chapter)
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+    project_target_chapter_words = None
+    if project is not None and isinstance(project.settings_json, dict):
+        project_target_chapter_words = project.settings_json.get("target_chapter_words")
+    return ChapterResponse.model_validate(
+        _chapter_response_payload(chapter, project_target_chapter_words)
+    )
 
 
 @router.delete("/{chapter_id}", status_code=204)
@@ -259,6 +324,26 @@ async def expand_chapter_outline_endpoint(
     chapter = await db.get(Chapter, chapter_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
+
+    readiness = await build_outline_readiness_report(
+        db,
+        project_id=project_id,
+        chapter_id=chapter_id,
+    )
+    upstream_missing = [
+        layer for layer in readiness.missing_layers if layer in {"book", "volume"}
+    ]
+    if upstream_missing:
+        labels = "、".join(LAYER_LABELS.get(layer, layer) for layer in upstream_missing)
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "outline_chain_incomplete",
+                "message": f"缺少：{labels}",
+                "missing_layers": upstream_missing,
+                "readiness": readiness.to_dict(),
+            },
+        )
 
     from app.services.chapter_outline_expander import (
         ChapterOutlineExpandError,

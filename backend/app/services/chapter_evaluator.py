@@ -16,61 +16,46 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 from app.services.model_router import get_model_router_async
+from app.services.narrative_contract import (
+    EVALUATOR_CALIBRATION_PROMPT,
+    EVALUATOR_CONTRACT_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
+# B2 hotfix: bare control characters to strip on the JSON repair retry.
+# Keeps \t (\x09), \n (\x0a) and \r (\x0d) -- those are legitimate inside
+# string values once strict=False is in effect.
+_BARE_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
 EVALUATION_SYSTEM_PROMPT = """\
-你是一位专业的小说质量评审专家。你将对一段章节文本进行多维度评估。
-
-请严格按照以下JSON格式输出评估结果，不要添加任何其他文字：
-
+你是小说章节质量评审。只输出合法 JSON，不要输出解释、Markdown 或正文摘录。
+按 5 个维度评分，每项 0-10：plot_coherence、character_consistency、style_adherence、narrative_pacing、foreshadow_handling。
+issues 只列关键问题，最多 12 条；每条只写元数据和简短诊断；除 quote 字段外禁止引用/复述原文章句子。
+quote 必须是从原文逐字摘取的 10-40 字连续片段，用于定位问题位置；无法逐字摘取时留空字符串。
+JSON 格式必须是：
 {
-  "plot_coherence": {
-    "score": <0-10的浮点数>,
-    "issues": [
-      {
-        "paragraph": <段落编号，从1开始>,
-        "description": "<问题描述>",
-        "suggestion": "<改进建议>"
-      }
-    ]
-  },
-  "character_consistency": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  },
-  "style_adherence": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  },
-  "narrative_pacing": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  },
-  "foreshadow_handling": {
-    "score": <0-10的浮点数>,
-    "issues": [...]
-  }
+  "plot_coherence": {"score": 0, "issues": [{"paragraph": 0, "description": "", "suggestion": "", "violation_type": "", "severity": "", "quote": ""}]},
+  "character_consistency": {"score": 0, "issues": []},
+  "style_adherence": {"score": 0, "issues": []},
+  "narrative_pacing": {"score": 0, "issues": []},
+  "foreshadow_handling": {"score": 0, "issues": []}
 }
+""" + EVALUATOR_CONTRACT_PROMPT + EVALUATOR_CALIBRATION_PROMPT
 
-评分标准：
-- 0-3: 严重问题，需要重写
-- 4-5: 明显问题，需要大幅修改
-- 6-7: 有一些问题，需要小幅修改
-- 8-9: 质量良好，仅有细微问题
-- 10: 完美，无需修改
 
-评估维度说明：
-1. plot_coherence (剧情连贯性): 检查情节是否与大纲一致、是否有逻辑矛盾、转折是否合理
-2. character_consistency (角色一致性): 检查角色行为是否符合人设、对话是否符合角色性格
-3. style_adherence (风格贴合度): 检查写作风格是否与目标风格一致、用词是否恰当
-4. narrative_pacing (叙事节奏): 检查叙事节奏是否合适、详略是否得当、高潮/低谷安排
-5. foreshadow_handling (伏笔处理): 检查伏笔的埋设和回收是否自然、是否遗漏应有的伏笔
-"""
-
+def _limit_text(text: str, max_chars: int) -> str:
+    if not text or max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    head = max_chars // 2
+    tail = max_chars - head
+    return text[:head] + "\n...[已截断，保留首尾用于评分]...\n" + text[-tail:]
 
 def _build_user_prompt(
     chapter_text: str,
@@ -78,24 +63,40 @@ def _build_user_prompt(
     previous_summary: str,
     style_profile: str,
     active_foreshadows: list[str] | None,
+    cognition_ledger_text: str = "",
+    style_stats_text: str = "",
 ) -> str:
     """Build the user prompt with all context for evaluation."""
     parts: list[str] = []
 
     parts.append("## 待评估章节内容\n")
-    parts.append(chapter_text)
+    parts.append(_limit_text(chapter_text, 9000))
 
     if chapter_outline:
         parts.append("\n\n## 本章大纲\n")
-        parts.append(json.dumps(chapter_outline, ensure_ascii=False, indent=2))
+        parts.append(_limit_text(json.dumps(chapter_outline, ensure_ascii=False, indent=2), 2500))
 
     if previous_summary:
         parts.append("\n\n## 前文摘要\n")
-        parts.append(previous_summary)
+        parts.append(_limit_text(previous_summary, 1200))
 
     if style_profile:
         parts.append("\n\n## 目标风格描述\n")
-        parts.append(style_profile)
+        parts.append(_limit_text(style_profile, 1200))
+
+    if cognition_ledger_text:
+        parts.append("\n\n## 当前认知账本\n")
+        parts.append(
+            "按下列账本核查 cognition_violation：角色不得说破/利用其「不知道」"
+            "列表中的信息（除非本章写明获知路径）；不要无故抹平「读者已知-角色未知」的信息差。\n"
+        )
+        parts.append(_limit_text(cognition_ledger_text, 1200))
+
+    # C2/F1: whole-book style statistics (deterministic numbers; the LLM
+    # decides whether this chapter over-reuses book-level tics).
+    if style_stats_text:
+        parts.append("\n\n")
+        parts.append(_limit_text(style_stats_text, 600))
 
     if active_foreshadows:
         parts.append("\n\n## 当前活跃伏笔\n")
@@ -118,6 +119,11 @@ class EvaluationResult:
     foreshadow_handling: float = 0.0
     overall: float = 0.0
     issues: list[dict] = field(default_factory=list)
+    # B2 hotfix: True when the LLM response could not be parsed at all, so
+    # the all-zero scores are sentinels rather than a real verdict. Callers
+    # (auto_revise.should_revise) must not treat such results as "bad
+    # chapter" -- a fake overall=0 previously forced a full-chapter rewrite.
+    parse_failed: bool = False
 
     def to_dict(self) -> dict:
         """Convert to a serializable dictionary."""
@@ -129,6 +135,7 @@ class EvaluationResult:
             "foreshadow_handling": self.foreshadow_handling,
             "overall": self.overall,
             "issues": self.issues,
+            "parse_failed": self.parse_failed,
         }
 
 
@@ -144,7 +151,28 @@ def _parse_evaluation_response(raw_text: str) -> EvaluationResult:
         text = text[: -3]
     text = text.strip()
 
-    data: dict = json.loads(text)
+    # B2 hotfix: evaluation LLMs sometimes emit RAW control characters inside
+    # JSON string values (typically a literal newline in an issue `quote`
+    # excerpt). json.loads defaults to strict=True and rejects those, which
+    # previously zeroed the whole evaluation and triggered a wasted
+    # full-chapter rewrite round. strict=False accepts control chars inside
+    # string values -- exactly this failure shape.
+    try:
+        data: dict = json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        # Minimal repair retry: slice from the first '{' to the last '}'
+        # (drops LLM prose/chatter around the JSON object) and drop bare
+        # control chars (keeping \n \t \r, which strict=False already
+        # tolerates), then try once more. Anything still unparseable
+        # propagates to evaluate()'s except branch, which marks the result
+        # parse_failed.
+        cleaned = text
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end > start:
+            cleaned = cleaned[start : end + 1]
+        cleaned = _BARE_CONTROL_CHARS_RE.sub("", cleaned)
+        data = json.loads(cleaned, strict=False)
 
     dimensions = [
         "plot_coherence",
@@ -171,8 +199,28 @@ def _parse_evaluation_response(raw_text: str) -> EvaluationResult:
                     "location": issue.get("paragraph", 0),
                     "description": issue.get("description", ""),
                     "suggestion": issue.get("suggestion", ""),
+                    "violation_type": issue.get("violation_type", ""),
+                    "severity": issue.get("severity", ""),
+                    # Q2 targeted revision: verbatim 10-40 char locator snippet.
+                    "quote": issue.get("quote", "") or "",
                 }
             )
+
+    for issue in data.get("contract_violations", []) or []:
+        if not isinstance(issue, dict):
+            continue
+        vtype = issue.get("violation_type") or issue.get("type") or "contract_violation"
+        all_issues.append(
+            {
+                "dimension": issue.get("dimension", "plot_coherence"),
+                "location": issue.get("paragraph", issue.get("location", 0)),
+                "description": f"[{vtype}] {issue.get('description') or issue.get('why') or issue.get('violated_rule') or ''}",
+                "suggestion": issue.get("suggestion") or issue.get("required_fix") or issue.get("downgrade_if_unfixable") or "按世界逻辑合同补足支撑或降低结果强度",
+                "violation_type": vtype,
+                "severity": issue.get("severity", ""),
+                "quote": issue.get("quote", "") or "",
+            }
+        )
 
     overall = sum(scores.values()) / len(dimensions) if dimensions else 0.0
 
@@ -203,6 +251,8 @@ class ChapterEvaluator:
         previous_summary: str = "",
         style_profile: str = "",
         active_foreshadows: list[str] | None = None,
+        cognition_ledger_text: str = "",
+        style_stats_text: str = "",
     ) -> EvaluationResult:
         """
         Evaluate a chapter using task_type='evaluation'.
@@ -213,6 +263,10 @@ class ChapterEvaluator:
             previous_summary: Summary of preceding chapters for context.
             style_profile: Description of the target writing style.
             active_foreshadows: List of currently active foreshadow descriptions.
+            cognition_ledger_text: Serialized character cognition ledger
+                (who knows what / reader-only facts) for cognition_violation checks.
+            style_stats_text: Whole-book style statistics block (C2/F1) for the
+                LLM to judge book-level tic over-reuse.
 
         Returns:
             EvaluationResult with scores across 5 dimensions and specific issues.
@@ -227,6 +281,8 @@ class ChapterEvaluator:
             previous_summary=previous_summary,
             style_profile=style_profile,
             active_foreshadows=active_foreshadows,
+            cognition_ledger_text=cognition_ledger_text,
+            style_stats_text=style_stats_text,
         )
 
         messages = [
@@ -240,7 +296,7 @@ class ChapterEvaluator:
                 task_type="evaluation",
                 messages=messages,
                 temperature=0.3,
-                max_tokens=4096,
+                max_tokens=2400,
                 _log_meta={"caller": "chapter_evaluator.evaluate"},
             )
 
@@ -254,7 +310,11 @@ class ChapterEvaluator:
 
         except json.JSONDecodeError as exc:
             logger.error("Failed to parse evaluation response as JSON: %s", exc)
+            # parse_failed marks the zero scores as untrusted sentinels:
+            # should_revise() skips revision instead of treating overall=0
+            # as a genuinely terrible chapter.
             return EvaluationResult(
+                parse_failed=True,
                 issues=[
                     {
                         "dimension": "system",
@@ -266,7 +326,13 @@ class ChapterEvaluator:
             )
         except Exception as exc:
             logger.error("Chapter evaluation failed: %s", exc, exc_info=True)
+            # parse_failed marks the zero scores as untrusted: this branch also
+            # catches non-dict JSON (AttributeError), bare-fence ValueError, and
+            # router/network errors. Without the flag, overall=0 would pass
+            # should_revise() and trigger a wasted full-chapter rewrite -- the
+            # exact bug B2 fixed for the JSONDecodeError path.
             return EvaluationResult(
+                parse_failed=True,
                 issues=[
                     {
                         "dimension": "system",

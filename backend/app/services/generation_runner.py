@@ -74,12 +74,37 @@ def _checkpoint_set(run: GenerationRun, phase: str, data: dict[str, Any]) -> Non
     run.updated_at = datetime.now(timezone.utc)
 
 
+async def _resolve_chapter_coords(db: AsyncSession, chapter_id: Any) -> tuple[str, int]:
+    """Map a chapter_id to the ``(volume_id, chapter_idx)`` pair required by
+    the current ``ContextPackBuilder.build()`` signature.
+
+    Task A3: the v0.8 runner was wired against the old
+    ``build(project_id, chapter_id)`` signature; the builder has since moved
+    to ``build(project_id, volume_id, chapter_idx)``. ``chapter_idx`` here is
+    the volume-local DB value — build() resolves the book-global index
+    internally (Task A2), so the runner must not convert it.
+    """
+    from app.models.project import Chapter
+
+    chapter = await db.get(Chapter, chapter_id)
+    if chapter is None:
+        raise ValueError(f"Chapter {chapter_id} not found")
+    return str(chapter.volume_id), int(chapter.chapter_idx)
+
+
 async def _phase_planning(run: GenerationRun, db: AsyncSession) -> dict[str, Any]:
     """Build the ContextPack for this run."""
+    if not run.chapter_id:
+        raise ValueError(
+            "GenerationRun has no chapter_id; ContextPackBuilder.build() "
+            "requires a target chapter (volume_id + chapter_idx)"
+        )
+    volume_id, chapter_idx = await _resolve_chapter_coords(db, run.chapter_id)
     builder = ContextPackBuilder(db=db)
     pack = await builder.build(
         project_id=str(run.project_id),
-        chapter_id=str(run.chapter_id) if run.chapter_id else None,
+        volume_id=volume_id,
+        chapter_idx=chapter_idx,
     )
     # v0.8 ContextPack v3: 4th recall path — writing_rules scoped to genre_profile.
     try:

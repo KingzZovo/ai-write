@@ -16,12 +16,12 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # ---------------------------------------------------------------------------
 # Hardcoded user
 # ---------------------------------------------------------------------------
-_USERNAME = os.environ.get("AUTH_USERNAME", "king")
+from app.config import settings as _app_settings
+_USERNAME = _app_settings.AUTH_USERNAME
 # Password hash — supports bcrypt ($2b$ prefix) or legacy sha256
-_PASSWORD_HASH = os.environ.get(
-    "AUTH_PASSWORD_HASH",
-    # bcrypt hash of default password
-    "$2b$12$GGjcFhOAfXd/.fcpugYc4uqy6y7fw7pvDJxk.XA1HnmKR/UNrZAKO",
+_PASSWORD_HASH = (
+    _app_settings.AUTH_PASSWORD_HASH
+    or "$2b$12$GGjcFhOAfXd/.fcpugYc4uqy6y7fw7pvDJxk.XA1HnmKR/UNrZAKO"
 )
 
 _JWT_ALGORITHM = "HS256"

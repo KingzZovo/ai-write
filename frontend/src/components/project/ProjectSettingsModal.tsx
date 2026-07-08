@@ -78,7 +78,7 @@ export function ProjectSettingsModal({
               min={1}
               value={chapterStr}
               onChange={(e) => setChapterStr(e.target.value)}
-              placeholder="如 3000，留空不限"
+              placeholder="默认 4000，留空使用默认"
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>

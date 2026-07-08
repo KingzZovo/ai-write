@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from typing import Any
 from uuid import UUID
@@ -17,6 +18,8 @@ from app.db.neo4j import get_neo4j
 from app.db.session import get_db
 from app.models.project import Foreshadow
 from app.tasks.entity_tasks import _materialize_entities_to_postgres
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/foreshadows",
@@ -76,6 +79,9 @@ class ForeshadowResponse(BaseModel):
 class ForeshadowListResponse(BaseModel):
     foreshadows: list[ForeshadowResponse]
     total: int
+    # Q4: foreshadow debt health (QMAI-adapted):
+    # {"score": int, "criticals": [...], "warnings": [...], "unresolved": int}
+    debt: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -100,10 +106,76 @@ async def list_foreshadows(
     result = await db.execute(query)
     foreshadows = list(result.scalars().all())
 
+    # Q4: attach foreshadow debt health. Debt is always computed over the
+    # full (unfiltered) foreshadow set so a status filter cannot skew the
+    # score. Fail-safe: a debt computation problem never breaks listing.
+    debt: dict[str, Any] | None = None
+    try:
+        from app.services.foreshadow_manager import compute_debt_score
+
+        if status is None:
+            debt_rows = foreshadows
+        else:
+            all_result = await db.execute(
+                select(Foreshadow).where(Foreshadow.project_id == project_id)
+            )
+            debt_rows = list(all_result.scalars().all())
+        debt = compute_debt_score(
+            debt_rows,
+            await _current_global_chapter_idx(db, project_id, debt_rows),
+        )
+    except Exception:
+        logger.warning(
+            "foreshadow debt computation failed for project %s",
+            project_id,
+            exc_info=True,
+        )
+
     return ForeshadowListResponse(
         foreshadows=[ForeshadowResponse.model_validate(f) for f in foreshadows],
         total=len(foreshadows),
+        debt=debt,
     )
+
+
+async def _current_global_chapter_idx(
+    db: AsyncSession,
+    project_id: UUID,
+    foreshadows: list[Foreshadow],
+) -> int:
+    """Best-effort book-global writing progress for debt aging.
+
+    Primary source: the number of chapters with generated content across the
+    project (chapter rows are per-volume, so the count is the global
+    progress). Fallback when nothing is written yet or the query fails: the
+    max planted/resolved chapter recorded on the foreshadows themselves.
+    """
+    written = 0
+    try:
+        from sqlalchemy import func
+
+        from app.models.project import Chapter, Volume
+
+        count_result = await db.execute(
+            select(func.count(Chapter.id))
+            .join(Volume, Chapter.volume_id == Volume.id)
+            .where(
+                Volume.project_id == project_id,
+                Chapter.content_text.isnot(None),
+                Chapter.content_text != "",
+            )
+        )
+        written = int(count_result.scalar() or 0)
+    except Exception:
+        logger.debug("written-chapter count failed for project %s", project_id, exc_info=True)
+    if written > 0:
+        return written
+    fallback = 0
+    for fs in foreshadows:
+        for value in (fs.planted_chapter, fs.resolved_chapter):
+            if value is not None:
+                fallback = max(fallback, int(value))
+    return fallback
 
 
 @router.post("", response_model=ForeshadowResponse, status_code=201)

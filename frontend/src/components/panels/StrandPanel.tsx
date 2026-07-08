@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
+import type { MessageKey } from '@/lib/i18n/messages'
 
 interface Tracker {
   last_quest_chapter: number
@@ -20,13 +22,14 @@ interface StrandResponse {
 interface StrandPanelProps { projectId: string }
 
 const STRAND_CONFIG = {
-  quest:         { label: '主线',   sublabel: 'Quest',         color: 'bg-amber-500',  colorLight: 'bg-amber-100',  colorText: 'text-amber-700',  dotColor: 'bg-amber-400',  warnThreshold: 5  },
-  fire:          { label: '感情线', sublabel: 'Fire',          color: 'bg-rose-500',   colorLight: 'bg-rose-100',   colorText: 'text-rose-700',   dotColor: 'bg-rose-400',   warnThreshold: 10 },
-  constellation: { label: '世界观', sublabel: 'Constellation', color: 'bg-indigo-500', colorLight: 'bg-indigo-100', colorText: 'text-indigo-700', dotColor: 'bg-indigo-400', warnThreshold: 15 },
+  quest:         { label: '主线',   sublabelKey: 'strand.sublabel.quest' as MessageKey,         color: 'bg-amber-500',  colorLight: 'bg-amber-100',  colorText: 'text-amber-700',  dotColor: 'bg-amber-400',  warnThreshold: 5  },
+  fire:          { label: '感情线', sublabelKey: 'strand.sublabel.fire' as MessageKey,          color: 'bg-rose-500',   colorLight: 'bg-rose-100',   colorText: 'text-rose-700',   dotColor: 'bg-rose-400',   warnThreshold: 10 },
+  constellation: { label: '世界观', sublabelKey: 'strand.sublabel.constellation' as MessageKey, color: 'bg-indigo-500', colorLight: 'bg-indigo-100', colorText: 'text-indigo-700', dotColor: 'bg-indigo-400', warnThreshold: 15 },
 } as const
 type StrandKey = keyof typeof STRAND_CONFIG
 
 function StrandBar({ strand, chaptersSince, currentChapter }: { strand: StrandKey; chaptersSince: number; currentChapter: number }) {
+  const t = useT()
   const config = STRAND_CONFIG[strand]
   const safeSince = Number.isFinite(chaptersSince) ? Math.max(0, chaptersSince) : 0
   const maxDisplay = config.warnThreshold * 1.5
@@ -40,7 +43,7 @@ function StrandBar({ strand, chaptersSince, currentChapter }: { strand: StrandKe
         <div className="flex items-center gap-1.5">
           <span className={`inline-block w-2 h-2 rounded-full ${config.color}`} />
           <span className="text-xs font-medium text-stone-700">{config.label}</span>
-          <span className="text-[10px] text-stone-400">{config.sublabel}</span>
+          <span className="text-[10px] text-stone-400">{t(config.sublabelKey)}</span>
         </div>
         <div className="flex items-center gap-1">
           <span className={`text-xs font-semibold ${isOverThreshold ? config.colorText : 'text-stone-600'}`}>{safeSince} 章</span>
@@ -58,8 +61,10 @@ function StrandBar({ strand, chaptersSince, currentChapter }: { strand: StrandKe
 }
 
 function TimelineStrip({ history }: { history: Array<{ chapter: number; dominant: string }> }) {
+  const t = useT()
   const last20 = history.slice(-20)
   if (last20.length === 0) return null
+  const chapterRef = (n: number) => `${t('strand.chapterPrefix')}${n}${t('strand.chapterSuffix')}`
   return (
     <div className="space-y-1.5">
       <div className="text-[10px] text-stone-500 font-medium tracking-wide">近期章节走势</div>
@@ -70,12 +75,12 @@ function TimelineStrip({ history }: { history: Array<{ chapter: number; dominant
           return (
             <div key={entry.chapter} className="group relative flex-1 flex flex-col items-center">
               <div className={`w-2.5 h-2.5 rounded-full ${dotColor} transition-transform group-hover:scale-150`} />
-              <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity bg-stone-800 text-white text-[9px] px-1.5 py-0.5 rounded whitespace-nowrap z-10 pointer-events-none">Ch.{entry.chapter}</div>
+              <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity bg-stone-800 text-white text-[9px] px-1.5 py-0.5 rounded whitespace-nowrap z-10 pointer-events-none">{chapterRef(entry.chapter)}</div>
             </div>
           )
         })}
       </div>
-      <div className="flex justify-between text-[9px] text-stone-400"><span>Ch.{last20[0].chapter}</span><span>Ch.{last20[last20.length - 1].chapter}</span></div>
+      <div className="flex justify-between text-[9px] text-stone-400"><span>{chapterRef(last20[0].chapter)}</span><span>{chapterRef(last20[last20.length - 1].chapter)}</span></div>
     </div>
   )
 }

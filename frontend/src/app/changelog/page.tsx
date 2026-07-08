@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
+import { actorTypeLabel, actionLabel } from '@/lib/i18n/enumLabels'
 
 type Entry = {
   id: string
@@ -92,7 +93,7 @@ function ChangelogInner() {
         }`}
         title={kind}
       >
-        {value}
+        {kind === 'actor' ? actorTypeLabel(value) : kind === 'action' ? actionLabel(value) : value}
       </span>
     )
   }
@@ -189,13 +190,13 @@ function ChangelogInner() {
                 {isOpen && (
                   <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <div className="font-semibold mb-1">before</div>
+                      <div className="font-semibold mb-1">修改前</div>
                       <pre className="bg-gray-50 p-2 rounded overflow-auto max-h-64">
 {JSON.stringify(e.before_json ?? {}, null, 2)}
                       </pre>
                     </div>
                     <div>
-                      <div className="font-semibold mb-1">after</div>
+                      <div className="font-semibold mb-1">修改后</div>
                       <pre className="bg-gray-50 p-2 rounded overflow-auto max-h-64">
 {JSON.stringify(e.after_json ?? {}, null, 2)}
                       </pre>

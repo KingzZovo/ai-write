@@ -52,3 +52,10 @@ backend/.coverage
 
 # SSE dump files
 *.sse
+
+# auto-maintained operation logs & scratch
+PROGRESS.md
+tmp/
+backend/tmp/
+.tmp_*.py
+.tmp_*.log

@@ -161,9 +161,36 @@ async def get_snapshot(task_type: str, db: Any) -> Optional[PromptAssetSnapshot]
         )
         asset = result.scalar_one_or_none()
     except Exception as exc:
-        # Don't poison the cache on transient DB errors; just bypass.
-        logger.debug("prompt_cache: DB read failed for %s: %s", task_type, exc)
-        return None
+        # v1.12 L3: Avoid false-negatives when the caller's session is in an
+        # invalid/rolled-back state (common inside long-running Celery tasks).
+        # Falling back to a FRESH session here prevents
+        # "No active prompt registered" errors when the prompt exists.
+        logger.debug(
+            "prompt_cache: DB read failed for %s; retrying with fresh session: %s",
+            task_type,
+            exc,
+        )
+        try:
+            from app.db.session import async_session_factory
+
+            async with async_session_factory() as fresh_db:
+                fresh_result = await fresh_db.execute(
+                    select(PromptAsset)
+                    .where(
+                        PromptAsset.task_type == task_type,
+                        PromptAsset.is_active == 1,
+                    )
+                    .order_by(PromptAsset.version.desc())
+                    .limit(1)
+                )
+                asset = fresh_result.scalar_one_or_none()
+        except Exception as exc2:
+            logger.debug(
+                "prompt_cache: fresh-session DB read also failed for %s: %s",
+                task_type,
+                exc2,
+            )
+            return None
 
     if asset is None:
         _snap_cache[task_type] = (None, now + NEG_TTL_SECONDS)

@@ -317,13 +317,29 @@ async def regenerate_volume(
 
                 # chunk-30: auto-allocate volume budget across new chapters
                 # (local to this volume, force=True because all new rows still
-                # carry the Chapter default of 50000).
+                # carry the Chapter default; legacy 50000 rows are handled by
+                # the budget allocator as an untouched default.
                 volume_target = int(vol.target_word_count or 0)
                 if new_chapter_rows and volume_target > 0:
                     chapter_word_counts = allocate_even(volume_target, len(new_chapter_rows))
                     for ch_row, wc in zip(new_chapter_rows, chapter_word_counts):
                         ch_row.target_word_count = int(wc)
                 await save_db.commit()
+
+            # C4/F3: update the narrative compass when a new volume is planned
+            # (threads + scale). Fresh session, fail-safe -- never blocks the
+            # volume regeneration stream.
+            try:
+                from app.db.session import async_session_factory
+                from app.services.compass_service import update_on_new_volume
+
+                async with async_session_factory() as compass_db:
+                    await update_on_new_volume(compass_db, project_id, parsed)
+            except Exception as _compass_err:
+                import logging as _clg
+                _clg.getLogger(__name__).warning(
+                    "compass update after volume regen failed: %s", _compass_err
+                )
 
             yield f"data: {json.dumps({'status': 'done', 'chapters_created': chapters_created, 'volume_target': volume_target, 'chapter_word_counts': chapter_word_counts})}\n\n"
             yield "data: [DONE]\n\n"

@@ -67,6 +67,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Chapter, Outline, Volume
+from app.services.narrative_contract import WORLD_LOGIC_CONTRACT
+from app.services.outline_generator import OUTLINE_CHAPTER_CONTRACT_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,9 @@ SYSTEM_PROMPT = (
     "只输出 JSON 本身，不要 markdown 代码块，不要任何辅助说明文本。\n"
     "以中文完成。必要时 \"\\n\" 表示换行。\n"
     "不要创作未在上下文中出现的人物、设定、道具，除非 stub 中明确提示。\n"
-    "【title 冻结】本章 title 已在分卷大纲阶段按作者命名风格确定并写入 stub.title，请直接原样复制到输出的 title 字段，不要修改、不要润色、不要重新生成。"
+    "【title 冻结】本章 title 已在分卷大纲阶段按作者命名风格确定并写入 stub.title，请直接原样复制到输出的 title 字段，不要修改、不要润色、不要重新生成。\n"
+    + WORLD_LOGIC_CONTRACT
+    + OUTLINE_CHAPTER_CONTRACT_PROMPT
 )
 
 
@@ -121,7 +125,20 @@ USER_PROMPT_TMPL = """\
     "description": "本章埋下的伏笔描述", "resolve_conditions": "未来某章兑现条件"
   ],
   "foreshadows_resolved": ["本章兑现之前某伏笔的描述"],
-  "next_chapter_hook": "本章末尾留给下章的明确动作 · 冲突 · 问题。不可为空。"
+  "next_chapter_hook": "本章末尾留给下章的明确动作 · 冲突 · 问题。不可为空。",
+  "start_state": "本章开头承接上一章的时间、空间、人物、物件、信息和冲突状态",
+  "end_state": "本章结束时实际交付给下一章的状态",
+  "time_delta": "距离上一章/上一关键场景过去多久；哪些流程、移动、准备消耗了时间",
+  "location_path": "关键人物/物件/消息/风险如何从上一地点到达本章地点；无移动写同地承接",
+  "entity_transfers": "关键人物、物件、资源、消息等如何到场/转移/留置",
+  "information_state": "本章开始和结束时各方已知/未知/误解的信息，以及证据强度",
+  "power_resource_map": "本章冲突各方权力/资源差、违抗成本、制衡条件",
+  "mechanism_limits": "本章使用的能力/技术/制度工具/证据/资源调用的条件、成本、边界、反制",
+  "result_strength": "本章允许达成的结果强度；支撑不足时如何降级",
+  "handoff_to_next": "本章如何把时间、空间、人物、物件、信息状态交接给下一章",
+  "transition_bridge": "本章结尾到下一章开头之间必须显化的过桥过程：时间流逝、空间移动、人物/物件/消息交接、信息可见性、未解决风险。不能只写抽象钩子。",
+  "action_budget": "本章高压动作预算：每个追捕/搜拿/倒计时/公开对质场景的可用时间、身体限制、预先准备、动作数上限和代价；超预算时如何拆场或降级结果",
+  "inference_ledger": "本章关键推理台账：感知来源/证据、可推出结论强度、替代解释、允许写法；弱证据只能给疑点/假设"
 }}
 
 额外要求：
@@ -305,6 +322,28 @@ def _validate_and_normalize(parsed: Any, chapter: Chapter, stub: dict) -> dict[s
     nch = parsed.get("next_chapter_hook")
     out["next_chapter_hook"] = nch if isinstance(nch, str) else ""
 
+    for key in (
+        "start_state",
+        "end_state",
+        "time_delta",
+        "location_path",
+        "entity_transfers",
+        "information_state",
+        "power_resource_map",
+        "mechanism_limits",
+        "result_strength",
+        "handoff_to_next",
+        "transition_bridge",
+    ):
+        val = parsed.get(key)
+        if not isinstance(val, str) or not val.strip():
+            val = stub.get(key) if isinstance(stub.get(key), str) else ""
+        out[key] = val.strip() if isinstance(val, str) else ""
+
+    if not out.get("transition_bridge"):
+        fallback_bridge = out.get("handoff_to_next") or out.get("end_state") or out.get("next_chapter_hook") or ""
+        out["transition_bridge"] = fallback_bridge.strip() if isinstance(fallback_bridge, str) else ""
+
     return out
 
 
@@ -332,6 +371,14 @@ async def expand_chapter_outline(
 
     user_prompt = _format_user_prompt(ctx, chapter)
 
+    # Do not hold the request transaction open while the LLM call runs.
+    # Chapter outline expansion can take several minutes; Postgres kills
+    # idle-in-transaction connections before the model returns, so the later
+    # UPDATE used to fail with "underlying connection is closed". Release the
+    # read transaction after context assembly, then open a fresh transaction
+    # only for the final write.
+    await db.rollback()
+
     # 须在函数内延迟导入，避免 backend 启动时交叉依赖。
     from app.services.model_router import get_model_router
     from app.services.outline_generator import OutlineGenerator
@@ -350,6 +397,9 @@ async def expand_chapter_outline(
 
     # 复用 outline_generator 的宽松 JSON 解析（除 markdown / 其他顶层控制字符）。
     parsed = OutlineGenerator()._parse_json(raw_text)
+    chapter = await db.get(Chapter, chapter_id)
+    if chapter is None:
+        raise ChapterOutlineExpandError(f"chapter {chapter_id} 不存在")
     normalized = _validate_and_normalize(parsed, chapter, ctx["stub"])
 
     # 写回 DB。

@@ -22,6 +22,18 @@ interface CheckerResult {
   issues: CheckerIssue[]
 }
 
+interface ChineseProseMechanics {
+  passed: boolean
+  pseudo_literary_register_count: number
+  plain_contemporary_violation_count: number
+  duplicate_explanation_span_count: number
+  semantic_collocation_count: number
+  resource_continuity_count: number
+  scene_plausibility_count: number
+  dialogue_symmetry_risk_count: number
+  story_bible_leakage_count: number
+}
+
 interface CheckerDashboardProps {
   chapterId: string
 }
@@ -104,6 +116,7 @@ function StatusDot({ passed, score }: { passed: boolean; score: number }) {
 
 export function CheckerDashboard({ chapterId }: CheckerDashboardProps) {
   const [results, setResults] = useState<CheckerResult[] | null>(null)
+  const [proseMechanics, setProseMechanics] = useState<ChineseProseMechanics | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedChecker, setExpandedChecker] = useState<string | null>(null)
@@ -114,11 +127,13 @@ export function CheckerDashboard({ chapterId }: CheckerDashboardProps) {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiFetch<{ checkers: CheckerResult[]; overall_score: number }>(
-        `/api/chapters/${chapterId}/check-quality`,
-        { method: 'POST' }
-      )
+      const data = await apiFetch<{
+        checkers: CheckerResult[]
+        overall_score: number
+        chinese_prose_mechanics?: ChineseProseMechanics
+      }>(`/api/chapters/${chapterId}/check-quality`, { method: 'POST' })
       setResults(data.checkers)
+      setProseMechanics(data.chinese_prose_mechanics ?? null)
       setLastChecked(new Date().toISOString())
     } catch (err) {
       setError(err instanceof Error ? err.message : '检查失败')
@@ -171,6 +186,28 @@ export function CheckerDashboard({ chapterId }: CheckerDashboardProps) {
           </div>
           <div className="text-[11px] text-stone-500 mt-0.5 tracking-wide">
             综合质量评分 / 10
+          </div>
+        </div>
+      )}
+
+      {proseMechanics && (
+        <div
+          className={`rounded-lg border p-3 ${
+            proseMechanics.passed
+              ? 'border-emerald-200 bg-emerald-50/50'
+              : 'border-red-200 bg-red-50/50'
+          }`}
+        >
+          <div className="text-xs font-semibold text-stone-800 mb-2">中文行文机械自检</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-stone-600">
+            <span>伪文学压缩：{proseMechanics.pseudo_literary_register_count}</span>
+            <span>现代汉语异常：{proseMechanics.plain_contemporary_violation_count}</span>
+            <span>重复解释：{proseMechanics.duplicate_explanation_span_count}</span>
+            <span>搭配异常：{proseMechanics.semantic_collocation_count}</span>
+            <span>资源矛盾：{proseMechanics.resource_continuity_count}</span>
+            <span>场景失真：{proseMechanics.scene_plausibility_count}</span>
+            <span>对话对称：{proseMechanics.dialogue_symmetry_risk_count}</span>
+            <span>设定泄漏：{proseMechanics.story_bible_leakage_count}</span>
           </div>
         </div>
       )}

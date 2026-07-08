@@ -27,7 +27,7 @@ const MODULES = [
 
 const DEFAULT_MODULES = ['show_not_tell', 'micro_tension', 'info_weaving']
 
-interface StyleInfo { id: string; name: string; rules_json?: any[]; is_active?: boolean }
+interface StyleInfo { id: string; name: string; rules_json?: Record<string, unknown>[]; is_active?: boolean }
 interface StructureInfo { book_id: string; book_title: string; arc_pattern?: string; structure_summary?: string }
 
 export function NewProjectModal({
@@ -73,7 +73,7 @@ export function NewProjectModal({
     try {
       const settings_json: Record<string, unknown> = {
         writing_guide: { active_modules: activeModules, genre_code: genreCode || null },
-        style_reference: { profile_id: styleId || null, reference_book_id: null },
+        style_reference: { profile_id: styleId || null },
         style_profile_id: styleId || null,
         plot_structure: { structure_book_id: structureBookId || null },
       }

@@ -9,6 +9,69 @@
 - **禁止 PG 直写**：避免 drift。
 - 例外（待决策）：`foreshadows` 当前仍走 PG ORM 直写，详见 §3 与 docs/PROGRESS.md。
 
+## 0.1 参考书 retry 巡检与单飞锁（2026-05-17）
+
+背景：`retry_reference_book_missing_branches` 在《赤心巡天》补全期间出现同一本书 4 个 retry task 并发活跃，根因是单波在 provider cooldown + 多次 LLM retry 下超过 Redis broker `visibility_timeout=7200`，导致未 ack 消息被 redeliver。
+
+2026-05-17 04:00 巡检补充：01:00 的 single-flight 修复后，任务在 03:29 左右因 `asyncpg.exceptions.InterfaceError: connection is closed` 中断且 Redis `celery` 队列为空。根因是 retry 波在 LLM/Qdrant 长耗时期间仍持有最初用于快照缺失 slices 的 AsyncSession；Postgres `idle_in_transaction_session_timeout=10min` 会关闭该连接，尾部 `db.refresh(book)` 失败，导致下一波没有被调度。当前修复是在批次快照完成后关闭该 session，分支写入继续使用短生命周期 session，最终对账/metadata 更新用 fresh session 重开。
+
+当前机制：
+- `DECOMPILE_RETRY_WAVE_BATCH` 默认从 `250` 降到 `50`，降低单波耗时。
+- `REFERENCE_INGEST_CONCURRENCY` 控制 retry wave 内部 LLM/Qdrant 分支并发；2026-05-17 已按 3→4→5→6→8→10→15→20 上调。Celery worker `--concurrency=4` 暂不调整；为避免中断活跃 retry wave，调参后等待安全维护窗口/当前 wave 完成再重建 worker。
+- Celery retry task 使用 Redis key `decompile_retry:lock:{book_id}` 做同书 single-flight；默认 TTL `DECOMPILE_RETRY_LOCK_TTL=10800` 秒。
+- 0 增量 retry wave 默认按 `DECOMPILE_RETRY_STALL_DELAY=60` 秒短延迟继续重试，用于应对上游 LLM 间歇性 429/503/auth 故障；即使连续失败达到历史 `DECOMPILE_MAX_AUTO_RETRIES`，也会把 attempt 循环回 1 继续探测直到 `ready`，single-flight lock 负责防止同书重复 wave 堆积。
+- 锁命中任务直接返回 `locked=true`，不再继续处理，也不自调度下一波。
+- `retry_missing_branches` 不再跨整波持有 snapshot AsyncSession；最终 `_refresh_book_status` 使用新 session，避免 idle timeout 后无法自调度。
+
+动态调参规则：
+- 每小时巡检记录当前 style/beat 计数、最近 2–3 个 retry wave 的耗时、`style_filled/beat_filled`、以及 worker 日志中的 APIError / model_cooldown / auth 失败情况。
+- 如果并发 5 生效后失败率没有大幅增加、wave 仍稳定完成并继续自调度，再考虑把 `DECOMPILE_RETRY_WAVE_BATCH` 从 `50` 调到 `75`。
+- 如果失败率明显上升、单波耗时接近 Redis visibility window、出现 duplicate/redelivery/lock 挤压、或进度停滞，则立即回退到上一个稳定值，并汇报原因。
+
+验证命令：
+```bash
+docker exec -e PYTHONPATH=/app ai-write-celery-worker-1 python -m py_compile /app/app/tasks/__init__.py /app/app/services/reference_ingestor.py
+docker exec ai-write-celery-worker-1 celery -A app.tasks.celery_app inspect active reserved scheduled
+docker logs --tail 4000 ai-write-celery-worker-1 2>&1 | grep -E 'retry_reference_book_missing_branches\[|locked|style_filled|beat_filled|connection is closed' | tail -40
+docker exec ai-write-redis-1 redis-cli llen celery
+```
+
+对账 SQL：
+```sql
+SELECT (SELECT count(*) FROM style_profile_cards WHERE book_id='0a543b1d-19fe-4e03-986e-42844feb36ee') AS style,
+       (SELECT count(*) FROM beat_sheet_cards WHERE book_id='0a543b1d-19fe-4e03-986e-42844feb36ee') AS beat,
+       22941 AS total;
+SELECT status, metadata_json::jsonb #>> '{decompile_retry}'
+FROM reference_books
+WHERE id='0a543b1d-19fe-4e03-986e-42844feb36ee';
+```
+
+
+### 0.2 参考书卡片 JSON 包装规整（2026-05-19）
+
+背景：巡检《赤心巡天》完成态时发现少量 `style_profile_cards.profile_json` / `beat_sheet_cards.beat_json` 为 LLM 包装形态（如 `items` / `scenes` 数组），下游按顶层字段读取时会退化为 `?` / `unknown`。
+
+当前机制：
+- `style_abstractor.abstract_style` 会把 `items` / `profiles` / `styles` 包装折叠为第一个 dict。
+- `beat_extractor.extract_beat` 会把 `beats` / `items` / `scenes` / `beat_sheet` / `chapter_beats` 包装折叠为第一个 dict。
+- 参考书 decompile 仍保持一 slice 一张 style card、一张 beat card。
+
+验证命令：
+```bash
+docker exec -e PYTHONPATH=/app ai-write-backend-1 \
+  bash -c 'cd /app && python -m pytest tests/test_v173_p0_unit_coverage.py -q'
+```
+
+对账 SQL：
+```sql
+SELECT count(*) FROM style_profile_cards
+WHERE book_id = '0a543b1d-19fe-4e03-986e-42844feb36ee'
+  AND NOT (profile_json::jsonb ?& array['pov','tense','sentence_rhythm','dialogue_style','sensory_mix','pacing','emotional_register','vocab_tone','forbidden_tells','signature_moves']);
+SELECT count(*) FROM beat_sheet_cards
+WHERE book_id = '0a543b1d-19fe-4e03-986e-42844feb36ee'
+  AND NOT (beat_json::jsonb ?& array['scene_type','subject','goal','stakes','obstacle','turn','outcome','emotional_arc','foreshadow','reusable_pattern']);
+```
+
 ## 1. 正确写入路径（推荐入口）
 
 ### 1.1 当前 main 上的实际写入口（事实）

@@ -36,7 +36,8 @@ export interface Chapter {
   content_text?: string
   wordCount: number
   word_count?: number
-  status: 'draft' | 'generating' | 'completed'
+  target_word_count?: number | null
+  status: 'draft' | 'generating' | 'completed' | 'needs_review'
   summary?: string | null
   outline_json?: Record<string, unknown>
 }
@@ -59,7 +60,7 @@ interface ProjectState {
   addChapters: (chapters: Chapter[]) => void
   selectChapter: (id: string | null) => void
   updateChapterContent: (id: string, content: string) => void
-  updateChapterStatus: (id: string, status: 'draft' | 'generating' | 'completed') => void
+  updateChapterStatus: (id: string, status: 'draft' | 'generating' | 'completed' | 'needs_review') => void
 }
 
 /** Normalize a volume from API (snake_case) to store format */
@@ -88,7 +89,11 @@ function normalizeChapter(c: Record<string, unknown>): Chapter {
     content_text: String(c.content_text ?? c.contentText ?? ''),
     wordCount: Number(c.word_count ?? c.wordCount ?? 0),
     word_count: Number(c.word_count ?? c.wordCount ?? 0),
-    status: (c.status as 'draft' | 'generating' | 'completed') ?? 'draft',
+    target_word_count:
+      c.target_word_count === null || c.target_word_count === undefined
+        ? null
+        : Number(c.target_word_count),
+    status: (c.status as 'draft' | 'generating' | 'completed' | 'needs_review') ?? 'draft',
     summary: (c.summary as string | null) ?? null,
     outline_json: (c.outline_json as Record<string, unknown>) ?? undefined,
   }

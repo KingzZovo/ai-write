@@ -320,8 +320,11 @@ class TestPlanCascade:
         assert out[0].severity == "critical"
         assert out[0].issue_count == CRITICAL_ISSUE_COUNT
 
-    async def test_no_outline_drops_plot_issues(self, stub_planner_loaders):
-        # Defensive: missing outline => skip, never crash.
+    async def test_no_outline_routes_plot_issues_to_source_chapter(
+        self, stub_planner_loaders
+    ):
+        # Defensive: missing project outline => repair the executable chapter
+        # outline instead of dropping the cascade candidate.
         stub_planner_loaders.outline = None
         out = await plan_cascade(
             db=None,
@@ -330,7 +333,10 @@ class TestPlanCascade:
             source_evaluation_id="e",
             issues_json=[{"dimension": "plot_coherence", "description": "x"}],
         )
-        assert out == []
+        assert len(out) == 1
+        assert out[0].target_entity_type == "chapter"
+        assert out[0].target_entity_id == "c"
+        assert out[0].source_chapter_id == "c"
 
     async def test_character_match_targets_named_chars_only(
         self, stub_planner_loaders

@@ -43,6 +43,25 @@ def test_style_abstractor_success_returns_payload():
     assert out == payload
 
 
+def test_style_abstractor_items_wrapper_collapses_to_first():
+    wrapped = {"items": [{"pov": "third_limited", "sentence_rhythm": "tight"}]}
+    with patch(
+        "app.services.style_abstractor.run_structured_prompt",
+        new=AsyncMock(return_value=wrapped),
+    ):
+        out = asyncio.run(style_abstractor.abstract_style("text", db=None))
+    assert out == {"pov": "third_limited", "sentence_rhythm": "tight"}
+
+
+def test_style_abstractor_non_dict_array_element_returns_empty():
+    wrapped = {"items": ["oops-this-is-a-string"]}
+    with patch(
+        "app.services.style_abstractor.run_structured_prompt",
+        new=AsyncMock(return_value=wrapped),
+    ):
+        assert asyncio.run(style_abstractor.abstract_style("text", db=None)) == {}
+
+
 def test_style_abstractor_parse_error_returns_empty():
     with patch(
         "app.services.style_abstractor.run_structured_prompt",
@@ -93,6 +112,26 @@ def test_beat_extractor_items_wrapper_collapses_to_first():
     ):
         out = asyncio.run(beat_extractor.extract_beat("raw", db=None))
     assert out == {"scene_type": "setup", "subject": "A"}
+
+
+def test_beat_extractor_scenes_wrapper_collapses_to_first():
+    wrapped = {"scenes": [{"scene_type": "conflict", "subject": "A"}]}
+    with patch(
+        "app.services.beat_extractor.run_structured_prompt",
+        new=AsyncMock(return_value=wrapped),
+    ):
+        out = asyncio.run(beat_extractor.extract_beat("raw", db=None))
+    assert out == {"scene_type": "conflict", "subject": "A"}
+
+
+def test_beat_extractor_beat_sheet_wrapper_collapses_to_first():
+    wrapped = {"beat_sheet": [{"scene_type": "turn", "subject": "A"}]}
+    with patch(
+        "app.services.beat_extractor.run_structured_prompt",
+        new=AsyncMock(return_value=wrapped),
+    ):
+        out = asyncio.run(beat_extractor.extract_beat("raw", db=None))
+    assert out == {"scene_type": "turn", "subject": "A"}
 
 
 def test_beat_extractor_non_dict_array_element_returns_empty():

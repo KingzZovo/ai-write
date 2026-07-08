@@ -18,6 +18,11 @@ from collections import Counter
 
 from app.services.checkers.base import BaseChecker, CheckResult
 from app.services.context_pack import ContextPack
+from app.services.prompts.anti_ai_rules_zh import AI_PHRASE_BLACKLIST
+from app.services.prompts.humanizer_zh_rules import (
+    rule_by_id as humanizer_rule_by_id,
+    scan_humanizer_structural,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,14 @@ AI_PHRASES: list[str] = [
     "一股莫名的", "一种说不出的",
     "心中五味杂陈", "百感交集",
 ]
+
+# Merge the QMAI-derived phrase blacklist (services/prompts/anti_ai_rules_zh)
+# into the detection source, deduplicated. Original entries and detection
+# logic stay unchanged; this only widens phrase coverage.
+for _phrases in AI_PHRASE_BLACKLIST.values():
+    for _phrase in _phrases:
+        if _phrase not in AI_PHRASES:
+            AI_PHRASES.append(_phrase)
 
 # Four-character idiom pattern (CJK 4-char combinations)
 FOUR_CHAR_PATTERN = re.compile(r'[\u4e00-\u9fff]{4}')
@@ -123,6 +136,14 @@ STYLE_V9_DIRECTIVES: list[str] = [
     "　　不要全程以上帝视角描述。",
 ]
 
+DIALOGUE_DAMPING_DIRECTIVES: list[str] = [
+    "【communication_damping】密集交锋不必每句都接住；允许无视、岔开、迟钝、重复尾音、信息掉在地上或被环境打断。",
+    "【plain_register_no_wit】日常护财、试探、讨价还价和街头冲突必须服从人物当下情绪，禁止廉价机智、抖机灵、对仗式反击和硬凹聪明。",
+    "【focal_measure_only】数字化距离只在生死、翻脸、机密暴露或必须对齐证物的焦点时刻使用；普通走位不要写成坐标测绘。",
+    "【motive_exposition_zero】不要把角色或对方的底层动机直接说破；改用反问、压价、动作和结果施压。",
+    "【structural_prose_topology】动作对白绑定率不超过 0.35；紧贴问答不超过 12 组；短对白密度不得过半；制度/证据说明不能由专家 NPC 一口气讲完。",
+]
+
 
 class AntiAIChecker(BaseChecker):
     """AI writing trace detection.
@@ -172,8 +193,40 @@ class AntiAIChecker(BaseChecker):
         # 8. Formality level
         self._check_formality(chapter_text, result)
 
+        # 9. Humanizer-zh structural tells (negative parallelism, shallow
+        #    significance, synonym cycling, false range, copula avoidance...)
+        self._check_humanizer_structural(chapter_text, result)
+
         result.score = self._compute_score(result)
         return result
+
+    def _check_humanizer_structural(
+        self,
+        text: str,
+        result: CheckResult,
+    ) -> None:
+        """Detect Humanizer-zh structural AI tells.
+
+        These are syntactic scaffolds (Wikipedia "Signs of AI writing")
+        that the lexical word lists above cannot catch: 否定式排比,
+        句尾强行升华, 虚假范围, 系动词回避, 过度限定. Each finding is
+        advisory (low/medium) — diagnosis for the rewrite loop, not a
+        hard gate, to avoid the over-rewrite churn we already fight.
+        """
+        for finding in scan_humanizer_structural(text):
+            examples = finding.get("examples") or ()
+            example_text = "，".join(f"'{e}'" for e in examples)  # type: ignore[arg-type]
+            rule = humanizer_rule_by_id(str(finding["rule_id"]))
+            result.add_issue(
+                type=f"humanizer_{finding['rule_id']}",
+                severity=str(finding["severity"]),
+                location="多处",
+                description=(
+                    f"结构性AI痕迹·{finding['title']}（{finding['hits']}处）：{rule.problem}"
+                    + (f" 命中: {example_text}" if example_text else "")
+                ),
+                suggestion=str(finding.get("suggestion") or rule.suggestion),
+            )
 
     def _check_ai_words(
         self,

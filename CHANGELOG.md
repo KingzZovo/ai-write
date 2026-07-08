@@ -1,5 +1,164 @@
 # Changelog
 
+## [1.9.5] - 2026-07-04
+
+全流程测试驱动的稳定性修复（分支 `rescue/2026-05-17-baseline`，全程 TDD，707 pytest 全绿）+ 前端全面汉化。
+
+### 修复
+
+- **prose 残片塌缩**（`services/chapter_pipeline.apply_targeted_logic_rewrite`）：logic_critic 定向改写时，drafter 偶尔只返回被点名片段附近的一小段、丢弃整章其余正文（实测 124 句 → 15 句残片），残片随后被 `persist-on-block` 当终稿存库、标 `completed` = 静默数据丢失。加篇幅守门 `_MIN_REWRITE_LENGTH_RATIO=0.70`：候选掉到原文 70% 以下视为内容丢弃，返回 None 保留上一稿。测 `tests/services/test_chapter_pipeline.py`。
+- **分卷大纲跑偏题材**（`services/outline_generator._generate_volume_outline_staged`）：V1 meta JSON 解析失败（relay 返回截断/未闭合字符串）→ 退回空 `_fallback_volume_meta` → V2 batch prompt 只带空 meta、完全不含全书前提 → 模型套用与题材无关的通用武侠桥段（林凡/天玄宗）。新增 `_book_premise_digest()` 抽全书前提，注入每个 batch prompt 顶部作锚。测 `tests/test_volume_batch_premise_anchor.py`。
+- **auto-revise 回滚清空新章**（`api/generate.py` rollback 站点）：C2 revise loop 对新章存了多版有效正文（4775→5003 字、评分 ~8.0），耗尽 max_rounds 未过 8.2 阈值后回滚到 `baseline_text_before_run`——新章该值为空——把好正文清成 len=0/draft，直接抵消 `QUALITY_GATE_PERSIST_ON_BLOCK=1`。抽纯函数 `resolve_rollback_text(baseline, current, persist_on_block)`：baseline 空 + persist_on_block + current 非空时保留 current。测 `tests/test_auto_revise_rollback_preserves_draft.py`。
+- **level=chapter 大纲从不回写 `chapters.outline_json`**（`api/generate.py._persist_outline_now` + `services/outline_generator.merge_chapter_outline_enrichment`）：SSE 章节大纲生成端点只写 `outlines` 表，而正文/readiness 读的 `chapters.outline_json` 一直是分卷批次的薄骨架（4 字段）。新增纯函数 `merge_chapter_outline_enrichment(skeleton, generated)`（skeleton 的 chapter_idx 权威、生成字段有内容才覆盖、`_parse_error`/`raw_text` 忽略），在 chapter 分支按 volume_idx+chapter_idx 定位 Chapter 行回写。实测 4 字段 → 19–21 字段。测 `tests/test_chapter_outline_enrichment.py`。
+  - **注意**：前端 UI 实际走的是 `POST /api/projects/{id}/chapters/{cid}/outline/expand`（`services/chapter_outline_expander`，会话前已存在，用 chapter_id 自动解析卷、直接写 `chapter_json`）——那条路本就能丰富。本修复补的是另一条 SSE 生成路径 `/api/generate/outline {level:chapter}`（前端不走，但确实之前不回写）。该 SSE 路径的 readiness 要求显式传 `parent_outline_id`（多卷时 chapter_idx 单值有歧义），否则 blocked「缺少当前卷大纲」。
+- **章节半句截断被静默标 completed**（`services/chapter_quality_gate.looks_truncated` + `api/generate.py` 三处存库站点）：scene_writer 最后一场撞 max_tokens 或 relay 中途断流，整章仍过 50% 长度地板 → 标 `completed`、结尾是半句话（`generate_stream` 从不读 finish_reason）。新增纯函数 `looks_truncated(text)` 查末字符是否终止标点（`。！？…"』」）】》—`，剔尾部空行/代码围栏）；初存、revise re-save、rollback 三处存库站点截断则标 `status="draft"` + SSE `truncated` 事件。测 `tests/test_chapter_truncation_detection.py`（11 case）。
+
+### 变更
+
+- **前端全面汉化**：内联硬编码英文迁移到 `src/lib/i18n/messages.ts`（zh/en catalog，145 键对齐）+ 新增 `src/lib/i18n/enumLabels.ts`（后端枚举值中文标签映射：状态/严重度/等级/actor/action）。覆盖编辑器（RewriteMenu/EditorView 的中英混排）、联动面板（CascadePanel/CascadeTasksPanel）、混排面板（Style/Foreshadow/Strand）、管理页（logs/changelog/llm-routing/settings/writing-engine/prompts/cascade-tasks）。`useT` 引用 5 → 15 文件，JSX 可见英文清零，`tsc --noEmit` 零输出，eslint 恰在基线 78。
+
+### 已知问题（待办，本轮全流程测试新暴露）
+
+- **图像拒绝话术污染正文**：relay 偶尔把 scene_writer 的文本调用误路由到图像模型，返回拒绝语（如「您登录了吗？我可以搜索图片，但目前似乎无法为您创建任何图片」），被当作场景拼进正文。因其以「。」结尾，骗过了 `looks_truncated` 截断检测。全流程测试中 1/5 章中招。根因在 relay 路由层，产品侧可加一道「已知拒绝话术」检测门（拦截后标 draft/触发重写）。**尚未修复**。
+- **relay JSON 健壮性**：分卷大纲逐批生成时，单个 batch 的 JSON 解析失败会使整卷大纲作废（`_parse_error` → 0 章物化）。大卷（如 14 批次）任一批次失败即毁全卷。`_book_premise_digest` 锚点缓解了跑偏，但 json_repair + strict retry 的批次级健壮性仍是深层待办。**尚未修复**。
+
+## [1.9.4] - 2026-06-26
+
+弧式增量创作循环（子项目 A）落地。详见 `docs/superpowers/specs/2026-06-26-incremental-arc-writing-loop-design.md` 与 `docs/HANDOFF_2026-06-26_incremental-arc-loop.md`。
+
+### 新功能
+
+- **弧式增量创作循环（子项目 A）**：实现用户的核心创作哲学——从一个点子出发，一弧（≈20 章一段连贯故事）一弧地写，**绝不预先规划几百几千章的大伏笔**。与旧的"全书 750 章大纲→批量生成"相反，旧流程降级保留。
+  - **零迁移设计**：弧物理复用 `Volume` 表（一弧 = 一卷，`volume_idx` = 弧序号），弧状态寄存 volume-level `Outline.content_json` 的 `_arc` 命名空间（`level`/`content_json` 均自由结构，无需建表/迁移）。旧项目无 `_arc` 标记 → `/api/arc/{pid}/current` 返回 `null`，前端回退旧 wizard，互不干扰。
+  - **状态机层** `services/arc_loop.py`（新）：`ArcState` 解析/序列化、`advance_arc_state` 纯状态机（active→awaiting_direction→active→completed，可无 LLM 单测）、`generate_arc_outline`（哲学约束 prompt：只规划本弧、禁止跨弧长线伏笔）、`build_arc_kickoff_questions`（补全设定问答）、`build_arc_completion_suggestions`（弧末给下一弧建议）、`build_next_chapter_brief`（组装下一章 brief：本弧标题+到目前故事线+作者下一步方向+本章 beat）。`target_chapters` 4–40 夹紧（默认 20）。
+  - **编排 API** `api/arc.py`（新，`/api/arc`）：`POST /{pid}/start`（建第一弧 Volume+Outline，大纲失败 502 回滚不建半截）、`GET /{pid}/current`、`POST /{pid}/chapter-written`（写章后推进状态）、`POST /{pid}/next-direction`（作者给下一章方向→active）、`GET /{pid}/chapter-brief`（组装下一章 brief）、`POST /{pid}/complete`（生成下一弧建议）、`POST /{pid}/next-arc`（建 volume_idx+1 新弧，要求当前弧 completed 否则 409）。
+  - **复用子项目 B**：章节正文仍走既有 `/api/generate/chapter`（内部 `run_chapter_pipeline` 三角色管线）；A 只负责弧编排 + 下一章 brief，不重复实现生成。
+  - **降级**：kickoff 问题/弧末建议生成失败 → 空列表（跳过，不阻断）；弧大纲失败 → 502 + 事务不建半截 Volume。task_type `arc_outline`/`arc_kickoff`/`arc_suggest` 未配 PromptAsset 时回退到 `outline_volume`/`critic`。
+
+### 测试与验证
+
+- pytest **685 passed**（666 基线 + 弧状态机/大纲/问答/brief 12 例 + 弧 API 7 例），零回归。零新增数据库迁移。
+- 部署：`docker compose up -d --build backend`。
+
+### 非目标（YAGNI）
+
+- 前端向导未改（API 完备，前端可后续按既有 wizard 模式接；本环境无法有效测前端）。
+- 未改子项目 B 的 `run_chapter_pipeline` 内部；未动旧 `outline_generator` 全量大纲路径（降级保留）。
+- 不做跨弧大伏笔管理（与本子项目哲学相悖）。
+
+## [1.9.3] - 2026-06-25
+
+Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能体章节质量管线（子项目 B）落地。详见 `docs/HANDOFF_2026-06-25_humanizer-and-outline-fix.md`。
+
+### 修复
+
+- **大纲生成回退到 prompt（恶性 bug，根治）**：`OutlineGenerator.__init__` 用同步 `get_model_router()`，在 SSE 异步事件循环里命中 `loop.is_running()` 分支不加载 DB 配置，只回退到 env provider；而本部署 env LLM key 全空 → router providers 为空 → `_get_route` 抛 `No model configured for 'outline_book'`，该错误被 SSE 当内容下发，前端渲染成"回退到 prompt 提示词"。修复：`generate_outline` 在实例化 `OutlineGenerator` 前 `await get_model_router_async()`，治愈共享单例（同一 `_router` 对象，sync getter 随后返回 DB-loaded 实例）。这是唯一用同步 router 的生成路径，其余生成端走 `run_text_prompt → get_model_router_async` 不受影响。`tests/test_outline_router_preload.py`（源码契约断言 + 单例治愈证明）。
+- **测试套件确定性**：`conftest.py` 在 import 前钉 `CHAPTER_MAX_REWRITE_ROUNDS=2`，消除全套跑 vs 单文件跑因 `.env` 加载顺序导致的两个 `chapter_quality_gate` 用例时挂时过（pre-existing 隔离 bug，非本轮代码引入）。
+
+### 新功能
+
+- **Humanizer-zh 结构性去AI味规则**（`services/prompts/humanizer_zh_rules.py`，源自 op7418/Humanizer-zh，基于 Wikipedia「Signs of AI writing」）：补现有两层去AI味（QMAI 词表 `anti_ai_rules_zh` 管网文腔 + `AntiAIChecker` 管密度统计）查不到的**句法骨架级** AI 指纹。7 条规则：否定式排比、句尾强行升华、虚假范围、系动词回避、过度限定（5 条可确定性正则检测）+ 同义词循环/同画面重述、三段式法则（2 条仅 prompt 引导）。`synonym_cycling` 段落级语义判重正对神裔 ch1「骨架画面二次重述」根因。
+  - **prompt 侧**：`render_humanizer_prompt_block()`（≤1400 字预算截断）追加进 `render_prose_quality_prompt()` 单一注入点，同时进生成与润色 prompt（blueprint 里精确出现 1 次）。
+  - **检测侧**：`scan_humanizer_structural()` 接入 `AntiAIChecker`，产 `humanizer_*` issue，仅 low/medium 不做硬门（诊断不阻断，避免过度返工）。
+  - 测试 `tests/services/test_humanizer_zh_rules.py`（17 例：检测命中/清洁文本零误报/预算/正交契约/端到端 wiring）。
+
+- **子项目 B：多智能体章节质量管线（已实现，12 个 TDD 任务全绿）**（spec `docs/superpowers/specs/2026-06-23-multi-agent-chapter-pipeline-design.md` + 计划 `docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`）：串行三角色 drafter→logic_critic→prose_polish，新增「逻辑与剧情核查」（`services/logic_critic.py`）专查神裔 ch1 三类章内缺陷（空间方向矛盾/画面重述/跨度突变 + 动作因果/道具状态），隔离上下文（仅本章正文+本章大纲+前章末尾 1500 字，不喂全书记忆）echo 终稿不污染主流程。编排器 `services/chapter_pipeline.py`：clean 快路径（0 改写）、定向改写只动 locatable quote、2 轮封顶 + plateau 终止、逐棒降级不丢整章。`apply_chapter_quality_gate` 零改动作第三棒。`generate.py` 调用点切到 `run_chapter_pipeline`，新增可选 `logic_critic_done` SSE 事件。`CHAPTER_PIPELINE_ENABLED=0` 一键回退、`LOGIC_CRITIC_MAX_ROUNDS` 调轮次、`logic_critic`/`drafter` task_type 带 fallback（→critic/rewrite）。限流约束下选串行而非并行扇出。
+
+### 测试与验证
+
+- pytest **666 passed**（642 基线 + outline router 2 + 子项目 B 的 logic_critic/chapter_pipeline 共 22 例；Humanizer 17 例含在内）。前端 `tsc --noEmit` 零输出（仅可选新增 `logic_critic_done` 事件，前端可选消费）。
+- 子项目 B 回退路径已验证（`CHAPTER_PIPELINE_ENABLED=0` 直通 `apply_chapter_quality_gate`，行为与今日一致）。
+- 大纲修复已部署 live 并端到端验证（outline 流恢复正常正文输出，不再回退 prompt）。多智能体管线已 `docker compose up -d --build backend` 部署。
+
+### 调研（未引入代码，仅记录可学点）
+
+- **worldwonderer/oh-story-claudecode**：文件系统即记忆、`guard-outline-before-prose` 钩子（无章节大纲禁止写正文，强制大纲先行）、7 agent 按模型分层——印证子项目 A（增量弧式循环）与 B（串行三角色）方向。
+- **dama-cyber/magic-distillation**：七步单任务 prompt 拆分、可量化原创性闸（5-gram 重叠<5%/最长公共子串<8字）、分级黑名单、逐段字数预算 ±5%。其"反 AI 检测"目标不采纳。
+
+## [1.9.2] - 2026-06-13
+
+遗留项修复 + ainovel-cli 借鉴四件套（12 commits）。调研 voocel/ainovel-cli（Go/TUI，473★）后引入 4 个我们没有等价物的机制；同时修掉 v1.9.1 记录的 3 个遗留项 + 真实生成冒烟发现的 2 个 bug。计划见 `.claude/plans/ai-https-github-com-mochocyang-qmai-groovy-garden.md`。
+
+### 遗留项修复（A）
+
+- **test_relationships_crud 重写**：v1.9 起 PG settings 写端点已故意 410（Neo4j 为唯一真源），旧测试按 PG 直写契约写已过时。改为断言写端点 410 + 只读端点 200，并清理 dev 库 44 个测试残留项目。全套自此 0 失败。
+- **伏笔债务全局章号**：`ContextPackBuilder` 内部用 `chapter_global_idx` 把卷内局部章号换算为书级全局号再算债务，修掉第 2 卷起 age 偏小/为负导致的漏报（调用方零改动，写读两侧同换算同域可比）。
+- **generation_runner 签名对齐**：`build(project_id, chapter_id=...)` 与现签名 `(project_id, volume_id, chapter_idx)` 不匹配的 TypeError 暗债，新增 `_resolve_chapter_coords` 反查修复。
+- **认知账本补全两个 evaluate 调用方**：`evaluation_tasks` 独立评估任务 + `versions` 手动评估端点现在也注入认知账本（反查 chapter→volume→project_id）。
+
+### 生成冒烟发现的修复（B）
+
+- **真实生成冒烟**（流程测试2，550 章/5 卷）验证 A 阶段修复，并抓到：评估 LLM 在 JSON 字符串里输出原始控制符 → `json.loads` strict=True 抛错 → overall=0 假评分 → 整章重写（烧 2/3 修订轮）。
+- **评估解析容错**：`strict=False` + 修复重试（剥围栏/截首尾大括号/剥裸控制符）；新增 `EvaluationResult.parse_failed`，解析失败时 `should_revise` 跳过修订（不在垃圾信号上动文），泛型 except 也置标志，cascade 触发点加闸。
+
+### 新功能（ainovel-cli 借鉴，均注明出处）
+
+- **C1 评审防过度返工校准**（`EVALUATOR_CALIBRATION_PROMPT` 六条 + `REVISE_CALIBRATION_PROMPT`）：「accept 是最常见结果」「审美 warning 不构成返工理由」「对话区分度测试」「平淡必须 quote 指出 1-2 处」。封顶规则与 8.2 阈值逻辑不变，只把审美噪音从分数里拿掉。
+- **C2 全书文风统计 stylestat**（表 `style_stats`，迁移 a1001911）：纯 Python 零 LLM 统计句式 tic 章均频率、最近 20 章 n-gram 高频短语（实体名做停用词）、跨章逐字重复句、章末同构、开篇时间词率。双向反馈：生成端注入「文风镜像（主动压低）」，评分端给统计数字由 LLM 裁定。补「单章评审窗口对全书级文风固化失明」盲区。
+- **C3 确定性相关章反查 + 配角名册**（表 `character_appearances`，迁移 a1001912）：从伏笔埋设章（全局号）+ 配角 last_seen 反查相关历史章强制回读（与向量检索互补，零嵌入）；配角 first_seen/last_seen/出场数台账，长期未出场角色提示回读对齐。状态变化路因 chapter_start 是卷内局部域 V1 跳过。
+- **C4 叙事方向锚 Compass + 完结判定**（表 `narrative_compass`，迁移 a1001913）：ending_direction（终局命题）+ open_threads（长线台账）+ estimated_scale（规模区间，禁单值）。规模纯代码派生（确定性优先持久化），终局/长线 LLM 抽取；新卷生成时更新（带 ±30% clamp）；完结六条清单（规模未达下限/活跃长线/未回收伏笔→阻断，终局是否回答→人工核对，日常稳态启发式告警）。API `/compass`、`/compass/refresh`、`/compass/completion-readiness`。生成时注入方向锚。
+
+### prompt 预算
+
+- `ContextPack.to_system_prompt` 默认 token_budget 8000→9500，覆盖三个新注入块（文风镜像 L2 尾 ≤800、相关章回读 L1 尾 ≤600、方向锚 L1 尾 ≤400），保护 L1/L2 头部世界规则不被截断（keep-tail 截断语义）。
+
+### 测试与验证
+
+- pytest **598 passed**（本轮新增 ~60 个测试，纯函数 + 注入 tripwire + 变异自查；评估解析/校准/stylestat/反查/Compass 各有覆盖）；唯一历史失败 test_relationships_crud 已在 A1 修复，全套 0 失败。
+- 迁移 a1001911→a1001913 已实跑到 head；部署冒烟 /api/health 200、启动无错误。
+- C 特性真实数据验证（流程测试2 550 章）：文风镜像正确识别 time_quantifier 1.76/章 + 北山殡仪馆/七号线等高频地名 + 68% 短句章末；配角名册 150 行；Compass 派生规模 637-862 章 + LLM 抽出终局命题，completion-readiness 正确阻断（550<637 下限 + 8 条活跃长线）。
+
+### Breaking / 注意
+
+- 新增 3 张表，需 `alembic upgrade head`（a1001913，幂等，本机已执行）。
+- 子代理派发本轮持续 429（服务过载），A1-A4/B/C 全部内联实现 + 自审 + 变异验证，无独立审查代理。
+- **已知遗留**：① stylestat n-gram 停用词只过滤含全名的 gram，昵称短形（"见月把"）会漏入高频短语，待加昵称 skiplist；② C3 状态变化反查路（chapter_start 卷内局部域）V1 未启用，待 CharacterState 加卷标识；③ Compass 自动初始化仅在 `/compass/refresh` 与卷重生时触发，book 大纲首次生成的深层异步/SSE 保存点未挂钩（避免深嵌套回归风险）；④ B1 另曝 scene_planner 结构化输出 6/6 失败走兜底、质量门 rewrite 与长度地板打架，属既有行为，待后续任务。
+
+## [1.9.1] - 2026-06-11
+
+质量加固 + QMAI 借鉴迭代（28 commits）：先把积压的进行中改动按语义拆分提交锁定，随后修复 8 个后端 + 6 个前端正确性 bug，并落地 4 项借鉴自 QMAI（MIT, github.com/Mochocyang/QMAI）的特性。计划与逐任务审查记录见 `docs/superpowers/plans/2026-06-10-quality-hardening-and-qmai-adoption.md`。
+
+### 锁定的进行中改动（提交拆分）
+
+- 章节目标字数迁移：默认 50000 → 4000，`resolve_chapter_target_word_count` 做 legacy 解析（迁移 a1001909）。
+- 大纲就绪门（outline readiness gate）、场景数上限 6→20、评分策略由"硬门槛阻断"翻转为"生成前内化 + 分数验收"。
+- 前端 readiness UI、结构化错误解析、工作台 tab 化。
+
+### 修复（后端）
+
+- **SSE 场景回退正文重复**：场景流中途失败回退单发生成时未清空已流出的半截文本，保存的章节 = 半截场景 + 完整全文。现已清空并向前端发 `fallback_restart` 事件（`api/generate.py`）。
+- **`retry_attempts` 形同虚设**：参数层层传入但 provider 不消费，重试硬编码 4 次（单发路径最坏 840s×4 ≈ 56 分钟挂死）。现已透传（`model_router.py`）。
+- **评分 45s 超时假评分**：评估调用超时硬编码 45s，长输入超时 → overall=0 全零评分误触发重写。现默认 120s，env `EVALUATION_REQUEST_TIMEOUT` 可调。
+- **评审提示丢失违规分类法**：`EVALUATOR_CONTRACT_PROMPT` import 了但没拼进系统提示，下游修订管道被静默削弱；`max_tokens=900` 易截断 JSON。现已拼回 + 提到 2400。
+- **Celery 路径遗留 50000 字数**：未走 legacy 解析导致老章节永远落入模板兜底（质量塌陷）。现与 API 路径一致。
+- 删除 `should_stop_random_retry` 三层死代码；场景列表截断改为硬顶 `MAX_SCENE_COUNT` 且保留结尾钩子场景；blueprint 散文力学规则单源化（消除两处重复定义 + 空壳小节 + 版本号漂移，规则零丢失、44 marker 零缺失）。
+
+### 修复（前端）
+
+- **SSE 失败 UI 永久卡"生成中"**：`apiSSE` 失败路径不回调。现保证终态回调恰好一次 + 新增 `onError`（5 个调用点全部接入）。
+- **SSE 流无法取消/卸载泄漏**：AbortController 被丢弃。现统一 ref 管理，切章/重新生成/卸载时 abort；处理 `fallback_restart` 事件清空半截文本。
+- **轮询泄漏**：多处 `setInterval` 无卸载清理、vector 页缺 failed 终态且瞬时错误即停。新增 `usePolling` hook 统一改造 5 处（另 5 处确认本就规范）。
+- `apiFetch` 调用方传 headers 会整体覆盖 Authorization 的潜伏地雷已修。
+
+### 新功能（QMAI 借鉴，均注明 MIT 出处）
+
+- **去AI味规则库**（`services/prompts/anti_ai_rules_zh.py`）：41 条分类黑名单 + 5 组"情绪→动作"改写对照 + 对白十原则 + 防过度矫正禁令，接入 `anti_ai_checker` 检测与生成/润色 prompt（每章 prompt 增量约 1.2k 字符）。
+- **定点修订（rewriteTarget）**：评审 issue 新增 `quote` 字段（10-40 字原文定位片段），修订轮优先对"问题段落±1 段"做定点改写拼回，替代整章重生成；不可定位/超预算/退化改写自动回退整章路径。env `TARGETED_REVISION_ENABLED`（默认开）。
+- **角色认知账本**（`character_cognitions` 表，迁移 a1001910）：每角色 knows/does_not_know + 读者已知三表。章节定稿后 LLM 抽取增量合并（每角色上限 30 条，挤旧保新），生成时注入【人物认知边界】节，评审新增 `cognition_violation` 违规类型（防"角色提前知道不该知道的事"穿帮）。needs_review 文本不摄取。
+- **伏笔债务分 + 黄金开篇**：`compute_debt_score`（planted 滞留 ≥5 章 -15、推进后停滞 ≥10 章 -5、未回收超 5 条每条 -2），伏笔列表 API 附 `debt`，score<60 时生成 prompt 注入"优先推进/回收、禁止新埋"；开卷前三章注入开篇硬约束（500 字内入事、禁铺垫、章末必留钩子）。
+
+### 测试与卫生
+
+- pytest **529 passed**（本轮新增 ~80 个测试，关键修复均经变异测试验证）；唯一失败 `test_relationships_crud` 为既有环境性失败（与本轮无关，待查）。
+- tsc 零错误；eslint 维持基线 78 problems 零新增。
+- `PROGRESS.md`（3.9MB 运行日志）与 `tmp/` 出库并 ignore；删除根目录一次性补偿脚本。
+
+### Breaking / 注意
+
+- 评审 issue schema 新增 `quote` 字段（向后兼容，缺省空）；显式传 `target_words=50000` 现按 legacy 解析为项目设置/4000（与 API 路径既有行为一致）。
+- 需执行迁移至 a1001910（`alembic upgrade head`，幂等，本机已执行）。
+- 已知遗留：context_pack 路径的 `chapter_idx` 为卷内局部值，第 2 卷起伏笔债务可能漏报（不误报）；独立评估任务与手动评估端点暂未传认知账本。
+
 ## [1.7.3] - 2026-04-28
 
 v1.7.3 是 v1.7.x 线上 `stream_by_route` `NameError` 热修复，详见 `RELEASE_NOTES_v1.7.3.md`。

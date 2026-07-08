@@ -59,6 +59,9 @@ celery_app.conf.beat_schedule = {
 
 # Explicitly import task modules so Celery registers them.
 import app.tasks.knowledge_tasks  # noqa: F401, E402
+import app.tasks.generation_tasks  # noqa: F401, E402
+import app.tasks.book_tasks  # noqa: F401, E402
+import app.tasks.analysis_tasks  # noqa: F401, E402
 import app.tasks.style_tasks  # noqa: F401, E402
 import app.tasks.backup_tasks  # noqa: F401, E402
 import app.tasks.entity_tasks  # noqa: F401, E402  # B2' (v1.5.0): entity extraction
@@ -178,16 +181,58 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
     safe to invoke manually from the frontend (see
     ``POST /api/reference-books/{id}/retry-missing``).
     """
+    # v1.15: single-flight by book. When a retry wave overruns Redis broker
+    # visibility_timeout, Redis can redeliver the same logical wave while the
+    # original process is still running. Prevent duplicate same-book waves from
+    # piling up and consuming all worker slots. The TTL is intentionally longer
+    # than visibility_timeout; if the worker dies, Redis releases it eventually.
+    lock_key = f"decompile_retry:lock:{book_id}"
+    lock_token = str(getattr(getattr(self, "request", None), "id", None) or "unknown")
+    lock_client = None
+    lock_acquired = False
+    try:
+        import os as _os
+        import redis
+
+        lock_ttl = int(_os.getenv("DECOMPILE_RETRY_LOCK_TTL", "10800"))
+        lock_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        lock_acquired = bool(lock_client.set(lock_key, lock_token, nx=True, ex=lock_ttl))
+    except Exception:
+        # Redis lock failure must not block the retry mechanism; fall back to
+        # normal execution and let task idempotency protect rows.
+        lock_client = None
+        lock_acquired = True
+
+    if not lock_acquired:
+        return {
+            "status": "partial",
+            "style_filled": 0,
+            "beat_filled": 0,
+            "locked": True,
+            "lock_key": lock_key,
+        }
+
     from app.services.reference_ingestor import (
         compute_retry_delay,
         max_auto_retries,
         retry_missing_branches as _retry,
     )
 
-    result = _run_async_safe(_retry(book_id=book_id, attempt=attempt))
+    try:
+        result = _run_async_safe(_retry(book_id=book_id, attempt=attempt))
+    finally:
+        if lock_client is not None and lock_acquired:
+            try:
+                if lock_client.get(lock_key) == lock_token:
+                    lock_client.delete(lock_key)
+                lock_client.close()
+            except Exception:
+                pass
 
     try:
         status = result.get("status") if isinstance(result, dict) else None
+        if isinstance(result, dict) and result.get("locked"):
+            return result
         # v1.14: progress-aware rescheduling. The legacy contract used a
         # bounded exponential backoff (300s, 600s, 1200s, ... capped at
         # ``max_auto_retries`` waves) which is correct when nothing is
@@ -199,8 +244,11 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
         #     time we actually stall. This lets a 20k-slice book drain
         #     batch-by-batch without artificial pauses.
         #   * If this wave filled 0 cards (true stall) and the book is
-        #     still partial, fall back to the original exponential backoff
-        #     and respect ``max_auto_retries`` so we don't spin forever.
+        #     still partial, retry on a short fixed delay as well. The
+        #     ``attempt`` counter is kept only as observable metadata and is
+        #     wrapped back to 1 after ``max_auto_retries`` instead of stopping:
+        #     upstream LLM outages can last for hours, but the missing-card
+        #     backfill must keep probing until the book reaches ready.
         if status == "partial":
             style_filled = int(result.get("style_filled", 0) or 0)
             beat_filled = int(result.get("beat_filled", 0) or 0)
@@ -215,13 +263,19 @@ def retry_reference_book_missing_branches(self, book_id: str, attempt: int = 1):
                     args=[book_id, 1],
                     countdown=fast_delay,
                 )
-            elif int(attempt) < max_auto_retries():
-                next_attempt = int(attempt) + 1
-                delay = compute_retry_delay(next_attempt)
+            else:
+                max_attempts = max(1, int(max_auto_retries() or 1))
+                next_attempt = int(attempt) + 1 if int(attempt) < max_attempts else 1
+                # Upstream LLM outages are usually transient/intermittent.
+                # If a wave fills 0 cards, retry soon and do not stop at the
+                # historical attempt cap; the single-flight lock prevents
+                # duplicate same-book waves from piling up.
+                import os as _os
+                stall_delay = int(_os.getenv("DECOMPILE_RETRY_STALL_DELAY", "60"))
                 celery_app.send_task(
                     "retry_reference_book_missing_branches",
                     args=[book_id, next_attempt],
-                    countdown=delay,
+                    countdown=stall_delay,
                 )
     except Exception:  # pragma: no cover
         import logging

@@ -9,11 +9,79 @@ Celery tasks for knowledge base operations.
 """
 
 import asyncio
+import json
 import logging
 
 from app.tasks import celery_app
+from app.services.chapter_quality_gate import apply_chapter_quality_gate
 
 logger = logging.getLogger(__name__)
+
+
+# chapter_evaluator emits a single issue with dimension="system" (and overall=0)
+# when the judge response cannot be parsed or the eval errors. These placeholders
+# must never leak into the prose-mechanics issue_focus, or the generation-before
+# hint degrades to ["system"] and loses its issue-aware value.
+_PROSE_PREFLIGHT_PLACEHOLDER_DIMENSIONS = {"system"}
+
+
+def _single_shot_llm_timeout_kwargs(fallback_timeout: float) -> dict[str, float | int | bool]:
+    """Return generic LLM-call kwargs for direct/fallback chapter prose.
+
+    ``fallback_timeout_seconds`` wraps the whole single-shot path. The underlying
+    OpenAI-compatible call also needs an explicit per-request timeout and retry
+    count so long chapter drafts do not fail at 0 chars on the global default.
+    In addition, direct chapter prose now defaults to non-streaming via
+    ``SINGLE_SHOT_LLM_STREAM=0`` because some proxy/model routes can raise HTTP/2
+    stream INTERNAL_ERROR after minutes of generation, leaving no recoverable
+    text in the database. The env toggle keeps the behavior reusable across
+    chapters/projects without hard-coding a chapter-specific workaround.
+    """
+    from app.config import settings
+
+    configured = settings.SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS
+    retry_attempts = settings.SINGLE_SHOT_LLM_RETRY_ATTEMPTS
+    use_stream = settings.SINGLE_SHOT_LLM_STREAM
+    outer = max(float(fallback_timeout or 0), 60.0)
+    leave_commit_margin = max(30.0, outer - 30.0)
+
+    if use_stream:
+        assumed_endpoints = max(1, settings.SINGLE_SHOT_LLM_BUDGET_ENDPOINTS)
+    else:
+        assumed_endpoints = max(1, settings.SINGLE_SHOT_LLM_BUDGET_ENDPOINTS)
+    endpoint_budget = max(30.0, (outer - 50.0) / float(assumed_endpoints))
+    request_timeout = max(30.0, min(configured, leave_commit_margin, endpoint_budget))
+    return {"request_timeout": request_timeout, "retry_attempts": retry_attempts, "stream": use_stream}
+
+
+def _stage_needs_review_chapter_text(task, chapter, text: str, *, error_message: str | None = None) -> str:
+    """Stage a generated draft everywhere the UI reads manual-review content."""
+    final_text = (text or "").strip()
+    task.status = "needs_review"
+    task.error_message = ((error_message or "")[:1500] or None)
+    task.result_text = final_text
+    task.progress_text = final_text
+    task.char_count = len(final_text)
+    if chapter is not None:
+        chapter.content_text = final_text
+        chapter.word_count = len(final_text)
+        chapter.status = "needs_review"
+    return final_text
+
+
+def _resolve_task_chapter_target_words(params, chapter_target_word_count, project_settings) -> int:
+    """Resolve the effective chapter target word count for Celery generation.
+
+    Mirrors the API path (api/generate.py): explicit task param wins over the
+    chapter row value, then legacy 50k defaults are remapped via
+    resolve_chapter_target_word_count to the project setting or 4000 fallback.
+    """
+    from app.services.chapter_target_words import resolve_chapter_target_word_count
+
+    return resolve_chapter_target_word_count(
+        (params or {}).get("target_words") or chapter_target_word_count,
+        (project_settings or {}).get("target_chapter_words"),
+    )
 
 
 def _run_async(coro):
@@ -28,6 +96,210 @@ def _run_async(coro):
     from app.tasks import _run_async_safe
     return _run_async_safe(coro)
 
+async def _build_chinese_prose_preflight_prompt(ch, db) -> tuple[str, dict]:
+    """Build diagnostic-only prose-mechanics feedback for the next draft.
+
+    Uses the current stored chapter text and latest non-zero evaluation issues as
+    generation-before context. Does not block, repair, or print prose snippets.
+    """
+    from sqlalchemy import desc, select
+
+    from app.models.project import ChapterEvaluation, EvaluateTask
+    from app.services.chinese_prose_mechanics_checker import (
+        analyze_chinese_prose_mechanics,
+        build_generation_preflight_prompt,
+    )
+
+    previous_text = (getattr(ch, "content_text", "") or "").strip()
+    if not previous_text:
+        return "", {}
+
+    report = analyze_chinese_prose_mechanics(previous_text)
+    issue_focus: list[str] = []
+
+    def _extract_issue_focus(issues) -> list[str]:
+        labels: list[str] = []
+        for issue in issues or []:
+            if isinstance(issue, dict):
+                dimension = str(issue.get("dimension") or "").strip().lower()
+                if dimension in _PROSE_PREFLIGHT_PLACEHOLDER_DIMENSIONS:
+                    continue
+                raw = (
+                    issue.get("violation_type")
+                    or issue.get("type")
+                    or issue.get("category")
+                    or issue.get("dimension")
+                )
+                label = str(raw).strip() if raw else ""
+                if label and label.lower() not in _PROSE_PREFLIGHT_PLACEHOLDER_DIMENSIONS:
+                    labels.append(label)
+            elif issue:
+                labels.append(str(issue)[:80])
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for label in labels:
+            if label not in seen:
+                seen.add(label)
+                deduped.append(label)
+        return deduped
+
+    try:
+        # Prefer the most recent completed EvaluateTask that actually scored the
+        # chapter (overall > 0) and carries non-placeholder issues. Recent celery
+        # parse/timeout failures persist as overall=0 with a single
+        # dimension="system" issue; selecting them blindly degraded issue_focus to
+        # ["system"] and starved the generation-before hint of real violations.
+        task_result = await db.execute(
+            select(EvaluateTask)
+            .where(EvaluateTask.chapter_id == ch.id)
+            .where(EvaluateTask.status == "completed")
+            .where(EvaluateTask.result_json.is_not(None))
+            .order_by(desc(EvaluateTask.completed_at), desc(EvaluateTask.created_at))
+            .limit(5)
+        )
+        for task in task_result.scalars().all():
+            result_json = task.result_json if isinstance(task.result_json, dict) else {}
+            try:
+                overall = float(result_json.get("overall") or 0)
+            except (TypeError, ValueError):
+                overall = 0.0
+            if overall <= 0:
+                continue
+            focus = _extract_issue_focus(result_json.get("issues") or [])
+            if focus:
+                issue_focus = focus
+                break
+        if not issue_focus:
+            eval_result = await db.execute(
+                select(ChapterEvaluation)
+                .where(ChapterEvaluation.chapter_id == ch.id)
+                .where(ChapterEvaluation.overall > 0)
+                .order_by(desc(ChapterEvaluation.created_at))
+                .limit(1)
+            )
+            latest_eval = eval_result.scalar_one_or_none()
+            if latest_eval is not None:
+                issue_focus = _extract_issue_focus(
+                    getattr(latest_eval, "issues_json", None) or []
+                )
+    except Exception as err:  # pragma: no cover - prompt feedback must be best effort.
+        logger.warning(
+            "chinese_prose_preflight issue focus lookup failed chapter_id=%s err=%s",
+            getattr(ch, "id", None),
+            err,
+        )
+
+    safe_metrics = report.to_safe_dict()
+    return build_generation_preflight_prompt(report, issue_focus=issue_focus, version_label="v4.40"), {
+        "version": "v4.40_mundane_naturalness_age_logic_feedback",
+        "diagnostic_only": True,
+        "hard_gate": False,
+        "metrics": safe_metrics,
+        "issue_focus": issue_focus[:12],
+        "generation_targets": {
+            "short_sentence_run_max": 4,
+            "short_sentence_runs_over_target_ratio": 0.25,
+            "verb_watchlist_hits_ratio": 0.35,
+            "exposition_cluster_risk_ratio": 0.0,
+            "exposition_cluster_risk_max": 0,
+            "nominal_construction_ban": True,
+            "micro_measure_ban": ["半寸", "半息", "半指"],
+            "action_trajectory_downgrade": True,
+            "dialogue_asymmetry_required": True,
+            "few_shot_conflict_flow": True,
+            "action_verb_budget_per_paragraph": 1,
+            "exposition_reset_target": 0,
+            "space_watchlist_hits_max": 0,
+            "forbidden_collocation_count_max": 0,
+            "zero_tolerance_regression_recovery": True,
+            "short_sentence_run_max_target": 6,
+            "exposition_cluster_risk_hard_target_for_generation": 0,
+            "paragraph_exposition_proxy_reset": True,
+            "v4_22_exposition_cluster_split": True,
+            "environment_reaction_substitution": True,
+            "action_density_clamp_from_v4_15": True,
+            "short_run_clamp_from_v4_18": True,
+            "length_floor_from_v4_20": True,
+            "paragraph_exposition_cluster_target": 2,
+            "short_sentence_runs_over_target_max": 6,
+            "v4_23_rhythm_reclamp_from_v4_21": True,
+            "keep_v4_22_exposition_length_recovery": True,
+            "v4_24_length_recovery_without_short_run_chains": True,
+            "v4_24_restore_space_and_forbidden_zero": True,
+            "v4_25_constraint_priority_order": ["zero_tolerance", "short_sentence_rhythm", "exposition_split", "action_result_only", "dialogue_asymmetry", "length"],
+            "v4_25_length_yields_to_rhythm": True,
+            "v4_25_length_yields_to_zero_tolerance": True,
+            "v4_25_no_short_sentence_chain_for_length": True,
+            "v4_25_target_chars_soft_range": [6500, 7500],
+            "v4_26_length_pressure_disabled": True,
+            "v4_26_target_chars_soft_range": [5200, 6500],
+            "v4_26_short_sentence_run_max_target": 4,
+            "v4_26_short_sentence_runs_over_target_max": 3,
+            "v4_26_zero_tolerance_before_length": True,
+            "v4_26_forbidden_and_space_must_be_zero": True,
+            "v4_26_no_scene_expansion_for_length": True,
+            "v4_27_rhythm_only_no_length_pressure": True,
+            "v4_27_ban_comma_chopped_short_clause_chain": True,
+            "v4_27_require_medium_causal_sentences": True,
+            "v4_27_sentence_count_soft_max": 430,
+            "v4_28_restore_strict_rhythm_clamp": True,
+            "v4_28_no_scene_expansion_for_rhythm": True,
+            "v4_28_sentence_count_soft_max": 520,
+            "v4_28_short_sentence_run_max_target": 4,
+            "v4_28_short_sentence_runs_over_target_max": 3,
+            "v4_29_zero_tolerance_before_rhythm": True,
+            "v4_29_forbidden_and_space_must_be_zero": True,
+            "v4_29_long_quote_segments_gt80_max": 0,
+            "v4_29_target_chars_soft_range": [5800, 6800],
+            "v4_29_no_invented_official_terms": True,
+            "v4_29_dialogue_fragmentation_without_long_quote": True,
+            "v4_30_canonical_terms_not_forbidden": True,
+            "v4_30_space_watchlist_terms_must_be_zero": ["半寸", "半息", "半指", "半步", "寸许", "尺许", "肘下", "腋下"],
+            "v4_30_surviving_terms_from_v429": {"半息": 1, "半步": 1},
+            "v4_30_target_chars_soft_range": [5600, 6600],
+            "v4_31_residual_half_xi_must_be_zero": True,
+            "v4_31_exposition_cluster_risk_must_be_zero": True,
+            "v4_31_reduce_shoubei_repetition": True,
+            "v4_31_target_chars_soft_range": [5000, 6200],
+            "v4_32_length_must_return_under_6500": True,
+            "v4_32_exposition_cluster_risk_must_be_zero": True,
+            "v4_32_keep_space_and_forbidden_zero": True,
+            "v4_32_target_chars_soft_range": [5200, 6500],
+            "v4_32_no_scene_expansion_for_length": True,
+            "v4_33_return_internal_self_check_no_hard_gate": True,
+            "v4_33_zero_micro_measure_terms": True,
+            "v4_33_target_chars_soft_range": [5200, 6200],
+            "v4_33_delete_whole_exposition_blocks_over_6500": True,
+            "v4_33_no_scene_expansion_for_length": True,
+            "v4_36_lexical_zero_first_before_generation": True,
+            "v4_36_target_chars_soft_range": [2000, 6000],
+            "v4_36_lower_bound_chars_guard": 2000,
+            "v4_36_short_sentence_runs_over_target_max": 0,
+            "v4_36_zero_residual_micro_measure_terms_first": True,
+            "v4_36_no_hard_gate_generation_before_only": True,
+            "mundane_scene_plausibility": True,
+            "plain_modern_register": True,
+            "age_plausibility": True,
+            "abstract_reasoning_zero": True,
+            "limited_pov_only": True,
+            "semantic_density_budget": True,
+            "resource_continuity": True,
+            "action_causality": True,
+            "motivation_bridge": True,
+            "awkward_register_count_max": 0,
+            "limited_pov_leak_count_max": 0,
+            "mundane_logic_violation_count_max": 0,
+            "hardship_stack_count_max": 0,
+            "resource_continuity_count_max": 0,
+            "mundane_register_count_max": 0,
+            "action_causality_count_max": 0,
+            "motivation_gap_count_max": 0,
+            "scene_plausibility_count_max": 0,
+            "no_action_chain_for_explanation": True,
+            "diagnostic_only": True,
+        },
+    }
+
 
 def _make_session():
     """Create a fresh async session factory for Celery tasks (avoids event loop conflicts)."""
@@ -37,998 +309,10 @@ def _make_session():
     return async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
 
 
-@celery_app.task(name="tasks.vectorize_book")
-def vectorize_book_task(book_id: str):
-    """Vectorize all chunks of an existing book into Qdrant."""
-    _run_async(_vectorize_book_async(book_id))
 
-
-async def _vectorize_book_async(book_id: str):
-    from sqlalchemy import select
-    from app.db.session import async_session_factory
-    from app.models.project import TextChunk, ReferenceBook
-    from app.services.model_router import get_model_router_async
-    from app.services.qdrant_store import QdrantStore
-    from qdrant_client import AsyncQdrantClient
-    from app.config import settings
-
-    router = await get_model_router_async()
-    qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
-    store = QdrantStore(qc)
-    await store.ensure_collections()
-
-    async with async_session_factory() as db:
-        book = await db.get(ReferenceBook, book_id)
-        if not book:
-            logger.error("Book %s not found", book_id)
-            return
-
-        result = await db.execute(
-            select(TextChunk)
-            .where(TextChunk.book_id == book_id)
-            .order_by(TextChunk.sequence_id)
-        )
-        chunks = list(result.scalars().all())
-        logger.info("Vectorizing %d chunks for %s", len(chunks), book.title)
-
-        vectorized = 0
-        for chunk in chunks:
-            try:
-                embedding = await router.embed(chunk.content[:500])
-                if embedding and any(v != 0 for v in embedding[:10]):
-                    await store.store_style_features(
-                        book_id=book_id,
-                        chunk_id=str(chunk.id),
-                        sequence_id=chunk.sequence_id,
-                        features_dict={
-                            "chapter_title": chunk.chapter_title or "",
-                            "char_count": chunk.char_count,
-                        },
-                        embedding=embedding,
-                    )
-                    vectorized += 1
-            except Exception as e:
-                logger.debug("Chunk vectorization failed: %s", e)
-
-            # Log progress every 100 chunks
-            if vectorized > 0 and vectorized % 100 == 0:
-                logger.info("  %d/%d vectorized...", vectorized, len(chunks))
-
-        logger.info("Vectorization complete: %d/%d chunks for %s", vectorized, len(chunks), book.title)
-
-    await qc.close()
-
-
-@celery_app.task(name="tasks.run_async_generation")
-def run_async_generation(task_id: str):
-    """Run outline/chapter generation in background with progress tracking."""
-    _run_async(_run_async_generation_impl(task_id))
-
-
-async def _run_async_generation_impl(task_id: str):
-    from app.models.generation_task import GenerationTask
-    from app.models.project import Outline
-    from app.services.model_router import get_model_router_async
-    from app.services.outline_generator import OutlineGenerator
-
-    router = await get_model_router_async()
-    session_factory = _make_session()
-
-    async with session_factory() as db:
-        task = await db.get(GenerationTask, task_id)
-        if not task:
-            return
-
-        task.status = "running"
-        await db.commit()
-
-        params = task.params_json or {}
-        user_input = params.get("user_input", "")
-        project_id = str(task.project_id)
-
-        try:
-            # Resolve style
-            style_text = ""
-            style_id = params.get("style_id")
-            if style_id:
-                from app.models.project import StyleProfile
-                from app.services.style_compiler import compile_style
-                profile = await db.get(StyleProfile, style_id)
-                if profile:
-                    style_text = compile_style(profile)
-            if not style_text:
-                from app.services.style_runtime import resolve_style_prompt
-                style_text = await resolve_style_prompt(db, project_id) or ""
-
-            # Optional: extract plot structure from reference book
-            structure_text = ""
-            structure_book_id = params.get("structure_book_id")
-            if structure_book_id:
-                try:
-                    from app.models.project import TextChunk as _TC
-                    from app.services.plot_structure import extract_plot_structure, compile_structure_prompt
-                    from sqlalchemy import select as _sel
-                    tc_result = await db.execute(
-                        _sel(_TC).where(_TC.book_id == structure_book_id).order_by(_TC.sequence_id)
-                    )
-                    tc_chunks = list(tc_result.scalars().all())
-                    if tc_chunks:
-                        n = len(tc_chunks)
-                        tc_samples = [tc_chunks[i].content for i in range(0, n, max(1, n // 6))][:6]
-                        ps = await extract_plot_structure("\n\n".join(tc_samples))
-                        structure_text = compile_structure_prompt(ps)
-                except Exception as e:
-                    logger.warning("Plot structure extraction failed: %s", e)
-
-            # Build enhanced input
-            enhanced = user_input
-            if style_text:
-                enhanced = f"{style_text}\n\n{user_input}"
-            if structure_text:
-                enhanced = f"{enhanced}\n\n{structure_text}"
-
-            # Generate based on task_type
-            generator = OutlineGenerator()
-            collected = []
-
-            if task.task_type == "outline_from_reference":
-                # v1.5.0 D-2: async outline-from-reference. Wraps the
-                # service-layer single-shot LLM call as a single chunk so the
-                # downstream Markdown-strip / humanize / auto-save-outline
-                # logic still applies uniformly. Required params (in
-                # task.params_json): reference_book_id, intent, style_hint,
-                # target_volumes, target_chapters_per_volume.
-                from app.services.outline_from_reference import (
-                    build_outline_from_reference,
-                )
-
-                ref_id = params.get("reference_book_id")
-                if not ref_id:
-                    raise ValueError("reference_book_id missing in params_json")
-                wizard = {
-                    "intent": params.get("intent", ""),
-                    "style_hint": params.get("style_hint", ""),
-                    "target_volumes": params.get("target_volumes", 5),
-                    "target_chapters_per_volume": params.get(
-                        "target_chapters_per_volume", 30
-                    ),
-                }
-                fr = await build_outline_from_reference(
-                    reference_book_id=ref_id,
-                    wizard_params=wizard,
-                    db=db,
-                    project_id=project_id,
-                )
-                if fr.get("status") != "ok":
-                    raise RuntimeError(
-                        "build_outline_from_reference failed: "
-                        f"reason={fr.get('reason')} detail={fr.get('detail')}"
-                    )
-                ot = fr.get("outline_text") or ""
-                collected.append(ot)
-                # Persist sketch metadata so the polling endpoint can show
-                # progress context to the UI without re-running the query.
-                task.params_json = {
-                    **(task.params_json or {}),
-                    "sketch_line_count": fr.get("sketch_line_count"),
-                    "reference_book": fr.get("reference_book"),
-                }
-                task.progress_text = ot
-                task.char_count = len(ot)
-                await db.commit()
-
-            elif task.task_type == "outline_book":
-                async for chunk in await generator.generate_book_outline(
-                    user_input=enhanced, stream=True
-                ):
-                    collected.append(chunk)
-                    # Update progress every 20 chunks
-                    if len(collected) % 5 == 0:
-                        task.progress_text = "".join(collected)
-                        task.char_count = len(task.progress_text)
-                        await db.commit()
-
-            elif task.task_type == "outline_volume":
-                # Get book outline for context
-                from sqlalchemy import select
-                result = await db.execute(
-                    select(Outline).where(Outline.project_id == project_id, Outline.level == "book")
-                )
-                book_ol = result.scalar_one_or_none()
-                book_data = book_ol.content_json if book_ol else {}
-
-                async for chunk in await generator.generate_volume_outline(
-                    book_outline=book_data,
-                    volume_idx=params.get("volume_idx", 1),
-                    user_notes=enhanced, stream=True
-                ):
-                    collected.append(chunk)
-                    if len(collected) % 5 == 0:
-                        task.progress_text = "".join(collected)
-                        task.char_count = len(task.progress_text)
-                        await db.commit()
-
-            elif task.task_type == "chapter":
-                from app.services.chapter_generator import ChapterGenerator
-                from app.models.project import Chapter
-                ch = await db.get(Chapter, params.get("chapter_id", ""))
-                if not ch:
-                    raise ValueError("章节不存在")
-                gen = ChapterGenerator()
-                # v0.5+ ChapterGenerator: ContextPack + PromptRegistry build context;
-                # style/world_rules/prev_chapter are pulled from db, not passed in.
-                user_instr = (enhanced + ("\n\n[风格要求] " + style_text if style_text else "")).strip()
-                async for chunk in gen.generate_stream(
-                    project_id=project_id,
-                    volume_id=ch.volume_id,
-                    chapter_idx=ch.chapter_idx,
-                    db=db,
-                    chapter_id=ch.id,
-                    user_instruction=user_instr,
-                ):
-                    collected.append(chunk)
-                    if len(collected) % 5 == 0:
-                        task.progress_text = "".join(collected)
-                        task.char_count = len(task.progress_text)
-                        await db.commit()
-
-                # Save chapter content
-                if collected:
-                    ch.content_text = "".join(collected)
-                    ch.word_count = len(ch.content_text)
-                    ch.status = "completed"
-
-            full_text = "".join(collected)
-
-            # Post-process: strip Markdown + AI fluff
-            import re as _re
-            full_text = _re.sub(r'\*\*([^*]+)\*\*', r'\1', full_text)  # **bold**
-            full_text = _re.sub(r'\*([^*]+)\*', r'\1', full_text)  # *italic*
-            full_text = _re.sub(r'^#{1,6}\s*', '', full_text, flags=_re.MULTILINE)  # # headers
-            full_text = _re.sub(r'^---+\s*$', '', full_text, flags=_re.MULTILINE)  # --- hr
-            full_text = _re.sub(r'^>\s*', '', full_text, flags=_re.MULTILINE)  # > blockquote
-            full_text = _re.sub(r'`([^`]+)`', r'\1', full_text)  # `code`
-            # Strip AI conversational fluff
-            fluff_patterns = [
-                # Opening fluff
-                r'^(好的|当然|下面|以下|接下来|没问题)[，,。！].*?\n',
-                r'^我(会|将|来|给你|不会|不能|可以|不直接|不照搬).*?\n',
-                # Conditional suggestions (delete entire paragraph)
-                r'^如果(你|需要|想|希望|愿意|以后|后续).*?\n',
-                r'^(你也可以|你可以|可以考虑|建议你|需要的话).*?\n',
-                # Closing fluff
-                r'^希望(这|对你|能|以上|你|整).*?\n',
-                r'^(以上|这就是|这是一份|这套|整体).*?(大纲|方案|规划|框架).*?\n',
-                r'^让我.*?\n',
-                # Meta-commentary about the writing process
-                r'^(整体按|整体气质|整体风格|整体来看).*?\n',
-                r'^(注意|提示|说明|备注)[：:].*?\n',
-                # "I won't copy X but will Y" disclaimers
-                r'^我不(会|能|直接|照搬).*?\n',
-                r'^(不直接|不去|不照搬).*?(某|某部|具体|特定).*?\n',
-            ]
-            for p in fluff_patterns:
-                full_text = _re.sub(p, '', full_text, flags=_re.MULTILINE)
-            full_text = _re.sub(r'\n{3,}', '\n\n', full_text)  # excess newlines
-
-            # Anti-AI humanization: break statistical patterns that detectors flag
-            import random as _rand
-            lines = full_text.split('\n')
-            humanized = []
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    humanized.append('')
-                    continue
-                # Break overly uniform sentence lengths by occasionally merging/splitting
-                # Remove trailing symmetry patterns
-                line = _re.sub(r'[，,]\s*(而|且|并|同时)$', '。', line)
-                # Vary punctuation: occasionally use。instead of ，for long sentences
-                if len(line) > 60 and '，' in line and _rand.random() < 0.3:
-                    parts = line.split('，', 1)
-                    if len(parts[0]) > 15:
-                        line = parts[0] + '。' + parts[1]
-                # Add occasional short interjections to break rhythm
-                humanized.append(line)
-
-            full_text = '\n'.join(humanized).strip()
-
-            task.result_text = full_text
-
-            # Second pass: LLM anti-AI polishing (optional, only when enabled)
-            if params.get("enable_polish"):
-                task.status = "polishing"
-                task.progress_text = full_text
-                await db.commit()
-
-                try:
-                    polish_chunks = []
-                    chunk_size = 2000
-                    for i in range(0, len(full_text), chunk_size):
-                        chunk_text = full_text[i:i + chunk_size]
-                        polish_result = await router.generate(
-                            task_type="polishing",
-                            messages=[
-                                {"role": "system", "content": (
-                                    "你是文本润色编辑。改写以下文本让它更像人写的。\n"
-                                    "规则：保持所有内容不变，只改表达方式。\n"
-                                    "加口语化表达，打破均匀节奏，去对称句式。\n"
-                                    "直接输出，不加说明，不用Markdown。"
-                                )},
-                                {"role": "user", "content": chunk_text},
-                            ],
-                        )
-                        polish_chunks.append(polish_result.text if polish_result.text else chunk_text)
-                    polished = "".join(polish_chunks)
-                    polished = _re.sub(r'\*\*([^*]+)\*\*', r'\1', polished)
-                    polished = _re.sub(r'\*([^*]+)\*', r'\1', polished)
-                    polished = _re.sub(r'^#{1,6}\s*', '', polished, flags=_re.MULTILINE)
-                    polished = _re.sub(r'\n{3,}', '\n\n', polished)
-                    task.polished_text = polished.strip()
-                except Exception as pe:
-                    logger.warning("Polishing failed, using raw text: %s", pe)
-                    task.polished_text = full_text
-            else:
-                task.polished_text = ""  # No polishing requested
-            task.progress_text = full_text
-            task.char_count = len(full_text)
-            task.status = "completed"
-
-            # Auto-save outline to outlines table
-            if task.task_type.startswith("outline") and full_text and project_id:
-                # Explicit task_type -> outline level mapping. `outline_from_reference`
-                # is semantically a book-level outline (built from a reference book),
-                # NOT a separate "from_reference" level. The outline_volume branch is
-                # intentionally a no-op here: real volume outlines are written by
-                # /volumes/{id}/regenerate which sets parent_id and dedupes per
-                # volume_idx; auto-saving here would produce orphan rows that no query
-                # path can find (volumes.py requires parent_id == book_outline_id).
-                _outline_level_map = {
-                    "outline_from_reference": "book",
-                    "outline_book": "book",
-                }
-                outline_level = _outline_level_map.get(task.task_type)
-                if outline_level == "book":
-                    # Upsert: enforce one-book-per-project invariant. Migration
-                    # a1001500 adds a partial UNIQUE index on outlines(project_id)
-                    # WHERE level='book'; this DELETE+INSERT keeps the index happy
-                    # and replaces any prior book outline atomically within this txn.
-                    from sqlalchemy import delete as _sql_delete
-                    await db.execute(
-                        _sql_delete(Outline).where(
-                            Outline.project_id == project_id,
-                            Outline.level == "book",
-                        )
-                    )
-                    # PR-OL2: extract <volume-plan> JSON block and persist it
-                    # alongside raw_text so the wizard can prefill volume count
-                    # without re-running the SSE preview.
-                    _vol_plan = None
-                    # PR-FIX-OL15-CELERY-STRIP: the SSE save path in
-                    # backend/app/api/generate.py:945-949 already calls
-                    # _OG._strip_volume_plan_tags(full_text) before persisting,
-                    # but this celery branch (used by outline_book /
-                    # outline_from_reference task_types) was writing the raw LLM
-                    # output verbatim, which leaks <volume-plan>...</volume-plan>
-                    # control tags into user-visible raw_text. Strip them here
-                    # too. Both _extract_volume_plan (instance method) and
-                    # _strip_volume_plan_tags (staticmethod) live on the same
-                    # _OG import, so we do both inside the same try.
-                    full_text_clean = full_text
-                    try:
-                        from app.services.outline_generator import OutlineGenerator as _OG
-                        _vol_plan = _OG()._extract_volume_plan(full_text)
-                        full_text_clean = _OG._strip_volume_plan_tags(full_text)
-                    except Exception as _vp_err:
-                        logger.warning("volume_plan extract/strip failed: %s", _vp_err)
-                    _content = {"raw_text": full_text_clean}
-                    if _vol_plan:
-                        _content["volume_plan"] = _vol_plan
-                    db.add(
-                        Outline(
-                            project_id=project_id,
-                            level="book",
-                            content_json=_content,
-                        )
-                    )
-                    # PR-OL2: also create empty Volume rows from the plan so
-                    # the wizard step 2 has a real skeleton to fill in. Skip
-                    # idx that already exists (idempotent on retry).
-                    if _vol_plan:
-                        from sqlalchemy import select as _sql_select
-                        from app.models.project import Volume as _Volume
-                        existing = await db.execute(
-                            _sql_select(_Volume.volume_idx).where(
-                                _Volume.project_id == project_id
-                            )
-                        )
-                        existing_idx = {r[0] for r in existing.all()}
-                        for _v in _vol_plan:
-                            _idx = int(_v.get("idx") or 0)
-                            if _idx <= 0 or _idx in existing_idx:
-                                continue
-                            db.add(_Volume(
-                                project_id=project_id,
-                                volume_idx=_idx,
-                                title=str(_v.get("title") or f"第{_idx}卷"),
-                                summary=str(_v.get("theme") or ""),
-                            ))
-                        logger.info(
-                            "PR-OL2: planned %d volumes from <volume-plan> for project=%s",
-                            len(_vol_plan), project_id,
-                        )
-                else:
-                    logger.info(
-                        "Skipping auto-save for task_type=%s (handled by dedicated endpoint)",
-                        task.task_type,
-                    )
-
-            await db.commit()
-            logger.info("Async generation complete: %s, %d chars", task.task_type, len(full_text))
-
-        except Exception as e:
-            task.status = "failed"
-            task.error_message = str(e)[:500]
-            await db.commit()
-            logger.exception("Async generation failed: %s", task_id)
-
-
-@celery_app.task(name="tasks.run_pipeline_generation")
-def run_pipeline_generation(pipeline_id: str):
-    """Execute pipeline generation: iterate chapters, generate, review."""
-    _run_async(_run_pipeline_async(pipeline_id))
-
-
-async def _run_pipeline_async(pipeline_id: str):
-    from sqlalchemy import select
-    from app.db.session import async_session_factory
-    from app.models.pipeline import PipelineRun, PipelineChapterStatus
-    from app.models.project import Chapter
-    from app.services.model_router import get_model_router_async
-    from datetime import datetime, timezone
-    import asyncio as aio
-
-    async with async_session_factory() as db:
-        pipeline = await db.get(PipelineRun, pipeline_id)
-        if not pipeline or pipeline.state not in ("generating", "planning"):
-            return
-
-        if pipeline.state == "planning":
-            pipeline.state = "generating"
-            pipeline.started_at = datetime.now(timezone.utc)
-            await db.commit()
-
-        router = await get_model_router_async()
-
-        # Get pending chapters
-        result = await db.execute(
-            select(PipelineChapterStatus)
-            .where(
-                PipelineChapterStatus.pipeline_id == pipeline.id,
-                PipelineChapterStatus.state == "pending",
-            )
-            .order_by(PipelineChapterStatus.chapter_idx)
-        )
-        pending = list(result.scalars().all())
-
-        for cs in pending:
-            if pipeline.state == "paused":
-                break
-
-            chapter = await db.get(Chapter, str(cs.chapter_id))
-            if not chapter:
-                cs.state = "failed"
-                cs.error_message = "章节不存在"
-                await db.commit()
-                continue
-
-            cs.state = "generating"
-            cs.started_at = datetime.now(timezone.utc)
-            pipeline.current_chapter_idx = cs.chapter_idx
-            await db.commit()
-
-            try:
-                gen_result = await router.generate(
-                    task_type="generation",
-                    messages=[
-                        {"role": "system", "content": "你是一位专业的小说内容生成引擎。根据章节标题和大纲生成正文。每章至少3000字。"},
-                        {"role": "user", "content": f"章节标题：{chapter.title}\n大纲：{chapter.outline_json or '无'}"},
-                    ],
-                    max_tokens=8192,
-                )
-
-                chapter.content_text = gen_result.text
-                chapter.word_count = len(gen_result.text)
-                chapter.status = "completed"
-                cs.state = "completed"
-                cs.word_count = len(gen_result.text)
-                cs.completed_at = datetime.now(timezone.utc)
-                pipeline.completed_chapters = (pipeline.completed_chapters or 0) + 1
-
-            except Exception as e:
-                cs.state = "failed"
-                cs.error_message = str(e)[:200]
-                logger.warning("Pipeline chapter %d failed: %s", cs.chapter_idx, e)
-
-            await db.commit()
-            # B2' (v1.5.0): kick entity-extraction task post-commit when the
-            # chapter actually got a new body. Failures never block the
-            # pipeline: they retry asynchronously on the celery queue.
-            if cs.state == "completed":
-                try:
-                    from app.services.entity_dispatch import dispatch_for_chapter
-                    await dispatch_for_chapter(
-                        chapter, db,
-                        caller="knowledge_tasks.run_pipeline_chapters",
-                        project_id_hint=str(pipeline.project_id),
-                    )
-                except Exception as dispatch_err:
-                    logger.warning(
-                        "Entity dispatch after pipeline chapter %d failed: %s",
-                        cs.chapter_idx, dispatch_err,
-                    )
-            await aio.sleep(1)  # Rate limit
-
-        # Advance pipeline state
-        from app.services.pipeline_service import advance_pipeline
-        await advance_pipeline(db, pipeline_id)
-        await db.commit()
-
-        logger.info("Pipeline %s state: %s (%d/%d chapters)",
-                     pipeline_id, pipeline.state, pipeline.completed_chapters, pipeline.total_chapters)
-
-
-@celery_app.task(name="tasks.process_uploaded_book")
-def process_uploaded_book(book_id: str, file_path: str, filename: str, user_title: str = "", user_author: str = ""):
-    """Process an uploaded book file: parse → chunk → auto-score."""
-    _run_async(_process_uploaded_book_async(book_id, file_path, filename, user_title, user_author))
-
-
-async def _process_uploaded_book_async(book_id: str, file_path: str, filename: str, user_title: str, user_author: str):
-    import os
-    from app.db.session import async_session_factory
-    from app.models.project import ReferenceBook, TextChunk
-    from app.services.text_pipeline import process_text_file
-
-    async with async_session_factory() as db:
-        book = await db.get(ReferenceBook, book_id)
-        if not book:
-            logger.error("Book %s not found", book_id)
-            return
-
-        try:
-            # Stage 1: cleaning
-            book.status = "cleaning"
-            await db.commit()
-
-            with open(file_path, "rb") as f:
-                content = f.read()
-
-            parse_result, blocks = process_text_file(content, filename)
-
-            if parse_result.title and not user_title:
-                book.title = parse_result.title
-            if parse_result.author and not user_author:
-                book.author = parse_result.author
-            book.total_chapters = len(parse_result.chapters)
-            book.total_words = parse_result.total_chars
-
-            # Save text chunks
-            for block in blocks:
-                chunk = TextChunk(
-                    book_id=book.id,
-                    chapter_idx=block.chapter_idx,
-                    block_idx=block.block_idx,
-                    chapter_title=block.chapter_title,
-                    content=block.content,
-                    char_count=block.char_count,
-                    sequence_id=block.sequence_id,
-                )
-                db.add(chunk)
-            await db.commit()
-
-            # Stage 2: vectorize chunks into Qdrant
-            book.status = "extracting"
-            await db.commit()
-
-            try:
-                from app.services.qdrant_store import QdrantStore
-                from app.services.model_router import get_model_router_async
-                from qdrant_client import AsyncQdrantClient as _QC
-                from app.config import settings as _s
-
-                # Pre-load model router (with DB config + decrypted keys)
-                router = await get_model_router_async()
-
-                qdrant_client = _QC(host=_s.QDRANT_HOST, port=_s.QDRANT_PORT)
-                store = QdrantStore(qdrant_client)
-                await store.ensure_collections()
-                vectorized = 0
-                for block in blocks:
-                    try:
-                        embedding = await router.embed(block.content[:500])
-                        if embedding and any(v != 0 for v in embedding[:10]):
-                            await store.store_style_features(
-                                book_id=str(book.id),
-                                chunk_id=f"{block.chapter_idx}_{block.block_idx}",
-                                sequence_id=block.sequence_id,
-                                features_dict={"chapter_title": block.chapter_title, "char_count": block.char_count},
-                                embedding=embedding,
-                            )
-                            vectorized += 1
-                    except Exception:
-                        pass
-                await qdrant_client.close()
-                logger.info("Vectorized %d/%d chunks for %s", vectorized, len(blocks), book.title)
-            except Exception as e:
-                logger.warning("Vectorization skipped for %s: %s", book.title, e)
-
-            # Stage 3: auto quality scoring (if model configured)
-            try:
-                from app.services.model_router import get_model_router_async as _gmra
-                await _gmra()  # Ensure router loaded before QualityScorer uses sync version
-                from app.services.quality_scorer import QualityScorer
-                scorer = QualityScorer()
-
-                sample_blocks = blocks[:5] if len(blocks) <= 5 else [blocks[i] for i in range(0, len(blocks), max(1, len(blocks) // 5))][:5]
-                samples = [b.content for b in sample_blocks]
-
-                score, is_suitable = await scorer.score_and_filter(samples)
-                metadata = book.metadata_json or {}
-                metadata["quality_score"] = score.to_dict()
-                book.metadata_json = metadata
-                if not is_suitable:
-                    book.status = "low_quality"
-                else:
-                    book.status = "ready"
-            except Exception as e:
-                logger.warning("Auto-scoring skipped for %s: %s", book.title, e)
-                book.status = "ready"
-
-            await db.commit()
-            # PR-BOOK-PROFILE-BIND: ensure every reference_book has a bound StyleProfile
-            try:
-                from app.services.style_profile_resolver import get_or_create_book_profile
-                await get_or_create_book_profile(db, str(book.id))
-            except Exception as e:
-                logger.warning("auto profile binding failed for %s: %s", book.title, e)
-            logger.info("Book processed: %s — %d chapters, %d chars", book.title, book.total_chapters, book.total_words)
-
-        except Exception as e:
-            book.status = "error"
-            book.error_message = str(e)[:500]
-            await db.commit()
-            logger.exception("Failed to process book %s", book_id)
-        finally:
-            # Clean up temp file
-            try:
-                os.unlink(file_path)
-            except OSError:
-                pass
-
-
-@celery_app.task(name="tasks.batch_test_sources")
-def batch_test_sources_task(source_ids: list[str]):
-    """Batch test book sources for connectivity in background."""
-    _run_async(_batch_test_async(source_ids))
-
-
-async def _batch_test_async(source_ids: list[str]):
-    import httpx
-    from datetime import datetime, timezone
-    from sqlalchemy import select
-    from app.db.session import async_session_factory
-    from app.models.project import BookSource
-
-    client = httpx.AsyncClient(
-        timeout=6,
-        follow_redirects=True,
-        verify=False,
-        headers={"User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/107.0 Mobile Safari/537.36"},
-        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
-    )
-
-    ok_count = 0
-    fail_count = 0
-
-    async with async_session_factory() as db:
-        result = await db.execute(
-            select(BookSource).where(BookSource.id.in_(source_ids))
-        )
-        sources = list(result.scalars().all())
-
-        async def test_one(source: BookSource):
-            sj = source.source_json or {}
-            base = sj.get("bookSourceUrl", "")
-            if not base:
-                return False
-            try:
-                resp = await client.get(base)
-                reachable = resp.status_code < 500
-                source.last_test_ok = 1 if reachable else 0
-                source.last_test_at = datetime.now(timezone.utc)
-                if reachable:
-                    source.success_count = (source.success_count or 0) + 1
-                    source.consecutive_fails = 0
-                    source.score = min(10.0, (source.score or 5.0) + 0.3)
-                else:
-                    source.fail_count = (source.fail_count or 0) + 1
-                    source.consecutive_fails = (source.consecutive_fails or 0) + 1
-                    source.score = max(0.0, (source.score or 5.0) - 0.5)
-                return reachable
-            except Exception:
-                source.last_test_ok = 0
-                source.last_test_at = datetime.now(timezone.utc)
-                source.fail_count = (source.fail_count or 0) + 1
-                source.consecutive_fails = (source.consecutive_fails or 0) + 1
-                source.score = max(0.0, (source.score or 5.0) - 1.0)
-                return False
-
-        batch_size = 30
-        for i in range(0, len(sources), batch_size):
-            batch = sources[i:i + batch_size]
-            results = await asyncio.gather(*[test_one(s) for s in batch], return_exceptions=True)
-            for r in results:
-                if r is True:
-                    ok_count += 1
-                else:
-                    fail_count += 1
-            await db.commit()
-            logger.info("Batch test progress: %d/%d (ok=%d, fail=%d)", i + len(batch), len(sources), ok_count, fail_count)
-
-    await client.aclose()
-    logger.info("Batch test complete: %d total, %d ok, %d failed", len(sources), ok_count, fail_count)
-
-
-@celery_app.task(bind=True, name="tasks.crawl_book", max_retries=3)
-def crawl_book(self, task_id: str):
-    """
-    Crawl a book using the book source engine.
-
-    Steps:
-    1. Load CrawlTask and BookSource from DB
-    2. Parse book source rules
-    3. Get table of contents
-    4. Fetch each chapter with rate limiting
-    5. Save raw content to ReferenceBook chapters
-    6. Trigger text cleaning pipeline
-    """
-    _run_async(_crawl_book_async(self, task_id))
-
-
-async def _crawl_book_async(task, task_id: str):
-    from app.db.session import async_session_factory
-    from app.models.project import CrawlTask, BookSource, ReferenceBook, TextChunk
-    from app.services.book_source_engine import BookSourceEngine
-    from app.services.text_pipeline import _strip_noise, slice_chapters_to_blocks, ChapterData
-
-    engine = BookSourceEngine()
-
-    async with async_session_factory() as db:
-        crawl_task = await db.get(CrawlTask, task_id)
-        if not crawl_task:
-            logger.error("CrawlTask %s not found", task_id)
-            return
-
-        crawl_task.status = "running"
-        await db.commit()
-
-        book = await db.get(ReferenceBook, str(crawl_task.book_id))
-        source = await db.get(BookSource, str(crawl_task.source_id)) if crawl_task.source_id else None
-
-        if not source:
-            crawl_task.status = "error"
-            crawl_task.error_message = "Book source not found"
-            await db.commit()
-            return
-
-        try:
-            config = engine.parse_source(source.source_json)
-
-            # Get TOC
-            chapters = await engine.get_toc(config, crawl_task.book_url)
-            crawl_task.total_chapters = len(chapters)
-            await db.commit()
-
-            if not chapters:
-                crawl_task.status = "error"
-                crawl_task.error_message = "No chapters found"
-                await db.commit()
-                return
-
-            # Fetch each chapter
-            all_chapter_data = []
-            for idx, ch in enumerate(chapters):
-                try:
-                    content = await engine.get_content(config, ch.url)
-                    if content:
-                        content = _strip_noise(content)
-                        all_chapter_data.append(ChapterData(
-                            chapter_idx=idx + 1,
-                            title=ch.title,
-                            content=content,
-                        ))
-
-                    crawl_task.completed_chapters = idx + 1
-                    if idx % 10 == 0:
-                        await db.commit()
-
-                    # Rate limiting
-                    import asyncio as aio
-                    await aio.sleep(1.0)
-
-                except Exception as e:
-                    logger.warning("Failed to fetch chapter %d: %s", idx, e)
-                    continue
-
-            # Slice into blocks
-            blocks = slice_chapters_to_blocks(all_chapter_data)
-
-            # Save blocks
-            for block in blocks:
-                chunk = TextChunk(
-                    book_id=book.id,
-                    chapter_idx=block.chapter_idx,
-                    block_idx=block.block_idx,
-                    chapter_title=block.chapter_title,
-                    content=block.content,
-                    char_count=block.char_count,
-                    sequence_id=block.sequence_id,
-                )
-                db.add(chunk)
-
-            book.total_chapters = len(all_chapter_data)
-            book.total_words = sum(ch.char_count for ch in all_chapter_data)
-            book.status = "ready"
-            crawl_task.status = "completed"
-            await db.commit()
-
-            logger.info(
-                "Crawl complete: %s — %d chapters, %d blocks",
-                book.title, len(all_chapter_data), len(blocks),
-            )
-
-        except Exception as e:
-            logger.exception("Crawl failed for task %s", task_id)
-            crawl_task.status = "error"
-            crawl_task.error_message = str(e)
-            book.status = "error"
-            book.error_message = str(e)
-            await db.commit()
-
-    await engine.close()
-
-
-@celery_app.task(name="tasks.extract_features")
-def extract_features(book_id: str):
-    """Extract plot and style features from all chunks of a book."""
-    _run_async(_extract_features_async(book_id))
-
-
-async def _extract_features_async(book_id: str):
-    from sqlalchemy import select
-    from app.db.session import async_session_factory
-    from app.models.project import TextChunk, ReferenceBook
-    from app.services.feature_extractor import PlotExtractor, StyleExtractor
-
-    plot_extractor = PlotExtractor()
-    style_extractor = StyleExtractor()
-
-    async with async_session_factory() as db:
-        book = await db.get(ReferenceBook, book_id)
-        if not book:
-            return
-
-        book.status = "extracting"
-        await db.commit()
-
-        result = await db.execute(
-            select(TextChunk)
-            .where(TextChunk.book_id == book_id)
-            .order_by(TextChunk.sequence_id)
-        )
-        chunks = result.scalars().all()
-
-        # Initialize Qdrant for vectorization
-        qdrant_store = None
-        try:
-            from qdrant_client import AsyncQdrantClient
-            from app.config import settings as _cfg
-            from app.services.qdrant_store import QdrantStore
-            from app.services.feature_extractor import generate_embedding
-
-            _qc = AsyncQdrantClient(host=_cfg.QDRANT_HOST, port=_cfg.QDRANT_PORT)
-            qdrant_store = QdrantStore(_qc)
-            await qdrant_store.ensure_collections()
-        except Exception as e:
-            logger.warning("Qdrant not available for vectorization: %s", e)
-
-        for chunk in chunks:
-            try:
-                # Style extraction (fast, no LLM)
-                if not chunk.style_extracted:
-                    style_features = style_extractor.extract(chunk.content)
-                    chunk.style_features_json = style_features if isinstance(style_features, dict) else {"raw": str(style_features)}
-                    chunk.style_extracted = 1
-
-                # Plot extraction (LLM, slower)
-                if not chunk.plot_extracted:
-                    plot_features = await plot_extractor.extract(chunk.content)
-                    chunk.plot_features_json = plot_features if isinstance(plot_features, dict) else {"raw": str(plot_features)}
-                    chunk.plot_extracted = 1
-
-                # Vectorize to Qdrant
-                if qdrant_store:
-                    try:
-                        embedding = await generate_embedding(chunk.content[:500])
-                        if embedding and any(v != 0 for v in embedding[:10]):
-                            summary = str(chunk.plot_features_json.get("summary", "")) if chunk.plot_features_json else ""
-                            await qdrant_store.store_plot_features(
-                                book_id=book_id, chunk_id=str(chunk.id),
-                                sequence_id=chunk.sequence_id, summary_text=summary,
-                                embedding=embedding,
-                            )
-                            await qdrant_store.store_style_features(
-                                book_id=book_id, chunk_id=str(chunk.id),
-                                sequence_id=chunk.sequence_id,
-                                features_dict=chunk.style_features_json or {},
-                                embedding=embedding,
-                            )
-                    except Exception as ve:
-                        logger.debug("Vectorization failed for chunk %s: %s", chunk.id, ve)
-
-                await db.commit()
-            except Exception as e:
-                logger.warning("Feature extraction failed for chunk %s: %s", chunk.id, e)
-
-        if qdrant_store:
-            await _qc.close()
-
-        book.status = "ready"
-        await db.commit()
-        logger.info("Feature extraction + vectorization complete for book %s", book.title)
-
-
-@celery_app.task(name="tasks.run_quality_score")
-def run_quality_score(book_id: str):
-    """Run quality scoring on a reference book."""
-    _run_async(_run_quality_score_async(book_id))
-
-
-async def _run_quality_score_async(book_id: str):
-    from sqlalchemy import select
-    from app.db.session import async_session_factory
-    from app.models.project import TextChunk, ReferenceBook
-    from app.services.quality_scorer import QualityScorer
-
-    async with async_session_factory() as db:
-        book = await db.get(ReferenceBook, book_id)
-        if not book:
-            return
-
-        result = await db.execute(
-            select(TextChunk)
-            .where(TextChunk.book_id == book_id)
-            .order_by(TextChunk.sequence_id)
-        )
-        chunks = result.scalars().all()
-        if not chunks:
-            return
-
-        # Sample 5 blocks evenly
-        n = len(chunks)
-        step = max(1, n // 5)
-        samples = [chunks[i].content for i in range(0, n, step)][:5]
-
-        scorer = QualityScorer()
-        score, is_suitable = await scorer.score_and_filter(samples)
-
-        metadata = book.metadata_json or {}
-        metadata["quality_score"] = score.to_dict()
-        book.metadata_json = metadata
-
-        if not is_suitable:
-            book.status = "low_quality"
-
-        await db.commit()
-        logger.info("Quality score for %s: %.1f (%s)", book.title, score.overall, score.verdict)
+# ---------------------------------------------------------------------------
+# Backward-compatible re-exports (Celery discovers tasks via module imports)
+# ---------------------------------------------------------------------------
+from app.tasks.generation_tasks import run_async_generation, run_pipeline_generation  # noqa: F401
+from app.tasks.book_tasks import vectorize_book_task, process_uploaded_book, crawl_book, batch_test_sources_task  # noqa: F401
+from app.tasks.analysis_tasks import extract_features, run_quality_score  # noqa: F401

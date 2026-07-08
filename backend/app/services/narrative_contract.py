@@ -1,0 +1,167 @@
+"""Genre-agnostic narrative logic contract.
+
+This module deliberately avoids book-specific or genre-specific rules.  It
+defines the meta-contract every long-form generation pass must apply first:
+infer the current story world's time / space / power-resource / information /
+mechanism / result-strength rules from the project context, then generate and
+evaluate prose against those inferred rules.
+"""
+
+from __future__ import annotations
+
+from app.services.narrative_quality_gates import contract_hard_gate_prompt
+
+NARRATIVE_CONTRACT_VERSION = "world_logic_contract_v4_13_spatial_occlusion_coincidence_dialogue_ledgers"
+
+
+WORLD_LOGIC_CONTRACT = """\
+【世界逻辑合同（题材无关，最高优先级）】
+不要套用某本书、某一章或某个固定题材的限制。你必须先从当前项目的题材、设定、大纲、人物、已生成章节和目标风格中，推导本书自己的 World Logic Contract，再写作。
+
+所有关键剧情推进都必须同时接受六类底层规则约束：
+1. 时间规则：移动、传讯、准备、恢复、冷却、社会流程都可能消耗时间。不得跳过会影响可信度的时间成本。
+2. 空间规则：人物、物件、消息、风险从 A 到 B 必须有路径、权限、载体或代价。不得让关键实体瞬移。
+3. 权力/资源规则：冲突双方的制度权力、武力/能力、财富/物资、信息优势、关系、声望、技术权限等必须被识别。低资源方不能无成本全面压倒高资源方；若获胜，只能依靠规则漏洞、信息差、第三方制衡、局部胜利或代价交换。
+4. 信息规则：角色只能根据已获得、可理解、可信任的信息行动。弱信息只能推出疑点或假设，不能直接推出强结论。
+5. 能力/机制规则：任何能力、技术、法术、制度工具、资源调用都必须有触发条件、成本、边界、冷却/副作用/风险和可反制方式。禁止临时万能补丁。
+6. 结果强度规则：剧情结果必须与前置支撑匹配。支撑不足时必须降级为疑点、局部胜利、暂缓、误导、代价胜、后续线索或延迟回收，不能强行完成强结果。
+
+【跨项目生成前内化约束】
+- 写正文前必须内部自检：空间路径有锚点、信息判断有来源、强弱资源有代价、高压时序会打断、机制物证有边界、章末线索不过度确认、压力场景不写说明书式对白。
+- 历史评分中的 [xxx_violation] 只作为诊断信号；应在下一次生成前内化为约束，让第一稿直接规避，而不是依赖后置质量门纠错。
+
+【复发问题生成前自检】
+以下规则必须在写正文前内部检查并规避；目标是一次输出满足要求，而不是写完后再触发额外流程；v4.1 起这些约束必须进入逐场 preflight_scene_blueprint 与 entity_route_ledger / claim_source_matrix / pressure_power_audit：
+- 线索四段式：每个关键线索必须按“来源锚点 -> 可见/可闻/可触观察 -> 低强度判断 -> 待验项/替代解释”推进。没有来源锚点时，只能写“像/疑似/也许/待验”，不得写“确认/证明/就是/定是”。
+- 强资源证物保护：案匣、供纸、账册、灯籍、封条、押物、军械、密钥等高资源证物，不得无设饵、无制度流程、无视线死角、无守卫代价地被低资源方近身接触或验证。
+- NPC 信息泄露预算：巡卒、门人、摊贩、旁观者、神秘人单次对白最多泄露 2 个信息碎片；核心机制必须由碎片 + 环境动作 + 主角既有信息推断，禁止闲谈式完整自曝。
+- 高压场面预算：追捕、押解、合围、近身搜拿、弩箭/兵器威胁下最多一问一答；若要传证、整理证词、拆验物证，必须先写明确阻隔、地点转移或时间窗口。
+- 伏笔强度限制：章末新纸片、新暗语、新道具、新人物立场只允许形成下一步疑点，不得一次投放并解释。
+- 风格承载限制：制度说明优先由账纸、封条、锣令、脚步、门锁、伤痛等物件与动作承载；市井对白不得像百科或报告。
+
+写作前先在心中完成“题材适配”：判断当前题材中什么相当于时间成本、空间门槛、权力资源、信息证据、能力机制和结果强度。正文不得显式输出这份分析，但每个关键场景必须受它约束。
+"""
+
+
+SCENE_CONTRACT_FIELDS_PROMPT = """\
+【场景合同字段】
+每个 scene JSON 除 title/brief/pov/location/time_cue/key_action/target_words/hook 外，必须尽量补齐以下题材无关字段：
+- start_state：本场开头承接上一场的状态。
+- time_delta：距离上一场过去多久；如果是首场，说明开场时间锚点。
+- location_path：关键人物/风险/信息从上一地点到本场地点的路径；无移动也要说明“同地承接”。
+- entity_transfers：关键人物、物件、尸体、文书、载具、数据、法器、资源、消息等如何到场/转移/留置。
+- power_resource_map：本场冲突各方可调用的权力与资源，以及低资源方推进时要付出的成本。
+- information_state：本场开始时各方已知/未知/误解的信息。
+- mechanism_limits：本场会改变局势的能力、技术、法术、制度工具或资源的触发条件、边界和代价。
+- result_strength：本场允许达成的结果强度；若支撑不足，必须写明降级结果。
+- transition_bridge：本场结尾如何把时间、空间、人物、物件、信息状态交给下一场。
+- continuity_ledger：用结构化台账列出人物/物件/消息/证据/资源在场初 -> 场末的位置、持有人、知情人、转移路径和代价；新增实体必须写来源，无法解释则降低结果强度或删除该实体。
+- action_budget：高压/追捕/近身冲突场景必须列出“可用时间窗口、身体姿态、双手是否受限、预先准备、最多连续动作数、代价/受伤/失物”；若窗口不足，必须拆场、提前准备或降级结果。
+- inference_ledger：关键判断必须列出“感知来源/证据 -> 角色能推出的结论强度 -> 替代解释 -> 允许写法”；弱证据只能写疑点或假设，不能写定论。
+- evidence_strength：关键证据必须标注“疑似/可公开成疑点/可定案”。疑似证据只能触发追查、试探、拖延或局部制衡，不能直接写成定案、公开翻盘或已回收伏笔。
+- npc_disclosure_budget：偷听、闲谈、审问、威胁中，单个信息窗口最多泄露 2-3 个碎片；完整计划必须由角色结合锣声、脚步、封锁强度、文书痕迹、前文话术等推断出来。
+- actor_boundary：关键人物立场反转、突然援助、突然泄密、突然退让时，必须写清外部限制、动机触发、资源边界或代价。
+- foreshadow_seed：新术语、新道具、新阵营动作必须有前置信号、来源路径或“暂不能理解”的暗语状态；不得临场投放可立即解释一切的道具。
+- register_guard：根据题材和身份列出禁用现代管理词、作者总结词和口号式表达；用场景动作、制度语汇和物件压力承载选择，不用“流程/任务线/收口”等抽象归纳推进。
+"""
+
+
+WRITER_CONTRACT_PROMPT = """\
+【正文写作合同】
+- 只能把 scene 合同允许的 result_strength 写成正文，不得为了爽感擅自升级剧情成果。
+- 如果信息支撑不足，只能写疑点、暂缓、误导、暗查、局部胜利或代价胜，不能写定论、全面胜利、公开压倒或万能解决。
+- 必须显化会影响读者可信度的时间/空间/实体转移；不得用“转眼”“不多时”“已经”等粗暴跳过关键成本。
+- 冲突必须体现当前世界的权力/资源差与违抗成本；高资源方不能无城府崩盘，低资源方不能无成本碾压。
+- 能力、技术、法术、系统、制度、金钱、人脉、证据、舆论等不得临时万能化。
+- 同类动作、意象、压迫感、情绪和对白句式要变换表达，避免连续复用同一核心动词或影视剧式口号互怼。
+- 句子呼吸必须自然：连续短句不得超过四句；环境描写用长句顺人物视线、听觉或行动轨迹铺陈，核心动作、危险反应和判断转折用短句提速。
+- 动作动词必须朴素准确：基础动作优先写“看、走、停、拿、放、退、靠近、转身”等日常动词；禁止堆砌生僻动词，禁止为了古风或干练强行压缩词语。
+- 禁止生造动宾短语和错误搭配：用“走到檐下”，不用“进檐”；用“试探鼻息”，不用“探鼻”；所有动宾搭配必须符合现代中文基础习惯。
+- 空间与动作必须符合物理常识：人物和屋檐、雨网、门槛、墙角、桌案、阴影等互动时，必须写清站位、方向、距离和方位介词；环境不能被写成不合物理的动作对象。
+- 环境说明必须视角化：通过人物视线、听觉、行动路线或停顿自然带出细节，禁止清单罗列式说明。
+- 重复信息必须概括处理：角色转述他人长段台词、供词或传闻时，只保留关键词、新反应和新判断，禁止全文复述。
+- 拒绝动作切片：连贯动作应整体书写，除非每一步都承担风险、观察、阻碍或代价，否则不要拆成僵硬步骤。
+- 高压动作必须遵守 action_budget：近身搜拿、追捕、倒计时、押解、公开对质等场景里，角色每多做一个动作都要有预先准备、对方迟疑/受阻、身体代价或结果降级。禁止在“一瞬/几息/半拍”里塞入多步精细动作链。
+- 关键推理必须遵守 inference_ledger：正文只能写角色实际看见、听见、摸到、被告知或能合理排除的信息；“像/疑似/也许/不足定案”不是装饰词，后续结果强度必须真的降级。
+- 证据强度必须守恒：上一章“像/疑似/一圈白玉/旧物相似”的线索，本章只能写成疑点、佐证或待验实物；除非出现新证人、案册、实物验证或可公开证据，不得升级为确定事实。
+- NPC 不能替作者解释剧情：巡卒、门人、旁观者的对话只能泄露碎片；重复偷听应合并，剩余信息用环境动作和主角推理补足。
+- 伏笔不能一次性投放并解释：新暗语、新道具、新阵营行为必须保留不确定性，先形成钩子，再由后续路径验证。
+- 避免现代管理语感和作者式总结：禁用不合题材的“流程”“任务线”“收口”等说法，改用当前世界的文书、案册、过册、关节、封条、锣令、脚步、门锁、伤痛等具体压力。
+- 生成正文前必须内部自查并规避以下复发点：①别人直接说出秘密；②高资源证物被主角低成本接触；③“像/疑似”被写成“确认/证明”；④追捕中长时间问答；⑤市井对白承担制度说明；⑥章末线索过准。
+- 若某场需要主角接触高价值证物，必须先写清“为什么强势方允许/误判/设饵/被流程限制”，否则只能远观、误导或得到弱线索。
+- 若一段对白含 3 个以上专有信息点，必须拆分为“碎片对白 + 动作观察 + 主角推断”，不得连续口头百科。
+- 对话与叙述/动作必须平衡，禁止把整场写成连续一问一答的对白墙：连续紧贴的一问一答不超过三组，之后必须用叙述、动作、环境变化或主角观察过渡；含引号的对白段落不应超过全场段落的一半，其余用有信息的叙述、动作和感官观察承载。每段都要推进剧情或带来新信息，禁止用短对白或一句一段凑字数。
+"""
+
+
+EVALUATOR_CONTRACT_PROMPT = """\
+【合同验收硬规则】
+评估前先推导当前项目的 World Logic Contract，不要按固定题材模板审稿。以下为题材无关违规类型：
+- time_rule_violation：时间成本/恢复/准备/流程被跳过。
+- space_rule_violation：人物、物件、消息、风险、资源无路径转移或瞬移。
+- power_resource_violation：低资源方无成本全面压倒高资源方，或高资源方无合理制衡而降智崩盘。
+- information_rule_violation：角色掌握未获得信息，或弱信息推出强结论。
+- mechanism_rule_violation：能力、技术、法术、制度工具、资源调用无触发条件/成本/边界/反制。
+- result_strength_violation：前置支撑不足却达成强结果，没有降级为疑点、局部胜利、暂缓、误导、代价胜或后续线索。
+- cognition_violation：角色知道了其不应知道的信息（认知账本或前文未给出获知路径却直接说破/利用），或「读者已知-角色未知」的信息差被无故抹平。
+- expression_contract_violation：表达层重复、句子呼吸失衡、动词生僻堆砌、生造动宾、空间动作不合物理、视角清单化、复述长段信息、动作切片、时代/场合/身份不适配、口号式或现代影视剧式互怼破坏沉浸。
+
+若出现上述高严重度违规，对应维度不得高于 7.5；若直接破坏因果链、角色认知或世界机制，对应维度不得高于 6.5。每条 issue 的 description 必须以违规类型标签开头，例如“[information_rule_violation] ...”，suggestion 用短语说明“降级结果/补足支撑”即可，避免长篇解释。
+"""
+
+
+REVISE_CONTRACT_PROMPT = """\
+【通用重写合同】
+不要按某个具体症状打补丁。先识别每条问题属于哪类世界逻辑违规，再按类型修复：
+- time_rule_violation：补时间差、准备/恢复/传递耗时、流程成本。
+- space_rule_violation：补移动路径、携带/转移/留置方式、进入权限或空间代价。
+- power_resource_violation：补双方资源差、制衡理由、违抗成本、局部胜利和后续反制。
+- information_rule_violation：把强结论降级为疑点/假设/佐证，补来源、可接触性、可信度和替代解释。
+- mechanism_rule_violation：补触发条件、成本、边界、副作用、冷却和反制方式。
+- result_strength_violation：把全面胜利/定论/公开翻盘降级为暂缓、暗查、误导、半胜或后续线索。
+- cognition_violation：删除角色对未获知信息的直接说破/利用，或补一条可信获知路径（目击、转述、文书、推断链）；恢复「读者已知-角色未知」的信息差，让角色继续在错误/缺失认知下行动。
+- expression_contract_violation：调节长短句呼吸，使用朴素准确动词，删除生造动宾和物理不通的空间动作，环境跟随视角流动，长段复述改为概括侧写，连贯动作不要切片；同时调整对白身份/场合/时代/题材语感。
+- recurrence_precheck：遇到跨章复发的 information/power/result/expression/time 问题，必须在生成前改场景结构：减少信息泄露口、降低证据强度、增加强资源方动机/设饵/流程成本、压缩追捕问答。
+- continuity/opening_gap：重写开头必须先补“上一章末状态 -> 本章开场位置”的路径、时间和阻隔，尤其是被藏起的人如何重新到场、追兵如何被甩开或拖住。
+- evidence_strength_downgrade：把“确定白玉扳指/旧刀/定案证据”降级为“像、疑似、一圈白玉似的东西、那包旧铁、待验线索”，并保留后续验证入口。
+- npc_disclosure_budget：删除或合并重复偷听，只保留少量关键词，让角色通过环境和既有话术推断。
+- actor_boundary：补足援助者为何只能掷物不能过身、官差为何听见仍服从、弱势证人为何敢说但只能形成疑点。
+- foreshadow_seed/source_path：补新暗语、新道具、新蓑影路径的前置信号或来源，不得无路径投放。
+- register_guard：替换现代/抽象总结词，用当前题材制度语汇与动作细节承载压力。
+跨轮反复出现 time / power_resource / mechanism / result_strength 组合问题时，下一次生成前必须重排场景：减少同一时间窗口内的动作数，提前准备必要道具，拆分对质与逃脱，把强结果降级为短暂疑点并付出明确代价。
+重写必须保留主线目标，但允许降低单场结果强度，优先维护故事世界自洽。
+"""
+
+
+# C1 (ainovel editor doctrine): calibration against over-revision. The
+# score->auto-revise loop's main operational risk is thrashing / rewriting for
+# the sake of rewriting. These principles pull the verdict back toward "accept
+# is the common result" without touching the 8.2 threshold logic. The hard caps
+# in EVALUATOR_CONTRACT_PROMPT (>=high-severity violation -> dimension <=7.5/6.5)
+# still backstop genuinely broken chapters, so calibration only loosens the
+# aesthetic-warning noise, never the world-logic floor.
+EVALUATOR_CALIBRATION_PROMPT = """\
+【评审校准（防过度返工）】
+- 没有高严重度合同违规时，accept（不触发返工）是最常见、最正确的结果；不要为显得严格而系统性压分。
+- 纯审美/风格偏好类问题只能记为 warning（severity=low），不计入维度封顶规则，也不构成返工理由。
+- 大纲/契约写得更激进、而章节做出了更合理的叙事取舍时，优先判可接受，在 issue 里说明取舍即可，不得仅因“偏离大纲”重判重写。
+- 每条 issue 必须带 quote 逐字证据；给不出 quote 的审美评价不要列入 issues；禁止用“整体流畅/文笔不错”一类空洞表扬占用 issue 配额。
+- 对话区分度测试：摘除说话人标记后仍无法分辨是谁在说话，记一条 character_consistency issue（带 quote）。
+- 整章平淡时禁止只写“节奏平淡”：必须用 quote 指出最该加强的 1-2 处，并给具体手法（加冲突压力 / 换感官承载 / 砍内省重复等）。
+"""
+
+
+REVISE_CALIBRATION_PROMPT = """\
+【修订校准】
+审美类 warning 不强制重写对应段落；只有高严重度违规和明显低分维度才动结构。保留原稿中可取的段落与表达，禁止为改而改——重写后若并未修复具体违规，宁可保留原文。
+"""
+
+
+def contract_block(*, include_scene_fields: bool = False, include_writer: bool = False) -> str:
+    """Compose a compact contract prompt block for generation paths."""
+    parts = [WORLD_LOGIC_CONTRACT, contract_hard_gate_prompt()]
+    if include_scene_fields:
+        parts.append(SCENE_CONTRACT_FIELDS_PROMPT)
+    if include_writer:
+        parts.append(WRITER_CONTRACT_PROMPT)
+    return "\n\n".join(parts)
