@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Navbar } from "@/components/Navbar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import "./globals.css";
 
@@ -37,12 +38,14 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <body className="min-h-full">
-        <I18nProvider>
-          <Suspense fallback={null}>
-            <Navbar />
-          </Suspense>
-          {children}
-        </I18nProvider>
+        <ErrorBoundary>
+          <I18nProvider>
+            <Suspense fallback={null}>
+              <Navbar />
+            </Suspense>
+            {children}
+          </I18nProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
