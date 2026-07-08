@@ -43,7 +43,7 @@ async def build_rag_layer(
             if isinstance(samples, list) and samples:
                 pack.dialogue_samples[char.name] = samples[:3]
     except Exception as e:
-        logger.warning("Failed to load dialogue samples: %s", e)
+        logger.warning("Failed to load dialogue samples [project=%s]: %s", pid, e)
 
     # Style samples from Qdrant
     await load_style_samples(pack, pid, db)

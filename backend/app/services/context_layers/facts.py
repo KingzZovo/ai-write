@@ -6,6 +6,7 @@ import logging
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import (
@@ -48,7 +49,7 @@ async def build_facts_layer(
         for row in rules_result.all():
             pack.world_rules.append(f"[{row.category}] {row.rule_text}")
     except Exception as e:
-        logger.warning("Failed to load world rules: %s", e)
+        logger.warning("Failed to load world rules [project=%s]: %s", pid, e)
 
     # Character cards from PostgreSQL characters + Neo4j state
     try:
@@ -73,7 +74,7 @@ async def build_facts_layer(
                 if character_id not in loc_by_char_id:
                     loc_by_char_id[character_id] = loc_name
         except Exception as e:
-            logger.debug("Failed to load character_locations projection: %s", e)
+            logger.debug("Failed to load character_locations projection [project=%s]: %s", pid, e)
 
         char_result = await db.execute(
             select(Character)
@@ -110,7 +111,7 @@ async def build_facts_layer(
         # Enrich from Neo4j if available
         await _enrich_characters_from_neo4j(pack, pid, chapter_idx)
     except Exception as e:
-        logger.warning("Failed to load character cards: %s", e)
+        logger.warning("Failed to load character cards [project=%s]: %s", pid, e)
 
     # Foreshadow triplets
     try:
@@ -151,9 +152,9 @@ async def build_facts_layer(
             debt = compute_debt_score(fs_rows, int(debt_idx))
             pack.foreshadow_debt_warning = render_debt_warning(debt)
         except Exception as e:
-            logger.warning("Failed to compute foreshadow debt: %s", e)
+            logger.warning("Failed to compute foreshadow debt [project=%s]: %s", pid, e)
     except Exception as e:
-        logger.warning("Failed to load foreshadow triplets: %s", e)
+        logger.warning("Failed to load foreshadow triplets [project=%s]: %s", pid, e)
 
     # Timeline anchors from chapter summaries with key events
     try:
@@ -185,7 +186,7 @@ async def build_facts_layer(
             sampled = middle[::step][:7]
             pack.timeline_anchors = first + sampled + last
     except Exception as e:
-        logger.warning("Failed to load timeline anchors: %s", e)
+        logger.warning("Failed to load timeline anchors [project=%s]: %s", pid, e)
 
     # Q3 v1.9.1: character cognition ledger
     try:
@@ -196,7 +197,7 @@ async def build_facts_layer(
             ledger, max_chars=1200
         )
     except Exception as e:
-        logger.warning("Failed to load character cognition ledger: %s", e)
+        logger.warning("Failed to load character cognition ledger [project=%s]: %s", pid, e)
 
     # C2/F1 v1.9.2: whole-book style-tic mirror
     try:
@@ -211,7 +212,7 @@ async def build_facts_layer(
         if row and row[0]:
             pack.style_tic_mirror = render_style_mirror_block(row[0], max_chars=800)
     except Exception as e:
-        logger.warning("Failed to load style stats: %s", e)
+        logger.warning("Failed to load style stats [project=%s]: %s", pid, e)
 
     # C3/F4: deterministic related-chapter recall + secondary-cast roster
     try:
@@ -246,13 +247,13 @@ async def build_facts_layer(
                 cast, (global_chapter_idx or chapter_idx), max_chars=600
             )
         except Exception as e:
-            logger.warning("Failed to render cast roster: %s", e)
+            logger.warning("Failed to render cast roster [project=%s]: %s", pid, e)
 
         pack.related_chapter_recall = "\n\n".join(
             b for b in (recall, roster_block) if b
         )
     except Exception as e:
-        logger.warning("Failed to build related-chapter recall: %s", e)
+        logger.warning("Failed to build related-chapter recall [project=%s]: %s", pid, e)
 
     # C4/F3: narrative compass direction anchor
     try:
@@ -263,7 +264,7 @@ async def build_facts_layer(
             compass, (global_chapter_idx or chapter_idx), max_chars=400
         )
     except Exception as e:
-        logger.warning("Failed to load narrative compass: %s", e)
+        logger.warning("Failed to load narrative compass [project=%s]: %s", pid, e)
 
     # Build strand tracker from recent chapters
     await _build_strand_tracker(pack, pid, chapter_idx, db)
@@ -337,9 +338,9 @@ async def _enrich_characters_from_neo4j(
                 pack.character_cards.append(card)
 
     except (RuntimeError, ImportError):
-        logger.debug("Neo4j not available, skipping character enrichment")
+        logger.debug("Neo4j not available, skipping character enrichment [project=%s]", project_id)
     except Exception as e:
-        logger.warning("Failed to enrich characters from Neo4j: %s", e)
+        logger.warning("Failed to enrich characters from Neo4j [project=%s]: %s", project_id, e)
 
 
 async def _build_strand_tracker(
@@ -356,4 +357,4 @@ async def _build_strand_tracker(
         tracker = await tracker_svc.analyze_strands(project_id, chapter_idx)
         pack.strand_tracker = tracker
     except (ImportError, Exception) as e:
-        logger.debug("Strand tracker not available: %s", e)
+        logger.debug("Strand tracker not available [project=%s]: %s", project_id, e)
