@@ -338,6 +338,12 @@ def _quality_penalty(report: ChineseProseMechanicsReport) -> int:
         + int(max(0.0, 0.10 - report.dialogue_paragraph_rate) * 300)
         + report.plain_contemporary_violation_count * 360
         + report.duplicate_explanation_span_count * 300
+        # Reader-feedback metrics: translationese blocks like meta leakage;
+        # micro-action overload / repeated rare phrases are warn-level but must
+        # shrink across rewrite rounds, so they weigh into the penalty.
+        + report.translationese_marker_count * 320
+        + (report.micro_action_beat_count * 90 if report.micro_action_overload else 0)
+        + report.repeated_rare_phrase_count * 150
         + max(0, report.action_dialogue_beat_count - 14) * 120
         + report.short_sentence_runs_over_target * 80
         + max(0, report.short_sentence_run_max - 8) * 40
@@ -455,6 +461,12 @@ def _build_rewrite_user_content(
         "pseudo_literary_register_count": initial_report.pseudo_literary_register_count,
         "plain_contemporary_violation_count": initial_report.plain_contemporary_violation_count,
         "duplicate_explanation_span_count": initial_report.duplicate_explanation_span_count,
+        "micro_action_beat_count": initial_report.micro_action_beat_count,
+        "micro_action_density_per_1000": initial_report.micro_action_density_per_1000,
+        "micro_action_overload": initial_report.micro_action_overload,
+        "repeated_rare_phrase_count": initial_report.repeated_rare_phrase_count,
+        "repeated_rare_phrases": dict(initial_report.repeated_rare_phrases),
+        "translationese_marker_count": initial_report.translationese_marker_count,
         "interiority_monologue_rate": round(initial_report.interiority_monologue_rate, 3),
         "repeated_realization_run": initial_report.repeated_realization_run,
         "dialogue_paragraph_rate": round(initial_report.dialogue_paragraph_rate, 3),
@@ -488,6 +500,9 @@ def _build_rewrite_user_content(
         "- semantic_collocation：修正不完整或故作深的现代汉语搭配；写透不出灯光/没有灯光，不写透不出灯；写价格超过余额，不写价格难看；写没有人声/没有开门动静，不写可以借口留下来的声音。\n"
         "- shelter_cost_logic：不住旅馆/宾馆/酒店的原因必须落在房费、押金、余额、满房、证件、关门、风险或距离上；不要用背包放干、没力气碰脸色、从头看到脚当核心理由。\n"
         "- abstract_evasion：删除试错、借口留下来、价格难看、碰这种脸色等抽象逃避词，把行为理由写成钱、时间、电量、体力、路况和退路。\n\n"
+        "- micro_action_budget：删减推眼镜、摸物件、关节作响、捏纸角这类小动作拍，每千字不超过 3 处，同一个具体动作全章只留 1 次；情绪改用一个准确的念头或对话内容的变化承载。\n"
+        "- repeated_rare_phrase：同一个显眼短语（检测摘要 repeated_rare_phrases 中列出的）不得反复出现三次以上；重复处换写法或删除。\n"
+        "- translationese：删除介于两者之间、某种意义上、从某种程度、事实上开头这类英语骨架直译式表达，改成平实的中文陈述。\n\n"
         "- cross_project_prose_quality_contract：先按规则族修，不要只替换用户点名的一句话。同类伪文学压缩腔、语义搭配缺失、资源逻辑断裂和重复解释都要一起清理。\n"
         "- duplicate_explanation_control：同一压力链只解释一次。重复的退路说明、心理金句和困境标签要删除或改成下一步行动。\n\n"
         "- chapter_level_anti_padding：每段必须带新信息（动作/对话/发现/关系变化）；同一洞察全章只写一次，禁止换比喻反复重述；删除连续堆叠的心理剖白段，段落不得只复述上一段结论；对话与有信息的叙述/动作要平衡，不要用独白金句凑字数，也不要用整章短对白墙或一句一段凑字数。\n\n"

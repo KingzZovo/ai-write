@@ -693,3 +693,38 @@ async def test_quality_gate_explicit_rounds_override_settings(monkeypatch) -> No
 
     assert len(calls) == 3
     assert result.rewrite_rounds == 3
+
+
+def test_quality_penalty_counts_reader_feedback_metrics() -> None:
+    base = cqg.ChineseProseMechanicsReport()
+    flagged = cqg.ChineseProseMechanicsReport(
+        micro_action_beat_count=5,
+        micro_action_density_per_1000=6.0,
+        micro_action_overload=True,
+        repeated_rare_phrase_count=2,
+        translationese_marker_count=1,
+    )
+
+    assert cqg._quality_penalty(flagged) > cqg._quality_penalty(base)
+    # Overload gating: the same beat count without overload adds no penalty.
+    unflagged = cqg.ChineseProseMechanicsReport(
+        micro_action_beat_count=5,
+        micro_action_density_per_1000=1.0,
+        micro_action_overload=False,
+    )
+    assert cqg._quality_penalty(unflagged) == cqg._quality_penalty(base)
+
+
+def test_rewrite_prompt_carries_reader_feedback_metrics() -> None:
+    report = cqg.analyze_chinese_prose_mechanics(
+        "那种颜色像是介于两者之间。他推了推眼镜，又推了推眼镜，还是推了推眼镜。"
+    )
+    content = cqg._build_rewrite_user_content(
+        text="正文", initial_report=report, round_idx=1, previous_attempts=[]
+    )
+
+    assert "micro_action_density_per_1000" in content
+    assert "repeated_rare_phrase_count" in content
+    assert "translationese_marker_count" in content
+    assert "micro_action_budget" in content
+    assert "英语骨架直译式表达" in content

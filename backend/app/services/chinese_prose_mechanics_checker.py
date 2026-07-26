@@ -308,6 +308,54 @@ ABSTRACT_EVASION_PATTERNS = [
 # truth) so this checker stays in sync with the generation prompts and gate.
 PSEUDO_LITERARY_REGISTER_PATTERNS = list(regex_patterns_for("plain_contemporary_chinese"))
 
+# Reader-feedback (2026-07): the anti-AI rules overcorrected into a new machine
+# flavor — micro-action overload (推眼镜×3 / 摸茧 / 膝盖轻响×2 in one chapter),
+# repeated rare phrases, and translation-skeleton phrasing (像是介于两者之间).
+# 微动作预算: budget for "small action beats" per 1000 chars. WARN-level: the
+# density metric feeds the rewrite penalty and preflight prompt, not `passed`.
+MICRO_ACTION_BEAT_PATTERNS = [
+    r"推了推眼镜|推了下眼镜|扶了扶眼镜|眼镜往上推|把眼镜.{0,4}推",
+    r"摸了摸",
+    r"捏了捏|捏紧",
+    r"蹭了蹭",
+    r"搓了搓",
+    r"挠了挠|挠头",
+    r"(?:关节|指节|膝盖|脖颈)[^。！？\n]{0,4}(?:轻响|作响|一响|响了|咔)",
+    r"(?:指腹|指尖)[^。！？\n]{0,6}(?:贴|探|蹭|抠|摩挲|擦)",
+    r"摩挲",
+    r"抿了抿",
+    r"敲了敲",
+    r"扯了扯|拽了拽",
+    r"攥了攥|攥紧",
+    r"捻了捻",
+    r"掐了掐",
+    r"(?:摸|蹭|抠)[^。！？\n]{0,4}茧",
+]
+MICRO_ACTION_DENSITY_LIMIT = 3.0  # beats per 1000 chars
+MICRO_ACTION_MIN_HITS = 3  # short-snippet guard: one beat alone never flags
+
+# repeated_rare_phrase: a distinctive 4+ char CJK n-gram recurring 3+ times in
+# one chapter (膝盖轻响×3, 焊锡茧×3) reads as a verbal tic. Function-char guard
+# keeps ordinary high-frequency constructions (的/了/他/说…) out of the count.
+REPEATED_RARE_PHRASE_MIN_COUNT = 3
+_RARE_PHRASE_NGRAM_SIZES = (4, 5, 6)
+_RARE_PHRASE_GUARD_CHARS = set(
+    "的一了是在不有人我他她它你们这那就都而及与着或个上下来去到得地过"
+    "说道么什呢吧啊吗把被让给从对向和跟为于之其还又也很没要会能可以"
+    "看走站坐盯笑摇点抬低转回开关拿放伸手眼头脸声里外前后边时候自己"
+)
+_CJK_RUN_RE = re.compile(r"[一-鿿]{4,}")
+
+# translationese: English-skeleton calques. Violation-level (blocks like meta
+# leakage): they never belong in natural Chinese narration.
+TRANSLATIONESE_MARKER_PATTERNS = [
+    r"介于.{0,12}之间",
+    r"某种意义上",
+    r"从某种程度",
+    r"在.{0,8}的意义上",
+    r"事实上，",
+]
+
 @dataclass
 class ChineseProseMechanicsReport:
     passed: bool = False
@@ -362,6 +410,12 @@ class ChineseProseMechanicsReport:
     pseudo_literary_register_count: int = 0
     plain_contemporary_violation_count: int = 0
     duplicate_explanation_span_count: int = 0
+    micro_action_beat_count: int = 0
+    micro_action_density_per_1000: float = 0.0
+    micro_action_overload: bool = False
+    repeated_rare_phrase_count: int = 0
+    repeated_rare_phrases: dict[str, int] = field(default_factory=dict)
+    translationese_marker_count: int = 0
     paragraph_risks: list[str] = field(default_factory=list)
 
     @property
@@ -423,6 +477,12 @@ class ChineseProseMechanicsReport:
             "pseudo_literary_register_count": self.pseudo_literary_register_count,
             "plain_contemporary_violation_count": self.plain_contemporary_violation_count,
             "duplicate_explanation_span_count": self.duplicate_explanation_span_count,
+            "micro_action_beat_count": self.micro_action_beat_count,
+            "micro_action_density_per_1000": self.micro_action_density_per_1000,
+            "micro_action_overload": self.micro_action_overload,
+            "repeated_rare_phrase_count": self.repeated_rare_phrase_count,
+            "repeated_rare_phrases": dict(self.repeated_rare_phrases),
+            "translationese_marker_count": self.translationese_marker_count,
             "paragraph_risks": list(self.paragraph_risks),
         }
 
@@ -806,6 +866,50 @@ def _chapter_interiority_metrics(paragraphs: list[str]) -> tuple[float, int, flo
     return sum(interior_flags) / n, max_run, dialogue / n
 
 
+def _micro_action_metrics(text: str) -> tuple[int, float, bool]:
+    """Return (beat_count, density_per_1000, overload).
+
+    Overload needs both an absolute floor (MICRO_ACTION_MIN_HITS, so a single
+    beat in a short snippet never flags) and a density above
+    MICRO_ACTION_DENSITY_LIMIT per 1000 chars.
+    """
+    beats = _count_unique_regex_hits(text, MICRO_ACTION_BEAT_PATTERNS)
+    length = len(re.sub(r"\s+", "", text or ""))
+    density = _round_rate(beats * 1000.0 / length) if length else 0.0
+    overload = beats >= MICRO_ACTION_MIN_HITS and density > MICRO_ACTION_DENSITY_LIMIT
+    return beats, density, overload
+
+
+def _repeated_rare_phrases(text: str) -> dict[str, int]:
+    """Deterministic CJK n-gram tic detector.
+
+    Counts 4-6 char n-grams inside contiguous Han runs, skips any gram touching
+    the function-char guard set, keeps grams recurring
+    REPEATED_RARE_PHRASE_MIN_COUNT+ times, then reports only maximal phrases
+    (a 4-gram inside an equally frequent longer offender is dropped).
+    """
+    runs = _CJK_RUN_RE.findall(text or "")
+    counts: Counter[str] = Counter()
+    for run in runs:
+        for n in _RARE_PHRASE_NGRAM_SIZES:
+            for i in range(len(run) - n + 1):
+                gram = run[i : i + n]
+                if _RARE_PHRASE_GUARD_CHARS.intersection(gram):
+                    continue
+                counts[gram] += 1
+    offenders = {g: c for g, c in counts.items() if c >= REPEATED_RARE_PHRASE_MIN_COUNT}
+    maximal = {
+        gram: count
+        for gram, count in offenders.items()
+        if not any(
+            gram != other and gram in other and other_count >= count
+            for other, other_count in offenders.items()
+        )
+    }
+    top = sorted(maximal.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+    return dict(top)
+
+
 def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
     text = text or ""
     report = ChineseProseMechanicsReport()
@@ -871,6 +975,16 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
         text, PSEUDO_LITERARY_REGISTER_PATTERNS
     )
     report.duplicate_explanation_span_count = _count_duplicate_explanation_spans(paragraphs)
+    (
+        report.micro_action_beat_count,
+        report.micro_action_density_per_1000,
+        report.micro_action_overload,
+    ) = _micro_action_metrics(text)
+    report.repeated_rare_phrases = _repeated_rare_phrases(text)
+    report.repeated_rare_phrase_count = len(report.repeated_rare_phrases)
+    report.translationese_marker_count = _count_unique_regex_hits(
+        text, TRANSLATIONESE_MARKER_PATTERNS
+    )
     # Aggregate "normal modern Chinese" violation so the gate/UI catch the family
     # of problems instead of one-off phrases (cross_project_prose_quality_contract).
     # Count by unique merged span across the families so a phrase matching more than
@@ -940,6 +1054,10 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
         or report.pseudo_literary_register_count
         or report.plain_contemporary_violation_count
         or report.duplicate_explanation_span_count
+        # Translationese calques are violation-level like meta leakage;
+        # micro-action overload and repeated rare phrases stay WARN-only
+        # (penalty + prompts) so the old rules can't over-trigger rewrites.
+        or report.translationese_marker_count
         or report.repeated_realization_run > REPEATED_REALIZATION_RUN_LIMIT
         or report.interiority_monologue_rate > INTERIORITY_RATE_LIMIT
         or report.paragraph_risks
@@ -1002,6 +1120,10 @@ def build_generation_preflight_prompt(
     pseudo_literary_register = int(safe.get("pseudo_literary_register_count") or 0)
     plain_contemporary_violation = int(safe.get("plain_contemporary_violation_count") or 0)
     duplicate_explanation_span = int(safe.get("duplicate_explanation_span_count") or 0)
+    micro_action_density = float(safe.get("micro_action_density_per_1000") or 0.0)
+    repeated_rare_phrase = int(safe.get("repeated_rare_phrase_count") or 0)
+    repeated_rare_phrase_top = "、".join((safe.get("repeated_rare_phrases") or {}).keys())
+    translationese = int(safe.get("translationese_marker_count") or 0)
     interiority_rate = float(safe.get("interiority_monologue_rate") or 0.0)
     repeated_realization = int(safe.get("repeated_realization_run") or 0)
     dialogue_rate = float(safe.get("dialogue_paragraph_rate") or 0.0)
@@ -1029,6 +1151,8 @@ def build_generation_preflight_prompt(
         f"abstract_evasion={abstract_evasion}, pseudo_literary_register={pseudo_literary_register}, "
         f"plain_contemporary_violation={plain_contemporary_violation}, "
         f"duplicate_explanation_span={duplicate_explanation_span}, "
+        f"micro_action_density_per_1000={micro_action_density:.2f}, "
+        f"repeated_rare_phrase={repeated_rare_phrase}, translationese={translationese}, "
         f"interiority_rate={interiority_rate:.2f}, repeated_realization={repeated_realization}, "
         f"dialogue_rate={dialogue_rate:.2f}."
         f"\n关注项：{focus}."
@@ -1068,6 +1192,11 @@ def build_generation_preflight_prompt(
         "shelter_cost_logic_count 必须为 0；不住旅馆、宾馆或酒店的原因必须落在房费、押金、余额、满房、证件、关门、风险或距离上，不要用背包放干、没力气碰脸色、从头看到脚这类抽象借口替代现实阻力。"
         "abstract_evasion_count 必须为 0；删除试错、借口留下来、价格难看、碰这种脸色等抽象逃避词，把行动原因落回钱、时间、电量、体力、路况和退路。"
         "pseudo_literary_register_count 必须为 0；删除半文言、硬压缩、装腔的现代叙述。普通问路、求助、登记、买东西、躲雨都用普通人会说的完整话。"
+        "微动作预算必须执行：micro_action_density_per_1000 不得超过 3；推眼镜、摸物件、关节作响、捏纸角这类小动作拍受总量限制，同一个具体动作全章最多出现 1 次。情绪表达优先用一个准确的念头或对话内容的变化，身体反应是备选而非默认。"
+        "repeated_rare_phrase_count 必须为 0；同一个显眼短语（如膝盖轻响、焊锡茧）全章不得反复出现三次以上，重复处换写法或删除。"
+        + (f"上一章复发短语：{repeated_rare_phrase_top}。" if repeated_rare_phrase_top else "")
+        + "translationese_marker_count 必须为 0；禁用介于两者之间、某种意义上、从某种程度、事实上开头这类英语骨架直译式表达，改用平实陈述。"
+        "自然白话优先：不要把双音节词砍成单字硬凑极简，稳定不写成稳在、看清不写成读；不追求文言式紧缩的酷感。"
         "dialogue_topology_limit 必须执行：连续含引号段落不得超过四段，连续纯短对白不得超过两段，每个场景紧贴问答不得超过三组。"
         "超出时用未答、抢白、误解、环境声、动作结果、证物变化或概括性侧写打断，不要把整章写成问答剧本。"
         "结构拓扑也必须自检：动作对白绑定率不得超过 0.35，不能让多数段落都写成“人物摆一下/挪一下/看一下 + 台词”；"

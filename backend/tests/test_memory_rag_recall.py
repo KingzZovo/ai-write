@@ -295,10 +295,16 @@ class TestSearchQdrantSnippetsProjectFilter:
         project_id = str(uuid.uuid4())
         await builder._search_qdrant_snippets(pack, ["主角", "旧信"], project_id)
 
-        # Two-tier recall: live + compacted.
-        assert client.search.await_count == 2
+        # Two-tier summary recall (live + compacted) + Tier-4 chunk recall
+        # (chapter_chunks shard; covered in tests/services/test_chapter_chunker.py).
+        assert client.search.await_count == 3
         live_kwargs = client.search.await_args_list[0].kwargs
         compacted_kwargs = client.search.await_args_list[1].kwargs
+        from app.services.qdrant_store import chapter_chunks_collection
+
+        assert client.search.await_args_list[2].kwargs["collection_name"] == (
+            chapter_chunks_collection(project_id)
+        )
         assert live_kwargs["collection_name"] == "chapter_summaries"
         assert (
             compacted_kwargs["collection_name"] == "chapter_summaries_compacted"

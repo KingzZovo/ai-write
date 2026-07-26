@@ -200,6 +200,25 @@ async def summarize_and_save_chapter(
         global_idx=chapter.global_idx,
         volume_idx=volume_idx,
     )
+
+    # Tier-4 (自由检索层): mirror the chapter's FULL TEXT into the per-project
+    # chapter_chunks shard so ContextPack L3 can recall verbatim prose, not
+    # just summaries. Same failure-tolerant contract as the summary upsert —
+    # the committed chapter must stay saved whatever happens here.
+    try:
+        from app.services.chapter_chunker import upsert_chapter_chunks
+
+        await upsert_chapter_chunks(
+            project_id=project_id,
+            volume_id=chapter.volume_id,
+            chapter_idx=chapter.chapter_idx,
+            global_idx=chapter.global_idx,
+            content_text=chapter.content_text or "",
+        )
+    except Exception as e:  # noqa: BLE001 — never break the save path
+        logger.warning(
+            "chapter chunk upsert failed (chapter_id=%s): %s", chapter_id, e
+        )
     return True, summary
 
 

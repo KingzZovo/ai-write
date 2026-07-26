@@ -91,6 +91,20 @@ class Settings(BaseSettings):
     # chapter-summary point count exceeds this threshold.
     MEMORY_COMPACT_THRESHOLD_POINTS: int = 200
 
+    # --- Memory pyramid (coarse-to-fine tiers) ---
+    # Tier 2: max memory cards kept per (project, character). first_appearance
+    # cards are always kept; oldest key_moment cards are evicted beyond cap.
+    MEMORY_CARDS_PER_CHARACTER: int = 10
+    # Tier 3: a chapter-relevant character absent for MORE than this many
+    # chapters (gap = current global_idx - last_seen > GAP) triggers the
+    # 旧人重现 drill-down block in ContextPack L3.
+    MEMORY_DRILLDOWN_GAP_CHAPTERS: int = 20
+    # Tier 4: chunk chapter full text into the per-project chapter_chunks
+    # shard on persist (write side) / recall chunks into ContextPack L3
+    # (read side).
+    CHAPTER_CHUNKING_ENABLED: bool = True
+    CHAPTER_CHUNK_RECALL_ENABLED: bool = True
+
     # --- DB scaling / retention (v1.11 partitioning groundwork) ---
     # Drop llm_call_logs monthly partitions older than this many months.
     # <= 0 disables dropping (keep forever).

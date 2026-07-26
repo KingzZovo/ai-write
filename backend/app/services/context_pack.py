@@ -258,6 +258,14 @@ class ContextPack:
     # the L3 style block (budget shared with style_samples) instead of
     # competing with chapter summaries for the rag_snippets[:5] slots.
     style_recall: list[str] = field(default_factory=list)
+    # Tier-4 (自由检索层): verbatim chapter-chunk recall lines (each <=300
+    # chars, current chapter excluded). Rendered at the L3 HEAD so under
+    # keep-tail truncation they are the first L3 material to degrade.
+    chunk_recall: list[str] = field(default_factory=list)
+    # Tier-3 (细读层): pre-rendered 【旧人重现·原文片段】 block for
+    # long-absent returning characters (memory-card excerpts). Rendered at
+    # the L3 tail (after the style block) so it survives truncation longest.
+    returning_character_drilldown: str = ""
 
     # Meta (~7%)
     writing_guidance: list[str] = field(default_factory=list)
@@ -469,9 +477,12 @@ class ContextPack:
         - L2: 权威事实契约 → 世界规则 → 写作规则 → 活跃角色状态 →
           人物认知边界 → 伏笔追踪 → 时间线锚点 → 已知矛盾 →
           线索平衡提醒 → 文风镜像.
-        - L3: 相关片段 (two-tier merged recall: live chapter summaries +
-          penalized compacted rollups, capped at 5; head-most, degrades
-          first) → 角色对话样本 → 风格参考.
+        - L3: 原文回读 (Tier-4 verbatim chapter-chunk recall; head-most,
+          degrades first) → 相关片段 (two-tier merged recall: live chapter
+          summaries + penalized compacted rollups, capped at 5) →
+          角色对话样本 → 风格参考 → 旧人重现·原文片段 (Tier-3
+          returning-character memory-card drill-down; most tail-ward,
+          survives longest).
         """
         if token_budget is None:
             try:
@@ -624,6 +635,12 @@ class ContextPack:
         # ---- Layer 3: RAG ----
         l3_parts: list[str] = []
 
+        # Tier-4 chunk recall at the L3 HEAD: keep-tail truncation drops the
+        # head first, so verbatim re-reads are the lowest-priority L3 slot.
+        if self.chunk_recall:
+            chunk_text = "\n---\n".join(self.chunk_recall[:3])
+            l3_parts.append(f"【原文回读】\n{chunk_text}")
+
         if self.rag_snippets:
             rag_text = "\n---\n".join(self.rag_snippets[:5])
             l3_parts.append(f"【相关片段】\n{rag_text}")
@@ -642,6 +659,12 @@ class ContextPack:
             style_block_parts.append("\n---\n".join(self.style_samples[:3]))
         if style_block_parts:
             l3_parts.append("【风格参考】\n" + "\n---\n".join(style_block_parts))
+
+        # Tier-3 returning-character drill-down at the L3 tail: under
+        # keep-tail truncation this block survives the longest (a
+        # long-absent character's voice anchor outranks generic recall).
+        if self.returning_character_drilldown:
+            l3_parts.append(self.returning_character_drilldown)
 
         l3_text = "\n\n".join(l3_parts)
         l3_text = self._truncate_to_budget(l3_text, budget_l3)
@@ -694,6 +717,73 @@ class ContextPack:
                 ),
             })
         return messages
+
+
+# ---------------------------------------------------------------------------
+# Tier-3 (细读层): returning-character drill-down helpers (pure, no LLM)
+# ---------------------------------------------------------------------------
+
+
+def is_returning_character(
+    last_seen: int, current_idx: int, gap_chapters: int
+) -> bool:
+    """Deterministic drill-down trigger: absent for MORE than the gap.
+
+    A character last seen exactly ``gap_chapters`` ago does NOT trigger;
+    ``gap_chapters + 1`` does.
+    """
+    return (int(current_idx) - int(last_seen)) > int(gap_chapters)
+
+
+def render_drilldown_block(
+    entries: list[dict],
+    current_idx: int,
+    *,
+    max_chars: int = 1200,
+) -> str:
+    """Render the 【旧人重现·原文片段】 L3 block from memory-card entries.
+
+    ``entries`` is ``[{"name", "last_seen", "cards": [(global_idx,
+    card_type, excerpt), ...]}]`` — cards already selected/ordered by the
+    caller (first_appearance first, then most recent key_moments). Total
+    output is capped at ``max_chars``: whole per-character sections are
+    dropped tail-first once the cap is reached. Empty input ⇒ "" (silent
+    absence).
+    """
+    if not entries:
+        return ""
+    header = (
+        "【旧人重现·原文片段】以下角色已多章未出场，本章重现时用原文片段"
+        "对齐其口吻/状态，严禁写成另一个人："
+    )
+    sections: list[str] = []
+    for e in entries:
+        name = e.get("name") or ""
+        last_seen = e.get("last_seen")
+        cards = e.get("cards") or []
+        if not name or last_seen is None or not cards:
+            continue
+        gap = int(current_idx) - int(last_seen)
+        lines = [f"▍{name}（上次出场 [CH-{last_seen}]，已隔{gap}章）"]
+        for gidx, card_type, excerpt in cards:
+            if not excerpt:
+                continue
+            tag = "初登场" if card_type == "first_appearance" else "片段"
+            lines.append(f"[CH-{gidx}·{tag}] {excerpt}")
+        if len(lines) > 1:
+            sections.append("\n".join(lines))
+
+    out: list[str] = []
+    used = len(header)
+    for sec in sections:
+        cost = len(sec) + 1
+        if used + cost > max_chars:
+            break
+        out.append(sec)
+        used += cost
+    if not out:
+        return ""
+    return "\n".join([header, *out])
 
 
 # ---------------------------------------------------------------------------
@@ -1366,6 +1456,13 @@ class ContextPackBuilder:
         except Exception as e:
             logger.warning("Failed to load narrative compass: %s", e)
 
+        # Tier-3 (细读层): returning-character drill-down. Deterministic
+        # trigger over the capped card list — no LLM, silent absence.
+        try:
+            await self._build_returning_drilldown(pack, pid, gidx)
+        except Exception as e:
+            logger.warning("Failed to build returning-character drilldown: %s", e)
+
         # Build strand tracker from recent chapters (book-global window)
         await self._build_strand_tracker(pack, pid, gidx)
 
@@ -1607,6 +1704,107 @@ class ContextPackBuilder:
         ]
         pack.character_cards = [cards[i] for i in kept]
 
+    async def _build_returning_drilldown(
+        self,
+        pack: ContextPack,
+        project_id: str,
+        global_chapter_idx: int,
+    ) -> None:
+        """Tier-3 (细读层): 旧人重现 drill-down for long-absent characters.
+
+        For each chapter-relevant character (the capped card list plus the
+        name-only roster overflow), a roster ``last_seen_chapter`` more than
+        ``MEMORY_DRILLDOWN_GAP_CHAPTERS`` chapters behind the current
+        book-global index triggers a fetch of their memory cards
+        (first_appearance + up to 2 most recent key_moments from earlier
+        chapters) rendered into ``pack.returning_character_drilldown``.
+        Deterministic, zero LLM; silently absent when nothing triggers.
+        """
+        names = [c.name for c in pack.character_cards if c.name]
+        for n in pack.roster_extra_names:
+            if n and n not in names:
+                names.append(n)
+        if not names:
+            return
+        try:
+            from app.config import settings
+
+            gap_chapters = int(
+                getattr(settings, "MEMORY_DRILLDOWN_GAP_CHAPTERS", 20)
+            )
+        except Exception:  # noqa: BLE001
+            gap_chapters = 20
+
+        from app.models.project import CharacterAppearance, CharacterMemoryCard
+
+        db = await self._get_db()
+        roster_rows = await db.execute(
+            select(
+                CharacterAppearance.character_name,
+                CharacterAppearance.last_seen_chapter,
+            ).where(
+                CharacterAppearance.project_id == project_id,
+                CharacterAppearance.character_name.in_(names),
+            )
+        )
+        returning: dict[str, int] = {}
+        for name, last_seen in roster_rows.all():
+            if name is None or last_seen is None:
+                continue
+            if is_returning_character(
+                int(last_seen), int(global_chapter_idx), gap_chapters
+            ):
+                returning[name] = int(last_seen)
+        if not returning:
+            return
+
+        card_rows = await db.execute(
+            select(
+                CharacterMemoryCard.character_name,
+                CharacterMemoryCard.global_idx,
+                CharacterMemoryCard.card_type,
+                CharacterMemoryCard.excerpt,
+            ).where(
+                CharacterMemoryCard.project_id == project_id,
+                CharacterMemoryCard.character_name.in_(list(returning)),
+                CharacterMemoryCard.global_idx < int(global_chapter_idx),
+            )
+        )
+        by_name: dict[str, list[tuple[int, str, str]]] = {}
+        for name, gidx, card_type, excerpt in card_rows.all():
+            if name and excerpt:
+                by_name.setdefault(name, []).append(
+                    (int(gidx), str(card_type), str(excerpt))
+                )
+
+        entries: list[dict] = []
+        # Longest-absent first: they need the re-read anchor the most, and
+        # the render cap drops tail sections first.
+        for name in sorted(returning, key=lambda n: (returning[n], n)):
+            cards = by_name.get(name) or []
+            if not cards:
+                continue
+            first = sorted(
+                (c for c in cards if c[1] == "first_appearance"),
+                key=lambda c: c[0],
+            )[:1]
+            moments = sorted(
+                (c for c in cards if c[1] != "first_appearance"),
+                key=lambda c: -c[0],
+            )[:2]
+            selected = first + list(reversed(moments))  # chronological
+            if selected:
+                entries.append(
+                    {
+                        "name": name,
+                        "last_seen": returning[name],
+                        "cards": selected,
+                    }
+                )
+        pack.returning_character_drilldown = render_drilldown_block(
+            entries, int(global_chapter_idx), max_chars=1200
+        )
+
     async def _build_strand_tracker(
         self,
         pack: ContextPack,
@@ -1780,6 +1978,36 @@ class ContextPackBuilder:
                         if hit.get("tier") == "compacted":
                             summary = f"[压缩记忆] {summary}"
                         pack.rag_snippets.append(summary)
+
+                # Tier-4 (自由检索层): one extra search against the
+                # chapter-chunk shard with the SAME query embedding. The
+                # current chapter is excluded by global_idx filter so the
+                # model never recalls the chapter it is writing. Gated,
+                # deterministic, silently absent on any failure.
+                try:
+                    if getattr(settings, "CHAPTER_CHUNK_RECALL_ENABLED", True):
+                        chunk_hits = await qs.search_project_chunks(
+                            client,
+                            str(project_id),
+                            embedding,
+                            limit=3,
+                            score_threshold=0.5,
+                            exclude_global_idx=(
+                                pack.global_chapter_idx or None
+                            ),
+                        )
+                        for hit in chunk_hits:
+                            payload = hit.get("payload") or {}
+                            text = payload.get("text") or ""
+                            if not text:
+                                continue
+                            gidx = payload.get("global_idx")
+                            label = f"[CH-{gidx}] " if gidx is not None else ""
+                            pack.chunk_recall.append(
+                                f"{label}{str(text)[:300]}"
+                            )
+                except Exception as chunk_exc:  # noqa: BLE001
+                    logger.debug("chapter chunk recall skipped: %s", chunk_exc)
                 # v0.6 — ContextPack v2: three-way recall from decompile collections
                 # Gated on CONTEXT_PACK_V2_ENABLED env flag. Safe no-op if disabled
                 # or if the project has no bound reference book.

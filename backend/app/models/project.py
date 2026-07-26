@@ -489,6 +489,51 @@ class CharacterAppearance(Base):
     )
 
 
+class CharacterMemoryCard(Base):
+    """Tier-2 memory card: short verbatim excerpt anchoring a character.
+
+    One row per (project, character, chapter, card_type). Excerpts are cut
+    deterministically from the chapter's full text by entity extraction
+    (zero extra LLM calls): the sentence-bounded window around the
+    character's first name occurrence in their first-seen chapter
+    (``card_type='first_appearance'``) and around the occurrence nearest
+    the chapter midpoint (``card_type='key_moment'``). ``global_idx`` is
+    the book-global chapter index. Re-extraction upserts (overwrites) the
+    same row; retention keeps at most ``MEMORY_CARDS_PER_CHARACTER`` cards
+    per character (first_appearance always survives).
+    """
+
+    __tablename__ = "character_memory_cards"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_name = Column(String(128), nullable=False)
+    global_idx = Column(Integer, nullable=False)
+    excerpt = Column(Text, nullable=False)
+    card_type = Column(String(32), nullable=False, default="key_moment")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index(
+            "ix_character_memory_cards_lookup",
+            "project_id",
+            "character_name",
+            "global_idx",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "character_name",
+            "global_idx",
+            "card_type",
+            name="uq_character_memory_cards_key",
+        ),
+    )
+
+
 class ChapterStyleStat(Base):
     """Per-chapter style-stat + appearance cache (incremental recompute, W14).
 

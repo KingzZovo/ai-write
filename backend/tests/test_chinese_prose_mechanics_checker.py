@@ -2,7 +2,11 @@ from app.services.chinese_prose_mechanics_checker import (
     analyze_chinese_prose_mechanics,
     build_generation_preflight_prompt,
 )
-from app.services.narrative_quality_gates import preflight_scene_blueprint_prompt
+from app.services.narrative_contract import WRITER_CONTRACT_PROMPT
+from app.services.narrative_quality_gates import (
+    CHINESE_PROSE_MECHANICS_PROMPT,
+    preflight_scene_blueprint_prompt,
+)
 
 
 BAD_DIALOGUE_MACHINE_TEXT = """
@@ -726,3 +730,140 @@ def test_allows_dialogue_driven_chapter_without_padding() -> None:
     assert report.interiority_monologue_rate == 0.0
     assert report.dialogue_paragraph_rate > 0.5
     assert report.passed
+
+
+# Reader-feedback detectors (2026-07): micro-action overload, repeated rare
+# phrases and translationese calques. The first two are WARN-level (penalty +
+# prompts, no hard block); translationese blocks like meta leakage.
+
+BAD_MICRO_ACTION_OVERLOAD_TEXT = """
+他推了推眼镜，屏幕上的读数终于停住。窗外的雨还在下，霓虹在积水里晃。
+
+“还差一组数据。”对面的人把椅子拉近了些。
+
+他又推了推眼镜，指腹蹭过桌角，翻开记录本。楼下有车驶过，水声盖过了引擎。
+
+临交表前，他第三次推了推眼镜，膝盖轻响了一声。
+"""
+
+SINGLE_MICRO_ACTION_TEXT = """
+他推了推眼镜，把报告合上。窗外的雨还在下，霓虹在积水里晃，值班室的灯只亮着一半。
+
+她端着碗从里屋出来，说汤要凉了。他应了一声，先把桌上的表格签完。楼下有车驶过，水声盖过了引擎，门口的风铃动了动就停了。
+"""
+
+BAD_REPEATED_RARE_PHRASE_TEXT = """
+他起身时膝盖轻响。巡逻队的灰蓝制服从门口过去，他数到第七个才敢呼气。
+
+蹲下去检查接线的时候，膝盖轻响了第二声。窗台上晾着那件借来的灰蓝制服，袖口磨破了。
+
+最后一次起身，膝盖轻响，他扶住台面。走廊尽头又晃过一片灰蓝制服。
+"""
+
+BAD_TRANSLATIONESE_TEXT = """
+那种颜色像是介于两者之间。某种意义上，他早已放弃了争辩。事实上，他没得选。
+"""
+
+
+def test_detects_micro_action_overload_as_warning() -> None:
+    report = analyze_chinese_prose_mechanics(BAD_MICRO_ACTION_OVERLOAD_TEXT)
+
+    assert report.micro_action_beat_count >= 4  # 推眼镜×3 + 指腹蹭 + 膝盖轻响
+    assert report.micro_action_density_per_1000 > 3.0
+    assert report.micro_action_overload
+    # WARN-level: overload alone must not hard-block the chapter.
+    assert report.passed
+
+
+def test_allows_single_micro_action_beat() -> None:
+    report = analyze_chinese_prose_mechanics(SINGLE_MICRO_ACTION_TEXT)
+
+    assert report.micro_action_beat_count == 1
+    assert not report.micro_action_overload
+    assert report.passed
+
+
+def test_detects_repeated_rare_phrases() -> None:
+    report = analyze_chinese_prose_mechanics(BAD_REPEATED_RARE_PHRASE_TEXT)
+
+    assert report.repeated_rare_phrase_count >= 2
+    assert report.repeated_rare_phrases.get("膝盖轻响", 0) >= 3
+    assert report.repeated_rare_phrases.get("灰蓝制服", 0) >= 3
+
+
+def test_common_function_word_ngrams_do_not_count_as_rare_phrases() -> None:
+    report = analyze_chinese_prose_mechanics(TIGHT_DIALOGUE_TEXT)
+
+    assert report.repeated_rare_phrase_count == 0
+    assert report.passed
+
+
+def test_detects_translationese_markers_as_violation() -> None:
+    report = analyze_chinese_prose_mechanics(BAD_TRANSLATIONESE_TEXT)
+
+    assert report.translationese_marker_count >= 3
+    assert not report.passed
+
+
+def test_clean_conflict_text_has_no_reader_feedback_hits() -> None:
+    report = analyze_chinese_prose_mechanics(GOOD_CONFLICT_TEXT)
+
+    assert report.micro_action_beat_count == 0
+    assert not report.micro_action_overload
+    assert report.repeated_rare_phrase_count == 0
+    assert report.translationese_marker_count == 0
+    assert report.passed
+
+
+def test_reader_feedback_metrics_in_safe_dict_and_preflight_prompt() -> None:
+    safe = analyze_chinese_prose_mechanics(BAD_REPEATED_RARE_PHRASE_TEXT).to_safe_dict()
+
+    for key in (
+        "micro_action_beat_count",
+        "micro_action_density_per_1000",
+        "micro_action_overload",
+        "repeated_rare_phrase_count",
+        "repeated_rare_phrases",
+        "translationese_marker_count",
+    ):
+        assert key in safe
+
+    prompt = build_generation_preflight_prompt(safe)
+    assert "micro_action_density_per_1000" in prompt
+    assert "repeated_rare_phrase_count" in prompt
+    assert "translationese_marker_count" in prompt
+    assert "微动作预算" in prompt
+    # Top offenders from the previous chapter are named so the next generation
+    # pass avoids exactly those phrases.
+    assert "膝盖轻响" in prompt
+
+
+def test_prose_mechanics_prompt_contains_reader_feedback_rules() -> None:
+    for phrase in (
+        "微动作预算",
+        "自然白话优先",
+        "奇喻限额",
+        "首现具象化",
+        "设定引用自洽",
+        "每千字不超过 3 处",
+        "介于两者之间",
+    ):
+        assert phrase in CHINESE_PROSE_MECHANICS_PROMPT, phrase
+    # Amended 模糊套话禁用: the precise thought is the FIRST choice; body
+    # reactions are explicitly rationed by the micro-action budget.
+    assert "情绪首选落到一个准确的念头" in CHINESE_PROSE_MECHANICS_PROMPT
+    assert "情绪必须落到具体的身体反应" not in CHINESE_PROSE_MECHANICS_PROMPT
+
+
+def test_writer_contract_prompt_contains_reader_feedback_rules() -> None:
+    for phrase in (
+        "微动作预算",
+        "自然白话优先",
+        "奇喻限额",
+        "首现具象化",
+        "设定引用自洽",
+        "介于两者之间",
+    ):
+        assert phrase in WRITER_CONTRACT_PROMPT, phrase
+    assert "情绪首选一个准确的念头" in WRITER_CONTRACT_PROMPT
+    assert "情绪要落到具体身体反应" not in WRITER_CONTRACT_PROMPT

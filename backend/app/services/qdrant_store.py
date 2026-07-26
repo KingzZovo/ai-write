@@ -59,6 +59,9 @@ logger = logging.getLogger(__name__)
 
 LEGACY_CHAPTER_SUMMARIES = "chapter_summaries"
 LEGACY_COMPACTED_SUMMARIES = "chapter_summaries_compacted"
+# Tier-4 (自由检索层): per-project chapter full-text chunk shards. No legacy
+# global collection exists for chunks — the tier is born sharded.
+CHAPTER_CHUNKS_PREFIX = "chapter_chunks"
 
 
 def project_shard_suffix(project_id: Any) -> str:
@@ -83,6 +86,11 @@ def chapter_summaries_collection(project_id: Any) -> str:
 def compacted_summaries_collection(project_id: Any) -> str:
     """Per-project compacted chapter-summary collection name."""
     return f"{LEGACY_COMPACTED_SUMMARIES}__{project_shard_suffix(project_id)}"
+
+
+def chapter_chunks_collection(project_id: Any) -> str:
+    """Per-project chapter full-text chunk collection name (Tier 4)."""
+    return f"{CHAPTER_CHUNKS_PREFIX}__{project_shard_suffix(project_id)}"
 
 
 async def collection_point_count(client: Any, name: str) -> int | None:
@@ -163,6 +171,66 @@ async def ensure_summary_shard(
     except Exception as exc:  # noqa: BLE001
         logger.warning("Legacy copy into %s failed (run migrate later): %s", name, exc)
     return name
+
+
+async def ensure_chunk_shard(client: Any, project_id: Any, dim: int) -> str:
+    """Ensure the project's chapter-chunk shard exists; return its name.
+
+    Unlike summary shards there is no legacy global collection to copy from
+    (the chunk tier is born sharded), so this is a plain create-if-missing.
+    """
+    name = chapter_chunks_collection(project_id)
+    try:
+        await client.get_collection(name)
+        return name
+    except Exception:  # noqa: BLE001 — shard missing, create it
+        pass
+    await _create_collection(client, name, dim)
+    return name
+
+
+async def search_project_chunks(
+    client: Any,
+    project_id: Any,
+    embedding: list[float],
+    *,
+    limit: int = 3,
+    score_threshold: float = 0.5,
+    exclude_global_idx: int | None = None,
+) -> list[dict]:
+    """Chapter full-text chunk recall for one project (Tier 4, 自由检索层).
+
+    Searches the project's ``chapter_chunks__<hex>`` shard, excluding the
+    chapter currently being generated (``exclude_global_idx`` payload
+    filter) so the model never "recalls" the chapter it is writing.
+
+    Returns ``[{"score", "payload"}]``; never raises (missing shard /
+    transport errors degrade to an empty list).
+    """
+    try:
+        must_not: list[Any] = []
+        if exclude_global_idx is not None:
+            must_not.append(
+                FieldCondition(
+                    key="global_idx",
+                    match=MatchValue(value=int(exclude_global_idx)),
+                )
+            )
+        qfilter = Filter(must_not=must_not) if must_not else None
+        results = await client.search(
+            collection_name=chapter_chunks_collection(project_id),
+            query_vector=embedding,
+            query_filter=qfilter,
+            limit=limit,
+            score_threshold=score_threshold,
+        )
+        return [
+            {"score": float(h.score), "payload": h.payload or {}}
+            for h in results
+        ]
+    except Exception as exc:  # noqa: BLE001 — shard missing / transport error
+        logger.debug("chapter chunk search skipped: %s", exc)
+        return []
 
 
 async def _copy_project_points(

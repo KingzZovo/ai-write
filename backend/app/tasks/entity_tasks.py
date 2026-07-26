@@ -207,6 +207,258 @@ def _plan_world_rule_writes(
     return inserts, updates
 
 
+# ---------------------------------------------------------------------------
+# Tier-2 memory cards (定位层) — deterministic verbatim excerpts, zero LLM
+# ---------------------------------------------------------------------------
+
+_MEMORY_CARD_MAX_CHARS = 300
+_SENTENCE_ENDERS = "。！？…!?\n"
+
+
+def _name_occurrences(text: str, name: str) -> list[int]:
+    """Non-overlapping start positions of ``name`` in ``text`` (in order)."""
+    positions: list[int] = []
+    start = 0
+    while True:
+        pos = text.find(name, start)
+        if pos < 0:
+            break
+        positions.append(pos)
+        start = pos + len(name)
+    return positions
+
+
+def _sentence_bounded_excerpt(
+    text: str,
+    pos: int,
+    token_len: int,
+    max_chars: int = _MEMORY_CARD_MAX_CHARS,
+) -> str:
+    """Sentence-bounded window around ``text[pos:pos+token_len]``.
+
+    Deterministic: expand to the enclosing sentence, then greedily grow by
+    whole sentences (forward first, then backward) while the window fits in
+    ``max_chars``. A single sentence longer than ``max_chars`` is hard-trimmed
+    around the occurrence instead.
+    """
+    n = len(text)
+    start = pos
+    while start > 0 and text[start - 1] not in _SENTENCE_ENDERS:
+        start -= 1
+    end = min(pos + token_len, n)
+    while end < n and text[end] not in _SENTENCE_ENDERS:
+        end += 1
+    if end < n:
+        end += 1  # include the sentence terminator
+
+    if end - start > max_chars:
+        half = max_chars // 2
+        s = max(start, pos - half)
+        e = min(end, s + max_chars)
+        s = max(start, e - max_chars)
+        return text[s:e].strip()
+
+    while True:
+        # Forward: one more whole sentence.
+        ext_end = end
+        while ext_end < n and text[ext_end] not in _SENTENCE_ENDERS:
+            ext_end += 1
+        if ext_end < n:
+            ext_end += 1
+        if ext_end > end and (ext_end - start) <= max_chars:
+            end = ext_end
+            continue
+        # Backward: one more whole sentence.
+        ext_start = start
+        if ext_start > 0:
+            ext_start -= 1  # step over the previous terminator
+            while ext_start > 0 and text[ext_start - 1] not in _SENTENCE_ENDERS:
+                ext_start -= 1
+        if ext_start < start and (end - ext_start) <= max_chars:
+            start = ext_start
+            continue
+        break
+    return text[start:end].strip()
+
+
+def plan_memory_cards(
+    chapter_text: str,
+    global_idx: int,
+    char_names: list[str],
+    first_seen_by_name: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Plan the memory-card rows for one chapter. Pure and deterministic.
+
+    Per appearing character (exact canonical-name occurrence, len >= 2):
+    - ``first_appearance`` card from the FIRST occurrence's sentence window,
+      only when this chapter is the character's first-seen chapter (no
+      roster entry yet, or roster first_seen >= this chapter — the roster
+      recompute may lag the extraction task).
+    - ``key_moment`` card from the occurrence nearest the chapter midpoint
+      (skipped when it would duplicate the first_appearance excerpt).
+
+    Returns ``[{"character_name", "global_idx", "card_type", "excerpt"}]``
+    sorted by (character_name, card_type) for stable output.
+    """
+    if not chapter_text:
+        return []
+    rows: list[dict[str, Any]] = []
+    midpoint = len(chapter_text) // 2
+    for name in sorted({n for n in char_names if n and len(n) >= 2}):
+        occ = _name_occurrences(chapter_text, name)
+        if not occ:
+            continue
+        first_pos = occ[0]
+        mid_pos = min(occ, key=lambda p: (abs(p - midpoint), p))
+        first_seen = first_seen_by_name.get(name)
+        is_first_chapter = first_seen is None or int(first_seen) >= int(global_idx)
+
+        first_excerpt = _sentence_bounded_excerpt(chapter_text, first_pos, len(name))
+        mid_excerpt = _sentence_bounded_excerpt(chapter_text, mid_pos, len(name))
+        if is_first_chapter:
+            if first_excerpt:
+                rows.append(
+                    {
+                        "character_name": name,
+                        "global_idx": int(global_idx),
+                        "card_type": "first_appearance",
+                        "excerpt": first_excerpt,
+                    }
+                )
+            if mid_excerpt and mid_excerpt != first_excerpt:
+                rows.append(
+                    {
+                        "character_name": name,
+                        "global_idx": int(global_idx),
+                        "card_type": "key_moment",
+                        "excerpt": mid_excerpt,
+                    }
+                )
+        elif mid_excerpt:
+            rows.append(
+                {
+                    "character_name": name,
+                    "global_idx": int(global_idx),
+                    "card_type": "key_moment",
+                    "excerpt": mid_excerpt,
+                }
+            )
+    return rows
+
+
+def plan_card_eviction(
+    cards: list[tuple[Any, str, int]],
+    cap: int,
+) -> list[Any]:
+    """Card ids to delete so one character keeps at most ``cap`` cards.
+
+    ``cards`` is ``[(id, card_type, global_idx), ...]`` for ONE character.
+    first_appearance cards are always kept; key_moment cards are evicted
+    oldest-first (lowest global_idx) until the total fits the cap.
+    """
+    if cap <= 0 or len(cards) <= cap:
+        return []
+    first = [c for c in cards if c[1] == "first_appearance"]
+    moments = sorted(
+        (c for c in cards if c[1] != "first_appearance"),
+        key=lambda c: (c[2], str(c[0])),
+    )
+    keep_moments = max(0, cap - len(first))
+    excess = len(moments) - keep_moments
+    return [c[0] for c in moments[:excess]] if excess > 0 else []
+
+
+async def _upsert_memory_cards(
+    *,
+    project_id: str,
+    global_idx: int,
+    chapter_text: str,
+) -> dict[str, int]:
+    """Tier-2 write path: deterministic memory-card upsert for one chapter.
+
+    Best-effort by contract — failures are logged and swallowed by the
+    caller; the extraction task itself never depends on this succeeding.
+    Idempotent: re-extraction overwrites the same (project, name, chapter,
+    type) rows and retention converges to the same card set.
+    """
+    from sqlalchemy import delete, select
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.config import settings
+    from app.db.session import async_session_factory
+    from app.models.project import (
+        Character,
+        CharacterAppearance,
+        CharacterMemoryCard,
+    )
+
+    cap = int(getattr(settings, "MEMORY_CARDS_PER_CHARACTER", 10))
+
+    async with async_session_factory() as db:
+        char_rows = await db.execute(
+            select(Character.name).where(Character.project_id == project_id)
+        )
+        char_names = [n for (n,) in char_rows.all() if isinstance(n, str) and n.strip()]
+        roster_rows = await db.execute(
+            select(
+                CharacterAppearance.character_name,
+                CharacterAppearance.first_seen_chapter,
+            ).where(CharacterAppearance.project_id == project_id)
+        )
+        first_seen_by_name = {
+            n: int(fs) for n, fs in roster_rows.all() if n and fs is not None
+        }
+
+        planned = plan_memory_cards(
+            chapter_text, int(global_idx), char_names, first_seen_by_name
+        )
+        for row in planned:
+            stmt = insert(CharacterMemoryCard).values(
+                project_id=project_id,
+                character_name=row["character_name"],
+                global_idx=row["global_idx"],
+                card_type=row["card_type"],
+                excerpt=row["excerpt"][:_MEMORY_CARD_MAX_CHARS],
+            )
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_character_memory_cards_key",
+                set_={"excerpt": stmt.excluded.excerpt},
+            )
+            await db.execute(stmt)
+
+        # Retention: cap cards per touched character (first_appearance kept).
+        evicted = 0
+        for name in sorted({r["character_name"] for r in planned}):
+            card_rows = await db.execute(
+                select(
+                    CharacterMemoryCard.id,
+                    CharacterMemoryCard.card_type,
+                    CharacterMemoryCard.global_idx,
+                ).where(
+                    CharacterMemoryCard.project_id == project_id,
+                    CharacterMemoryCard.character_name == name,
+                )
+            )
+            doomed = plan_card_eviction(
+                [(cid, ct, int(gi)) for cid, ct, gi in card_rows.all()], cap
+            )
+            if doomed:
+                await db.execute(
+                    delete(CharacterMemoryCard).where(
+                        CharacterMemoryCard.id.in_(doomed)
+                    )
+                )
+                evicted += len(doomed)
+
+        await db.commit()
+
+    logger.info(
+        "memory_cards upserted (project=%s global=%d cards=%d evicted=%d)",
+        project_id, int(global_idx), len(planned), evicted,
+    )
+    return {"cards_planned": len(planned), "cards_evicted": evicted}
+
+
 async def _materialize_entities_to_postgres(
     *,
     project_id: str,
@@ -1164,6 +1416,20 @@ async def _extract_chapter_async(
             chapter_idx=global_idx,
             caller=caller,
         )
+        # Tier-2 memory cards also converge on re-dispatch (deterministic
+        # upsert; re-runs overwrite). Best-effort, never blocks.
+        if chapter_text:
+            try:
+                await _upsert_memory_cards(
+                    project_id=project_id,
+                    global_idx=global_idx,
+                    chapter_text=chapter_text,
+                )
+            except Exception:  # noqa: BLE001 — cards must never break the task
+                logger.exception(
+                    "memory_card_upsert_failed (project=%s global=%d)",
+                    project_id, global_idx,
+                )
         return {
             "status": "skipped",
             "reason": "already_completed",
@@ -1207,6 +1473,22 @@ async def _extract_chapter_async(
             chapter_idx=global_idx,
             caller=caller,
         )
+
+        # Tier-2 memory cards (定位层): deterministic verbatim excerpts per
+        # appearing character, cut from the chapter text this task already
+        # holds — zero extra LLM calls. Best-effort: a failure here must not
+        # flip the extraction marker to 'failed' or trigger a celery retry.
+        try:
+            await _upsert_memory_cards(
+                project_id=project_id,
+                global_idx=global_idx,
+                chapter_text=chapter_text,
+            )
+        except Exception:  # noqa: BLE001 — cards must never break extraction
+            logger.exception(
+                "memory_card_upsert_failed (project=%s global=%d)",
+                project_id, global_idx,
+            )
     except Exception as e:
         await _mark_failed(driver, project_id, global_idx, repr(e)[:500])
         raise
