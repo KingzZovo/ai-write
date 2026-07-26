@@ -31,6 +31,21 @@
   --text-caption: 0.8125rem;
   --text-caption--line-height: 1.45;
 
+  /* Warm paper neutral scale. Overrides Tailwind's default (cool) gray so
+   * every existing `gray-*` utility shifts to a stone-like, reading-friendly
+   * tone without touching component markup. */
+  --color-gray-50: #fafaf9;
+  --color-gray-100: #f5f5f4;
+  --color-gray-200: #e7e5e4;
+  --color-gray-300: #d6d3d1;
+  --color-gray-400: #a8a29e;
+  --color-gray-500: #78716c;
+  --color-gray-600: #57534e;
+  --color-gray-700: #44403c;
+  --color-gray-800: #292524;
+  --color-gray-900: #1c1917;
+  --color-gray-950: #0c0a09;
+
   /* Brand scale (indigo-leaning) */
   --color-brand-50: #eef2ff;
   --color-brand-100: #e0e7ff;
@@ -52,6 +67,7 @@
   --color-warning-700: #b45309;
   --color-danger-50: #fef2f2;
   --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
   --color-danger-700: #b91c1c;
   --color-info-50: #eff6ff;
   --color-info-500: #3b82f6;
@@ -76,42 +92,50 @@
   --radius-panel: 1rem;
   --radius-pill: 9999px;
 
-  /* Shadows */
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
-  --shadow-popover: 0 8px 24px rgb(15 23 42 / 0.12);
-  --shadow-modal: 0 24px 48px rgb(15 23 42 / 0.18);
+  /* Shadows (soft, layered, warm-tinted to match the neutral scale) */
+  --shadow-card: 0 1px 2px rgb(28 25 23 / 0.04), 0 1px 3px rgb(28 25 23 / 0.05);
+  --shadow-card-hover: 0 2px 4px rgb(28 25 23 / 0.05), 0 10px 24px -4px rgb(28 25 23 / 0.1);
+  --shadow-popover: 0 4px 10px rgb(28 25 23 / 0.06), 0 12px 28px -4px rgb(28 25 23 / 0.14);
+  --shadow-modal: 0 12px 24px rgb(28 25 23 / 0.1), 0 32px 64px -12px rgb(28 25 23 / 0.22);
+
+  /* Motion. Exposed as animate-fade-in / animate-slide-up / animate-dropdown /
+   * animate-shake utilities; keyframes are defined below the theme block. */
+  --animate-fade-in: fade-in 0.2s ease-out both;
+  --animate-slide-up: slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-dropdown: dropdown-in 0.16s ease-out both;
+  --animate-shake: shake 0.35s ease-in-out;
 
   /* Layout containers */
   --container-readable: 48rem;
   --container-workspace: 80rem;
 }
 
-/* Light theme (default) */
+/* Light theme (default) -- warm paper neutrals */
 :root {
   --surface: #ffffff;
-  --surface-muted: #f8fafc;
+  --surface-muted: #fafaf9;
   --surface-raised: #ffffff;
-  --surface-inverted: #0f172a;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --text: #0f172a;
-  --text-muted: #475569;
-  --text-inverted: #f8fafc;
+  --surface-inverted: #1c1917;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --text: #1c1917;
+  --text-muted: #57534e;
+  --text-inverted: #fafaf9;
 }
 
 /* Dark theme -- opt-in via prefers-color-scheme today; switchable to a
  *  `.dark` class later without touching token names. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface: #0f172a;
-    --surface-muted: #0b1220;
-    --surface-raised: #111827;
-    --surface-inverted: #f8fafc;
-    --border: #1f2937;
-    --border-strong: #334155;
-    --text: #f8fafc;
-    --text-muted: #94a3b8;
-    --text-inverted: #0f172a;
+    --surface: #1c1917;
+    --surface-muted: #171412;
+    --surface-raised: #232019;
+    --surface-inverted: #fafaf9;
+    --border: #2e2a26;
+    --border-strong: #44403c;
+    --text: #fafaf9;
+    --text-muted: #a8a29e;
+    --text-inverted: #1c1917;
   }
 }
 
@@ -119,6 +143,67 @@ body {
   font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
   background-color: var(--surface);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Motion keyframes backing the --animate-* theme tokens above. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes shake {
+  0%, 100% { transform: none; }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Loading placeholder with a subtle warm shimmer. Size/rounding come from
+ * the element's own utility classes. */
+.skeleton {
+  background-color: var(--border);
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgb(255 255 255 / 0.5) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background-image: linear-gradient(
+      100deg,
+      transparent 40%,
+      rgb(255 255 255 / 0.06) 50%,
+      transparent 60%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .skeleton {
+    animation: none;
+  }
 }
 
 /* chunk-16: safe-area utility classes.

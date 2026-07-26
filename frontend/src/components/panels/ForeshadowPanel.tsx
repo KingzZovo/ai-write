@@ -112,12 +112,12 @@ export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
           <h3 className="text-sm font-semibold text-gray-900">伏笔追踪</h3>
           <span className="text-[10px] text-stone-400">共 {foreshadows.length} / 当前 {visible.length}</span>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="text-xs text-blue-600 hover:text-blue-700">+ 手动添加</button>
+        <button onClick={() => setShowForm(!showForm)} className="rounded-md px-1.5 py-0.5 text-xs text-blue-600 transition-colors duration-150 hover:bg-blue-50 hover:text-blue-700">+ 手动添加</button>
       </div>
 
       <div className="flex items-center gap-1">
-        <button onClick={() => setFilter('active')} className={`px-2 py-1 text-xs rounded ${filter === 'active' ? 'bg-blue-100 text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="排除已收的伏笔">{t('foreshadow.filter.active')}</button>
-        <button onClick={() => setFilter('all')} className={`px-2 py-1 text-xs rounded ${filter === 'all' ? 'bg-blue-100 text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="含已收的全部伏笔">{t('foreshadow.filter.all')}</button>
+        <button onClick={() => setFilter('active')} className={`px-2.5 py-1 text-xs rounded-full transition-colors duration-150 ${filter === 'active' ? 'bg-blue-100 font-medium text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="排除已收的伏笔">{t('foreshadow.filter.active')}</button>
+        <button onClick={() => setFilter('all')} className={`px-2.5 py-1 text-xs rounded-full transition-colors duration-150 ${filter === 'all' ? 'bg-blue-100 font-medium text-blue-700' : 'text-stone-500 hover:bg-stone-100'}`} title="含已收的全部伏笔">{t('foreshadow.filter.all')}</button>
         {typeOptions.length > 1 && (
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="ml-auto text-xs border border-stone-200 rounded px-1.5 py-1">
             <option value="all">全类型</option>
@@ -141,7 +141,10 @@ export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
       {loading ? (
         <p className="text-xs text-gray-400">加载中...</p>
       ) : visible.length === 0 ? (
-        <p className="text-xs text-gray-400">暂无伏笔。</p>
+        <div className="flex flex-col items-center gap-1 py-4 text-center">
+          <span className="text-lg" aria-hidden>🌱</span>
+          <p className="text-xs text-gray-400">暂无伏笔。生成正文或手动添加后会出现在这里。</p>
+        </div>
       ) : (
         <div className="space-y-3">
           {grouped.ready.length    > 0 && <Section title={t('foreshadow.section.ready')}   items={grouped.ready} projectId={projectId} onChanged={fetchForeshadows} />}
@@ -201,7 +204,7 @@ function ForeshadowCard({ foreshadow: f, projectId, onChanged }: { foreshadow: F
   }
 
   return (
-    <div className={`bg-white border border-stone-200 rounded-lg p-2.5 text-xs ${f.status === 'resolved' ? 'opacity-60' : ''}`}>
+    <div className={`bg-white border border-stone-200 rounded-lg p-2.5 text-xs transition-colors duration-150 hover:border-stone-300 ${f.status === 'resolved' ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-1.5 mb-1">
         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusCfg.color}`} title={statusCfg.help}>{statusCfg.label}</span>
         <span className={`text-[10px] ${typeCfg.color}`}>{typeCfg.label}</span>
@@ -226,7 +229,7 @@ function ForeshadowCard({ foreshadow: f, projectId, onChanged }: { foreshadow: F
         <div className="mt-1.5 flex items-center gap-1.5" title={`叙事接近度 ${proximityWidth}%，指当前剧情走到多近该收线点。`}>
           <span className="text-[10px] text-stone-400 w-12 flex-shrink-0">接近度</span>
           <div className="flex-1 h-1 bg-stone-100 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full ${proximity > 0.9 ? 'bg-rose-500' : proximity > 0.7 ? 'bg-amber-500' : 'bg-blue-400'}`} style={{ width: `${proximityWidth}%` }} />
+            <div className={`h-full rounded-full transition-[width] duration-300 ${proximity > 0.9 ? 'bg-rose-500' : proximity > 0.7 ? 'bg-amber-500' : 'bg-blue-400'}`} style={{ width: `${proximityWidth}%` }} />
           </div>
           <span className="text-stone-400 w-9 text-right">{proximityWidth}%</span>
         </div>
@@ -269,19 +272,19 @@ function ForeshadowEditForm({ foreshadow: f, projectId, onDone, onCancel }: { fo
   }
   return (
     <div className="space-y-1.5">
-      <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded">
+      <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
         {!knownTypes.includes(type) && <option value={type}>{TYPE_CFG[type]?.label || type}</option>}
         <option value="plot">{t('foreshadow.type.plot')}</option>
         <option value="character">{t('foreshadow.type.character')}</option>
         <option value="worldbuilding">{t('foreshadow.type.worldbuilding')}</option>
         <option value="mystery">{t('foreshadow.type.mystery')}</option>
       </select>
-      <textarea value={desc} onChange={e => setDesc(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16" />
+      <textarea value={desc} onChange={e => setDesc(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       <label className="text-[10px] text-stone-400">{t('foreshadow.conditionsLabel')}</label>
-      <textarea value={conditions} onChange={e => setConditions(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-12" />
+      <textarea value={conditions} onChange={e => setConditions(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-12 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       <div className="flex gap-1.5">
-        <button onClick={handleSave} disabled={saving || !desc.trim()} className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
-        <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 text-xs bg-stone-200 text-stone-600 rounded disabled:opacity-50">{t('common.cancel')}</button>
+        <button onClick={handleSave} disabled={saving || !desc.trim()} className="flex-1 px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
+        <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 text-xs bg-white border border-stone-200 text-stone-600 rounded transition-colors duration-150 hover:bg-stone-100 disabled:opacity-50">{t('common.cancel')}</button>
       </div>
     </div>
   )
@@ -306,15 +309,15 @@ function ForeshadowForm({ projectId, onCreated }: { projectId: string; onCreated
   }
   return (
     <div className="bg-stone-50 rounded-lg p-3 space-y-2">
-      <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded">
+      <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
         <option value="plot">{t('foreshadow.type.plot')}</option>
         <option value="character">{t('foreshadow.type.character')}</option>
         <option value="worldbuilding">{t('foreshadow.type.worldbuilding')}</option>
         <option value="mystery">{t('foreshadow.type.mystery')}</option>
       </select>
-      <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="描述伏笔..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16" />
-      <textarea value={conditions} onChange={e => setConditions(e.target.value)} placeholder="收线条件 (一行一条)..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-12" />
-      <button onClick={handleSubmit} disabled={submitting || !desc.trim()} className="w-full px-2 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{submitting ? '创建中...' : '创建伏笔'}</button>
+      <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="描述伏笔..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
+      <textarea value={conditions} onChange={e => setConditions(e.target.value)} placeholder="收线条件 (一行一条)..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-12 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
+      <button onClick={handleSubmit} disabled={submitting || !desc.trim()} className="w-full px-2 py-1.5 text-xs font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50">{submitting ? '创建中...' : '创建伏笔'}</button>
     </div>
   )
 }

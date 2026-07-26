@@ -154,7 +154,7 @@ export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel, projectId
             aria-label={t('workspace.sidebar.expand')}
             title={`${t('workspace.sidebar.expand')} ([)`}
             data-testid="workspace-sidebar-toggle"
-            className="w-6 border-r border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-500"
+            className="w-6 border-r border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors duration-150"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
@@ -166,7 +166,7 @@ export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel, projectId
               aria-label={t('workspace.sidebar.collapse')}
               title={`${t('workspace.sidebar.collapse')} ([)`}
               data-testid="workspace-sidebar-toggle"
-              className="absolute top-2 right-2 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 z-10"
+              className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors duration-150 z-10"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
@@ -185,7 +185,7 @@ export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel, projectId
             aria-label={t('workspace.panel.expand')}
             title={`${t('workspace.panel.expand')} (])`}
             data-testid="workspace-panel-toggle"
-            className="w-6 border-l border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-500"
+            className="w-6 border-l border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors duration-150"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
@@ -197,7 +197,7 @@ export function WorkspaceLayout({ sidebar, editor, panel, mobilePanel, projectId
               aria-label={t('workspace.panel.collapse')}
               title={`${t('workspace.panel.collapse')} (])`}
               data-testid="workspace-panel-toggle"
-              className="absolute top-2 left-2 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 z-10"
+              className="absolute top-2 left-2 p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors duration-150 z-10"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </button>

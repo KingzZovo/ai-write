@@ -128,7 +128,8 @@ function StatusPill({
     purple: 'border-violet-200 bg-violet-50 text-violet-700',
   }
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${tones[tone]}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${tones[tone]}`}>
+      <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
       {children}
     </span>
   )
@@ -145,8 +146,8 @@ function WorkbenchMetric({
 }) {
   return (
     <div className="min-w-0 rounded-md border border-gray-200 bg-white px-2.5 py-2">
-      <div className="text-[10px] font-medium text-gray-400">{label}</div>
-      <div className="mt-0.5 text-sm font-semibold text-gray-900">{value}</div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-400">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{value}</div>
       {hint && <div className="mt-0.5 truncate text-[10px] text-gray-500">{hint}</div>}
     </div>
   )
@@ -167,10 +168,10 @@ function WorkbenchTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-medium transition-colors ${
+      className={`flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-medium transition-all duration-150 motion-safe:active:scale-[0.97] ${
         active
-          ? 'border-gray-900 bg-gray-900 text-white'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+          ? 'border-gray-900 bg-gray-900 text-white shadow-sm'
+          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900'
       }`}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -191,11 +192,11 @@ function WorkbenchCard({
   action?: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/60 px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Icon className="h-4 w-4 text-gray-500" />
-          <h3 className="truncate text-sm font-semibold text-gray-900">{title}</h3>
+          <Icon className="h-4 w-4 shrink-0 text-gray-400" />
+          <h3 className="truncate text-sm font-semibold tracking-tight text-gray-900">{title}</h3>
         </div>
         {action}
       </div>
@@ -219,7 +220,7 @@ function DrawerLinkButton({
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
+      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-left transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm motion-safe:active:scale-[0.99]"
     >
       <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
         <Icon className="h-4 w-4 text-gray-500" />
@@ -1411,16 +1412,19 @@ export default function DesktopWorkspace() {
     {/* Drawer overlay for large panels */}
     {drawerPanel && currentProject && (
       <div className="fixed inset-0 z-50 flex">
-        <div className="absolute inset-0 bg-black/30" onClick={() => setDrawerPanel(null)} />
-        <div className="relative ml-auto w-full max-w-2xl bg-white shadow-xl overflow-y-auto">
+        <div
+          className="absolute inset-0 bg-black/30 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:starting:opacity-0"
+          onClick={() => setDrawerPanel(null)}
+        />
+        <div className="relative ml-auto w-full max-w-2xl bg-white shadow-xl overflow-y-auto motion-safe:transition-[transform,opacity] motion-safe:duration-200 motion-safe:starting:translate-x-6 motion-safe:starting:opacity-0">
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-semibold tracking-tight text-gray-900">
               {drawerPanel === 'strand' ? '三线平衡' :
                drawerPanel === 'foreshadow' ? '伏笔追踪' :
                drawerPanel === 'settings' ? '设定集' : '角色关系'}
             </h2>
             <button onClick={() => setDrawerPanel(null)}
-              className="text-gray-400 hover:text-gray-600 text-lg">&#x2715;</button>
+              className="rounded-md p-1.5 text-lg leading-none text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600">&#x2715;</button>
           </div>
           <div className="p-6">
             {drawerPanel === 'strand' && <StrandPanel projectId={currentProject.id} />}
@@ -1440,7 +1444,7 @@ export default function DesktopWorkspace() {
           <div className="p-4 border-b border-gray-200">
             <button
               onClick={() => router.push('/')}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-2"
+              className="flex items-center gap-1 text-xs text-gray-500 transition-colors duration-150 hover:text-gray-900 mb-2"
             >
               <span>←</span>
               <span>返回项目列表</span>
@@ -1499,7 +1503,7 @@ export default function DesktopWorkspace() {
                 <button
                   type="button"
                   onClick={handleCreateVolume}
-                  className="mt-2 w-full rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-500 hover:border-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                  className="mt-2 w-full rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-500 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-50 hover:text-gray-700"
                 >
                   + 新建分卷
                 </button>
@@ -2061,7 +2065,7 @@ export default function DesktopWorkspace() {
               {currentChapter && (
                 <div className="max-w-3xl mx-auto pt-4 px-6">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold text-gray-800">
+                    <h3 className="text-xl font-semibold tracking-tight text-gray-900">
                       {currentChapter.title}
                     </h3>
                     <div className="flex items-center gap-2">
@@ -2075,7 +2079,7 @@ export default function DesktopWorkspace() {
                           if (currentProject) loadProjectData(currentProject.id)
                         }}
                       />
-                      <span className="text-xs text-gray-400">
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] tabular-nums text-gray-500">
                         {(
                           currentChapter.word_count ??
                           currentChapter.wordCount ??
@@ -2084,7 +2088,7 @@ export default function DesktopWorkspace() {
                         字
                       </span>
                       <span
-                        className={`text-xs px-2 py-0.5 rounded ${
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           currentChapter.status === 'completed'
                             ? 'bg-green-100 text-green-700'
                             : currentChapter.status === 'generating'
@@ -2094,6 +2098,12 @@ export default function DesktopWorkspace() {
                               : 'bg-gray-100 text-gray-600'
                         }`}
                       >
+                        <span
+                          aria-hidden
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60 ${
+                            currentChapter.status === 'generating' ? 'motion-safe:animate-pulse' : ''
+                          }`}
+                        />
                         {currentChapter.status === 'completed'
                           ? '完成'
                           : currentChapter.status === 'generating'
@@ -2117,7 +2127,7 @@ export default function DesktopWorkspace() {
                 {selectedChapterId && (
                   <div className="mb-3">
                     <div
-                      className={`mb-2 rounded border px-3 py-2 text-xs ${
+                      className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
                         canGenerateChapterProse
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                           : 'border-amber-200 bg-amber-50 text-amber-800'
@@ -2129,7 +2139,7 @@ export default function DesktopWorkspace() {
                           {outlineMissingLayers.map((layer) => (
                             <span
                               key={layer}
-                              className="rounded bg-white/70 px-1.5 py-0.5 text-[11px]"
+                              className="rounded-full bg-white/70 px-2 py-0.5 text-[11px]"
                             >
                               缺 {outlineLayerLabels[layer] || layer}
                             </span>
@@ -2141,7 +2151,7 @@ export default function DesktopWorkspace() {
                       <button
                         onClick={handleGenerateChapter}
                         disabled={isGenerating || !canGenerateChapterProse}
-                        className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg shadow-sm transition-all duration-150 hover:bg-green-700 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isGenerating ? '生成中...' : '生成本章'}
                       </button>
@@ -2150,7 +2160,7 @@ export default function DesktopWorkspace() {
                         onClick={handleBackgroundGenerate}
                         disabled={isGenerating || !canGenerateChapterProse || chapterHasActiveTask}
                         title="提交到后台队列生成，可离开页面稍后回来查看"
-                        className="px-4 py-2 text-sm border border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 text-sm border border-emerald-600 text-emerald-700 rounded-lg transition-colors duration-150 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {chapterHasActiveTask ? '后台生成中...' : '后台生成本章'}
                       </button>
@@ -2164,23 +2174,27 @@ export default function DesktopWorkspace() {
                       />
                     )}
                     {generationError && (
-                      <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                        {generationError}
+                      <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:starting:-translate-y-1 motion-safe:starting:opacity-0">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+                        <span className="min-w-0">{generationError}</span>
                       </div>
                     )}
                     {/* PR-GEN-UX Task 3: truncated/refusal/cancel notices */}
                     {generationWarnings.map((warning, i) => (
                       <div
                         key={`${i}-${warning.slice(0, 12)}`}
-                        className="mt-2 flex items-start justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                        className="mt-2 flex items-start justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:starting:-translate-y-1 motion-safe:starting:opacity-0"
                       >
-                        <span>{warning}</span>
+                        <span className="flex min-w-0 items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                          <span>{warning}</span>
+                        </span>
                         <button
                           type="button"
                           onClick={() =>
                             setGenerationWarnings((prev) => prev.filter((_, wi) => wi !== i))
                           }
-                          className="shrink-0 text-amber-700 hover:underline"
+                          className="shrink-0 rounded px-1.5 py-0.5 text-amber-700 transition-colors duration-150 hover:bg-amber-100"
                         >
                           关闭
                         </button>
@@ -2218,7 +2232,7 @@ export default function DesktopWorkspace() {
                       ? '章节内容将在此显示。点击 "生成本章" 按钮开始生成...'
                       : '请从左侧选择一个章节进行编辑...'
                   }
-                  className="w-full min-h-[500px] p-4 text-base leading-relaxed border-none outline-none resize-none"
+                  className="w-full min-h-[500px] rounded-xl p-5 text-[17px] leading-loose text-gray-800 border-none outline-none resize-none ring-1 ring-transparent transition-[box-shadow,background-color] duration-200 focus:bg-white focus:ring-gray-200"
                   style={{ fontFamily: "'Noto Serif SC', serif" }}
                   readOnly={isGenerating}
                 />
@@ -2458,7 +2472,7 @@ export default function DesktopWorkspace() {
                         href={`/relationship-graph?id=${currentProject.id}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center justify-center gap-1.5 rounded-md border border-gray-900 bg-gray-900 px-2.5 py-2 text-xs font-medium text-white hover:bg-gray-800"
+                        className="flex items-center justify-center gap-1.5 rounded-md border border-gray-900 bg-gray-900 px-2.5 py-2 text-xs font-medium text-white shadow-sm transition-all duration-150 hover:bg-gray-800 motion-safe:active:scale-[0.98]"
                       >
                         <Network className="h-3.5 w-3.5" />
                         打开独立关系图页面 ↗
@@ -2607,9 +2621,12 @@ function GenerationProgressStrip({
   const mm = Math.floor(elapsed / 60)
   const ss = String(elapsed % 60).padStart(2, '0')
   return (
-    <div className="mt-2 flex items-center justify-between gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:starting:-translate-y-1 motion-safe:starting:opacity-0">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+        </span>
         <span className="truncate">{phase}</span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -2619,7 +2636,7 @@ function GenerationProgressStrip({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded border border-blue-300 bg-white px-2 py-0.5 text-blue-700 hover:bg-blue-100"
+          className="rounded-md border border-transparent px-2 py-0.5 text-red-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50"
         >
           取消生成
         </button>
@@ -2670,11 +2687,11 @@ function ChapterSummaryEditor({
   }
 
   return (
-    <div className="mb-2 rounded-lg border border-gray-200 bg-gray-50">
+    <div className="mb-2 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-3 py-1.5 text-left"
+        className="flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100"
       >
         <span className="text-xs font-medium text-gray-700">
           本章摘要
@@ -2688,21 +2705,21 @@ function ChapterSummaryEditor({
         <span className="text-xs text-gray-400">{open ? '收起' : '展开'}</span>
       </button>
       {open && (
-        <div className="border-t border-gray-200 px-3 py-2">
+        <div className="border-t border-gray-200 px-3 py-2 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:starting:opacity-0">
           {editing ? (
             <div>
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="概括本章剧情要点、人物变化和承接线索..."
-                className="w-full h-24 px-2 py-1.5 text-xs border border-gray-300 rounded resize-none focus:ring-1 focus:ring-blue-400 focus:border-transparent"
+                className="w-full h-24 px-2 py-1.5 text-xs border border-gray-300 rounded-md resize-none transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300"
               />
               <div className="mt-1.5 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={save}
                   disabled={saving}
-                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  className="px-3 py-1 text-xs font-medium bg-blue-600 text-white rounded-md transition-all duration-150 hover:bg-blue-700 motion-safe:active:scale-[0.97] disabled:opacity-50"
                 >
                   {saving ? '保存中...' : '保存'}
                 </button>
@@ -2712,7 +2729,7 @@ function ChapterSummaryEditor({
                     setDraft(chapter.summary ?? '')
                     setEditing(false)
                   }}
-                  className="px-3 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                  className="px-3 py-1 text-xs text-gray-600 rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:bg-gray-100"
                 >
                   取消
                 </button>
@@ -2794,7 +2811,7 @@ function ChapterTargetWordsEditor({
           />
         </>
       ) : (
-        <button onClick={() => setEditing(true)} className="hover:text-gray-800">
+        <button onClick={() => setEditing(true)} className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] tabular-nums transition-colors duration-150 hover:bg-gray-200 hover:text-gray-800">
           目标 {effective ? `${effective.toLocaleString()} 字` : '未设'}
           {initial == null && projectDefault ? '（默认）' : ''}
         </button>

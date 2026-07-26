@@ -104,11 +104,11 @@ export function ProjectListPage() {
           data-testid="project-list-header"
           className="flex flex-wrap items-center justify-between gap-y-3 mb-6"
         >
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">我的项目</h1>
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-gray-900">我的项目</h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => router.push('/trash')}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200/60 rounded-lg transition-colors"
             >
               回收站
             </button>
@@ -117,13 +117,13 @@ export function ProjectListPage() {
                 if (selectMode) { setSelectMode(false); setSelectedIds(new Set()) }
                 else setSelectMode(true)
               }}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200/60 rounded-lg transition-colors"
             >
               {selectMode ? '取消多选' : '多选'}
             </button>
             <button
               onClick={() => setShowNew(true)}
-              className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="px-4 py-1.5 text-sm font-medium bg-brand-600 text-white rounded-lg hover:bg-brand-700 active:bg-brand-800 shadow-card transition-colors"
             >
               + 新建项目
             </button>
@@ -131,12 +131,12 @@ export function ProjectListPage() {
         </div>
 
         {selectMode && (
-          <div className="mb-4 flex items-center gap-3">
+          <div className="mb-4 flex items-center gap-3 animate-fade-in">
             <span className="text-sm text-gray-600">已选 {selectedIds.size} 项</span>
             <button
               onClick={() => setShowBulkDelete(true)}
               disabled={selectedIds.size === 0}
-              className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm font-medium bg-danger-600 text-white rounded-lg hover:bg-danger-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               删除选中
             </button>
@@ -144,10 +144,34 @@ export function ProjectListPage() {
         )}
 
         {loading ? (
-          <div className="py-20 text-center text-gray-400">加载中...</div>
+          <div
+            data-testid="project-list-skeleton"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+          >
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 shadow-card">
+                <div className="skeleton h-4 w-2/3 rounded" />
+                <div className="skeleton mt-2 h-4 w-14 rounded-full" />
+                <div className="skeleton mt-3 h-3 w-full rounded" />
+                <div className="skeleton mt-1.5 h-3 w-4/5 rounded" />
+                <div className="mt-4 pt-3 border-t border-gray-100 flex gap-4">
+                  <div className="skeleton h-3 w-10 rounded" />
+                  <div className="skeleton h-3 w-10 rounded" />
+                  <div className="skeleton h-3 w-14 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : projects.length === 0 ? (
-          <div className="py-20 text-center">
-            <p className="text-gray-500 mb-4">还没有项目，点击右上角&quot;+ 新建项目&quot;开始创作。</p>
+          <div className="py-24 flex flex-col items-center text-center animate-fade-in">
+            <div className="w-14 h-14 mb-4 rounded-2xl bg-brand-50 text-brand-500 flex items-center justify-center">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+              </svg>
+            </div>
+            <p className="text-body font-medium text-gray-700">开始你的第一部作品</p>
+            <p className="mt-1 text-sm text-gray-500">还没有项目，点击右上角&quot;+ 新建项目&quot;开始创作。</p>
           </div>
         ) : (
           <div

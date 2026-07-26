@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { History } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 
 interface Version {
@@ -142,7 +143,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
         <h3 className="text-sm font-semibold text-gray-900">版本历史</h3>
         <button
           onClick={() => setShowBranchForm(!showBranchForm)}
-          className="text-xs text-blue-600 hover:text-blue-700"
+          className="rounded-md px-1.5 py-0.5 text-xs text-blue-600 transition-colors duration-150 hover:bg-blue-50 hover:text-blue-700"
         >
           + 分支
         </button>
@@ -154,13 +155,13 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
             value={branchName}
             onChange={(e) => setBranchName(e.target.value)}
             placeholder="分支名称..."
-            className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
+            className="w-full px-2 py-1 text-xs border border-gray-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300"
           />
           <div className="flex gap-1.5">
             <button
               onClick={handleCreateBranch}
               disabled={creating || !branchName.trim()}
-              className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              className="flex-1 px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50"
             >
               {creating ? '创建中...' : '创建分支'}
             </button>
@@ -169,7 +170,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
                 setShowBranchForm(false)
                 setBranchName('')
               }}
-              className="flex-1 px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded"
+              className="flex-1 px-2 py-1 text-xs bg-white border border-gray-200 text-gray-600 rounded transition-colors duration-150 hover:bg-gray-100"
             >
               取消
             </button>
@@ -180,14 +181,17 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
       {loading ? (
         <p className="text-xs text-gray-400">加载版本中...</p>
       ) : versions.length === 0 ? (
-        <p className="text-xs text-gray-400">暂无版本记录。</p>
+        <div className="flex flex-col items-center gap-1 py-4 text-center">
+          <History className="h-5 w-5 text-gray-300" aria-hidden />
+          <p className="text-xs text-gray-400">暂无版本记录。</p>
+        </div>
       ) : (
         <div className="space-y-1.5">
           {versions.map((v) => (
             <div
               key={v.id}
               onClick={() => handleSelectVersion(v.id)}
-              className={`bg-white border rounded-lg p-2.5 text-xs cursor-pointer transition-colors ${
+              className={`bg-white border rounded-lg p-2.5 text-xs cursor-pointer transition-colors duration-150 ${
                 v.isActive
                   ? 'border-blue-400 bg-blue-50'
                   : selectedVersionId === v.id
@@ -201,13 +205,13 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
                     {v.branchName}
                   </span>
                   {v.isActive && (
-                    <span className="px-1 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">
                       当前
                     </span>
                   )}
                 </div>
                 <span
-                  className={`px-1 py-0.5 rounded text-[10px] font-medium ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
                     v.source === 'ai'
                       ? 'bg-purple-100 text-purple-700'
                       : 'bg-green-100 text-green-700'
@@ -239,7 +243,7 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
                     handleSwitchVersion(v.id)
                   }}
                   disabled={switching}
-                  className="mt-2 w-full px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  className="mt-2 w-full px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded transition-all duration-150 hover:bg-blue-700 motion-safe:active:scale-[0.98] disabled:opacity-50 motion-safe:starting:opacity-0"
                 >
                   {switching ? '切换中...' : '切换到此版本'}
                 </button>

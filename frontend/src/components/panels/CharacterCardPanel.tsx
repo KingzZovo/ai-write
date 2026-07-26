@@ -291,8 +291,8 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索姓名 / 身份 / 描述..." className="flex-1 min-w-[140px] px-2 py-1 text-xs border border-stone-200 rounded" />
-        <select value={groupBy} onChange={e => setGroupBy(e.target.value as typeof groupBy)} className="text-xs border border-stone-200 rounded px-1.5 py-1">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索姓名 / 身份 / 描述..." className="flex-1 min-w-[140px] px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
+        <select value={groupBy} onChange={e => setGroupBy(e.target.value as typeof groupBy)} className="text-xs border border-stone-200 rounded px-1.5 py-1 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
           <option value="importance">按重要程度</option>
           <option value="identity">按身份</option>
           <option value="name">按姓氏</option>
@@ -321,7 +321,7 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
               const totalRel = rel.out.length + rel.in.length
               const imp = importanceById[c.id] || "minor"
               return (
-                <div key={c.id} className={`border rounded-lg transition-colors ${isOpen ? "border-blue-300 bg-blue-50/40" : "border-stone-200 bg-white hover:border-stone-300"}`}>
+                <div key={c.id} className={`border rounded-lg transition-colors duration-150 ${isOpen ? "border-blue-300 bg-blue-50/40" : "border-stone-200 bg-white hover:border-stone-300"}`}>
                   <button onClick={() => setExpanded(isOpen ? null : c.id)} className="w-full text-left px-2.5 py-2 flex items-center gap-2">
                     <span className="text-sm font-medium text-stone-800">{c.name}</span>
                     {imp === "protagonist" && <span className="text-[9px] px-1 rounded bg-amber-100 text-amber-700">主</span>}
@@ -334,7 +334,7 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                     </svg>
                   </button>
                   {isOpen && (
-                    <div className="px-2.5 pb-2.5 space-y-2 text-[11px]">
+                    <div className="px-2.5 pb-2.5 space-y-2 text-[11px] motion-safe:transition-opacity motion-safe:duration-200 motion-safe:starting:opacity-0">
                       <div className="flex items-center gap-1.5" title={t('charCard.importance.localHint')}>
                         <span className="text-[10px] text-stone-400">{t('charCard.importance.label')}</span>
                         <select
@@ -503,14 +503,14 @@ function RelationEditForm({ from, to, rel, projectId, onDone, onCancel }: { from
       <div className="grid grid-cols-2 gap-1.5">
         <div>
           <label className="text-[10px] text-stone-400">{t('charCard.rel.type')}</label>
-          <input value={relType} onChange={e => setRelType(e.target.value)} list={`rel-type-options-${rel.id}`} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded" />
+          <input value={relType} onChange={e => setRelType(e.target.value)} list={`rel-type-options-${rel.id}`} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
           <datalist id={`rel-type-options-${rel.id}`}>
             {Object.entries(REL_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </datalist>
         </div>
         <div>
           <label className="text-[10px] text-stone-400">{t('charCard.rel.sentiment')}</label>
-          <select value={sentiment} onChange={e => setSentiment(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded">
+          <select value={sentiment} onChange={e => setSentiment(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
             <option value="">{t('charCard.sentiment.none')}</option>
             <option value="positive">{t('charCard.sentiment.positive')}</option>
             <option value="neutral">{t('charCard.sentiment.neutral')}</option>
@@ -520,15 +520,15 @@ function RelationEditForm({ from, to, rel, projectId, onDone, onCancel }: { from
       </div>
       <div>
         <label className="text-[10px] text-stone-400">{t('charCard.rel.label')}</label>
-        <input value={label} onChange={e => setLabel(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded" />
+        <input value={label} onChange={e => setLabel(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       </div>
       <div>
         <label className="text-[10px] text-stone-400">{t('charCard.rel.note')}</label>
-        <input value={note} onChange={e => setNote(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded" />
+        <input value={note} onChange={e => setNote(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       </div>
       <div className="flex gap-1.5">
-        <button onClick={handleSave} disabled={saving || !relType.trim()} className="flex-1 px-2 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
-        <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 text-[11px] bg-stone-200 text-stone-600 rounded disabled:opacity-50">{t('common.cancel')}</button>
+        <button onClick={handleSave} disabled={saving || !relType.trim()} className="flex-1 px-2 py-1 text-[11px] font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
+        <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 text-[11px] bg-white border border-stone-200 text-stone-600 rounded transition-colors duration-150 hover:bg-stone-100 disabled:opacity-50">{t('common.cancel')}</button>
       </div>
     </div>
   )

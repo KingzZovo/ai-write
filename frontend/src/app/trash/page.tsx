@@ -21,7 +21,13 @@ export default function TrashPage() {
   if (!ok) {
     return (
       <div className="flex items-center justify-center h-screen pt-12 bg-gray-50">
-        <p className="text-gray-400">加载中...</p>
+        <p className="flex items-center gap-2 text-sm text-gray-400 animate-fade-in">
+          <span
+            aria-hidden
+            className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-brand-500 animate-spin"
+          />
+          加载中...
+        </p>
       </div>
     )
   }

@@ -33,6 +33,14 @@ const statusColors: Record<string, string> = {
   needs_review: 'bg-red-100 text-red-700',
 }
 
+// Dot indicator colors matching the pills above (visual only).
+const statusDots: Record<string, string> = {
+  draft: 'bg-gray-400',
+  generating: 'bg-yellow-500 motion-safe:animate-pulse',
+  completed: 'bg-green-500',
+  needs_review: 'bg-red-500',
+}
+
 const statusLabels: Record<string, string> = {
   draft: '草稿',
   generating: '生成中',
@@ -153,8 +161,9 @@ export function OutlineTree({
 
   if (sortedVolumes.length === 0) {
     return (
-      <div className="p-4 text-sm text-gray-500">
-        暂无卷册。请先生成大纲。
+      <div className="px-4 py-6 text-center">
+        <div className="text-lg" aria-hidden>📚</div>
+        <p className="mt-1 text-xs text-gray-400">暂无卷册。请先生成大纲。</p>
       </div>
     )
   }
@@ -173,7 +182,7 @@ export function OutlineTree({
               initialJson: bookOutline,
               title: '全书大纲',
             })}
-            className={`flex items-center w-full py-1 text-xs rounded ${
+            className={`flex items-center w-full px-1.5 py-1 text-xs rounded-md transition-colors duration-150 ${
               selectedOutlineKey === `book:${bookOutlineId}`
                 ? 'bg-emerald-100 text-emerald-800'
                 : 'text-emerald-700 hover:bg-emerald-50'
@@ -199,13 +208,17 @@ export function OutlineTree({
 
         return (
           <div key={volume.id} className="mb-1">
-            <div className="flex items-center w-full px-3 py-1.5 hover:bg-gray-100 rounded group">
+            <div className="flex items-center w-full px-3 py-1.5 hover:bg-gray-100 rounded-md transition-colors duration-150 group">
               <button
                 onClick={() => toggleNode(volume.id)}
                 className="flex-1 flex items-center text-left min-w-0"
               >
-                <span className="mr-1 text-gray-400 text-xs">
-                  {expandedNodes.has(volume.id) ? '▼' : '▶'}
+                <span
+                  className={`mr-1 inline-block text-gray-400 text-[10px] transition-transform duration-150 motion-reduce:transition-none ${
+                    expandedNodes.has(volume.id) ? 'rotate-90' : ''
+                  }`}
+                >
+                  ▶
                 </span>
                 {renamingVolumeId === volume.id ? (
                   <input
@@ -227,7 +240,7 @@ export function OutlineTree({
                       }
                     }}
                     onBlur={() => setRenamingVolumeId(null)}
-                    className="text-sm flex-1 px-1 border border-blue-300 rounded"
+                    className="text-sm flex-1 px-1 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400/40"
                   />
                 ) : (
                   <span className="font-medium text-gray-700 flex-1 truncate">
@@ -277,7 +290,7 @@ export function OutlineTree({
             </div>
 
             {expandedNodes.has(volume.id) && (
-              <div className="ml-4">
+              <div className="ml-4 border-l border-gray-200 pl-1.5 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:starting:opacity-0">
                 {volOutline && (
                   <div className="mb-1">
                     {/* PR-OUTLINE-CENTER-EDIT: clickable volume-outline entry. */}
@@ -291,7 +304,7 @@ export function OutlineTree({
                           title: `${volume.title} · 分卷大纲`,
                           volumeIdx: volIdx,
                         })}
-                        className={`flex items-center w-full px-3 py-1 text-xs rounded ${
+                        className={`flex items-center w-full px-3 py-1 text-xs rounded-md transition-colors duration-150 ${
                           selectedOutlineKey === `volume:${volOutlineId}`
                             ? 'bg-indigo-100 text-indigo-800'
                             : 'text-indigo-600 hover:bg-indigo-50'
@@ -314,7 +327,7 @@ export function OutlineTree({
                   return (
                     <React.Fragment key={chapter.id}>
                     <div
-                      className={`flex items-center w-full px-3 py-1 rounded group ${
+                      className={`flex items-center w-full px-3 py-1 rounded-md transition-colors duration-150 group ${
                         selectedChapterId === chapter.id ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
                     >
@@ -322,7 +335,6 @@ export function OutlineTree({
                         onClick={() => handleSelectChapter(chapter.id)}
                         className="flex-1 flex items-center text-left min-w-0"
                       >
-                        <span className="mr-1.5 text-gray-300">-</span>
                         {renamingChapterId === chapter.id ? (
                           <input
                             autoFocus
@@ -343,13 +355,13 @@ export function OutlineTree({
                               }
                             }}
                             onBlur={() => setRenamingChapterId(null)}
-                            className="text-sm flex-1 px-1 border border-blue-300 rounded"
+                            className="text-sm flex-1 px-1 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400/40"
                           />
                         ) : (
                           <span
                             className={`flex-1 truncate ${
                               selectedChapterId === chapter.id
-                                ? 'text-blue-700'
+                                ? 'font-medium text-blue-700'
                                 : 'text-gray-600'
                             }`}
                           >
@@ -367,10 +379,14 @@ export function OutlineTree({
                             </span>
                           )}
                           <span
-                            className={`text-[9px] px-1 py-0.5 rounded ${
+                            className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full ${
                               statusColors[st] || statusColors.draft
                             }`}
                           >
+                            <span
+                              aria-hidden
+                              className={`h-1 w-1 shrink-0 rounded-full ${statusDots[st] || statusDots.draft}`}
+                            />
                             {statusLabels[st] || st}
                           </span>
                         </span>
@@ -393,7 +409,7 @@ export function OutlineTree({
                               title: `${chapter.title || ''} · 章节大纲`,
                             })
                           }}
-                          className={`text-[10px] px-1 rounded ml-1 ${
+                          className={`text-[10px] px-1 rounded transition-colors duration-150 ml-1 ${
                             selectedOutlineKey === `chapter:${chapter.id}`
                               ? 'bg-amber-100 text-amber-800'
                               : 'text-amber-600 hover:bg-amber-50'

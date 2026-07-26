@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { ClipboardList } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 
 interface EvaluationIssue {
@@ -159,11 +160,11 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
                   return (
                     <div
                       key={idx}
-                      className="bg-white border border-gray-200 rounded-lg p-2 text-xs"
+                      className="bg-white border border-gray-200 rounded-lg p-2 text-xs transition-colors duration-150 hover:border-gray-300"
                     >
                       <div className="flex items-center gap-1.5 mb-1">
                         <span
-                          className={`px-1 py-0.5 rounded text-[10px] font-medium ${severityCfg.color}`}
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${severityCfg.color}`}
                         >
                           {severityCfg.label}
                         </span>
@@ -187,7 +188,10 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
           </div>
         </div>
       ) : (
-        <p className="text-xs text-gray-400">暂无评估数据，运行评估后可查看结果。</p>
+        <div className="flex flex-col items-center gap-1 py-4 text-center">
+          <ClipboardList className="h-5 w-5 text-gray-300" aria-hidden />
+          <p className="text-xs text-gray-400">暂无评估数据，运行评估后可查看结果。</p>
+        </div>
       )}
 
       {error && <p className="text-xs text-red-500">{error}</p>}
@@ -197,7 +201,7 @@ export function EvaluationPanel({ chapterId }: EvaluationPanelProps) {
         <button
           onClick={handleRunEvaluation}
           disabled={evaluating}
-          className="w-full px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg shadow-sm transition-all duration-150 hover:bg-blue-700 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {evaluating ? '评估中...' : '运行评估'}
         </button>

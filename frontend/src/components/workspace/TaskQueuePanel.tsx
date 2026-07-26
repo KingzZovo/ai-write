@@ -4,6 +4,7 @@
 // 写作中枢 tab. State/polling lives in useAsyncTaskQueue (DesktopWorkspace).
 
 import { useEffect, useState } from 'react'
+import { Inbox } from 'lucide-react'
 import {
   type AsyncTask,
   formatElapsed,
@@ -22,6 +23,17 @@ const STATUS_BADGES: Record<string, string> = {
   failed: 'bg-red-100 text-red-700',
   cancelled: 'bg-gray-100 text-gray-500',
   needs_review: 'bg-amber-100 text-amber-700',
+}
+
+// Dot indicator colors matching the badges above (visual only).
+const STATUS_DOTS: Record<string, string> = {
+  pending: 'bg-gray-400',
+  running: 'bg-blue-500',
+  polishing: 'bg-violet-500',
+  completed: 'bg-green-500',
+  failed: 'bg-red-500',
+  cancelled: 'bg-gray-400',
+  needs_review: 'bg-amber-500',
 }
 
 export function TaskQueuePanel({
@@ -45,9 +57,13 @@ export function TaskQueuePanel({
 
   if (tasks.length === 0) {
     return (
-      <p className="text-xs leading-relaxed text-gray-400">
-        暂无后台任务。点「后台生成本章」提交任务后，可离开页面稍后回来查看进度。
-      </p>
+      <div className="flex flex-col items-center gap-1 py-4 text-center">
+        <Inbox className="h-5 w-5 text-gray-300" aria-hidden />
+        <p className="text-xs font-medium text-gray-400">暂无后台任务</p>
+        <p className="text-[11px] leading-relaxed text-gray-400">
+          点「后台生成本章」提交任务后，可离开页面稍后回来查看进度。
+        </p>
+      </div>
     )
   }
 
@@ -64,7 +80,9 @@ export function TaskQueuePanel({
         return (
           <div
             key={t.taskId}
-            className="rounded-md border border-gray-200 bg-white px-2.5 py-2 text-xs"
+            className={`rounded-md border border-gray-200 bg-white px-2.5 py-2 text-xs transition-colors duration-150 hover:border-gray-300 ${
+              t.status === 'cancelled' ? 'opacity-60' : ''
+            }`}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5">
@@ -72,10 +90,16 @@ export function TaskQueuePanel({
                   {taskTypeLabel(t.taskType)}
                 </span>
                 <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                     STATUS_BADGES[t.status] || STATUS_BADGES.pending
                   }`}
                 >
+                  <span
+                    aria-hidden
+                    className={`h-1 w-1 shrink-0 rounded-full ${
+                      STATUS_DOTS[t.status] || STATUS_DOTS.pending
+                    } ${!isTerminal(t.status) ? 'motion-safe:animate-pulse' : ''}`}
+                  />
                   {statusLabel(t.status)}
                 </span>
               </div>
@@ -88,6 +112,11 @@ export function TaskQueuePanel({
                   : ''}
               </span>
             </div>
+            {!isTerminal(t.status) && (
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-gray-100">
+                <div className="h-full w-full rounded-full bg-gradient-to-r from-blue-200 via-blue-400 to-blue-200 motion-safe:animate-pulse" />
+              </div>
+            )}
             {hint && <p className="mt-1 truncate text-[11px] text-gray-500">…{hint}</p>}
             {t.errorMessage && (
               <p className="mt-1 break-all text-[11px] leading-relaxed text-red-600">
@@ -100,7 +129,7 @@ export function TaskQueuePanel({
                   <button
                     type="button"
                     onClick={() => onCancel(t.taskId)}
-                    className="rounded border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50"
+                    className="rounded-md border border-transparent px-2 py-0.5 text-[11px] text-red-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50"
                   >
                     取消
                   </button>
@@ -109,7 +138,7 @@ export function TaskQueuePanel({
                   <button
                     type="button"
                     onClick={() => onRefreshChapter(t.chapterId!)}
-                    className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 hover:bg-emerald-100"
+                    className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 transition-colors duration-150 hover:bg-emerald-100"
                   >
                     刷新章节
                   </button>

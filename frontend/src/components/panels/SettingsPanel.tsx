@@ -108,7 +108,7 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
       <h3 className="text-sm font-semibold text-gray-900">设定集</h3>
       <div className="flex border-b border-stone-200">
         {(['characters', 'world'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 text-xs font-medium border-b-2 ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-stone-500 hover:text-stone-700'}`}>
+          <button key={t} onClick={() => setTab(t)} className={`-mb-px px-3 py-1.5 text-xs font-medium border-b-2 transition-colors duration-150 ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-700'}`}>
             {t === 'characters' ? `人物 (${characters.length})` : `世界规则 (${worldRules.length})`}
           </button>
         ))}
@@ -121,7 +121,7 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
           {characters.map(char => {
             const profile = char.profile_json || {}
             return (
-              <div key={char.id} className="bg-white border border-stone-200 rounded-lg p-2.5">
+              <div key={char.id} className="bg-white border border-stone-200 rounded-lg p-2.5 transition-colors duration-150 hover:border-stone-300">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium text-stone-800">{char.name}</span>
                   <span className="flex items-center gap-1.5">
@@ -146,7 +146,7 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
                           <input
                             type="text"
                             defaultValue={(profile[field] as string) || ''}
-                            className="w-full px-2 py-1 text-xs border border-stone-200 rounded"
+                            className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300"
                             onBlur={async (e) => {
                               const updated = { ...profile, [field]: e.target.value }
                               try {
@@ -173,11 +173,16 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
               </div>
             )
           })}
-          {characters.length === 0 && !showAddChar && <p className="text-xs text-gray-400">还没有人物。</p>}
+          {characters.length === 0 && !showAddChar && (
+            <div className="flex flex-col items-center gap-1 py-4 text-center">
+              <span className="text-lg" aria-hidden>👤</span>
+              <p className="text-xs text-gray-400">还没有人物。</p>
+            </div>
+          )}
           {showAddChar ? (
             <AddCharacterForm projectId={projectId} onDone={() => { setShowAddChar(false); fetchCharacters() }} />
           ) : (
-            <button onClick={() => setShowAddChar(true)} className="w-full px-2 py-1.5 text-xs border border-dashed border-stone-300 rounded-lg text-stone-500 hover:bg-stone-50">+ 添加人物</button>
+            <button onClick={() => setShowAddChar(true)} className="w-full px-2 py-1.5 text-xs border border-dashed border-stone-300 rounded-lg text-stone-500 transition-colors duration-150 hover:border-stone-400 hover:bg-stone-50 hover:text-stone-700">+ 添加人物</button>
           )}
         </div>
       ) : (
@@ -186,7 +191,7 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
               truth); edits/deletes go through the neo4j-settings routes, which
               match the node by (category, text) and re-materialize PG. */}
           {worldRules.map(rule => (
-            <div key={rule.id} className="bg-white border border-stone-200 rounded-lg p-2.5">
+            <div key={rule.id} className="bg-white border border-stone-200 rounded-lg p-2.5 transition-colors duration-150 hover:border-stone-300">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-medium text-blue-600 uppercase">{rule.category}</span>
                 <span className="flex items-center gap-1.5">
@@ -210,11 +215,16 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
               )}
             </div>
           ))}
-          {worldRules.length === 0 && !showAddRule && <p className="text-xs text-gray-400">还没有世界规则。</p>}
+          {worldRules.length === 0 && !showAddRule && (
+            <div className="flex flex-col items-center gap-1 py-4 text-center">
+              <span className="text-lg" aria-hidden>🌍</span>
+              <p className="text-xs text-gray-400">还没有世界规则。</p>
+            </div>
+          )}
           {showAddRule ? (
             <AddWorldRuleForm projectId={projectId} onDone={() => { setShowAddRule(false); fetchWorldRules() }} />
           ) : (
-            <button onClick={() => setShowAddRule(true)} className="w-full px-2 py-1.5 text-xs border border-dashed border-stone-300 rounded-lg text-stone-500 hover:bg-stone-50">+ 添加规则</button>
+            <button onClick={() => setShowAddRule(true)} className="w-full px-2 py-1.5 text-xs border border-dashed border-stone-300 rounded-lg text-stone-500 transition-colors duration-150 hover:border-stone-400 hover:bg-stone-50 hover:text-stone-700">+ 添加规则</button>
           )}
         </div>
       )}
@@ -233,11 +243,11 @@ function AddCharacterForm({ projectId, onDone }: { projectId: string; onDone: ()
   }
   return (
     <div className="bg-stone-50 rounded-lg p-2.5 space-y-1.5">
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名" className="w-full px-2 py-1 text-xs border border-stone-200 rounded" />
-      <input value={identity} onChange={e => setIdentity(e.target.value)} placeholder="身份 / 角色" className="w-full px-2 py-1 text-xs border border-stone-200 rounded" />
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名" className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
+      <input value={identity} onChange={e => setIdentity(e.target.value)} placeholder="身份 / 角色" className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       <div className="flex gap-1.5">
-        <button onClick={handleSubmit} className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded">添加</button>
-        <button onClick={onDone} className="flex-1 px-2 py-1 text-xs bg-stone-200 text-stone-600 rounded">取消</button>
+        <button onClick={handleSubmit} className="flex-1 px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700">添加</button>
+        <button onClick={onDone} className="flex-1 px-2 py-1 text-xs bg-white border border-stone-200 text-stone-600 rounded transition-colors duration-150 hover:bg-stone-100">取消</button>
       </div>
     </div>
   )
@@ -270,11 +280,11 @@ function EditWorldRuleForm({ projectId, rule, onDone, onCancel }: { projectId: s
   }
   return (
     <div className="space-y-1.5">
-      <input value={category} onChange={e => setCategory(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded" />
-      <textarea value={text} onChange={e => setText(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16" />
+      <input value={category} onChange={e => setCategory(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
+      <textarea value={text} onChange={e => setText(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       <div className="flex gap-1.5">
-        <button onClick={handleSave} disabled={busy} className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded disabled:opacity-50">{busy ? t('common.saving') : t('common.save')}</button>
-        <button onClick={onCancel} disabled={busy} className="flex-1 px-2 py-1 text-xs bg-stone-200 text-stone-600 rounded disabled:opacity-50">{t('common.cancel')}</button>
+        <button onClick={handleSave} disabled={busy} className="flex-1 px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50">{busy ? t('common.saving') : t('common.save')}</button>
+        <button onClick={onCancel} disabled={busy} className="flex-1 px-2 py-1 text-xs bg-white border border-stone-200 text-stone-600 rounded transition-colors duration-150 hover:bg-stone-100 disabled:opacity-50">{t('common.cancel')}</button>
       </div>
     </div>
   )
@@ -291,11 +301,11 @@ function AddWorldRuleForm({ projectId, onDone }: { projectId: string; onDone: ()
   }
   return (
     <div className="bg-stone-50 rounded-lg p-2.5 space-y-1.5">
-      <input value={category} onChange={e => setCategory(e.target.value)} placeholder="分类 (如 power_system / geography)" className="w-full px-2 py-1 text-xs border border-stone-200 rounded" />
-      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="规则描述..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16" />
+      <input value={category} onChange={e => setCategory(e.target.value)} placeholder="分类 (如 power_system / geography)" className="w-full px-2 py-1 text-xs border border-stone-200 rounded transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
+      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="规则描述..." className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300" />
       <div className="flex gap-1.5">
-        <button onClick={handleSubmit} className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded">添加</button>
-        <button onClick={onDone} className="flex-1 px-2 py-1 text-xs bg-stone-200 text-stone-600 rounded">取消</button>
+        <button onClick={handleSubmit} className="flex-1 px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded transition-colors duration-150 hover:bg-blue-700">添加</button>
+        <button onClick={onDone} className="flex-1 px-2 py-1 text-xs bg-white border border-stone-200 text-stone-600 rounded transition-colors duration-150 hover:bg-stone-100">取消</button>
       </div>
     </div>
   )

@@ -25,6 +25,15 @@ interface Props {
   onSettings: (project: Project) => void
 }
 
+// Chinese-novel-friendly word count: 12.6 万 instead of 126,000.
+function formatWords(n: number): string {
+  if (n >= 10000) {
+    const w = n / 10000
+    return `${w >= 100 ? Math.round(w) : w.toFixed(1).replace(/\.0$/, '')} 万`
+  }
+  return n.toLocaleString()
+}
+
 function formatRelative(iso?: string): string {
   if (!iso) return ''
   const t = new Date(iso).getTime()
@@ -57,8 +66,10 @@ export function ProjectCard({
   return (
     <div
       onClick={handleBodyClick}
-      className={`relative rounded-xl border bg-white p-4 cursor-pointer transition-shadow hover:shadow-md ${
-        selected ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200'
+      className={`group relative rounded-xl border bg-white p-4 cursor-pointer shadow-card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 ${
+        selected
+          ? 'border-brand-500 ring-2 ring-brand-200'
+          : 'border-gray-200 hover:border-brand-200'
       }`}
     >
       {selectable && (
@@ -67,39 +78,42 @@ export function ProjectCard({
           checked={!!selected}
           onChange={() => onToggleSelect?.(project.id)}
           onClick={stop}
-          className="absolute top-3 left-3"
+          className="absolute top-3 left-3 w-4 h-4 accent-brand-600"
         />
       )}
       <div className={`${selectable ? 'pl-7' : ''} pr-8`}>
-        <h3 className="text-base font-semibold text-gray-900 truncate">
+        <h3 className="text-base font-semibold text-gray-900 truncate transition-colors group-hover:text-brand-700">
           {project.title}
         </h3>
         {project.genre && (
-          <span className="inline-block mt-1 px-2 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
+          <span className="inline-block mt-1.5 px-2 py-0.5 text-[11px] bg-gray-100 text-gray-600 rounded-full">
             {project.genre}
           </span>
         )}
         {project.premise && (
-          <p className="mt-2 text-xs text-gray-500 line-clamp-2">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500 line-clamp-2">
             {project.premise}
           </p>
         )}
-        <div className="mt-3 text-[11px] text-gray-400 flex items-center gap-2 flex-wrap">
-          <span>{formatRelative(project.created_at)}</span>
-          {stats && (
-            <>
-              <span>·</span>
-              <span>{stats.volumeCount} 卷</span>
-              <span>·</span>
-              <span>{stats.chapterCount} 章</span>
+        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+          {stats ? (
+            <div className="flex items-center gap-3">
+              <CardStat value={String(stats.volumeCount)} label="卷" />
+              <CardStat value={String(stats.chapterCount)} label="章" />
               {stats.totalWords > 0 && (
-                <>
-                  <span>·</span>
-                  <span>{stats.totalWords.toLocaleString()} 字</span>
-                </>
+                <CardStat value={formatWords(stats.totalWords)} label="字" />
               )}
-            </>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="skeleton h-3.5 w-8 rounded" />
+              <span className="skeleton h-3.5 w-8 rounded" />
+              <span className="skeleton h-3.5 w-12 rounded" />
+            </div>
           )}
+          <span className="text-[11px] text-gray-400 shrink-0">
+            {formatRelative(project.created_at)}
+          </span>
         </div>
       </div>
       {!selectable && (
@@ -117,6 +131,15 @@ export function ProjectCard({
         </div>
       )}
     </div>
+  )
+}
+
+function CardStat({ value, label }: { value: string; label: string }) {
+  return (
+    <span className="flex items-baseline gap-0.5">
+      <span className="text-sm font-semibold text-gray-700 tabular-nums">{value}</span>
+      <span className="text-[10px] text-gray-400">{label}</span>
+    </span>
   )
 }
 
@@ -155,19 +178,19 @@ function ExportMenu({ projectId }: { projectId: string }) {
       <button
         onClick={() => setOpen((v) => !v)}
         disabled={busy}
-        className="px-1.5 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500 text-xs disabled:opacity-50"
+        className="px-2 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 text-xs font-medium transition-colors disabled:opacity-50"
         aria-label="export"
         title={t('project.export')}
       >
         {busy ? '…' : t('project.export')}
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-24 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-10">
+        <div className="absolute right-0 mt-1 w-28 bg-white border border-gray-200 rounded-lg shadow-popover py-1 z-10 animate-dropdown">
           {EXPORT_FORMATS.map((fmt) => (
             <button
               key={fmt}
               onClick={() => download(fmt)}
-              className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 uppercase"
+              className="block w-[calc(100%-0.5rem)] mx-1 text-left px-2.5 py-1.5 text-xs font-medium tracking-wide text-gray-600 rounded-md hover:bg-gray-50 hover:text-gray-900 uppercase transition-colors"
             >
               {fmt}
             </button>
@@ -214,39 +237,39 @@ function ProjectCardMenu({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500"
+        className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
         aria-label="more"
       >
         ⋯
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-28 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-10">
+        <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-popover py-1 z-10 animate-dropdown">
           {PROJECT_LINKS.map(({ path, key }) => (
             <Link
               key={key}
               href={path(projectId)}
               onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="block mx-1 px-2.5 py-1.5 text-sm text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
             >
               {t(key)}
             </Link>
           ))}
-          <div className="border-t border-gray-100" />
+          <div className="my-1 border-t border-gray-100" />
           <button
             onClick={() => { setOpen(false); onRename() }}
-            className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+            className="block w-[calc(100%-0.5rem)] mx-1 text-left px-2.5 py-1.5 text-sm text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
           >
             重命名
           </button>
           <button
             onClick={() => { setOpen(false); onSettings() }}
-            className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+            className="block w-[calc(100%-0.5rem)] mx-1 text-left px-2.5 py-1.5 text-sm text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
           >
             项目设置
           </button>
           <button
             onClick={() => { setOpen(false); onDelete() }}
-            className="block w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+            className="block w-[calc(100%-0.5rem)] mx-1 text-left px-2.5 py-1.5 text-sm text-danger-600 rounded-md hover:bg-danger-50 transition-colors"
           >
             删除
           </button>

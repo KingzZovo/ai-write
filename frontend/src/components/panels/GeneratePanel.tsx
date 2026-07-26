@@ -117,7 +117,7 @@ function StyleSelector({ projectId }: { projectId?: string | null }) {
   return (
     <div className="space-y-2">
       <select value={selectedId} onChange={e => handleChange(e.target.value)}
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
         <option value="">不使用写法（默认风格）</option>
         {styles.map(s => (
           <option key={s.id} value={s.id}>
@@ -245,7 +245,7 @@ export function GeneratePanel({
   const otherTasks = tasks.filter(t => !['generation', 'outline', 'polishing'].includes(t.task_type))
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-1 space-y-5">
       {/* Current model status */}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">当前模型配置</h3>
@@ -393,7 +393,7 @@ export function GeneratePanel({
             onGenerate={() => outlineCounts.chapter > 0 ? setConfirmLevel("chapter") : onGenerateOutline?.("chapter")}
           />
           <button onClick={onGenerate} disabled={isGenerating || !hasEndpoints || !canGenerateChapterProse}
-            className="w-full px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+            className="w-full px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg shadow-sm transition-all duration-150 hover:bg-green-700 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
             {isGenerating ? "生成中..." : "生成章节正文"}
           </button>
           {confirmLevel && (
@@ -472,7 +472,7 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
   return (
     <div className="space-y-2">
       <select value={selectedId} onChange={e => handleChange(e.target.value)}
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
         <option value="">不使用剧情架构</option>
         {structures.map((s) => (
           <option key={s.book_id} value={s.book_id}>
@@ -518,7 +518,7 @@ function ChapterGenOptionsEditor({ chapterId }: { chapterId: string }) {
           value={instruction}
           onChange={(e) => { setInstruction(e.target.value); persist(e.target.value, targetWordsText) }}
           placeholder="例如：多写对话，结尾留悬念..."
-          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none h-20 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none h-20 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300"
         />
       </div>
       <div className="flex items-center gap-2">
@@ -529,7 +529,7 @@ function ChapterGenOptionsEditor({ chapterId }: { chapterId: string }) {
           value={targetWordsText}
           onChange={(e) => { setTargetWordsText(e.target.value); persist(instruction, e.target.value) }}
           placeholder="默认"
-          className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-lg placeholder-gray-400"
+          className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-lg placeholder-gray-400 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300"
         />
         <span className="text-[10px] text-gray-400">留空使用章节 / 项目默认</span>
       </div>
@@ -546,11 +546,11 @@ function OutlineButtonRow({ label, colorClass, count, disabled, onView, onGenera
     return (
       <div className="flex gap-1.5">
         <button onClick={onView} disabled={disabled}
-          className={`flex-1 px-3 py-2 text-sm text-white rounded-lg disabled:opacity-50 ${colorClass}`}>
+          className={`flex-1 px-3 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-all duration-150 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${colorClass}`}>
           📖 查看{label} ({count})
         </button>
         <button onClick={onGenerate} disabled={disabled} title="重新生成（需确认）"
-          className="px-2 py-2 text-xs bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300 disabled:opacity-50">
+          className="px-2 py-2 text-xs bg-stone-200 text-stone-700 rounded-lg transition-colors duration-150 hover:bg-stone-300 disabled:opacity-50 disabled:cursor-not-allowed">
           ↺
         </button>
       </div>
@@ -558,7 +558,7 @@ function OutlineButtonRow({ label, colorClass, count, disabled, onView, onGenera
   }
   return (
     <button onClick={onGenerate} disabled={disabled}
-      className={`w-full px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 ${colorClass}`}>
+      className={`w-full px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-all duration-150 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${colorClass}`}>
       ⚡ 生成{label}
     </button>
   )
@@ -567,13 +567,13 @@ function OutlineButtonRow({ label, colorClass, count, disabled, onView, onGenera
 function ConfirmModal({ level, onCancel, onConfirm }: { level: string; onCancel: () => void; onConfirm: () => void }) {
   const labels: Record<string, string> = { book: "全书大纲", volume: "分卷大纲", chapter: "章节大纲" }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-3">
-        <h3 className="text-base font-semibold text-stone-900">重新生成{labels[level] || level}？</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:starting:opacity-0">
+      <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-3 motion-safe:transition-[opacity,transform] motion-safe:duration-200 motion-safe:starting:scale-95 motion-safe:starting:opacity-0">
+        <h3 className="text-base font-semibold tracking-tight text-stone-900">重新生成{labels[level] || level}？</h3>
         <p className="text-sm text-stone-600">已存在{labels[level] || level}。重新生成会产生新的版本，原有版本会保留但不再被默认使用。</p>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-100 rounded">取消</button>
-          <button onClick={onConfirm} className="px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-700 rounded">确认重新生成</button>
+          <button onClick={onCancel} className="px-3 py-1.5 text-sm text-stone-700 rounded-md transition-colors duration-150 hover:bg-stone-100">取消</button>
+          <button onClick={onConfirm} className="px-3 py-1.5 text-sm font-medium bg-red-600 text-white rounded-md shadow-sm transition-all duration-150 hover:bg-red-700 motion-safe:active:scale-[0.98]">确认重新生成</button>
         </div>
       </div>
     </div>
