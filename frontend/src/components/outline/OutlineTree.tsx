@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { useProjectStore } from '@/stores/projectStore'
+import type { Chapter } from '@/stores/projectStore'
 import { apiFetch } from '@/lib/api'
 import { RowMenu } from './RowMenu'
 import { DeleteVolumeModal } from './DeleteVolumeModal'
@@ -75,6 +76,62 @@ export function OutlineTree({
   const handleSelectChapter = (chapterId: string) => {
     selectChapter(chapterId)
     onSelectChapter?.(chapterId)
+  }
+
+  // PR-WS-CHAPTER-MGMT: create a chapter at the end of a volume (client
+  // computes next chapter_idx; backend has no duplicate-idx guard).
+  const handleCreateChapter = async (volumeId: string) => {
+    const siblings = chapters.filter((c) => (c.volume_id ?? c.volumeId) === volumeId)
+    const nextIdx =
+      siblings.reduce((m, c) => Math.max(m, c.chapter_idx ?? c.chapterIdx ?? 0), 0) + 1
+    const title = window.prompt('新章节标题：', `第${nextIdx}章`)
+    if (title === null) return
+    try {
+      await apiFetch(`/api/projects/${projectId}/chapters`, {
+        method: 'POST',
+        body: JSON.stringify({
+          volume_id: volumeId,
+          title: title.trim() || `第${nextIdx}章`,
+          chapter_idx: nextIdx,
+          outline_json: {},
+        }),
+      })
+      onChanged?.()
+    } catch (err) {
+      console.error('新建章节失败:', err)
+      alert('新建章节失败，请重试。')
+    }
+  }
+
+  // PR-WS-CHAPTER-MGMT: swap chapter_idx with the neighbour (two PUTs; the
+  // backend recomputes global ordering), then refresh via onChanged.
+  const moveChapter = async (chapter: Chapter, direction: 'up' | 'down') => {
+    const volumeId = chapter.volume_id ?? chapter.volumeId
+    const siblings = chapters
+      .filter((c) => (c.volume_id ?? c.volumeId) === volumeId)
+      .sort((a, b) => (a.chapter_idx ?? a.chapterIdx) - (b.chapter_idx ?? b.chapterIdx))
+    const pos = siblings.findIndex((c) => c.id === chapter.id)
+    const target = direction === 'up' ? siblings[pos - 1] : siblings[pos + 1]
+    if (!target) {
+      alert(direction === 'up' ? '已是本卷第一章' : '已是本卷最后一章')
+      return
+    }
+    const myIdx = chapter.chapter_idx ?? chapter.chapterIdx
+    const targetIdx = target.chapter_idx ?? target.chapterIdx
+    try {
+      await apiFetch(`/api/projects/${projectId}/chapters/${chapter.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ chapter_idx: targetIdx }),
+      })
+      await apiFetch(`/api/projects/${projectId}/chapters/${target.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ chapter_idx: myIdx }),
+      })
+      onChanged?.()
+    } catch (err) {
+      console.error('移动章节失败:', err)
+      alert('移动章节失败，请重试。')
+    }
   }
 
   const sortedVolumes = [...volumes].sort(
@@ -190,6 +247,10 @@ export function OutlineTree({
                         setRenameVolumeValue(volume.title)
                         setRenamingVolumeId(volume.id)
                       },
+                    },
+                    {
+                      label: '新建章节',
+                      onClick: () => handleCreateChapter(volume.id),
                     },
                     {
                       label: '重新生成',
@@ -350,6 +411,14 @@ export function OutlineTree({
                                 setRenameChapterValue(chapter.title)
                                 setRenamingChapterId(chapter.id)
                               },
+                            },
+                            {
+                              label: '上移',
+                              onClick: () => moveChapter(chapter, 'up'),
+                            },
+                            {
+                              label: '下移',
+                              onClick: () => moveChapter(chapter, 'down'),
                             },
                             {
                               label: '删除',

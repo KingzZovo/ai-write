@@ -61,6 +61,7 @@ interface ProjectState {
   selectChapter: (id: string | null) => void
   updateChapterContent: (id: string, content: string) => void
   updateChapterStatus: (id: string, status: 'draft' | 'generating' | 'completed' | 'needs_review') => void
+  updateChapterSummary: (id: string, summary: string | null) => void
 }
 
 /** Normalize a volume from API (snake_case) to store format */
@@ -141,6 +142,12 @@ export const useProjectStore = create<ProjectState>((set) => ({
     set((state) => ({
       chapters: state.chapters.map((c) =>
         c.id === id ? { ...c, status } : c
+      ),
+    })),
+  updateChapterSummary: (id, summary) =>
+    set((state) => ({
+      chapters: state.chapters.map((c) =>
+        c.id === id ? { ...c, summary } : c
       ),
     })),
 }))

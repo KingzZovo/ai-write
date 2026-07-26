@@ -55,6 +55,158 @@ from app.tasks import celery_app
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Entity-graph hygiene helpers (pure, deterministic — no LLM)
+# ---------------------------------------------------------------------------
+
+
+def _alias_to_canonical(existing_chars: dict[str, Any]) -> dict[str, str]:
+    """Map alias -> canonical character name from profile_json.aliases.
+
+    ``existing_chars`` maps character name -> row-like object with a
+    ``profile_json`` attribute. Exact-string aliases only (no fuzzy
+    matching). Conservative rules: an alias that equals an existing
+    character's own name is never remapped (ambiguous), and an alias
+    claimed by two characters keeps the first claimant in sorted-name
+    order (deterministic).
+    """
+    out: dict[str, str] = {}
+    for name in sorted(existing_chars):
+        profile = getattr(existing_chars[name], "profile_json", None)
+        if not isinstance(profile, dict):
+            continue
+        aliases = profile.get("aliases")
+        if not isinstance(aliases, list):
+            continue
+        for a in aliases:
+            if not isinstance(a, str):
+                continue
+            a = a.strip()
+            if not a or a == name or a in existing_chars or a in out:
+                continue
+            out[a] = name
+    return out
+
+
+def _fold_aliases(
+    existing: dict[str, Any],
+    char_names: list[str],
+    char_profiles: dict[str, dict[str, Any]],
+    rels: list[tuple[str, str, str]],
+    memberships: list[tuple[str, str, int, int | None]],
+    at_locs: list[tuple[str, str, int, int | None]],
+    cstates: list[tuple[str, int, int | None, str]],
+):
+    """Resolve incoming entity names to canonical characters via aliases.
+
+    An incoming name that exactly matches an existing character's
+    profile_json.aliases entry is folded into that character everywhere
+    (char list, relationship endpoints, memberships, locations, states),
+    so no duplicate row is created downstream. A name that already has
+    its own row is never remapped.
+    """
+    alias_of = _alias_to_canonical(existing)
+    if not alias_of:
+        return char_names, char_profiles, rels, memberships, at_locs, cstates
+
+    def _canon(n: str) -> str:
+        return n if n in existing else alias_of.get(n, n)
+
+    def _ce_key(t):
+        return (t[0], t[1], t[2], t[3] if t[3] is not None else -1)
+
+    char_names = sorted({_canon(n) for n in char_names})
+    # Never overwrite a canonical profile with an alias node's.
+    char_profiles = {n: p for n, p in char_profiles.items() if _canon(n) == n}
+    rels = sorted({(_canon(s), _canon(t), rt) for (s, t, rt) in rels})
+    memberships = sorted(
+        {(_canon(c), o, cs, ce) for (c, o, cs, ce) in memberships}, key=_ce_key
+    )
+    at_locs = sorted(
+        {(_canon(c), l, cs, ce) for (c, l, cs, ce) in at_locs}, key=_ce_key
+    )
+    cstates = sorted(
+        {(_canon(c), cs, ce, st) for (c, cs, ce, st) in cstates},
+        key=lambda t: (t[0], t[1], t[2] if t[2] is not None else -1, t[3]),
+    )
+    return char_names, char_profiles, rels, memberships, at_locs, cstates
+
+
+def _char_bigrams(text: str) -> set[str]:
+    s = "".join((text or "").split())
+    if len(s) < 2:
+        return {s} if s else set()
+    return {s[i:i + 2] for i in range(len(s) - 1)}
+
+
+def _rule_text_similar(a: str, b: str) -> bool:
+    """Deterministic near-duplicate check for world-rule wording.
+
+    True when one text contains the other (only if the shorter side has
+    >= 8 non-space chars, so short generic rules never swallow longer
+    ones) or when char-bigram Jaccard similarity exceeds 0.8.
+    """
+    na = "".join((a or "").split())
+    nb = "".join((b or "").split())
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    if min(len(na), len(nb)) >= 8 and (na in nb or nb in na):
+        return True
+    ba = _char_bigrams(na)
+    bb = _char_bigrams(nb)
+    union = ba | bb
+    if not union:
+        return False
+    return len(ba & bb) / len(union) > 0.8
+
+
+def _plan_world_rule_writes(
+    existing: list[tuple[str, str]],
+    incoming: list[tuple[str, str]],
+) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
+    """Decide insert-vs-update for incoming (category, rule_text) pairs.
+
+    Returns ``(inserts, updates)`` where inserts are ``(category, text)``
+    and updates are ``(category, old_text, new_text)`` against existing
+    rows. A rule with the same category AND high textual overlap
+    (see ``_rule_text_similar``) as an existing rule is treated as a
+    re-worded version of it -> update. Exact duplicates are dropped.
+    Different-category or low-similarity rules always insert.
+    """
+    keys = set(existing)
+    by_cat: dict[str, list[str]] = {}
+    for cat, txt in existing:
+        by_cat.setdefault(cat, []).append(txt)
+
+    inserts: list[tuple[str, str]] = []
+    updates: list[tuple[str, str, str]] = []
+    for cat, txt in incoming:
+        if (cat, txt) in keys:
+            continue
+        target = next(
+            (t for t in by_cat.get(cat, []) if _rule_text_similar(t, txt)),
+            None,
+        )
+        if target is not None:
+            keys.discard((cat, target))
+            keys.add((cat, txt))
+            by_cat[cat] = [txt if t == target else t for t in by_cat[cat]]
+            for i, (icat, itxt) in enumerate(inserts):
+                if icat == cat and itxt == target:
+                    # target was planned this batch: rewrite the insert.
+                    inserts[i] = (cat, txt)
+                    break
+            else:
+                updates.append((cat, target, txt))
+            continue
+        inserts.append((cat, txt))
+        keys.add((cat, txt))
+        by_cat.setdefault(cat, []).append(txt)
+    return inserts, updates
+
+
 async def _materialize_entities_to_postgres(
     *,
     project_id: str,
@@ -349,6 +501,7 @@ async def _materialize_entities_to_postgres(
         created_chars = 0
         created_rels = 0
         created_rules = 0
+        updated_rules = 0
         created_locs = 0
         created_orgs = 0
         created_memberships = 0
@@ -359,16 +512,26 @@ async def _materialize_entities_to_postgres(
         skipped_cstates_unchanged = 0
 
         async with async_session_factory() as db:
-            if char_names:
-                existing_rows = await db.execute(
-                    select(Character).where(
-                        Character.project_id == project_id,
-                        Character.name.in_(char_names),
-                    )
-                )
-                existing = {c.name: c for c in existing_rows.scalars().all()}
-            else:
-                existing = {}
+            # Alias folding: an incoming name that exactly matches an
+            # existing character's profile_json.aliases entry is the SAME
+            # character (e.g. 「炎帝」 is 「萧炎」). Resolve every incoming
+            # name to its canonical form BEFORE any insert so no duplicate
+            # row is created and edges/states attach to the canonical row.
+            existing_rows = await db.execute(
+                select(Character).where(Character.project_id == project_id)
+            )
+            existing = {c.name: c for c in existing_rows.scalars().all()}
+            (
+                char_names,
+                char_profiles,
+                rels,
+                memberships,
+                at_locs,
+                cstates,
+            ) = _fold_aliases(
+                existing, char_names, char_profiles, rels,
+                memberships, at_locs, cstates,
+            )
 
             for name in char_names:
                 if name in existing:
@@ -485,16 +648,37 @@ async def _materialize_entities_to_postgres(
             except Exception:
                 logger.exception("relationships_deletion_sync_failed")
 
-            # World rules: bulk insert w/ ON CONFLICT DO NOTHING.
-            rule_rows = [
-                {"project_id": project_id, "category": cat, "rule_text": txt}
-                for (cat, txt) in world_rules
-            ]
-            if rule_rows:
-                stmt = insert(WorldRule).values(rule_rows)
-                stmt = stmt.on_conflict_do_nothing(constraint="uq_world_rules_key")
-                result = await db.execute(stmt)
-                created_rules += int(getattr(result, "rowcount", 0) or 0)
+            # World rules: exact duplicates skip; a rule with the same
+            # category AND high textual overlap with an existing row is a
+            # re-worded version -> UPDATE that row's text instead of piling
+            # up a contradictory near-duplicate in 【世界规则(不可违反)】.
+            # Different-category or low-similarity rules insert as before.
+            if world_rules:
+                rules_q = await db.execute(
+                    select(WorldRule).where(WorldRule.project_id == project_id)
+                )
+                existing_rule_objs = list(rules_q.scalars().all())
+                rule_inserts, rule_updates = _plan_world_rule_writes(
+                    [(r.category, r.rule_text) for r in existing_rule_objs],
+                    list(world_rules),
+                )
+                rule_by_key = {
+                    (r.category, r.rule_text): r for r in existing_rule_objs
+                }
+                for cat, old_txt, new_txt in rule_updates:
+                    obj = rule_by_key.pop((cat, old_txt), None)
+                    if obj is None:
+                        continue
+                    obj.rule_text = new_txt
+                    rule_by_key[(cat, new_txt)] = obj
+                    updated_rules += 1
+                for cat, txt in rule_inserts:
+                    db.add(
+                        WorldRule(
+                            project_id=project_id, category=cat, rule_text=txt
+                        )
+                    )
+                created_rules += len(rule_inserts)
 
             # Locations: bulk insert w/ ON CONFLICT DO NOTHING.
             loc_rows = [
@@ -715,7 +899,7 @@ async def _materialize_entities_to_postgres(
 
         ENTITY_PG_MATERIALIZE_TOTAL.labels("success", "ok").inc()
         logger.info(
-            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d/%d locs=%d/%d orgs=%d/%d member_of=%d/%d foreshadows=%d/%d atlocs=%d/%d cstates=%d/%d)",
+            "entity_pg_materialize ok (project=%s ch=%d caller=%s chars=%d/%d rels=%d/%d rules=%d+%du/%d locs=%d/%d orgs=%d/%d member_of=%d/%d foreshadows=%d/%d atlocs=%d/%d cstates=%d/%d)",
             project_id,
             chapter_idx,
             caller,
@@ -724,6 +908,7 @@ async def _materialize_entities_to_postgres(
             created_rels,
             len(rels),
             created_rules,
+            updated_rules,
             len(world_rules),
             created_locs,
             len(locations),
@@ -744,6 +929,7 @@ async def _materialize_entities_to_postgres(
             "rels_created": created_rels,
             "rels_seen": len(rels),
             "rules_created": created_rules,
+            "rules_updated": updated_rules,
             "rules_seen": len(world_rules),
             "locs_created": created_locs,
             "locs_seen": len(locations),
@@ -775,6 +961,7 @@ async def _materialize_entities_to_postgres(
             "rels_created": 0,
             "rels_seen": 0,
             "rules_created": 0,
+            "rules_updated": 0,
             "rules_seen": 0,
             "locs_created": 0,
             "locs_seen": 0,

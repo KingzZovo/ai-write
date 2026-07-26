@@ -23,37 +23,103 @@ logger = logging.getLogger(__name__)
 _RECALL_GAP = 10  # chapters: re-read reminder kicks in past this gap
 
 
-def count_appearances(text: str, names: set[str]) -> dict[str, int]:
+def count_appearances(
+    text: str,
+    names: set[str],
+    alias_map: dict[str, list[str]] | None = None,
+) -> dict[str, int]:
     """Count non-overlapping appearances of each name (len>=2) in ``text``.
 
     When names are substrings of each other (e.g. "林惊蛰" / "林惊"), longer
     names are matched first and their spans removed, so the shorter name is not
     double-counted inside the longer one.
+
+    ``alias_map`` maps a canonical name to its exact-string aliases
+    (e.g. {"萧炎": ["炎帝"]}). Alias occurrences are counted into the
+    canonical name's tally so 出场统计/last_seen reflect the real character.
+    An alias that collides with another tracked name is ignored (the name
+    keeps its own tally); alias keys not present in ``names`` are ignored.
     """
     if not text or not names:
         return {}
-    # Longest names first so substrings don't steal their matches.
-    ordered = sorted((n for n in names if n and len(n) >= 2), key=len, reverse=True)
+    # token -> canonical name it counts toward.
+    token_owner: dict[str, str] = {
+        n: n for n in names if n and len(n) >= 2
+    }
+    if alias_map:
+        for canonical in sorted(alias_map):
+            if canonical not in token_owner:
+                continue
+            for alias in alias_map[canonical] or []:
+                if not isinstance(alias, str):
+                    continue
+                alias = alias.strip()
+                if len(alias) < 2 or alias in token_owner:
+                    continue
+                token_owner[alias] = canonical
+    # Longest tokens first so substrings don't steal their matches.
+    ordered = sorted(token_owner, key=len, reverse=True)
     remaining = text
     counts: dict[str, int] = {}
-    for name in ordered:
-        c = remaining.count(name)
+    for token in ordered:
+        c = remaining.count(token)
         if c:
-            counts[name] = c
+            canonical = token_owner[token]
+            counts[canonical] = counts.get(canonical, 0) + c
             # Blank out matched spans so a shorter contained name won't recount.
-            remaining = remaining.replace(name, "\x00" * len(name))
+            remaining = remaining.replace(token, "\x00" * len(token))
     return counts
 
 
+async def load_alias_map(db, project_id) -> dict[str, list[str]]:
+    """Canonical name -> exact-string aliases, from characters.profile_json.
+
+    Aliases are written by the settings extractor (characters_extraction
+    prompt) into ``profile_json["aliases"]``. Defensive: missing/odd shapes
+    yield no entry.
+    """
+    from sqlalchemy import select
+
+    from app.models.project import Character
+
+    rows = (
+        await db.execute(
+            select(Character.name, Character.profile_json).where(
+                Character.project_id == project_id
+            )
+        )
+    ).all()
+    out: dict[str, list[str]] = {}
+    for name, profile in rows:
+        if not name or not isinstance(profile, dict):
+            continue
+        aliases = profile.get("aliases")
+        if not isinstance(aliases, list):
+            continue
+        clean = [a.strip() for a in aliases if isinstance(a, str) and a.strip()]
+        if clean:
+            out[name] = clean
+    return out
+
+
 async def update_roster_for_chapter(
-    db, project_id, global_idx: int, text: str, names: set[str]
+    db, project_id, global_idx: int, text: str, names: set[str],
+    alias_map: dict[str, list[str]] | None = None,
 ) -> None:
-    """Upsert first_seen/last_seen/appearance_count for names seen in a chapter."""
+    """Upsert first_seen/last_seen/appearance_count for names seen in a chapter.
+
+    Alias occurrences (characters.profile_json.aliases) count toward the
+    canonical character; ``alias_map`` is loaded from the characters table
+    when not supplied.
+    """
     from sqlalchemy.dialects.postgresql import insert
 
     from app.models.project import CharacterAppearance
 
-    counts = count_appearances(text, names)
+    if alias_map is None:
+        alias_map = await load_alias_map(db, project_id)
+
+    counts = count_appearances(text, names, alias_map)
     for name, c in counts.items():
         stmt = (
             insert(CharacterAppearance)

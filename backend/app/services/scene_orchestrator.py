@@ -287,7 +287,22 @@ def _scene_budget_reaches_target(briefs: list[SceneBrief], target_words: int) ->
     target = int(target_words or 0)
     if target <= 0:
         return True
-    return sum(max(0, int(brief.target_words or 0)) for brief in briefs) >= int(target * 0.85)
+    required = int(target * 0.85)
+    # Feasibility cap: each brief is clamped to MAX_SCENE_WORDS and the plan
+    # to MAX_SCENE_COUNT scenes, so no plan can ever budget more than
+    # MAX_SCENE_COUNT * MAX_SCENE_WORDS words. For large targets (>~28000 at
+    # the current clamps) the raw 0.85 requirement exceeds that ceiling and
+    # every legitimate plan silently fell into template fallback. Clamp the
+    # requirement to what the clamps allow — do NOT raise scene word limits.
+    achievable = MAX_SCENE_COUNT * MAX_SCENE_WORDS
+    if required > achievable:
+        logger.warning(
+            "scene budget requirement %d for target_words=%d exceeds achievable "
+            "cap %d (%d scenes x %d words); clamping requirement to the cap",
+            required, target, achievable, MAX_SCENE_COUNT, MAX_SCENE_WORDS,
+        )
+        required = achievable
+    return sum(max(0, int(brief.target_words or 0)) for brief in briefs) >= required
 
 
 # Always-applicable continuity-contract fields: every scene must carry these
@@ -515,6 +530,7 @@ class SceneOrchestrator:
             logger.warning(
                 "scene_planner returned no usable structured output; using fallback",
             )
+            _x4_inc_fallback("no_usable_output")
             if allow_fallback:
                 return _fallback_scene_briefs(target_words, chapter_outline_text)
             # Surface timeout vs unparseable as different root causes.

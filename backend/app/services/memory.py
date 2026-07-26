@@ -170,9 +170,17 @@ class HierarchicalMemory:
             current_volume_id, current_chapter_idx
         )
 
-        # L5 — Entity timeline from Neo4j
+        # L5 — Entity timeline from Neo4j. ``current_chapter_idx`` is
+        # volume-LOCAL (every layer above filters by volume_id, where local
+        # is correct), but Neo4j HAS_STATE / RELATES_TO / AT_LOCATION edges
+        # are written on the book-GLOBAL axis (entity_tasks resolves
+        # global_idx before calling extract_and_update), so the snapshot
+        # lookup must be converted to the global axis first.
+        global_idx = await self._resolve_global_idx(
+            current_volume_id, current_chapter_idx
+        )
         ctx.entity_states = await self._gather_entity_states(
-            project_id, current_chapter_idx
+            project_id, global_idx
         )
 
         logger.info(
@@ -188,6 +196,32 @@ class HierarchicalMemory:
             len(ctx.entity_states),
         )
         return ctx
+
+    async def _resolve_global_idx(
+        self,
+        volume_id: str,
+        chapter_idx: int,
+    ) -> int:
+        """Convert a volume-local chapter_idx into the book-global index.
+
+        Reads ``Chapter.global_idx`` (stamped by the before_insert listener,
+        backfilled by migration a1001915). Falls back to the local value when
+        the chapter is missing or predates the backfill (NULL global_idx) —
+        exact for single-volume projects, where global == local.
+        """
+        try:
+            result = await self.db.execute(
+                select(Chapter.global_idx).where(
+                    Chapter.volume_id == volume_id,
+                    Chapter.chapter_idx == chapter_idx,
+                )
+            )
+            global_idx = result.scalar_one_or_none()
+            if global_idx:
+                return int(global_idx)
+        except Exception as e:
+            logger.warning("Failed to resolve global chapter idx: %s", e)
+        return int(chapter_idx)
 
     # ==================================================================
     # L1 — World Rules
@@ -410,7 +444,12 @@ class HierarchicalMemory:
         project_id: str,
         chapter_idx: int,
     ) -> str:
-        """Query Neo4j for characters/relationships active at this chapter."""
+        """Query Neo4j for characters/relationships active at this chapter.
+
+        ``chapter_idx`` must be BOOK-GLOBAL: the HAS_STATE / RELATES_TO /
+        AT_LOCATION / MEMBER_OF edge windows queried by get_world_snapshot
+        are written on the global axis by entity_tasks.
+        """
         if not self.neo4j_driver:
             return ""
 

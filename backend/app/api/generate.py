@@ -114,6 +114,13 @@ def _sync_single_shot_llm_kwargs() -> dict[str, float | int | bool]:
 # evaluator) runs. Must stay well under nginx proxy_read_timeout (600s).
 _SSE_HEARTBEAT_INTERVAL_SECONDS = 15.0
 
+# PR-SCENE-PARTIAL (2026-07-26): minimum accumulated scene-mode text (chars)
+# worth preserving as a draft when BOTH the scene orchestrator and the
+# single-shot fallback fail. Below this, the old behavior (surface the error,
+# save nothing) is kept; a full scene is >=800 chars, so 200 means at least a
+# non-trivial fragment of a completed scene exists.
+_PARTIAL_SCENE_MIN_CHARS = 200
+
 
 async def _yield_with_heartbeat(
     coro, interval: float = _SSE_HEARTBEAT_INTERVAL_SECONDS
@@ -242,7 +249,13 @@ async def generate_chapter(
     project = await db.get(Project, req.project_id)
     if not project:
         return StreamingResponse(
-            iter([f"data: {json.dumps({'error': 'Project not found'})}\n\n"]),
+            # [DONE] sentinel: every exit path must terminate the stream so
+            # clients don't hang until their own timeout (same pattern as the
+            # in-stream error exits).
+            iter([
+                f"data: {json.dumps({'error': 'Project not found'})}\n\n",
+                "data: [DONE]\n\n",
+            ]),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
@@ -349,6 +362,12 @@ async def generate_chapter(
     async def event_stream() -> AsyncGenerator[str, None]:
         nonlocal current_text
         collected_text: list[str] = []
+        # PR-SCENE-PARTIAL (2026-07-26): set when scene mode AND its
+        # single-shot fallback both fail but non-trivial completed-scene text
+        # was accumulated. The preserved partial then skips the quality gate
+        # and auto-revise and is persisted as a draft instead of being lost.
+        partial_draft_only = False
+        partial_quality_meta: dict | None = None
         # Baseline snapshot so auto-revise failures do not leave a known-bad
         # draft as the active chapter.content_text.
         baseline_text_before_run = current_text
@@ -482,21 +501,58 @@ async def generate_chapter(
                         "SceneOrchestrator failed (falling back to ChapterGenerator): %s",
                         scene_err,
                     )
-                    # Discard partial scene chunks: the single-shot fallback
-                    # regenerates the full chapter, so keeping them would
-                    # duplicate content in the saved full_text.
+                    # PR-SCENE-PARTIAL: stash the completed-scene text BEFORE
+                    # discarding. The buffer must still be cleared — the
+                    # single-shot fallback regenerates the full chapter, so
+                    # keeping the chunks would duplicate content in the saved
+                    # full_text — but if the fallback ALSO fails, the stash is
+                    # persisted as a draft instead of the whole chapter being
+                    # lost (52KB-loss incident).
+                    partial_scene_text = "".join(collected_text)
                     collected_text.clear()
                     _pending_scene_events.clear()
                     yield f"data: {json.dumps({'event': 'fallback_restart'}, ensure_ascii=False)}\n\n"
                     generated_text = ""
-                    async for _hb_done, _hb_val in _yield_with_heartbeat(_run_single_shot_generator()):
-                        if _hb_done:
-                            generated_text = _hb_val
-                        else:
-                            yield _hb_val
+                    try:
+                        async for _hb_done, _hb_val in _yield_with_heartbeat(_run_single_shot_generator()):
+                            if _hb_done:
+                                generated_text = _hb_val
+                            else:
+                                yield _hb_val
+                    except Exception as fallback_err:
+                        if len(partial_scene_text.strip()) < _PARTIAL_SCENE_MIN_CHARS:
+                            # No non-trivial scene completed: keep the old
+                            # behavior (top-level handler emits error + [DONE]).
+                            raise
+                        logger.error(
+                            "Single-shot fallback ALSO failed after scene-mode "
+                            "failure; preserving %d chars of completed-scene "
+                            "text as a draft: %s",
+                            len(partial_scene_text), fallback_err, exc_info=True,
+                        )
+                        # fallback_restart told the client to reset its buffer;
+                        # resend the preserved partial so the client's view
+                        # matches what gets persisted.
+                        collected_text.append(partial_scene_text)
+                        yield f"data: {json.dumps({'text': partial_scene_text}, ensure_ascii=False)}\n\n"
+                        # Route the partial through the normal sanitize/persist
+                        # machinery below, but never through the quality gate
+                        # (which could block the save and lose the text again)
+                        # or the auto-revise loop (SceneOrchestrator just
+                        # failed). persisted_on_block forces status="draft" in
+                        # chapter_persist_status: a partial chapter must never
+                        # be marked completed.
+                        partial_draft_only = True
+                        partial_quality_meta = {
+                            "persisted_on_block": True,
+                            "reason": "scene_and_single_shot_failed",
+                            "scene_error": str(scene_err)[:300],
+                            "fallback_error": str(fallback_err)[:300],
+                        }
                     if generated_text:
                         collected_text.append(generated_text)
-                    yield f"data: {json.dumps({'text': generated_text}, ensure_ascii=False)}\n\n"
+                    if not partial_draft_only:
+                        yield f"data: {json.dumps({'text': generated_text}, ensure_ascii=False)}\n\n"
             else:
                 generated_text = ""
                 async for _hb_done, _hb_val in _yield_with_heartbeat(_run_single_shot_generator()):
@@ -524,7 +580,12 @@ async def generate_chapter(
             if full_text:
                 quality_gate_result = None
                 quality_gate_meta = None
-                if not req.skip_polish:
+                if partial_draft_only:
+                    # PR-SCENE-PARTIAL: a preserved partial goes straight to
+                    # the draft save — running the quality gate on it could
+                    # block the save and lose the partial all over again.
+                    quality_gate_meta = partial_quality_meta
+                elif not req.skip_polish:
                     try:
                         try:
                             # Release any locks inherited from earlier SELECTs
@@ -748,12 +809,17 @@ async def generate_chapter(
                         _inc_chapter_auto_save("chapter", "failure", "no_target_row")
                         yield f"data: {json.dumps({'status': 'save_failed', 'kind': 'chapter', 'reason': 'no_target_row', 'chapter_id': req.chapter_id, 'volume_id': str(resolved_volume_id) if resolved_volume_id else None, 'chapter_idx': resolved_chapter_idx})}\n\n"
                     else:
-                        cognition_ingest_text = full_text
+                        if not partial_draft_only:
+                            # PR-SCENE-PARTIAL: a preserved partial is not
+                            # settled chapter text; keep it out of the ledger.
+                            cognition_ingest_text = full_text
                         if looks_truncated(full_text):
                             yield f"data: {json.dumps({'event': 'truncated', 'status': 'draft', 'reason': 'midsentence_ending', 'chapter_id': _saved_id, 'word_count': _wc}, ensure_ascii=False)}\n\n"
                         if looks_like_refusal(full_text):
                             yield f"data: {json.dumps({'event': 'refusal', 'status': 'draft', 'reason': 'image_model_refusal', 'chapter_id': _saved_id, 'word_count': _wc}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'status': 'saved', 'chapter_id': _saved_id, 'word_count': _wc})}\n\n"
+                        if partial_draft_only:
+                            yield f"data: {json.dumps({'event': 'partial_saved', 'status': 'draft', 'reason': 'scene_and_single_shot_failed', 'chapter_id': _saved_id, 'word_count': _wc}, ensure_ascii=False)}\n\n"
                 except asyncio.CancelledError:
                     # SSE pipe cancelled mid-save; bg task continues commit independently.
                     raise
@@ -787,6 +853,7 @@ async def generate_chapter(
             # ----------------------------------------------------------------
             if (
                 full_text
+                and not partial_draft_only
                 and req.use_scene_mode
                 and req.auto_revise
                 and resolved_volume_id is not None
@@ -2160,9 +2227,29 @@ async def start_async_generation(
     await db.refresh(task)
 
     from app.tasks.knowledge_tasks import run_async_generation
-    run_async_generation.delay(str(task.id))
+    async_result = run_async_generation.delay(str(task.id))
+    # Persist the Celery task id so a later cancel can best-effort revoke it.
+    celery_id = getattr(async_result, "id", None)
+    if celery_id:
+        task.params_json = {**(task.params_json or {}), "celery_task_id": str(celery_id)}
+        await db.flush()
 
     return {"task_id": str(task.id), "status": "pending"}
+
+
+def _effective_task_status(task) -> str:
+    """Report 'cancelled' whenever the cancel marker exists in params_json.
+
+    The Celery worker's periodic progress commits can overwrite a
+    status='cancelled' column value (it re-reads/writes the row without
+    checking for cancellation). The cancel endpoint therefore also persists
+    ``params_json['cancelled_at']``; any row carrying that marker is
+    reported as cancelled regardless of the status column.
+    """
+    params = task.params_json if isinstance(task.params_json, dict) else {}
+    if params.get("cancelled_at"):
+        return "cancelled"
+    return task.status
 
 
 @router.get("/async/{task_id}")
@@ -2180,7 +2267,7 @@ async def get_async_generation(
     return {
         "task_id": str(task.id),
         "task_type": task.task_type,
-        "status": task.status,
+        "status": _effective_task_status(task),
         "char_count": task.char_count,
         "progress_text": task.progress_text or "",
         "result_text": task.result_text or "",
@@ -2193,24 +2280,107 @@ async def get_async_generation(
 @router.get("/async/project/{project_id}")
 async def list_project_tasks(
     project_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """List generation tasks for a project."""
+    """List generation tasks for a project (created_at desc).
+
+    ``status`` filters on the *effective* status (marker-derived 'cancelled'
+    included — see :func:`_effective_task_status`), so filtering is applied
+    in Python after fetching rather than in SQL.
+    """
     from app.models.generation_task import GenerationTask
 
-    result = await db.execute(
+    query = (
         select(GenerationTask)
         .where(GenerationTask.project_id == project_id)
         .order_by(GenerationTask.created_at.desc())
-        .limit(10)
     )
-    return [
-        {
-            "task_id": str(t.id),
-            "task_type": t.task_type,
-            "status": t.status,
-            "char_count": t.char_count,
-            "created_at": str(t.created_at),
-        }
-        for t in result.scalars().all()
-    ]
+    if status is None:
+        # No filter: effective status never changes row membership, so the
+        # SQL limit is safe.
+        query = query.limit(limit)
+    rows = (await db.execute(query)).scalars().all()
+
+    items: list[dict] = []
+    for t in rows:
+        effective = _effective_task_status(t)
+        if status is not None and effective != status:
+            continue
+        params = t.params_json if isinstance(t.params_json, dict) else {}
+        chapter_id = params.get("chapter_id")
+        items.append(
+            {
+                "task_id": str(t.id),
+                "task_type": t.task_type,
+                "status": effective,
+                "char_count": t.char_count,
+                "created_at": str(t.created_at),
+                "updated_at": str(t.updated_at),
+                "progress_text": (t.progress_text or "")[-200:],
+                "error_message": t.error_message,
+                "chapter_id": str(chapter_id) if chapter_id else None,
+            }
+        )
+        if len(items) >= limit:
+            break
+    return items
+
+
+_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
+
+
+@router.post("/async/{task_id}/cancel")
+async def cancel_async_generation(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Cancel a pending/running generation task.
+
+    Semantics ("cancelled" = "result will be ignored/not surfaced"):
+
+    - Sets ``status='cancelled'`` on the row AND persists a durable marker
+      ``params_json['cancelled_at']`` (ISO timestamp). The Celery worker is
+      NOT cancel-aware — its periodic progress commits may overwrite the
+      status column (e.g. back to 'running'/'completed') — so the GET
+      endpoints report status='cancelled' whenever the marker exists,
+      regardless of the column value. The worker may still finish and write
+      result_text; clients must treat a cancelled task's result as void.
+    - Best-effort Celery revoke (terminate=False, i.e. only prevents a
+      not-yet-started task from running) using the ``celery_task_id`` stored
+      in params_json at enqueue time; silently skipped if unavailable.
+    - 404 if the task does not exist; 409 ``{"detail":
+      "task_already_terminal"}`` if already completed/failed/cancelled.
+    """
+    from app.models.generation_task import GenerationTask
+
+    task = await db.get(GenerationTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if _effective_task_status(task) in _TERMINAL_TASK_STATUSES:
+        raise HTTPException(status_code=409, detail="task_already_terminal")
+
+    from datetime import datetime, timezone
+
+    params = task.params_json if isinstance(task.params_json, dict) else {}
+    task.params_json = {
+        **params,
+        "cancelled_at": datetime.now(timezone.utc).isoformat(),
+    }
+    task.status = "cancelled"
+    await db.flush()
+
+    celery_id = params.get("celery_task_id")
+    if celery_id:
+        try:
+            from app.tasks import celery_app
+
+            celery_app.control.revoke(str(celery_id), terminate=False)
+        except Exception as revoke_err:  # pragma: no cover - broker may be down
+            logger.warning(
+                "Best-effort Celery revoke failed task_id=%s: %s", task_id, revoke_err
+            )
+
+    return {"task_id": str(task.id), "status": "cancelled"}

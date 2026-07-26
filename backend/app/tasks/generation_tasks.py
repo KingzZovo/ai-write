@@ -9,7 +9,12 @@ import logging
 
 from app.tasks import celery_app
 from app.tasks.common import _make_session, _run_async
-from app.services.chapter_quality_gate import apply_chapter_quality_gate
+from app.services.chapter_quality_gate import (
+    apply_chapter_quality_gate,
+    looks_like_refusal,
+    looks_truncated,
+)
+from app.services.prose_sanitizer import sanitize_prose
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +61,99 @@ def _single_shot_llm_timeout_kwargs(fallback_timeout: float) -> dict[str, float 
     return {"request_timeout": request_timeout, "retry_attempts": retry_attempts, "stream": use_stream}
 
 
+async def _dispatch_chapter_entities(chapter, db, project_id) -> None:
+    """Enqueue Neo4j entity extraction after a chapter save (audit 2026-07-26).
+
+    Mirrors the SSE path (api/generate.py ``_persist_chapter_now``), which
+    dispatches on every persist including needs_review/draft saves: the saved
+    text IS the chapter's stored content, and the extraction task re-runs (and
+    overwrites) on any later re-save, so drafts never leave stale graph state.
+    Never raises — the graph extension being down must not fail chapter saves.
+    """
+    try:
+        from app.services.entity_dispatch import dispatch_for_chapter
+
+        await dispatch_for_chapter(
+            chapter,
+            db,
+            caller="tasks.run_async_generation",
+            project_id_hint=project_id,
+        )
+    except Exception as dispatch_err:
+        logger.warning(
+            "Entity dispatch after async-generation save failed: %s", dispatch_err
+        )
+
+
+def _humanize_chapter_text(full_text: str, *, seed_key: str) -> str:
+    """Deterministic anti-uniformity pass over generated prose.
+
+    Breaks statistical patterns detectors flag (trailing symmetry connectives,
+    overly uniform long sentences). Previously used the global ``random``
+    module, so re-running the same draft produced different prose —
+    non-reproducible output and unattributable score variance. The RNG is now
+    seeded from the chapter/task identity plus the text itself: the pass is a
+    pure function of its input while the intended variety across chapters is
+    preserved (different chapters hash to different seeds).
+    """
+    import hashlib
+    import random
+    import re as _re
+
+    rng = random.Random(
+        hashlib.sha256(f"{seed_key}:{full_text}".encode("utf-8")).hexdigest()
+    )
+    humanized = []
+    for line in full_text.split("\n"):
+        line = line.strip()
+        if not line:
+            humanized.append("")
+            continue
+        # Remove trailing symmetry patterns
+        line = _re.sub(r"[，,]\s*(而|且|并|同时)$", "。", line)
+        # Vary punctuation: occasionally use 。instead of ，for long sentences
+        if len(line) > 60 and "，" in line and rng.random() < 0.3:
+            parts = line.split("，", 1)
+            if len(parts[0]) > 15:
+                line = parts[0] + "。" + parts[1]
+        humanized.append(line)
+    return "\n".join(humanized).strip()
+
+
+def _persist_pipeline_chapter_text(chapter, text: str) -> bool:
+    """Sanitize + persist whole-book pipeline output; True when saved as draft.
+
+    Minimal hardening of the legacy pipeline path (audit 2026-07-26): the text
+    now goes through the same sanitizer and truncation/refusal checks as the
+    main generation paths instead of being saved "completed" unconditionally.
+    A full merge with the real chapter generator is intentionally deferred.
+    """
+    cleaned = (text or "").strip()
+    cleaned, leak_hits = sanitize_prose(cleaned)
+    if leak_hits:
+        logger.warning(
+            "prose_sanitizer stripped meta leakage in pipeline chapter_id=%s hits=%s",
+            getattr(chapter, "id", None),
+            leak_hits,
+        )
+    chapter.content_text = cleaned
+    chapter.word_count = len(cleaned)
+    flagged = looks_truncated(cleaned) or looks_like_refusal(cleaned)
+    chapter.status = "draft" if flagged else "completed"
+    return flagged
+
+
 def _stage_needs_review_chapter_text(task, chapter, text: str, *, error_message: str | None = None) -> str:
     """Stage a generated draft everywhere the UI reads manual-review content."""
     final_text = (text or "").strip()
+    # Meta/structure leakage guard (audit 2026-07-26): needs_review staging is
+    # a persistence path too — strip 第X章/[CH-n] leakage like every other save.
+    final_text, _leak_hits = sanitize_prose(final_text)
+    if _leak_hits:
+        logger.warning(
+            "prose_sanitizer stripped meta leakage in needs_review staging hits=%s",
+            _leak_hits,
+        )
     task.status = "needs_review"
     task.error_message = ((error_message or "")[:1500] or None)
     task.result_text = final_text
@@ -725,6 +820,10 @@ async def _run_async_generation_impl(task_id: str):
                                     persist_chapter.word_count = len(fallback_text)
                                     persist_chapter.status = "needs_review"
                                 await persist_db.commit()
+                                if generated_chapter_id_safe:
+                                    await _dispatch_chapter_entities(
+                                        persist_chapter, persist_db, project_id
+                                    )
                             logger.warning(
                                 "force_direct_chapter persisted via fresh session task_id=%s chapter_id=%s chars=%d",
                                 task_id,
@@ -954,27 +1053,13 @@ async def _run_async_generation_impl(task_id: str):
                 full_text = _re.sub(p, '', full_text, flags=_re.MULTILINE)
             full_text = _re.sub(r'\n{3,}', '\n\n', full_text)  # excess newlines
 
-            # Anti-AI humanization: break statistical patterns that detectors flag
-            import random as _rand
-            lines = full_text.split('\n')
-            humanized = []
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    humanized.append('')
-                    continue
-                # Break overly uniform sentence lengths by occasionally merging/splitting
-                # Remove trailing symmetry patterns
-                line = _re.sub(r'[，,]\s*(而|且|并|同时)$', '。', line)
-                # Vary punctuation: occasionally use。instead of ，for long sentences
-                if len(line) > 60 and '，' in line and _rand.random() < 0.3:
-                    parts = line.split('，', 1)
-                    if len(parts[0]) > 15:
-                        line = parts[0] + '。' + parts[1]
-                # Add occasional short interjections to break rhythm
-                humanized.append(line)
-
-            full_text = '\n'.join(humanized).strip()
+            # Anti-AI humanization: deterministic (seeded from chapter/task
+            # identity + text hash) so the same draft always yields the same
+            # output — see _humanize_chapter_text (audit 2026-07-26).
+            full_text = _humanize_chapter_text(
+                full_text,
+                seed_key=generated_chapter_id_safe or task_id,
+            )
 
             # Auto evaluation + regeneration for project/background chapter generation.
             # This mirrors the SSE /api/generate auto_revise path so chapters created
@@ -1305,6 +1390,7 @@ async def _run_async_generation_impl(task_id: str):
                                 await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                             except Exception as sum_err:
                                 logger.warning("Auto chapter summarize failed after quality-gate review save: %s", sum_err)
+                            await _dispatch_chapter_entities(ch, db, project_id)
                             return
                         if quality_result.rewrite_rounds > 0:
                             logger.info(
@@ -1356,6 +1442,7 @@ async def _run_async_generation_impl(task_id: str):
                             await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                         except Exception as sum_err:
                             logger.warning("Auto chapter summarize failed after quality-gate error save: %s", sum_err)
+                        await _dispatch_chapter_entities(ch, db, project_id)
                         return
 
                 try:
@@ -1402,6 +1489,7 @@ async def _run_async_generation_impl(task_id: str):
                             await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                         except Exception as sum_err:
                             logger.warning("Auto chapter summarize failed after fact-contract review save: %s", sum_err)
+                        await _dispatch_chapter_entities(ch, db, project_id)
                         return
                 except Exception as fact_err:
                     logger.warning(
@@ -1441,6 +1529,7 @@ async def _run_async_generation_impl(task_id: str):
                         await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                     except Exception as sum_err:
                         logger.warning("Auto chapter summarize failed after fact-contract error save: %s", sum_err)
+                    await _dispatch_chapter_entities(ch, db, project_id)
                     return
 
                 ch.content_text = full_text
@@ -1476,6 +1565,11 @@ async def _run_async_generation_impl(task_id: str):
                     },
                 ))
                 await db.commit()
+                # B2' (audit 2026-07-26): mirror the SSE path — enqueue Neo4j
+                # entity extraction after every chapter save. Without this,
+                # projects generated via the background task queue got no
+                # states/locations/relationships at all.
+                await _dispatch_chapter_entities(ch, db, project_id)
                 try:
                     await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                 except Exception as sum_err:
@@ -1491,31 +1585,30 @@ async def _run_async_generation_impl(task_id: str):
                     await backfill_prev_volume_summary(str(volume_id_for_eval))
                 except Exception as volsum_err:
                     logger.warning("Volume-summary backfill failed after evaluation: %s", volsum_err)
-                # Q3 v1.9.1 (review fix): character cognition ledger ingestion
-                # only when the final evaluation passed. needs_review saves
-                # (passed=False, ch.status='needs_review') await manual review
-                # or a rewrite and must not pollute the ledger — previously
-                # this final-save path ingested them anyway, contradicting the
-                # quality-gate-blocked branch above which already skips
-                # ingestion. Never blocks chapter persistence.
-                if passed:
-                    try:
-                        from app.services.character_cognition import extract_and_update
-                        await extract_and_update(db, project_id, full_text)
-                    except Exception as cog_err:
-                        logger.warning("Cognition ledger update failed after evaluation: %s", cog_err)
-                    # C2/F1: recompute whole-book style stats in the background
-                    # (deterministic, non-blocking, celery-optional).
-                    try:
-                        from app.services.style_stat import dispatch_style_recompute
-                        dispatch_style_recompute(project_id, caller="knowledge_tasks.chapter")
-                    except Exception as style_err:
-                        logger.warning("Style stats dispatch failed: %s", style_err)
-                else:
-                    logger.debug(
-                        "Skipping cognition ledger ingestion for needs_review chapter %s (overall below threshold)",
-                        chapter_id_for_eval,
-                    )
+                # Cognition ledger ingestion on every FINAL save (audit
+                # 2026-07-26). Q3 v1.9.1 gated this on `passed`, but that was
+                # lossy: a needs_review final save still persists full_text as
+                # the chapter's canonical content_text (readable, exportable,
+                # summarized, entity-extracted, volume-backfilled), and a later
+                # manual accept never re-ingests — accepted chapters silently
+                # missed the ledger. The SSE reference path (api/generate.py)
+                # ingests the settled text regardless of evaluation score and
+                # withholds only aborted/blocked drafts; align with it. The
+                # quality-gate / fact-contract blocked branches above return
+                # before this point, so blocked drafts are still never
+                # ingested. Never blocks chapter persistence.
+                try:
+                    from app.services.character_cognition import extract_and_update
+                    await extract_and_update(db, project_id, full_text)
+                except Exception as cog_err:
+                    logger.warning("Cognition ledger update failed after evaluation: %s", cog_err)
+                # C2/F1: recompute whole-book style stats in the background
+                # (deterministic, non-blocking, celery-optional).
+                try:
+                    from app.services.style_stat import dispatch_style_recompute
+                    dispatch_style_recompute(project_id, caller="knowledge_tasks.chapter")
+                except Exception as style_err:
+                    logger.warning("Style stats dispatch failed: %s", style_err)
 
             task.result_text = full_text
 
@@ -1688,6 +1781,7 @@ async def _run_async_generation_impl(task_id: str):
                             task2.polished_text = task2.polished_text or ""
                             task2.status = "needs_review" if _salvage_chapter_id else "completed"
                             task2.error_message = None
+                        ch2 = None
                         if _salvage_chapter_id:
                             ch2 = await db2.get(Chapter, _salvage_chapter_id)
                             if ch2:
@@ -1695,6 +1789,8 @@ async def _run_async_generation_impl(task_id: str):
                                 ch2.word_count = len(_salvage_text)
                                 ch2.status = "needs_review"
                         await db2.commit()
+                        if ch2 is not None:
+                            await _dispatch_chapter_entities(ch2, db2, project_id)
                     logger.warning(
                         "Async generation salvaged produced prose after persistence/session error task_id=%s chars=%d err=%s",
                         task_id,
@@ -1793,14 +1889,21 @@ async def _run_pipeline_async(pipeline_id: str):
                         {"role": "system", "content": "你是一位专业的小说内容生成引擎。根据章节标题和大纲生成正文。每章至少3000字。"},
                         {"role": "user", "content": f"章节标题：{chapter.title}\n大纲：{chapter.outline_json or '无'}"},
                     ],
-                    max_tokens=8192,
+                    # 16384 (was 8192): the system prompt demands ≥3000 chars of
+                    # Chinese prose; 8192 tokens regularly truncated mid-sentence.
+                    max_tokens=16384,
                 )
 
-                chapter.content_text = gen_result.text
-                chapter.word_count = len(gen_result.text)
-                chapter.status = "completed"
+                # Sanitize + truncation/refusal check; flagged text is kept but
+                # saved as draft instead of unconditionally "completed".
+                flagged = _persist_pipeline_chapter_text(chapter, gen_result.text)
+                if flagged:
+                    logger.warning(
+                        "Pipeline chapter %d looks truncated/refusal; saved as draft",
+                        cs.chapter_idx,
+                    )
                 cs.state = "completed"
-                cs.word_count = len(gen_result.text)
+                cs.word_count = chapter.word_count
                 cs.completed_at = datetime.now(timezone.utc)
                 pipeline.completed_chapters = (pipeline.completed_chapters or 0) + 1
 

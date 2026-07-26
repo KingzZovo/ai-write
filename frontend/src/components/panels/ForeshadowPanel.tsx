@@ -44,6 +44,32 @@ const TYPE_CFG: Record<string, { label: string; color: string }> = {
   hint:         { label: '暗示', color: 'text-stone-500' },
 }
 
+/** Build the PUT /foreshadows/{id} body from the inline edit form.
+ *  Exported for tests. Conditions are one-per-line, trimmed, blanks dropped. */
+export function buildForeshadowUpdatePayload(input: { description: string; type: string; conditionsText: string }) {
+  return {
+    description: input.description.trim(),
+    type: input.type,
+    resolve_conditions: input.conditionsText.split('\n').map(c => c.trim()).filter(Boolean),
+  }
+}
+
+/** Parse the window.prompt answer for 标记回收. Returns null when cancelled or
+ *  not a non-negative integer. Exported for tests. */
+export function parseResolvedChapter(raw: string | null): number | null {
+  if (raw === null) return null
+  const trimmed = raw.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  return Number(trimmed)
+}
+
+/** Normalize resolve_conditions_json (list or object) into a display list. */
+function conditionsToList(rc: unknown): string[] {
+  if (Array.isArray(rc)) return rc.map(v => String(v))
+  if (rc && typeof rc === 'object') return Object.values(rc).map(v => String(v))
+  return []
+}
+
 export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
   const t = useT()
   const [foreshadows, setForeshadows] = useState<Foreshadow[]>([])
@@ -118,41 +144,80 @@ export function ForeshadowPanel({ projectId }: ForeshadowPanelProps) {
         <p className="text-xs text-gray-400">暂无伏笔。</p>
       ) : (
         <div className="space-y-3">
-          {grouped.ready.length    > 0 && <Section title={t('foreshadow.section.ready')}   items={grouped.ready} />}
-          {grouped.ripening.length > 0 && <Section title={t('foreshadow.section.ripening')} items={grouped.ripening} />}
-          {grouped.planted.length  > 0 && <Section title={t('foreshadow.section.planted')}     items={grouped.planted} />}
-          {filter === 'all' && grouped.resolved.length > 0 && <Section title={t('foreshadow.section.resolved')} items={grouped.resolved} />}
+          {grouped.ready.length    > 0 && <Section title={t('foreshadow.section.ready')}   items={grouped.ready} projectId={projectId} onChanged={fetchForeshadows} />}
+          {grouped.ripening.length > 0 && <Section title={t('foreshadow.section.ripening')} items={grouped.ripening} projectId={projectId} onChanged={fetchForeshadows} />}
+          {grouped.planted.length  > 0 && <Section title={t('foreshadow.section.planted')}     items={grouped.planted} projectId={projectId} onChanged={fetchForeshadows} />}
+          {filter === 'all' && grouped.resolved.length > 0 && <Section title={t('foreshadow.section.resolved')} items={grouped.resolved} projectId={projectId} onChanged={fetchForeshadows} />}
         </div>
       )}
     </div>
   )
 }
 
-function Section({ title, items }: { title: string; items: Foreshadow[] }) {
+function Section({ title, items, projectId, onChanged }: { title: string; items: Foreshadow[]; projectId: string; onChanged: () => void }) {
   return (
     <div>
       <h4 className="text-[10px] font-medium text-stone-500 mb-1 uppercase tracking-wider">{title} <span className="text-stone-300">({items.length})</span></h4>
       <div className="space-y-1.5">
-        {items.map(f => <ForeshadowCard key={f.id} foreshadow={f} />)}
+        {items.map(f => <ForeshadowCard key={f.id} foreshadow={f} projectId={projectId} onChanged={onChanged} />)}
       </div>
     </div>
   )
 }
 
-function ForeshadowCard({ foreshadow: f }: { foreshadow: Foreshadow }) {
+function ForeshadowCard({ foreshadow: f, projectId, onChanged }: { foreshadow: Foreshadow; projectId: string; onChanged: () => void }) {
+  const t = useT()
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
   const statusCfg = STATUS_CFG[f.status] || STATUS_CFG.planted
   const typeCfg = TYPE_CFG[f.type] || { label: f.type, color: 'text-stone-500' }
   const proximity = (typeof f.narrative_proximity === "number" && Number.isFinite(f.narrative_proximity)) ? f.narrative_proximity : 0
   const proximityWidth = Math.round(proximity * 100)
+
+  const handleResolve = async () => {
+    const ch = parseResolvedChapter(window.prompt(t('foreshadow.resolvePrompt')))
+    if (ch === null) return
+    setBusy(true)
+    try {
+      await apiFetch(`/api/projects/${projectId}/foreshadows/${f.id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ resolved_chapter: ch }),
+      })
+      onChanged()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    } finally { setBusy(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!window.confirm(t('foreshadow.deleteConfirm'))) return
+    setBusy(true)
+    try {
+      await apiFetch(`/api/projects/${projectId}/foreshadows/${f.id}`, { method: 'DELETE' })
+      onChanged()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    } finally { setBusy(false) }
+  }
+
   return (
-    <div className="bg-white border border-stone-200 rounded-lg p-2.5 text-xs">
+    <div className={`bg-white border border-stone-200 rounded-lg p-2.5 text-xs ${f.status === 'resolved' ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-1.5 mb-1">
         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusCfg.color}`} title={statusCfg.help}>{statusCfg.label}</span>
         <span className={`text-[10px] ${typeCfg.color}`}>{typeCfg.label}</span>
         <span className="text-stone-300 ml-auto">第 {f.planted_chapter} 章</span>
       </div>
+      {editing ? (
+        <ForeshadowEditForm
+          foreshadow={f}
+          projectId={projectId}
+          onDone={() => { setEditing(false); onChanged() }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <>
       <p className="text-stone-700 leading-relaxed">{f.description}</p>
-      {(() => { const rc = f.resolve_conditions_json; const list = Array.isArray(rc) ? rc : (rc && typeof rc === "object" ? Object.values(rc).map(v => String(v)) : []); return list.length > 0 && (
+      {(() => { const list = conditionsToList(f.resolve_conditions_json); return list.length > 0 && (
         <ul className="mt-1 space-y-0.5 text-[10px] text-stone-500">
           {list.slice(0, 3).map((c, i) => <li key={i}>· {String(c)}</li>)}
         </ul>
@@ -169,6 +234,55 @@ function ForeshadowCard({ foreshadow: f }: { foreshadow: Foreshadow }) {
       {f.resolved_chapter && (
         <p className="text-stone-400 mt-1">已于第 {f.resolved_chapter} 章收线</p>
       )}
+      <div className="mt-1.5 flex items-center gap-2 border-t border-stone-100 pt-1.5">
+        <button onClick={() => setEditing(true)} disabled={busy} className="text-[10px] text-blue-500 hover:text-blue-600 disabled:opacity-50">{t('common.edit')}</button>
+        {f.status !== 'resolved' && (
+          <button onClick={handleResolve} disabled={busy} className="text-[10px] text-emerald-600 hover:text-emerald-700 disabled:opacity-50">{t('foreshadow.action.resolve')}</button>
+        )}
+        <button onClick={handleDelete} disabled={busy} className="ml-auto text-[10px] text-rose-400 hover:text-rose-500 disabled:opacity-50">{t('common.delete')}</button>
+      </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ForeshadowEditForm({ foreshadow: f, projectId, onDone, onCancel }: { foreshadow: Foreshadow; projectId: string; onDone: () => void; onCancel: () => void }) {
+  const t = useT()
+  const [desc, setDesc] = useState(f.description)
+  const [type, setType] = useState(f.type)
+  const [conditions, setConditions] = useState(conditionsToList(f.resolve_conditions_json).join('\n'))
+  const [saving, setSaving] = useState(false)
+  const knownTypes = ['plot', 'character', 'worldbuilding', 'mystery']
+  const handleSave = async () => {
+    if (!desc.trim()) return
+    setSaving(true)
+    try {
+      await apiFetch(`/api/projects/${projectId}/foreshadows/${f.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(buildForeshadowUpdatePayload({ description: desc, type, conditionsText: conditions })),
+      })
+      onDone()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    } finally { setSaving(false) }
+  }
+  return (
+    <div className="space-y-1.5">
+      <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded">
+        {!knownTypes.includes(type) && <option value={type}>{TYPE_CFG[type]?.label || type}</option>}
+        <option value="plot">{t('foreshadow.type.plot')}</option>
+        <option value="character">{t('foreshadow.type.character')}</option>
+        <option value="worldbuilding">{t('foreshadow.type.worldbuilding')}</option>
+        <option value="mystery">{t('foreshadow.type.mystery')}</option>
+      </select>
+      <textarea value={desc} onChange={e => setDesc(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-16" />
+      <label className="text-[10px] text-stone-400">{t('foreshadow.conditionsLabel')}</label>
+      <textarea value={conditions} onChange={e => setConditions(e.target.value)} className="w-full px-2 py-1 text-xs border border-stone-200 rounded resize-none h-12" />
+      <div className="flex gap-1.5">
+        <button onClick={handleSave} disabled={saving || !desc.trim()} className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
+        <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 text-xs bg-stone-200 text-stone-600 rounded disabled:opacity-50">{t('common.cancel')}</button>
+      </div>
     </div>
   )
 }

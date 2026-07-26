@@ -218,7 +218,19 @@ export function VersionPanel({ chapterId }: VersionPanelProps) {
               </div>
               <div className="flex items-center justify-between text-gray-400">
                 <span>{(v.wordCount || 0).toLocaleString()} 字</span>
-                <span>{formatTime(v.createdAt)}</span>
+                <span className="flex items-center gap-2">
+                  {/* PR-WS-DIFF: full-page diff view for this chapter's versions */}
+                  <a
+                    href={`/version-diff?chapter_id=${chapterId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-blue-600 hover:underline"
+                  >
+                    完整对比
+                  </a>
+                  <span>{formatTime(v.createdAt)}</span>
+                </span>
               </div>
               {selectedVersionId === v.id && !v.isActive && (
                 <button

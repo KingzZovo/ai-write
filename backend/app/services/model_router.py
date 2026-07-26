@@ -207,6 +207,12 @@ _OPENAI_COMPAT_RATE_LOCKS: dict[str, asyncio.Lock] = {}
 _OPENAI_COMPAT_NEXT_AT: dict[str, float] = {}
 _OPENAI_COMPAT_REGISTRY_LOCK = asyncio.Lock()
 
+# Streaming usage probe: base_urls (rstripped, "" = native OpenAI) that
+# rejected ``stream_options={"include_usage": True}`` with a 400 naming the
+# field. Per-process negative cache — those endpoints keep streaming without
+# usage instead of failing every call. See OpenAIProvider._create_chat_stream.
+_STREAM_OPTIONS_UNSUPPORTED: set[str] = set()
+
 
 def _openai_compat_rate_key(base_url: str, model: str) -> str:
     return f"{(base_url or 'openai').rstrip('/')}::{model or 'default'}"
@@ -437,16 +443,12 @@ class OpenAIProvider(BaseProvider):
                 return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
             chunks: list[str] = []
-            stream_kw: dict = {}
-            if not self.base_url:
-                stream_kw["stream_options"] = {"include_usage": True}
-            stream = await self.client.chat.completions.create(
+            stream = await self._create_chat_stream(dict(
                 model=model, messages=messages,
                 temperature=temperature, max_tokens=max_tokens,
-                stream=True,
                 extra_body=extra_body or None,
                 timeout=request_timeout if request_timeout is not None else None,
-                **stream_kw)
+            ))
             usage = TokenUsage()
             cached_tokens = 0
             async for chunk in stream:
@@ -478,26 +480,97 @@ class OpenAIProvider(BaseProvider):
             attempts=attempts,
         )
 
+    async def _create_chat_stream(self, create_kw: dict):
+        """Open a chat completions stream, probing ``stream_options.include_usage``.
+
+        Streaming calls only get token usage when the final chunk is requested
+        via ``stream_options={"include_usage": True}``. Native OpenAI and most
+        relays accept the field, but some OpenAI-compatible endpoints reject
+        unknown fields with HTTP 400 (which is why it was previously only sent
+        when ``base_url`` was unset). Probe-safe approach: always try with the
+        field; on a 400 raised while it was present, retry once without it,
+        and — when the error message names the field — stop sending it to this
+        base_url for the rest of the process. Endpoints that silently ignore
+        the field keep working (usage simply stays 0).
+        """
+        create_kw = dict(create_kw, stream=True)
+        ep_key = (self.base_url or "").rstrip("/")
+        if ep_key in _STREAM_OPTIONS_UNSUPPORTED:
+            return await self.client.chat.completions.create(**create_kw)
+        try:
+            return await self.client.chat.completions.create(
+                stream_options={"include_usage": True}, **create_kw)
+        except Exception as exc:
+            if getattr(exc, "status_code", None) != 400:
+                raise
+            msg = str(exc).lower()
+            if "stream_options" in msg or "include_usage" in msg:
+                _STREAM_OPTIONS_UNSUPPORTED.add(ep_key)
+                logger.warning(
+                    "Endpoint %s rejected stream_options.include_usage; "
+                    "disabling it for this process (streamed usage will be 0): %s",
+                    ep_key or "api.openai.com", exc)
+            # A 400 while the probe field was present may be an opaque
+            # rejection of the field itself — retry once without it before the
+            # retry policy (llm_retry) classifies the failure.
+            return await self.client.chat.completions.create(**create_kw)
+
     async def generate_stream(self, messages, model="gpt-4o",
                               temperature=0.7, max_tokens=8192, **kw):
         # v1.6.0 Y2: prompt_cache_key on stream too (native OpenAI only)
         extra_body = {}
         task_type = kw.get('task_type', 'unknown')
+        usage_box = kw.pop('usage_box', None)
+        retry_attempts = kw.pop('retry_attempts', None)
         # Relay workaround: fold system into first user message (see generate)
         if _should_merge_system_for_model(model):
             messages = merge_system_into_user(messages)
         if _OPENAI_CACHE_ENABLED and not self.base_url:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
-        await _wait_openai_compat_turn(self.base_url, model, task_type)
-        stream = await self.client.chat.completions.create(
-            model=model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens, stream=True,
-            extra_body=extra_body or None)
+
+        # Same retry envelope as the streaming branch of `generate` (attempts=4
+        # unless overridden): failures before the first chunk retry in place on
+        # this endpoint with backoff; after the first chunk errors propagate —
+        # the consumer's accumulated buffer cannot be rewound.
+        from app.services.llm_retry import stream_with_retry
+
+        async def _open():
+            await _wait_openai_compat_turn(self.base_url, model, task_type)
+            return await self._create_chat_stream(dict(
+                model=model, messages=messages,
+                temperature=temperature, max_tokens=max_tokens,
+                extra_body=extra_body or None,
+            ))
+
+        attempts = 4
+        if retry_attempts is not None and int(retry_attempts) > 0:
+            attempts = int(retry_attempts)
         saw_content = False
-        async for chunk in stream:
+        usage = TokenUsage()
+        cached_tokens = 0
+        async for chunk in stream_with_retry(
+            _open, label=f"openai_stream[{task_type}:{model}]",
+            attempts=attempts,
+        ):
             if chunk.choices and chunk.choices[0].delta.content:
                 saw_content = True
                 yield chunk.choices[0].delta.content
+            if hasattr(chunk, 'usage') and chunk.usage:
+                u = chunk.usage
+                usage = TokenUsage(
+                    getattr(u, 'prompt_tokens', 0) or 0,
+                    getattr(u, 'completion_tokens', 0) or 0,
+                    getattr(u, 'total_tokens', 0) or 0)
+                ptd = getattr(u, 'prompt_tokens_details', None)
+                if ptd is not None:
+                    cached_tokens = getattr(ptd, 'cached_tokens', 0) or 0
+        if usage_box is not None:
+            usage_box['input_tokens'] = usage.input_tokens
+            usage_box['output_tokens'] = usage.output_tokens
+        if _OPENAI_CACHE_ENABLED and usage.input_tokens:
+            uncached = max(usage.input_tokens - cached_tokens, 0)
+            _record_cache_tokens(task_type, self.name, model,
+                                 read=cached_tokens, uncached=uncached)
         if not saw_content:
             await _cooldown_openai_compat_empty(self.base_url, model, task_type)
 
@@ -960,11 +1033,15 @@ class ModelRouter:
         eff_temp = temperature if temperature is not None else route.temperature
         eff_max = max_tokens if max_tokens is not None else route.max_tokens
         if _log_meta is None:
-            with time_llm_call(task_type, provider.__class__.__name__, model):
+            _ubox: dict = {}
+            with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
                 async for chunk in provider.generate_stream(
                     messages=messages, model=model,
-                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
+                    temperature=eff_temp, max_tokens=eff_max, task_type=task_type,
+                    usage_box=_ubox, **kw):
                     yield chunk
+                _mbox["input_tokens"] = _ubox.get("input_tokens", 0)
+                _mbox["output_tokens"] = _ubox.get("output_tokens", 0)
             return
         from app.db.session import async_session_factory
         from app.services.llm_call_logger import log_llm_call
@@ -979,12 +1056,18 @@ class ModelRouter:
                 chapter_id=meta.pop("chapter_id", None),
                 rag_hits=meta.pop("rag_hits", None),
             ) as ctx:
-                with time_llm_call(task_type, provider.__class__.__name__, model):
+                _ubox = {}
+                with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
                     async for chunk in provider.generate_stream(
                         messages=messages, model=model,
-                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
+                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type,
+                        usage_box=_ubox, **kw):
                         ctx.add_chunk(chunk)
                         yield chunk
+                    _mbox["input_tokens"] = _ubox.get("input_tokens", 0)
+                    _mbox["output_tokens"] = _ubox.get("output_tokens", 0)
+                ctx.set_usage(_ubox.get("input_tokens", 0),
+                              _ubox.get("output_tokens", 0))
             await _commit_llm_call_log(
                 db, operation="generate_stream", task_type=task_type, model=model
             )
@@ -1326,11 +1409,16 @@ class ModelRouter:
             yielded_any = False
             try:
                 if _log_meta is None:
-                    async for chunk in provider.generate_stream(
-                        messages=messages, model=model,
-                        temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
-                        yielded_any = True
-                        yield chunk
+                    _ubox: dict = {}
+                    with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                        async for chunk in provider.generate_stream(
+                            messages=messages, model=model,
+                            temperature=eff_temp, max_tokens=eff_max, task_type=task_type,
+                            usage_box=_ubox, **kw):
+                            yielded_any = True
+                            yield chunk
+                        _mbox["input_tokens"] = _ubox.get("input_tokens", 0)
+                        _mbox["output_tokens"] = _ubox.get("output_tokens", 0)
                     return
                 async with async_session_factory() as db:
                     async with log_llm_call(
@@ -1344,12 +1432,19 @@ class ModelRouter:
                         fallback_reason=fallback_reason if idx > 0 else None,
                         attempt_index=idx,
                     ) as ctx:
-                        async for chunk in provider.generate_stream(
-                            messages=messages, model=model,
-                            temperature=eff_temp, max_tokens=eff_max, task_type=task_type, **kw):
-                            yielded_any = True
-                            ctx.add_chunk(chunk)
-                            yield chunk
+                        _ubox = {}
+                        with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:
+                            async for chunk in provider.generate_stream(
+                                messages=messages, model=model,
+                                temperature=eff_temp, max_tokens=eff_max, task_type=task_type,
+                                usage_box=_ubox, **kw):
+                                yielded_any = True
+                                ctx.add_chunk(chunk)
+                                yield chunk
+                            _mbox["input_tokens"] = _ubox.get("input_tokens", 0)
+                            _mbox["output_tokens"] = _ubox.get("output_tokens", 0)
+                        ctx.set_usage(_ubox.get("input_tokens", 0),
+                                      _ubox.get("output_tokens", 0))
                     await _commit_llm_call_log(
                         db,
                         operation="stream_with_tier_fallback",

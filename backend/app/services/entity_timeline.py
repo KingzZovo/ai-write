@@ -291,7 +291,12 @@ class EntityTimelineService:
         rel_type: str,
         chapter_idx: int,
     ) -> None:
-        """Add a new relationship between two characters."""
+        """Add a relationship between two characters (idempotent).
+
+        MERGEs on the (project_id, source_name, target_name, type) key so
+        repeated extraction of the same relationship never duplicates the
+        edge; a re-extracted edge is simply re-opened (chapter_end = null).
+        """
         try:
             async with self.driver.session() as session:
                 # Ensure both characters exist
@@ -308,9 +313,12 @@ class EntityTimelineService:
                 await session.run(
                     "MATCH (a:Character {project_id: $pid, name: $c1}), "
                     "      (b:Character {project_id: $pid, name: $c2}) "
-                    "CREATE (a)-[:RELATES_TO {"
-                    "  type: $rtype, chapter_start: $start, chapter_end: null"
-                    "}]->(b)",
+                    "MERGE (a)-[r:RELATES_TO {"
+                    "  project_id: $pid, source_name: $c1, target_name: $c2, "
+                    "  type: $rtype"
+                    "}]->(b) "
+                    "ON CREATE SET r.chapter_start = $start "
+                    "SET r.chapter_end = null",
                     pid=project_id,
                     c1=char1,
                     c2=char2,
@@ -331,7 +339,13 @@ class EntityTimelineService:
         rel_type: str,
         chapter_idx: int,
     ) -> None:
-        """Close existing open relationship and create a new one with updated type."""
+        """Close existing open relationship and open one with the updated type.
+
+        The new-type edge is MERGEd on the (project_id, source_name,
+        target_name, type) key: if the pair held this relationship type
+        before, that edge is re-opened at the new chapter instead of a
+        duplicate being created.
+        """
         try:
             async with self.driver.session() as session:
                 # Close existing open relationship
@@ -346,13 +360,15 @@ class EntityTimelineService:
                     c2=char2,
                     idx=chapter_idx - 1,
                 )
-                # Create new relationship
+                # Open the new-type relationship (idempotent MERGE)
                 await session.run(
                     "MATCH (a:Character {project_id: $pid, name: $c1}), "
                     "      (b:Character {project_id: $pid, name: $c2}) "
-                    "CREATE (a)-[:RELATES_TO {"
-                    "  type: $rtype, chapter_start: $start, chapter_end: null"
-                    "}]->(b)",
+                    "MERGE (a)-[r:RELATES_TO {"
+                    "  project_id: $pid, source_name: $c1, target_name: $c2, "
+                    "  type: $rtype"
+                    "}]->(b) "
+                    "SET r.chapter_start = $start, r.chapter_end = null",
                     pid=project_id,
                     c1=char1,
                     c2=char2,
@@ -364,6 +380,44 @@ class EntityTimelineService:
                 "Failed to update relationship %s-%s: %s",
                 char1, char2, e,
             )
+
+    async def dedupe_relationships(self, project_id: str) -> int:
+        """One-off cleanup for duplicate RELATES_TO edges (pre-MERGE era).
+
+        Legacy edges were CREATEd without the (project_id, source_name,
+        target_name, type) key properties, so the uniqueness constraint never
+        applied and every extraction run stacked another copy. Per
+        (source, target, type) group this keeps the newest edge (highest
+        chapter_start, elementId as tie-break), backfills the key properties
+        on the survivor so future MERGEs match it, and deletes the rest.
+
+        Returns the number of deleted edges. Raises on Neo4j failure so an
+        operator invoking it sees the error instead of a silent no-op.
+        """
+        async with self.driver.session() as session:
+            result = await session.run(
+                "MATCH (a:Character {project_id: $pid})-[r:RELATES_TO]->"
+                "(b:Character {project_id: $pid}) "
+                "WITH a, b, r "
+                "ORDER BY coalesce(r.chapter_start, -1) DESC, elementId(r) DESC "
+                "WITH a, b, r.type AS t, collect(r) AS rs "
+                "WITH a, b, head(rs) AS keep, rs[1..] AS dupes "
+                "SET keep.project_id = $pid, "
+                "    keep.source_name = a.name, "
+                "    keep.target_name = b.name "
+                "WITH dupes "
+                "UNWIND dupes AS d "
+                "DELETE d "
+                "RETURN count(d) AS deleted",
+                pid=project_id,
+            )
+            record = await result.single()
+            deleted = int(record["deleted"]) if record else 0
+            logger.info(
+                "dedupe_relationships: project=%s deleted=%d",
+                project_id, deleted,
+            )
+            return deleted
 
     # ------------------------------------------------------------------
     # Query methods

@@ -219,6 +219,10 @@ class ContextPack:
     authoritative_fact_contract: str = ""
     world_rules: list[str] = field(default_factory=list)
     character_cards: list[CharacterCard] = field(default_factory=list)
+    # W5: chapter-relevant characters that did not fit within the full-card
+    # cap (CONTEXT_PACK_MAX_CHARACTER_CARDS). Listed name-only in the
+    # Layer-0 roster so name fidelity is preserved without card bloat.
+    roster_extra_names: list[str] = field(default_factory=list)
     foreshadow_triplets: list[CFPGTriplet] = field(default_factory=list)
     # Q4 v1.9.2: foreshadow debt alert (QMAI-adapted). Pre-rendered by
     # foreshadow_manager.render_debt_warning; "" when health score >= 60.
@@ -432,15 +436,27 @@ class ContextPack:
             parts.append("本卷世界逻辑合同：\n" + "\n".join(vc_lines))
         return "\n\n".join(parts)
 
-    def to_system_prompt(self, token_budget: int = 9500) -> str:
+    def to_system_prompt(self, token_budget: int | None = None) -> str:
         """Build the system prompt from all layers with budget allocation.
 
+        ``token_budget`` defaults to ``settings.CONTEXT_PACK_TOKEN_BUDGET``
+        (9500) so bigger-context models can be tuned without code edits.
+
         Budget distribution:
-        - Layer 1 (Proximity): 40% = ~3200 tokens
-        - Layer 2 (Facts):     33% = ~2640 tokens
-        - Layer 3 (RAG):       20% = ~1600 tokens
-        - Instructions:         7% = ~560 tokens
+        - Layer 1 (Proximity): 40%
+        - Layer 2 (Facts):     33%
+        - Layer 3 (RAG):       20%
+        - Instructions:         7%
         """
+        if token_budget is None:
+            try:
+                from app.config import settings
+
+                token_budget = int(
+                    getattr(settings, "CONTEXT_PACK_TOKEN_BUDGET", 9500)
+                )
+            except Exception:  # noqa: BLE001
+                token_budget = 9500
         budget_l1 = int(token_budget * 0.40)
         budget_l2 = int(token_budget * 0.33)
         budget_l3 = int(token_budget * 0.20)
@@ -450,8 +466,13 @@ class ContextPack:
 
         # ---- Layer 0: Non-truncatable character name roster ----
         # Placed BEFORE budget-managed layers so it is never dropped.
-        if self.character_cards:
+        if self.character_cards or self.roster_extra_names:
             names = [c.name for c in self.character_cards]
+            # W5: relevant characters beyond the full-card cap keep their
+            # name in the roster (name fidelity) without a full card.
+            for n in self.roster_extra_names:
+                if n and n not in names:
+                    names.append(n)
             roster = (
                 "【角色名册(不可截断·最高优先)】\n"
                 f"本章登场角色固定名称：{'、'.join(names)}\n"
@@ -1093,6 +1114,15 @@ class ContextPackBuilder:
         except Exception as e:
             logger.warning("Failed to load character cards (project=%s, ch=%d): %s", pid, chapter_idx, e)
 
+        # W5b: overlay fresher character_states (entity extraction writes
+        # them on the global axis) onto the static profile_json card fields.
+        await self._overlay_character_states(pack, pid, gidx)
+
+        # W5: bound the full-card render to chapter-relevant characters so
+        # large casts cannot truncate away the L2 head (fact contract +
+        # world rules) or bloat the Layer-0 roster.
+        await self._cap_character_cards(pack, pid)
+
         # Foreshadow triplets
         try:
             fs_result = await db.execute(
@@ -1346,6 +1376,164 @@ class ContextPackBuilder:
         except Exception as e:
             logger.warning("Failed to enrich characters from Neo4j: %s", e)
 
+    async def _overlay_character_states(
+        self,
+        pack: ContextPack,
+        project_id: str,
+        global_chapter_idx: int,
+    ) -> None:
+        """W5b: overlay the latest ``character_states`` row onto each card.
+
+        ``character_states`` rows are written by entity extraction on the
+        book-global axis and are fresher than the static ``profile_json``
+        the cards start from. Per character, the latest row with
+        ``chapter_start <= global_chapter_idx`` wins for the mutable fields
+        (power_level/mental_state); ``profile_json`` values remain as
+        fallback when no state row exists. ``status_json`` carries the
+        Chinese keys emitted by ENTITY_EXTRACTION_PROMPT
+        (身份/状态/情绪/能力等级), materialized by entity_tasks as the raw
+        Neo4j JSON string.
+        """
+        if not pack.character_cards:
+            return
+        try:
+            from app.models.project import CharacterState
+
+            db = await self._get_db()
+            rows = await db.execute(
+                select(Character.name, CharacterState.status_json)
+                .join(Character, Character.id == CharacterState.character_id)
+                .where(
+                    CharacterState.project_id == project_id,
+                    CharacterState.chapter_start <= global_chapter_idx,
+                )
+                .order_by(
+                    CharacterState.chapter_start.desc(),
+                    CharacterState.created_at.desc(),
+                )
+            )
+            latest: dict[str, dict] = {}
+            for name, status in rows.all():
+                if not name or name in latest:
+                    continue
+                if isinstance(status, str):
+                    try:
+                        status = json.loads(status)
+                    except Exception:  # noqa: BLE001
+                        continue
+                if isinstance(status, dict):
+                    latest[name] = status
+
+            def _pick(status: dict, *keys: str) -> str:
+                for k in keys:
+                    v = status.get(k)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+                return ""
+
+            for card in pack.character_cards:
+                status = latest.get(card.name)
+                if not status:
+                    continue
+                power = _pick(status, "power_level", "能力等级", "实力")
+                mental = _pick(status, "mental_state", "情绪", "状态")
+                loc = _pick(status, "location", "位置")
+                if power:
+                    card.power_level = power
+                if mental:
+                    card.mental_state = mental
+                # Location: the character_locations projection (already
+                # queried on the global axis) stays authoritative; only
+                # fill gaps.
+                if loc and not card.location:
+                    card.location = loc
+        except SQLAlchemyError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to overlay character states: %s", e)
+
+    async def _cap_character_cards(
+        self,
+        pack: ContextPack,
+        project_id: str,
+    ) -> None:
+        """W5: bound the full-card render to chapter-relevant characters.
+
+        When the cast exceeds ``CONTEXT_PACK_MAX_CHARACTER_CARDS``:
+
+        - relevance = the card name appears in the current chapter outline
+          or the chapter's existing content (deterministic substring match,
+          same spirit as ``_extract_entities_from_outline``);
+        - protagonists (highest ``character_appearances.appearance_count``)
+          fill the remaining card slots;
+        - relevant names beyond the cap survive name-only in the Layer-0
+          roster (``pack.roster_extra_names``); the non-relevant remainder
+          is dropped so the roster stays chapter-scoped, not the whole
+          project cast.
+
+        Casts within the cap are left untouched (output unchanged).
+        """
+        try:
+            from app.config import settings
+
+            max_cards = int(
+                getattr(settings, "CONTEXT_PACK_MAX_CHARACTER_CARDS", 12)
+            )
+        except Exception:  # noqa: BLE001
+            max_cards = 12
+        cards = pack.character_cards
+        if max_cards <= 0 or len(cards) <= max_cards:
+            return
+
+        # Relevance text: current chapter outline + existing chapter content.
+        try:
+            outline_text = (
+                json.dumps(pack.current_outline, ensure_ascii=False)
+                if pack.current_outline
+                else ""
+            )
+        except Exception:  # noqa: BLE001
+            outline_text = str(pack.current_outline)
+        relevance_text = outline_text + "\n" + (pack.current_content or "")
+
+        # Appearance counts (book-global roster, pure-PG projection).
+        counts: dict[str, int] = {}
+        try:
+            from app.models.project import CharacterAppearance
+
+            db = await self._get_db()
+            rows = await db.execute(
+                select(
+                    CharacterAppearance.character_name,
+                    CharacterAppearance.appearance_count,
+                ).where(CharacterAppearance.project_id == project_id)
+            )
+            for name, cnt in rows.all():
+                counts[name] = int(cnt or 0)
+        except Exception as e:
+            logger.debug("Failed to load character appearance counts: %s", e)
+
+        mentioned = {
+            c.name for c in cards if c.name and c.name in relevance_text
+        }
+        # Deterministic rank: chapter-mentioned first, then appearance count
+        # (protagonists), then original card order as the tiebreaker.
+        ranked = sorted(
+            range(len(cards)),
+            key=lambda i: (
+                0 if cards[i].name in mentioned else 1,
+                -counts.get(cards[i].name, 0),
+                i,
+            ),
+        )
+        kept = sorted(ranked[:max_cards])  # restore original card order
+        pack.roster_extra_names = [
+            cards[i].name
+            for i in ranked[max_cards:]
+            if cards[i].name in mentioned
+        ]
+        pack.character_cards = [cards[i] for i in kept]
+
     async def _build_strand_tracker(
         self,
         pack: ContextPack,
@@ -1542,8 +1730,11 @@ class ContextPackBuilder:
         """v1.4 — optional LLM rewrite of the Qdrant query (task_type=rag_query_rewrite).
 
         Gated on ``RAG_QUERY_REWRITE_ENABLED`` (default off). On any failure the
-        original ``query_text`` is returned unchanged. Accepts either a plain
-        string or a ``{"query": "..."}`` JSON object as the LLM output.
+        original ``query_text`` is returned unchanged. The registry prompt
+        (task_type=rag_query_rewrite) outputs ``{queries: [...], keywords:
+        [...]}``; those are joined into one search string. Legacy shapes
+        (``{"query"|"rewrite"|"text": "..."}`` or a plain string) are still
+        accepted as fallback.
         """
         import os
 
@@ -1565,6 +1756,25 @@ class ContextPackBuilder:
             logger.debug("rag_query_rewrite skipped: %s", exc)
             return query_text
         if isinstance(out, dict):
+            # W9: actual prompt schema is {queries: [...], keywords: [...]}
+            # — join both lists (deduped, order-preserving) into one search
+            # string for embedding.
+            parts: list[str] = []
+            seen: set[str] = set()
+            for key in ("queries", "keywords"):
+                vals = out.get(key)
+                if not isinstance(vals, list):
+                    continue
+                for v in vals:
+                    if not isinstance(v, str):
+                        continue
+                    v = v.strip()
+                    if v and v not in seen:
+                        seen.add(v)
+                        parts.append(v)
+            if parts:
+                return " ".join(parts)
+            # Legacy fallback shapes.
             rewrote = out.get("query") or out.get("rewrite") or out.get("text")
             if isinstance(rewrote, str) and rewrote.strip():
                 return rewrote.strip()

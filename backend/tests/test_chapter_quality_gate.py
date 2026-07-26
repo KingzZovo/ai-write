@@ -631,3 +631,65 @@ async def test_quality_gate_tells_model_to_generalize_user_feedback(monkeypatch)
     assert result.status == "passed"
     assert result.initial_report.plain_contemporary_violation_count >= 2
     assert result.final_report.plain_contemporary_violation_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Rewrite-round budget routing (2026-07-26 audit): the default must come from
+# Settings.CHAPTER_MAX_REWRITE_ROUNDS at CALL time — the previous import-time
+# os.getenv read bypassed the config default of 2 (deployments without the env
+# var silently got 5 rounds) and made monkeypatched settings ineffective.
+# ---------------------------------------------------------------------------
+
+
+def test_no_import_time_env_round_default() -> None:
+    assert not hasattr(cqg, "_DEFAULT_MAX_REWRITE_ROUNDS")
+
+
+@pytest.mark.asyncio
+async def test_quality_gate_default_rounds_come_from_settings(monkeypatch) -> None:
+    from app.config import settings
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_run_text_prompt(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(text="太短了。")
+
+    monkeypatch.setattr(cqg, "run_text_prompt", fake_run_text_prompt)
+    monkeypatch.setattr(settings, "CHAPTER_MAX_REWRITE_ROUNDS", 1)
+
+    result = await cqg.apply_chapter_quality_gate(
+        text=BAD_DIALOGUE_MACHINE_TEXT,
+        db=SimpleNamespace(),
+        project_id="proj",
+        chapter_id="ch",
+    )
+
+    assert len(calls) == 1
+    assert result.rewrite_rounds == 1
+    assert result.status == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_quality_gate_explicit_rounds_override_settings(monkeypatch) -> None:
+    from app.config import settings
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_run_text_prompt(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(text="太短了。")
+
+    monkeypatch.setattr(cqg, "run_text_prompt", fake_run_text_prompt)
+    monkeypatch.setattr(settings, "CHAPTER_MAX_REWRITE_ROUNDS", 1)
+
+    result = await cqg.apply_chapter_quality_gate(
+        text=BAD_DIALOGUE_MACHINE_TEXT,
+        db=SimpleNamespace(),
+        project_id="proj",
+        chapter_id="ch",
+        max_rewrite_rounds=3,
+    )
+
+    assert len(calls) == 3
+    assert result.rewrite_rounds == 3

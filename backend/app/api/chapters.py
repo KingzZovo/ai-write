@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -23,6 +23,7 @@ class ChapterCreate(BaseModel):
     title: str
     chapter_idx: int
     outline_json: dict = {}
+    target_word_count: int | None = None
 
 
 class ChapterUpdate(BaseModel):
@@ -31,6 +32,12 @@ class ChapterUpdate(BaseModel):
     outline_json: dict | None = None
     status: str | None = None
     target_word_count: int | None = None
+    # Authors can correct (or clear) what the system remembers about a
+    # chapter; summary used to be API-read-only.
+    summary: str | None = None
+    # Reorder support: moving a chapter within its volume. Triggers a
+    # global_idx recompute for the whole volume (see update_chapter).
+    chapter_idx: int | None = None
     # PR-CHAPTER-PROTECT-V1: bypass the empty / shrink guards when the
     # caller really does mean to wipe or drastically reduce the chapter.
     force: bool | None = False
@@ -153,6 +160,10 @@ async def create_chapter(
         chapter_idx=body.chapter_idx,
         outline_json=body.outline_json,
     )
+    # Only override when provided so the column default (and the
+    # project-level fallback in resolve_chapter_target_word_count) applies.
+    if body.target_word_count is not None:
+        chapter.target_word_count = body.target_word_count
     db.add(chapter)
     await db.flush()
     await db.refresh(chapter)
@@ -252,8 +263,55 @@ async def update_chapter(
         chapter.status = body.status
     if "target_word_count" in data and body.target_word_count is not None:
         chapter.target_word_count = body.target_word_count
+    if "summary" in data:
+        # Plain assignment; explicit null clears the stored summary.
+        chapter.summary = body.summary
+
+    reorder = (
+        body.chapter_idx is not None and body.chapter_idx != chapter.chapter_idx
+    )
+    if reorder:
+        chapter.chapter_idx = body.chapter_idx
 
     await db.flush()
+    if reorder:
+        # ``global_idx`` is stamped only by the before_insert listener
+        # (_set_chapter_global_idx in app/models/project.py); it does NOT
+        # fire on updates, so a reorder must recompute it here with the
+        # same formula: chapters in lower-volume_idx volumes + local idx.
+        # We recompute for ALL chapters of this volume — cheap and
+        # deterministic, and it covers every sibling whose ordering the
+        # move affected. Later volumes stay correct because a reorder
+        # never changes this volume's chapter COUNT, so their base
+        # offset is unchanged.
+        vol = Volume.__table__
+        project_id_sq = (
+            select(vol.c.project_id)
+            .where(vol.c.id == chapter.volume_id)
+            .scalar_subquery()
+        )
+        volume_idx_sq = (
+            select(vol.c.volume_idx)
+            .where(vol.c.id == chapter.volume_id)
+            .scalar_subquery()
+        )
+        base = (
+            await db.execute(
+                select(func.count(Chapter.id))
+                .select_from(Chapter)
+                .join(Volume, Chapter.volume_id == Volume.id)
+                .where(
+                    Volume.project_id == project_id_sq,
+                    Volume.volume_idx < volume_idx_sq,
+                )
+            )
+        ).scalar()
+        await db.execute(
+            update(Chapter)
+            .where(Chapter.volume_id == chapter.volume_id)
+            .values(global_idx=int(base or 0) + Chapter.chapter_idx)
+            .execution_options(synchronize_session=False)
+        )
     await db.refresh(chapter)
     if body.content_text is not None:
         # B2' (v1.5.0): kick the entity-extraction Celery task whenever the

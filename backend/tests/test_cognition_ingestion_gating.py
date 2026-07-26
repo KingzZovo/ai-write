@@ -4,8 +4,10 @@ The ingestion call sites live deep inside the Celery async-generation task
 and the SSE chapter stream — neither is practically unit-testable, so these
 tests parse the source AST and pin the structural invariants instead:
 
-1. knowledge_tasks: the needs_review final-save path must NOT ingest — every
-   ``extract_and_update`` call must sit inside an ``if passed:`` guard body.
+1. generation_tasks: ingestion runs exactly once, on the FINAL save, and is
+   no longer gated on ``passed`` (2026-07-26 audit — see the celery test below
+   for the rationale). Blocked quality-gate / fact-contract branches return
+   before the final save, so blocked drafts are structurally never ingested.
 2. api.generate: ingestion must run exactly once per stream, AFTER the final
    text is settled — never inside ``_persist_chapter_now`` (which runs at
    draft-save time and again on the final-polish re-save).
@@ -34,31 +36,46 @@ def _is_extract_call(node: ast.AST) -> bool:
     return name == "extract_and_update"
 
 
-def test_celery_ingestion_wrapped_in_passed_guard():
-    """knowledge_tasks: cognition ingestion is review-gated on `passed`."""
+def test_celery_ingestion_on_final_save_not_gated_on_passed():
+    """generation_tasks: cognition ingestion runs on every FINAL save.
+
+    2026-07-26 audit: the earlier ``if passed:`` gate was lossy — a
+    needs_review final save still persists full_text as the chapter's
+    canonical content_text (readable, exportable, summarized,
+    entity-extracted), and a later manual accept never re-ingests, so
+    accepted chapters silently missed the ledger. The SSE path ingests the
+    settled text regardless of the evaluation score, withholding only
+    aborted/blocked drafts; the celery path now aligns with it: the
+    quality-gate / fact-contract blocked branches return before the final
+    save, and the single ingestion call site is NOT nested in a `passed`
+    guard.
+    """
     tree = _parse("tasks/generation_tasks.py")
 
-    guarded_ids: set[int] = set()
+    all_calls = [n for n in ast.walk(tree) if _is_extract_call(n)]
+    assert len(all_calls) == 1, (
+        "generation_tasks must ingest into the cognition ledger exactly once "
+        f"(on the final save); found {len(all_calls)} call(s) at line(s) "
+        f"{[n.lineno for n in all_calls]}"
+    )
+
+    gated_ids: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.If):
             test_names = {
                 n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)
             }
             if "passed" in test_names:
-                # Only the if-body counts; an else-branch call would be the
-                # exact bug this guards against.
-                for stmt in node.body:
-                    for sub in ast.walk(stmt):
-                        if _is_extract_call(sub):
-                            guarded_ids.add(id(sub))
+                for sub in ast.walk(node):
+                    if _is_extract_call(sub):
+                        gated_ids.add(id(sub))
 
-    all_calls = [n for n in ast.walk(tree) if _is_extract_call(n)]
-    assert all_calls, "expected an extract_and_update call in generation_tasks"
-    unguarded = [n for n in all_calls if id(n) not in guarded_ids]
-    assert not unguarded, (
-        "cognition extract_and_update call(s) not wrapped in an `if passed:` "
-        f"guard at line(s) {[n.lineno for n in unguarded]} — needs_review "
-        "saves must not be ingested into the ledger"
+    gated = [n for n in all_calls if id(n) in gated_ids]
+    assert not gated, (
+        "cognition extract_and_update must not be gated on `passed` anymore "
+        f"(found inside an if-passed guard at line(s) {[n.lineno for n in gated]}) "
+        "— the needs_review final save persists the text as canon and must be "
+        "ingested"
     )
 
 

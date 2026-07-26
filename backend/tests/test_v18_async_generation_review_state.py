@@ -17,19 +17,21 @@ def test_stage_needs_review_chapter_text_persists_review_state() -> None:
         status="draft",
     )
 
+    # NB: staging now runs sanitize_prose (2026-07-26 audit), so the sample
+    # must be real prose — "第一章正文" would be stripped as meta leakage.
     text = _stage_needs_review_chapter_text(
         task,
         chapter,
-        "  第一章正文  ",
+        "  他把门关上了。  ",
         error_message="quality_gate blocked: improved_but_not_passed",
     )
 
-    assert text == "第一章正文"
+    assert text == "他把门关上了。"
     assert task.status == "needs_review"
     assert task.error_message == "quality_gate blocked: improved_but_not_passed"
-    assert task.result_text == "第一章正文"
-    assert task.progress_text == "第一章正文"
-    assert task.char_count == 5
-    assert chapter.content_text == "第一章正文"
-    assert chapter.word_count == 5
+    assert task.result_text == "他把门关上了。"
+    assert task.progress_text == "他把门关上了。"
+    assert task.char_count == 7
+    assert chapter.content_text == "他把门关上了。"
+    assert chapter.word_count == 7
     assert chapter.status == "needs_review"

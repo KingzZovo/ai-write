@@ -10,12 +10,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import json
 import logging
-import os
 import re
 from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.services.chinese_prose_mechanics_checker import (
     ChineseProseMechanicsReport,
     analyze_chinese_prose_mechanics,
@@ -35,7 +35,11 @@ QualityGateStatus = Literal[
 
 _MIN_LENGTH_RATIO = 0.70
 _MIN_TARGET_WORD_RATIO = 0.50
-_DEFAULT_MAX_REWRITE_ROUNDS = int(os.getenv("CHAPTER_MAX_REWRITE_ROUNDS", "5"))
+# Rewrite-round budget comes from Settings.CHAPTER_MAX_REWRITE_ROUNDS, read at
+# CALL time inside apply_chapter_quality_gate (audit 2026-07-26). The previous
+# import-time os.getenv("CHAPTER_MAX_REWRITE_ROUNDS", "5") bypassed the config
+# default of 2: a deployment without the env var silently got 5 rounds, and
+# monkeypatched settings never took effect.
 _DEFAULT_MAX_TOKENS = 4096
 
 # PR-CH-TRUNCATION (2026-06-29): scene_writer sometimes hits its max_tokens
@@ -81,17 +85,64 @@ _REFUSAL_PHRASES = (
     "我不能生成图片",
 )
 
+# PR-REFUSAL-BROADEN (2026-07-26 audit): generic assistant refusal/meta openers
+# ("I cannot ...", "抱歉，我不能...", "作为AI...") also reach this gate when a
+# text route degrades to a plain chat refusal instead of prose. Unlike the exact
+# image-misroute phrases above (matched over the whole text because that refusal
+# arrives appended as a late scene), these generic markers are matched ONLY in
+# the head of the text (first _REFUSAL_HEAD_WINDOW chars) and ONLY outside
+# quoted dialogue: this function is applied to the full chapter body at persist
+# time (chapter_persist_status, api/generate), so a whole-output refusal
+# necessarily sits at the chapter opening, while a character saying 「我无法…」
+# mid-story (or in opening dialogue) must never be flagged. 我无法 is bound to
+# assistant-verb continuations so first-person narration (我无法忘记…) stays safe.
+_REFUSAL_HEAD_WINDOW = 200
+_GENERIC_REFUSAL_HEAD_RE = re.compile(
+    r"I can(?:'|’)?t\b"
+    r"|I cannot\b"
+    r"|I(?:'|’)?m sorry,? but"
+    r"|As an AI\b"
+    r"|我无法(?:为您|为你|帮助|协助|提供|生成|创建|回答|处理|满足|继续)"
+    r"|抱歉，我不能"
+    r"|抱歉，我无法"
+    r"|作为AI"
+    r"|作为人工智能"
+)
+_QUOTE_OPEN_CHARS = "“‘「『"
+_QUOTE_CLOSE_CHARS = "”’」』"
+
+
+def _inside_quoted_dialogue(prefix: str) -> bool:
+    """True when the position after ``prefix`` sits inside CJK quote pairs."""
+    depth = 0
+    for ch in prefix:
+        if ch in _QUOTE_OPEN_CHARS:
+            depth += 1
+        elif ch in _QUOTE_CLOSE_CHARS:
+            depth = max(0, depth - 1)
+    return depth > 0
+
 
 def looks_like_refusal(text: str) -> bool:
     """Return True when the text contains known assistant/service refusal
     boilerplate (typically an image-model misroute) rather than story prose.
 
-    Matches distinctive multi-word phrases only, so ordinary prose that merely
-    mentions 图片/登录 is not flagged. Empty/blank text is NOT flagged.
+    Two tiers: the distinctive image-misroute phrases are matched over the whole
+    text (they can be appended as a late scene); generic refusal openers are
+    matched only near the start of the text and outside quoted dialogue, so
+    ordinary prose that merely mentions 图片/登录 — or a character saying
+    「我无法帮助你」 deep in a chapter — is not flagged. Empty/blank text is NOT
+    flagged.
     """
     if not text or not text.strip():
         return False
-    return any(phrase in text for phrase in _REFUSAL_PHRASES)
+    if any(phrase in text for phrase in _REFUSAL_PHRASES):
+        return True
+    head = text.lstrip()[:_REFUSAL_HEAD_WINDOW]
+    for match in _GENERIC_REFUSAL_HEAD_RE.finditer(head):
+        if not _inside_quoted_dialogue(head[: match.start()]):
+            return True
+    return False
 
 
 def chapter_persist_status(text: str, quality_meta: dict | None = None) -> str:
@@ -469,7 +520,7 @@ async def apply_chapter_quality_gate(
     project_id: str | None = None,
     chapter_id: str | None = None,
     skip_polish: bool = False,
-    max_rewrite_rounds: int = _DEFAULT_MAX_REWRITE_ROUNDS,
+    max_rewrite_rounds: int | None = None,
     max_tokens: int = _DEFAULT_MAX_TOKENS,
     target_word_count: int | None = None,
     min_target_word_ratio: float = _MIN_TARGET_WORD_RATIO,
@@ -480,6 +531,10 @@ async def apply_chapter_quality_gate(
     alone; callers decide whether to persist the returned text and emit warning
     events.
     """
+    if max_rewrite_rounds is None:
+        # Call-time read so config changes / monkeypatched settings win.
+        max_rewrite_rounds = settings.CHAPTER_MAX_REWRITE_ROUNDS
+
     original_text = text or ""
     initial_report = analyze_chinese_prose_mechanics(original_text)
     min_target = _min_target_word_count(target_word_count, min_target_word_ratio)

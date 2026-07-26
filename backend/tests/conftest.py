@@ -11,12 +11,12 @@ os.environ.setdefault("AUTH_USERNAME", "king")
 os.environ.setdefault("AUTH_PASSWORD", "testpass")
 os.environ.setdefault("AUTH_PASSWORD_HASH", hashlib.sha256(b"testpass").hexdigest())
 
-# chapter_quality_gate reads CHAPTER_MAX_REWRITE_ROUNDS via os.getenv at import
-# time. In a single-file run .env (which pins 2) is loaded first; in a full-suite
-# run the module imports before .env, falling back to the 5 default — so the gate
-# round-count tests (which assert 2) pass alone but fail in the suite. Pin the
-# production value here, before any app import, to make the suite deterministic.
-# setdefault means an explicit override still wins.
+# chapter_quality_gate now reads CHAPTER_MAX_REWRITE_ROUNDS through
+# app.config.settings at call time (2026-07-26 audit fix; previously an
+# import-time os.getenv with a divergent 5 default). Settings still honors the
+# env var, so keep the production value pinned here (before any app import,
+# hence before Settings instantiates) for suite determinism regardless of the
+# host env. setdefault means an explicit override still wins.
 os.environ.setdefault("CHAPTER_MAX_REWRITE_ROUNDS", "2")
 # Subproject B (multi-agent chapter pipeline) reads these at runtime. Pin them
 # so suite-wide runs are deterministic; per-test monkeypatch.setenv still wins.

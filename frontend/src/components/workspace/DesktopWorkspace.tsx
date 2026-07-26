@@ -28,6 +28,10 @@ import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
 import { OutlineEditor, type OutlineEditTarget } from '@/components/outline/OutlineEditor'
 import { GeneratePanel, getSelectedStyleId } from '@/components/panels/GeneratePanel'
 import { RewriteMenu } from '@/components/editor/RewriteMenu'
+// PR-WS-QUEUE: background generation queue (任务队列)
+import { TaskQueuePanel } from '@/components/workspace/TaskQueuePanel'
+import { useAsyncTaskQueue } from '@/components/workspace/useAsyncTaskQueue'
+import { isTerminal } from '@/components/workspace/asyncTaskQueue'
 
 // Lazy load heavy panels — only loaded when their workbench tab/drawer is opened
 const ForeshadowPanel = dynamic(() => import('@/components/panels/ForeshadowPanel').then(m => ({ default: m.ForeshadowPanel })), { ssr: false })
@@ -246,10 +250,20 @@ export default function DesktopWorkspace() {
     chapters,
     updateChapterContent,
     updateChapterStatus,
+    updateChapterSummary,
   } = useProjectStore()
 
   const { isGenerating, setIsGenerating, appendStreamContent, resetStreamContent } =
     useGenerationStore()
+
+  // PR-WS-QUEUE: background async generation tasks for this project
+  // (resume-on-load + 5s polling while any task is non-terminal).
+  const {
+    tasks: queueTasks,
+    cancelUnavailable: queueCancelUnavailable,
+    submitChapterTask,
+    cancelTask,
+  } = useAsyncTaskQueue(currentProject?.id)
 
   // ---- Local UI state ----
   const [editorContent, setEditorContent] = useState('')
@@ -681,10 +695,10 @@ export default function DesktopWorkspace() {
         setWizardProgress('卷数必须是大于 0 的整数。')
         return
       }
-      count = Math.min(20, parsed)
+      count = parsed
     } else {
       const detected = detectVolumeCount(outlinePreview)
-      count = detected > 0 ? Math.min(20, detected) : 3
+      count = detected > 0 ? detected : 3
       setWizardProgress(
         detected > 0
           ? `已从大纲识别 ${detected} 卷，开始生成...`
@@ -1151,6 +1165,101 @@ export default function DesktopWorkspace() {
     sseControllerRef.current?.abort()
   }, [])
 
+  // PR-WS-QUEUE: submit the current chapter to the background queue. Mirrors
+  // the SSE payload of handleGenerateChapter via POST /api/generate/async
+  // (per-chapter 指令/目标字数 travel as user_input / params.target_words).
+  const chapterHasActiveTask = Boolean(
+    selectedChapterId &&
+      queueTasks.some(
+        (t) => !isTerminal(t.status) && t.chapterId === selectedChapterId,
+      ),
+  )
+  const handleBackgroundGenerate = useCallback(async () => {
+    if (!selectedChapterId || !currentProject) return
+    const genOpts = getChapterGenOptions(selectedChapterId)
+    try {
+      await submitChapterTask({
+        chapterId: selectedChapterId,
+        styleId: getSelectedStyleId(),
+        userInstruction: genOpts.userInstruction || undefined,
+        targetWords: genOpts.targetWords ?? undefined,
+      })
+      setGenerationWarnings((prev) => [
+        ...prev,
+        '已提交后台生成任务；进度见右侧「写作中枢 · 任务队列」，完成后点「刷新章节」载入正文。',
+      ])
+    } catch (err) {
+      setGenerationError(
+        `后台生成任务提交失败：${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }, [selectedChapterId, currentProject, submitChapterTask])
+
+  const handleCancelQueueTask = useCallback(
+    async (taskId: string) => {
+      const errMsg = await cancelTask(taskId)
+      if (errMsg) alert(`取消任务失败：${errMsg}`)
+    },
+    [cancelTask],
+  )
+
+  // PR-WS-QUEUE: reload a chapter generated in the background into store +
+  // editor. For a non-selected chapter, selectChapter triggers the normal
+  // chapter-load effect.
+  const handleRefreshChapterFromTask = useCallback(
+    async (chapterId: string) => {
+      if (!currentProject) return
+      try {
+        const ch = await apiFetch<ChapterRes>(
+          `/api/projects/${currentProject.id}/chapters/${chapterId}`,
+        )
+        updateChapterContent(ch.id, ch.content_text || '')
+        updateChapterStatus(ch.id, ch.status as Chapter['status'])
+        updateChapterSummary(ch.id, ch.summary ?? null)
+        if (chapterId === selectedChapterId) {
+          setEditorContent(ch.content_text || '')
+          lastSavedRef.current = ch.content_text || ''
+          setActiveView('editor')
+        } else {
+          setOutlineEditorTarget(null)
+          selectChapter(chapterId)
+        }
+      } catch (err) {
+        alert(`刷新章节失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [
+      currentProject,
+      selectedChapterId,
+      selectChapter,
+      updateChapterContent,
+      updateChapterStatus,
+      updateChapterSummary,
+    ],
+  )
+
+  // PR-WS-CHAPTER-MGMT: create a new volume at the end (client computes max+1).
+  const handleCreateVolume = useCallback(async () => {
+    if (!currentProject) return
+    const nextIdx =
+      volumes.reduce((m, v) => Math.max(m, v.volume_idx ?? v.volumeIdx ?? 0), 0) + 1
+    const title = window.prompt('新分卷标题：', `第${nextIdx}卷`)
+    if (title === null) return
+    try {
+      await apiFetch(`/api/projects/${currentProject.id}/volumes`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title.trim() || `第${nextIdx}卷`,
+          volume_idx: nextIdx,
+        }),
+      })
+      await loadProjectData(currentProject.id)
+    } catch (err) {
+      console.error('新建分卷失败:', err)
+      alert(`新建分卷失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [currentProject, volumes, loadProjectData])
+
   // PR-GEN-UX Task 6: open an outline in the centre editor from GeneratePanel's
   // 查看大纲 buttons. Mirrors the sidebar tree-click path (onSelectOutline).
   const handleViewOutline = useCallback(
@@ -1385,6 +1494,16 @@ export default function DesktopWorkspace() {
                   setActiveView('editor')
                 }}
               />
+              {/* PR-WS-CHAPTER-MGMT: append a volume at the end */}
+              {currentProject && (
+                <button
+                  type="button"
+                  onClick={handleCreateVolume}
+                  className="mt-2 w-full rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-500 hover:border-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                >
+                  + 新建分卷
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1744,7 +1863,6 @@ export default function DesktopWorkspace() {
                       <input
                         type="number"
                         min={1}
-                        max={20}
                         value={volumeCountInput}
                         onChange={(e) => setVolumeCountInput(e.target.value)}
                         placeholder="自动"
@@ -1986,6 +2104,12 @@ export default function DesktopWorkspace() {
                       </span>
                     </div>
                   </div>
+                  {/* PR-WS-SUMMARY: collapsible 本章摘要 strip under the title */}
+                  <ChapterSummaryEditor
+                    projectId={currentProject!.id}
+                    chapter={currentChapter}
+                    onSaved={(summary) => updateChapterSummary(currentChapter.id, summary)}
+                  />
                 </div>
               )}
 
@@ -2013,13 +2137,24 @@ export default function DesktopWorkspace() {
                         </div>
                       )}
                     </div>
-                    <button
-                      onClick={handleGenerateChapter}
-                      disabled={isGenerating || !canGenerateChapterProse}
-                      className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isGenerating ? '生成中...' : '生成本章'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleGenerateChapter}
+                        disabled={isGenerating || !canGenerateChapterProse}
+                        className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isGenerating ? '生成中...' : '生成本章'}
+                      </button>
+                      {/* PR-WS-QUEUE: submit to the background queue instead of streaming */}
+                      <button
+                        onClick={handleBackgroundGenerate}
+                        disabled={isGenerating || !canGenerateChapterProse || chapterHasActiveTask}
+                        title="提交到后台队列生成，可离开页面稍后回来查看"
+                        className="px-4 py-2 text-sm border border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {chapterHasActiveTask ? '后台生成中...' : '后台生成本章'}
+                      </button>
+                    </div>
                     {/* PR-GEN-UX Task 1/2: phase + elapsed + cancel */}
                     {isGenerating && generationPhase && (
                       <GenerationProgressStrip
@@ -2198,6 +2333,16 @@ export default function DesktopWorkspace() {
                   />
                 </WorkbenchCard>
 
+                {/* PR-WS-QUEUE: background generation tasks */}
+                <WorkbenchCard title="任务队列" icon={ListChecks}>
+                  <TaskQueuePanel
+                    tasks={queueTasks}
+                    cancelUnavailable={queueCancelUnavailable}
+                    onCancel={handleCancelQueueTask}
+                    onRefreshChapter={handleRefreshChapterFromTask}
+                  />
+                </WorkbenchCard>
+
                 <WorkbenchCard title="写作指南" icon={BookOpen}>
                   <WritingGuidePanel projectId={urlProjectId} />
                 </WorkbenchCard>
@@ -2307,8 +2452,20 @@ export default function DesktopWorkspace() {
                       <WorkbenchMetric label="角色" value="关系面板" hint="当前入口" />
                       <WorkbenchMetric label="线索" value="伏笔追踪" hint="债务面板" />
                     </div>
+                    {/* PR-WS-GRAPH: link out to the standalone relationship graph page */}
+                    {currentProject && (
+                      <a
+                        href={`/relationship-graph?id=${currentProject.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-1.5 rounded-md border border-gray-900 bg-gray-900 px-2.5 py-2 text-xs font-medium text-white hover:bg-gray-800"
+                      >
+                        <Network className="h-3.5 w-3.5" />
+                        打开独立关系图页面 ↗
+                      </a>
+                    )}
                     <p className="rounded-md bg-gray-50 px-2.5 py-2 leading-relaxed">
-                      现阶段复用角色关系、伏笔追踪和三线平衡作为图谱入口；后续可接入独立关系图页面。
+                      关系图基于已沉淀的角色与关系数据；下方入口继续提供角色、伏笔和剧情线视图。
                     </p>
                   </div>
                 </WorkbenchCard>
@@ -2467,6 +2624,128 @@ function GenerationProgressStrip({
           取消生成
         </button>
       </div>
+    </div>
+  )
+}
+
+// PR-WS-SUMMARY: collapsible 本章摘要 strip under the chapter title. Summaries
+// feed the AI's chapter memory, so edits go straight to PUT {summary}.
+function ChapterSummaryEditor({
+  projectId,
+  chapter,
+  onSaved,
+}: {
+  projectId: string
+  chapter: Chapter
+  onSaved: (summary: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(chapter.summary ?? '')
+  const [saving, setSaving] = useState(false)
+
+  // Reset local edit state when switching chapters.
+  useEffect(() => {
+    setDraft(chapter.summary ?? '')
+    setEditing(false)
+  }, [chapter.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const trimmed = draft.trim()
+      await apiFetch(`/api/projects/${projectId}/chapters/${chapter.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ summary: trimmed || null }),
+      })
+      onSaved(trimmed || null)
+      setEditing(false)
+    } catch (err) {
+      console.error('保存章节摘要失败:', err)
+      alert('保存摘要失败，请重试。')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mb-2 rounded-lg border border-gray-200 bg-gray-50">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-3 py-1.5 text-left"
+      >
+        <span className="text-xs font-medium text-gray-700">
+          本章摘要
+          {!open && chapter.summary && (
+            <span className="ml-2 font-normal text-gray-400">
+              {chapter.summary.slice(0, 30)}
+              {chapter.summary.length > 30 ? '…' : ''}
+            </span>
+          )}
+        </span>
+        <span className="text-xs text-gray-400">{open ? '收起' : '展开'}</span>
+      </button>
+      {open && (
+        <div className="border-t border-gray-200 px-3 py-2">
+          {editing ? (
+            <div>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="概括本章剧情要点、人物变化和承接线索..."
+                className="w-full h-24 px-2 py-1.5 text-xs border border-gray-300 rounded resize-none focus:ring-1 focus:ring-blue-400 focus:border-transparent"
+              />
+              <div className="mt-1.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={save}
+                  disabled={saving}
+                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {saving ? '保存中...' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(chapter.summary ?? '')
+                    setEditing(false)
+                  }}
+                  className="px-3 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              {chapter.summary ? (
+                <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
+                  {chapter.summary}
+                </p>
+              ) : (
+                <p className="text-xs text-gray-400">暂无摘要。</p>
+              )}
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-gray-400">
+                  摘要会写入 AI 的章节记忆，作为后续章节生成的上下文。
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(chapter.summary ?? '')
+                    setEditing(true)
+                  }}
+                  className="shrink-0 text-xs text-blue-600 hover:underline"
+                >
+                  编辑
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     SCENE_PLANNER_TIMEOUT_SECONDS: float = 180.0
     SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS: float = 240.0
 
+    # --- Context Pack ---
+    # Total token budget for ContextPack.to_system_prompt (split 40/33/20/7
+    # across L1/L2/L3/meta). Raise for bigger-context models.
+    CONTEXT_PACK_TOKEN_BUDGET: int = 9500
+    # Max full character cards rendered in Layer 2 / Layer-0 roster. Larger
+    # casts are trimmed to chapter-relevant characters + top protagonists;
+    # remaining relevant names are listed name-only in the roster.
+    CONTEXT_PACK_MAX_CHARACTER_CARDS: int = 12
+
     # --- Reference Ingestor ---
     STYLE_REDACTION_ENABLED: bool = True
     REFERENCE_INGEST_CONCURRENCY: int = 3

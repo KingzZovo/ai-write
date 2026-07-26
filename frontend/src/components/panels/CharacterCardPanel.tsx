@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { apiFetch } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
 
 interface Character {
   id: string
@@ -52,7 +53,7 @@ const FIELD_LABEL: Record<string, string> = {
   情绪: "情绪", emotion: "情绪",
 }
 
-type Importance = "protagonist" | "key" | "supporting" | "minor"
+export type Importance = "protagonist" | "key" | "supporting" | "minor"
 const IMPORTANCE_LABEL: Record<Importance, string> = {
   protagonist: "主角",
   key: "关键剧情角色",
@@ -60,6 +61,68 @@ const IMPORTANCE_LABEL: Record<Importance, string> = {
   minor: "路人",
 }
 const IMPORTANCE_ORDER: Importance[] = ["protagonist", "key", "supporting", "minor"]
+
+// ---------------------------------------------------------------------------
+// Client-only importance overrides (localStorage, keyed by project). Lets the
+// author pin a character's tier instead of the relation-count heuristic.
+// ---------------------------------------------------------------------------
+
+const OVERRIDE_KEY_PREFIX = "char_importance_override:"
+
+/** Read the author's per-character importance overrides (name → tier).
+ *  Corrupted or unknown values are dropped. Exported for tests. */
+export function getImportanceOverrides(projectId: string): Record<string, Importance> {
+  if (typeof window === "undefined" || !projectId) return {}
+  try {
+    const raw = window.localStorage.getItem(OVERRIDE_KEY_PREFIX + projectId)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+    const out: Record<string, Importance> = {}
+    Object.entries(parsed as Record<string, unknown>).forEach(([name, v]) => {
+      if (typeof v === "string" && (IMPORTANCE_ORDER as string[]).includes(v)) out[name] = v as Importance
+    })
+    return out
+  } catch { return {} }
+}
+
+/** Set (or clear with null) one character's override; returns the new map. */
+export function setImportanceOverride(projectId: string, name: string, imp: Importance | null): Record<string, Importance> {
+  const next = { ...getImportanceOverrides(projectId) }
+  if (imp === null) delete next[name]
+  else next[name] = imp
+  if (typeof window !== "undefined" && projectId) {
+    const key = OVERRIDE_KEY_PREFIX + projectId
+    if (Object.keys(next).length === 0) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, JSON.stringify(next))
+  }
+  return next
+}
+
+/** Build the PUT /neo4j-settings/relationships body. Relationships are matched
+ *  by (source, target, rel_type) names; new_rel_type is sent only when the
+ *  type actually changes. Exported for tests. */
+export function buildRelationshipUpdatePayload(input: {
+  source: string
+  target: string
+  relType: string
+  newRelType?: string
+  label?: string
+  sentiment?: string
+  note?: string
+}): Record<string, string> {
+  const body: Record<string, string> = {
+    source: input.source,
+    target: input.target,
+    rel_type: input.relType,
+  }
+  const newType = input.newRelType?.trim()
+  if (newType && newType !== input.relType) body.new_rel_type = newType
+  if (input.label !== undefined) body.label = input.label
+  if (input.sentiment !== undefined) body.sentiment = input.sentiment
+  if (input.note !== undefined) body.note = input.note
+  return body
+}
 
 export function CharacterCardPanel({ projectId }: { projectId: string }) {
   const [chars, setChars] = useState<Character[]>([])
@@ -71,10 +134,12 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
   const [search, setSearch] = useState("")
   const [groupBy, setGroupBy] = useState<"importance" | "identity" | "name" | "none">("importance")
   const [hideMinor, setHideMinor] = useState(true)
+  const [overrides, setOverrides] = useState<Record<string, Importance>>({})
+  const t = useT()
 
-  useEffect(() => {
+  const load = useCallback((withSpinner: boolean) => {
     if (!projectId) return
-    setLoading(true)
+    if (withSpinner) setLoading(true)
     setError(null)
     Promise.all([
       apiFetch<Character[] | CharResp>(`/api/projects/${projectId}/characters`).catch(() => ({ characters: [] } as CharResp)),
@@ -84,8 +149,13 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
       setChars(Array.isArray(c) ? c : (c.characters || []))
       setRels(Array.isArray(r) ? r : (r.relationships || []))
       setStates(Array.isArray(s) ? s : (s.states || []))
-    }).catch(e => setError(String(e?.message || e))).finally(() => setLoading(false))
+    }).catch(e => setError(String(e?.message || e))).finally(() => { if (withSpinner) setLoading(false) })
   }, [projectId])
+
+  useEffect(() => {
+    load(true)
+    setOverrides(getImportanceOverrides(projectId))
+  }, [projectId, load])
 
   const charById = useMemo(() => Object.fromEntries(chars.map(c => [c.id, c])), [chars])
 
@@ -130,8 +200,10 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
       else if (idx < topProtagonist + topSupporting) out[s.id] = "supporting"
       else out[s.id] = "minor"
     })
+    // 作者手动覆盖（仅本浏览器，按角色名）优先于启发式
+    chars.forEach(c => { const o = overrides[c.name]; if (o) out[c.id] = o })
     return out
-  }, [chars, relsByChar, statesByChar])
+  }, [chars, relsByChar, statesByChar, overrides])
 
   // 把 profile_json + 最新一条 status_json 合并成 "档案"
   const profileMerged = useMemo(() => {
@@ -257,6 +329,21 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                   </button>
                   {isOpen && (
                     <div className="px-2.5 pb-2.5 space-y-2 text-[11px]">
+                      <div className="flex items-center gap-1.5" title={t('charCard.importance.localHint')}>
+                        <span className="text-[10px] text-stone-400">{t('charCard.importance.label')}</span>
+                        <select
+                          value={overrides[c.name] ?? "auto"}
+                          onChange={e => {
+                            const v = e.target.value
+                            setOverrides(setImportanceOverride(projectId, c.name, v === "auto" ? null : (v as Importance)))
+                          }}
+                          className="text-[10px] border border-stone-200 rounded px-1 py-0.5"
+                        >
+                          <option value="auto">{t('charCard.importance.auto')}</option>
+                          {IMPORTANCE_ORDER.map(o => <option key={o} value={o}>{IMPORTANCE_LABEL[o]}</option>)}
+                        </select>
+                        <span className="text-[9px] text-stone-300">{t('charCard.importance.localHint')}</span>
+                      </div>
                       <ProfileBlock fields={merged} />
                       {(() => {
                         const stClean = dedupeStates(st)
@@ -286,12 +373,12 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                           <div className="text-[10px] font-medium text-stone-500 mb-1">人物关系 ({totalRel})</div>
                           <div className="space-y-0.5">
                             {rel.out.map(r => {
-                              const t = charById[r.target_id]
-                              return <RelationLine key={r.id} from={c.name} to={t?.name || "?"} rel={r} />
+                              const target = charById[r.target_id]
+                              return <RelationLine key={r.id} from={c.name} to={target?.name || "?"} rel={r} projectId={projectId} onChanged={() => load(false)} />
                             })}
                             {rel.in.map(r => {
                               const s = charById[r.source_id]
-                              return <RelationLine key={r.id} from={s?.name || "?"} to={c.name} rel={r} reverse />
+                              return <RelationLine key={r.id} from={s?.name || "?"} to={c.name} rel={r} reverse projectId={projectId} onChanged={() => load(false)} />
                             })}
                           </div>
                         </div>
@@ -326,16 +413,117 @@ function ProfileBlock({ fields }: { fields: Record<string, string> }) {
   )
 }
 
-function RelationLine({ from, to, rel, reverse }: { from: string; to: string; rel: Relationship; reverse?: boolean }) {
+function RelationLine({ from, to, rel, reverse, projectId, onChanged }: { from: string; to: string; rel: Relationship; reverse?: boolean; projectId: string; onChanged: () => void }) {
+  const t = useT()
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
   const sentColor = SENTIMENT_COLOR[rel.sentiment || "neutral"] || "text-stone-500"
   const typeLabel = REL_TYPE_LABEL[rel.rel_type] || rel.rel_type || "关系"
+
+  // Relationship writes match Neo4j edges by (source, target, rel_type) names.
+  const handleDelete = async () => {
+    if (!window.confirm(t('charCard.rel.deleteConfirm'))) return
+    setBusy(true)
+    try {
+      await apiFetch(`/api/projects/${projectId}/neo4j-settings/relationships`, {
+        method: 'DELETE',
+        body: JSON.stringify({ source: from, target: to, rel_type: rel.rel_type }),
+      })
+      onChanged()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    } finally { setBusy(false) }
+  }
+
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-stone-700 font-medium">{from}</span>
-      <span className={`text-[10px] ${sentColor}`}>→ {typeLabel}{rel.label ? `(${rel.label})` : ""} →</span>
-      <span className="text-stone-700 font-medium">{to}</span>
-      {reverse && <span className="text-[9px] text-stone-300">[被动]</span>}
-      {rel.note ? <span className="text-stone-400 text-[10px] ml-1 truncate">{rel.note}</span> : null}
+    <div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-stone-700 font-medium">{from}</span>
+        <span className={`text-[10px] ${sentColor}`}>→ {typeLabel}{rel.label ? `(${rel.label})` : ""} →</span>
+        <span className="text-stone-700 font-medium">{to}</span>
+        {reverse && <span className="text-[9px] text-stone-300">[被动]</span>}
+        {rel.note ? <span className="text-stone-400 text-[10px] ml-1 truncate">{rel.note}</span> : null}
+        <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          <button onClick={() => setEditing(!editing)} disabled={busy} className="text-[10px] text-blue-500 hover:text-blue-600 disabled:opacity-50">{t('common.edit')}</button>
+          <button onClick={handleDelete} disabled={busy} className="text-[10px] text-rose-400 hover:text-rose-500 disabled:opacity-50">{t('common.delete')}</button>
+        </span>
+      </div>
+      {editing && (
+        <RelationEditForm
+          from={from}
+          to={to}
+          rel={rel}
+          projectId={projectId}
+          onDone={() => { setEditing(false); onChanged() }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function RelationEditForm({ from, to, rel, projectId, onDone, onCancel }: { from: string; to: string; rel: Relationship; projectId: string; onDone: () => void; onCancel: () => void }) {
+  const t = useT()
+  const [relType, setRelType] = useState(rel.rel_type)
+  const [label, setLabel] = useState(rel.label || "")
+  const [sentiment, setSentiment] = useState(rel.sentiment || "")
+  const [note, setNote] = useState(rel.note || "")
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!relType.trim()) return
+    setSaving(true)
+    try {
+      await apiFetch(`/api/projects/${projectId}/neo4j-settings/relationships`, {
+        method: 'PUT',
+        body: JSON.stringify(buildRelationshipUpdatePayload({
+          source: from,
+          target: to,
+          relType: rel.rel_type,
+          newRelType: relType,
+          label,
+          sentiment,
+          note,
+        })),
+      })
+      onDone()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="mt-1 mb-1.5 bg-stone-50 border border-stone-200 rounded p-2 space-y-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
+        <div>
+          <label className="text-[10px] text-stone-400">{t('charCard.rel.type')}</label>
+          <input value={relType} onChange={e => setRelType(e.target.value)} list={`rel-type-options-${rel.id}`} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded" />
+          <datalist id={`rel-type-options-${rel.id}`}>
+            {Object.entries(REL_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </datalist>
+        </div>
+        <div>
+          <label className="text-[10px] text-stone-400">{t('charCard.rel.sentiment')}</label>
+          <select value={sentiment} onChange={e => setSentiment(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded">
+            <option value="">{t('charCard.sentiment.none')}</option>
+            <option value="positive">{t('charCard.sentiment.positive')}</option>
+            <option value="neutral">{t('charCard.sentiment.neutral')}</option>
+            <option value="negative">{t('charCard.sentiment.negative')}</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="text-[10px] text-stone-400">{t('charCard.rel.label')}</label>
+        <input value={label} onChange={e => setLabel(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded" />
+      </div>
+      <div>
+        <label className="text-[10px] text-stone-400">{t('charCard.rel.note')}</label>
+        <input value={note} onChange={e => setNote(e.target.value)} className="w-full px-1.5 py-0.5 text-[11px] border border-stone-200 rounded" />
+      </div>
+      <div className="flex gap-1.5">
+        <button onClick={handleSave} disabled={saving || !relType.trim()} className="flex-1 px-2 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
+        <button onClick={onCancel} disabled={saving} className="flex-1 px-2 py-1 text-[11px] bg-stone-200 text-stone-600 rounded disabled:opacity-50">{t('common.cancel')}</button>
+      </div>
     </div>
   )
 }

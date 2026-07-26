@@ -28,12 +28,14 @@ import pytest
 
 from app.services.prompt_recommendations import TASK_TYPE_RECOMMENDATIONS
 from app.services.scene_orchestrator import (
+    MAX_SCENE_COUNT,
     MAX_SCENE_WORDS,
     MIN_SCENE_WORDS,
     SceneBrief,
     SceneOrchestrator,
     _fallback_scene_briefs,
     _has_valid_scene_contract,
+    _scene_budget_reaches_target,
     _try_parse_scene_array,
 )
 
@@ -410,6 +412,98 @@ async def test_plan_scenes_falls_back_on_llm_exception():
             target_words=3500, n_scenes_hint=None,
         )
     assert 3 <= len(out) <= 6
+
+
+@pytest.mark.asyncio
+async def test_plan_scenes_no_usable_output_counts_fallback_metric():
+    """The no-usable-output branch must increment scene_plan_fallback_total
+    like the other three fallback branches (too_few / insufficient_scene_budget
+    / missing_contract_fields)."""
+    from app.observability.metrics import SCENE_PLAN_FALLBACK_TOTAL
+
+    def _val() -> float:
+        try:
+            return float(
+                SCENE_PLAN_FALLBACK_TOTAL.labels(reason="no_usable_output")._value.get()
+            )
+        except Exception:
+            return 0.0
+
+    before = _val()
+    pack = _FakePack()
+    with patch(
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(
+            return_value={"raw_text": "not json at all", "parse_error": True}
+        ),
+    ):
+        orch = SceneOrchestrator()
+        await orch.plan_scenes(
+            pack=pack, db=None, project_id="p", chapter_id=None,
+            target_words=3500, n_scenes_hint=None,
+        )
+    assert _val() == before + 1  # the branch runs once per plan_scenes call
+
+
+# 7b) ---------- scene budget feasibility (clamp-aware) ----------
+
+def _briefs_with_budget(n: int, per_scene: int) -> list[SceneBrief]:
+    return [
+        SceneBrief(idx=i, title=f"场{i}", brief="推进", target_words=per_scene)
+        for i in range(1, n + 1)
+    ]
+
+
+def test_scene_budget_requirement_clamped_to_achievable_cap():
+    """0.85 * 30000 = 25500 exceeds the hard clamps' ceiling
+    (MAX_SCENE_COUNT * MAX_SCENE_WORDS = 24000); a maximal legitimate plan
+    must still pass instead of being forced into template fallback."""
+    briefs = _briefs_with_budget(MAX_SCENE_COUNT, MAX_SCENE_WORDS)
+    assert _scene_budget_reaches_target(briefs, 30000) is True
+
+
+def test_scene_budget_small_plan_still_fails_large_target():
+    briefs = _briefs_with_budget(3, MAX_SCENE_WORDS)  # 3600 words
+    assert _scene_budget_reaches_target(briefs, 30000) is False
+
+
+def test_scene_budget_unclamped_below_cap():
+    # Requirement 0.85 * 4000 = 3400 is achievable: no clamping applies.
+    assert _scene_budget_reaches_target(_briefs_with_budget(4, 850), 4000) is True
+    assert _scene_budget_reaches_target(_briefs_with_budget(3, 1000), 4000) is False
+
+
+@pytest.mark.asyncio
+async def test_plan_scenes_accepts_valid_20_scene_plan_for_30000_target():
+    """End-to-end: a valid 20-scene planner output for target_words=30000 must
+    be accepted (previously the unreachable 25500-word budget forced silent
+    template fallback)."""
+    pack = _FakePack()
+    fake_briefs = [
+        _scene_contract(
+            title=f"场{i}", brief=f"推进{i}", target_words=MAX_SCENE_WORDS,
+            hook="接下一场",
+        )
+        for i in range(1, MAX_SCENE_COUNT + 1)
+    ]
+    fake_briefs[-1]["hook"] = ""
+    with patch(
+        "app.services.prompt_registry.run_structured_prompt",
+        new=AsyncMock(return_value={"items": fake_briefs}),
+    ):
+        orch = SceneOrchestrator()
+        out = await orch.plan_scenes(
+            pack=pack,
+            db=None,
+            project_id="p",
+            chapter_id="c",
+            target_words=30000,
+            n_scenes_hint=MAX_SCENE_COUNT,
+        )
+    assert len(out) == MAX_SCENE_COUNT
+    # Planner titles survive — template fallback would rename to "场景 N".
+    assert [b.title for b in out] == [f"场{i}" for i in range(1, MAX_SCENE_COUNT + 1)]
+    assert out[-1].hook == ""
 
 
 # 8) ---------- orchestrate_chapter_stream concatenates scene streams ----------

@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from typing import Awaitable, Callable, TypeVar
+from typing import AsyncIterator, Awaitable, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,53 @@ def _is_retryable(exc: BaseException) -> bool:
     return False
 
 
+# HTTP 400 is normally terminal (malformed request, fail fast). But relay /
+# aggregator fronts have been observed returning *transient* 400s when their
+# upstream account pool degrades. Let 400s participate in the normal attempt
+# loop, capped at this many retries per call, so transient relay 400s heal
+# while genuine bad requests still give up quickly.
+_BAD_REQUEST_MAX_RETRIES = 2
+
+
+def _is_limited_retryable(exc: BaseException) -> bool:
+    """True for HTTP 400 / openai ``BadRequestError``.
+
+    These are retried at most ``_BAD_REQUEST_MAX_RETRIES`` times per call
+    (enforced by ``_RetryBudget``), unlike ``_is_retryable`` errors which may
+    consume every remaining attempt.
+    """
+    cls = exc.__class__
+    mod = (getattr(cls, "__module__", "") or "").lower()
+    if mod.startswith("openai") and cls.__name__ == "BadRequestError":
+        return True
+    return " HTTP 400" in str(exc)
+
+
+class _RetryBudget:
+    """Per-call retry admission shared by the attempt loops below."""
+
+    def __init__(self, attempts: int) -> None:
+        self.attempts = attempts
+        self._limited_used = 0
+
+    def admit(self, exc: BaseException, attempt: int) -> bool:
+        """Return True if this failure may be retried (mutates limited count)."""
+        if attempt >= self.attempts:
+            return False
+        if _is_retryable(exc):
+            return True
+        if _is_limited_retryable(exc) and self._limited_used < _BAD_REQUEST_MAX_RETRIES:
+            self._limited_used += 1
+            return True
+        return False
+
+
+def _backoff_delay(attempt: int, base_delay: float, max_delay: float) -> float:
+    """Exponential backoff with full jitter; bounded by ``max_delay``."""
+    delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+    return delay * (0.5 + random.random() * 0.5)
+
+
 async def call_with_retry(
     fn: Callable[[], Awaitable[T]],
     *,
@@ -101,17 +148,16 @@ async def call_with_retry(
     ``fn`` must be a zero-arg async callable returning ``T``.
     ``label`` is logged on retry/failure to aid worker-log triage.
     """
+    budget = _RetryBudget(attempts)
     last_exc: BaseException | None = None
     for attempt in range(1, attempts + 1):
         try:
             return await fn()
         except BaseException as exc:  # noqa: BLE001
             last_exc = exc
-            if not _is_retryable(exc) or attempt >= attempts:
+            if not budget.admit(exc, attempt):
                 raise
-            # Exponential backoff with full jitter; bounded by max_delay.
-            delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
-            delay = delay * (0.5 + random.random() * 0.5)
+            delay = _backoff_delay(attempt, base_delay, max_delay)
             logger.warning(
                 "llm_retry %s attempt %d/%d failed (%s: %s); sleeping %.2fs",
                 label, attempt, attempts, type(exc).__name__, exc, delay,
@@ -120,3 +166,55 @@ async def call_with_retry(
     # Unreachable; loop either returns or raises.
     assert last_exc is not None  # for type-checkers
     raise last_exc
+
+
+async def stream_with_retry(
+    open_stream: Callable[[], Awaitable[AsyncIterator[T]]],
+    *,
+    label: str,
+    attempts: int = _DEFAULT_ATTEMPTS,
+    base_delay: float = _DEFAULT_BASE_DELAY,
+    max_delay: float = _DEFAULT_MAX_DELAY,
+) -> AsyncIterator[T]:
+    """Retry stream setup + first-item acquisition; never after the first item.
+
+    ``open_stream`` is a zero-arg async callable returning an async iterator
+    (e.g. an SSE chat stream). Failures occurring BEFORE the first item has
+    been yielded downstream — connection refused, immediate 4xx/5xx from the
+    endpoint — retry on the same endpoint with the same backoff/admission
+    policy as :func:`call_with_retry` (incl. the bounded 400 budget). Once the
+    first item has been yielded, errors propagate immediately: the consumer
+    has already accumulated output that cannot be rewound.
+
+    A stream that ends before producing any item is treated as a completed
+    empty response, not a failure — empty-output handling stays with the
+    caller (e.g. the OpenAI-compatible empty-completion cooldown).
+    """
+    budget = _RetryBudget(attempts)
+    for attempt in range(1, attempts + 1):
+        first = None
+        got_first = False
+        try:
+            it = aiter(await open_stream())
+            try:
+                first = await anext(it)
+                got_first = True
+            except StopAsyncIteration:
+                pass
+        except BaseException as exc:  # noqa: BLE001
+            if not budget.admit(exc, attempt):
+                raise
+            delay = _backoff_delay(attempt, base_delay, max_delay)
+            logger.warning(
+                "llm_stream_retry %s attempt %d/%d failed before first chunk "
+                "(%s: %s); sleeping %.2fs",
+                label, attempt, attempts, type(exc).__name__, exc, delay,
+            )
+            await asyncio.sleep(delay)
+            continue
+        if not got_first:
+            return
+        yield first
+        async for item in it:
+            yield item
+        return

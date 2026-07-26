@@ -118,13 +118,29 @@ async def get_strand_status(
         vol_ids = [str(v) for v in vol_result.scalars().all()]
         current_chapter = 1
         if vol_ids:
+            # Strand data lives on the book-global axis (Chapter.global_idx);
+            # max of the volume-LOCAL chapter_idx underestimates the current
+            # position from volume 2 onward.
             ch_result = await db.execute(
-                select(ChapterModel.chapter_idx)
-                .where(ChapterModel.volume_id.in_(vol_ids))
-                .order_by(ChapterModel.chapter_idx.desc())
+                select(ChapterModel.global_idx)
+                .where(
+                    ChapterModel.volume_id.in_(vol_ids),
+                    ChapterModel.global_idx.isnot(None),
+                )
+                .order_by(ChapterModel.global_idx.desc())
                 .limit(1)
             )
             latest = ch_result.scalar_one_or_none()
+            if not latest:
+                # Pre-backfill rows (NULL global_idx): fall back to the old
+                # local-idx max (exact for single-volume projects).
+                ch_result = await db.execute(
+                    select(ChapterModel.chapter_idx)
+                    .where(ChapterModel.volume_id.in_(vol_ids))
+                    .order_by(ChapterModel.chapter_idx.desc())
+                    .limit(1)
+                )
+                latest = ch_result.scalar_one_or_none()
             if latest:
                 current_chapter = latest
 
