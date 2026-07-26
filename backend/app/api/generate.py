@@ -354,8 +354,11 @@ async def generate_chapter(
     )
 
     # Resolve style: manual text > explicit style_id > settings/bind chain.
-    # resolve_style_context prefers the reference book's consolidated dossier
-    # style_block over compile_style, and compiles without raw sample few-shot.
+    # resolve_style_context returns the layered style text (基调层 dossier
+    # style_block + 修正层 compiled profile rules when both exist, single
+    # layer otherwise; samples never injected raw). The layered text flows
+    # into BOTH the writer prompt (build_style_injection_block below) and
+    # the ChapterEvaluator calls (style_profile=resolved_style).
     resolved_style = req.style_instruction
     if not resolved_style:
         try:

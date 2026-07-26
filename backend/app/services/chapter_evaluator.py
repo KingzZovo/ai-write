@@ -24,6 +24,7 @@ from app.services.narrative_contract import (
     EVALUATOR_CALIBRATION_PROMPT,
     EVALUATOR_CONTRACT_PROMPT,
 )
+from app.services.style_runtime import split_style_layers
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,22 @@ def _build_user_prompt(
         parts.append(_limit_text(previous_summary, 1200))
 
     if style_profile:
-        parts.append("\n\n## 目标风格描述\n")
-        parts.append(_limit_text(style_profile, 1200))
+        # Layered style injection: when the writer prompt carried a stacked
+        # 基调层/修正层 block, score style_adherence against both layers —
+        # base = "像不像这个基调", override = "这些规则是否被遵守". A plain
+        # single-layer style text keeps the original section unchanged.
+        base_layer, override_layer = split_style_layers(style_profile)
+        if override_layer:
+            if base_layer:
+                parts.append("\n\n## 目标风格·基调层\n")
+                parts.append("style_adherence 先评估整体读感像不像下面这个基调：\n")
+                parts.append(_limit_text(base_layer, 1200))
+            parts.append("\n\n## 目标风格·修正层（优先级高于基调层）\n")
+            parts.append("再逐条核查以下作者本人规则是否被遵守；违反修正层规则的扣分重于偏离基调：\n")
+            parts.append(_limit_text(override_layer, 1200))
+        else:
+            parts.append("\n\n## 目标风格描述\n")
+            parts.append(_limit_text(style_profile, 1200))
 
     if cognition_ledger_text:
         parts.append("\n\n## 当前认知账本\n")

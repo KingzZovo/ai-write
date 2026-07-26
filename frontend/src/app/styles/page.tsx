@@ -81,6 +81,7 @@ function StylesPageInner() {
   const [testResult, setTestResult] = useState('')
   const [testMode, setTestMode] = useState<string | null>(null)
   const [testLoading, setTestLoading] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   const fetchStyles = useCallback(async () => {
     try {
@@ -96,6 +97,20 @@ function StylesPageInner() {
   })
 
   useEffect(() => { fetchStyles() }, [fetchStyles])
+
+  // Auto-dismissing success toast (rebuild-from-dossier).
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  // A dossier was rebuilt into a profile: toast + switch to the 写作风格 tab.
+  const handleRebuilt = useCallback((message: string) => {
+    setToast(message)
+    setActiveTab('styles')
+    fetchStyles()
+  }, [fetchStyles])
 
   const handleDelete = async (id: string) => {
     if (!confirm('确定删除此写法？')) return
@@ -213,7 +228,12 @@ function StylesPageInner() {
       {activeTab === 'structures' && <StructuresPanel />}
 
       {/* Book dossier section (distillation rework) */}
-      {activeTab === 'dossiers' && <DossiersPanel focusBookId={focusBookId} />}
+      {activeTab === 'dossiers' && <DossiersPanel focusBookId={focusBookId} onRebuilt={handleRebuilt} />}
+
+      {/* Profiles are the manual override layer on top of the dossiers */}
+      {activeTab === 'styles' && (
+        <p className="text-xs text-gray-500 mb-4">{t('styles.profileLayerHint')}</p>
+      )}
 
       {/* Style cards */}
       {activeTab === 'styles' && (loading ? (
@@ -311,6 +331,13 @@ function StylesPageInner() {
           ))}
         </div>
       ))}
+
+      {/* Success toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }
@@ -379,7 +406,10 @@ interface AuthorSummary {
   dossier_status?: unknown
 }
 
-function DossiersPanel({ focusBookId }: { focusBookId: string | null }) {
+function DossiersPanel({ focusBookId, onRebuilt }: {
+  focusBookId: string | null
+  onRebuilt: (message: string) => void
+}) {
   const t = useT()
   const [books, setBooks] = useState<DossierBook[]>([])
   const [authors, setAuthors] = useState<AuthorSummary[] | null>(null)
@@ -421,10 +451,11 @@ function DossiersPanel({ focusBookId }: { focusBookId: string | null }) {
               author={group.author}
               bookCount={group.books.length}
               summary={authors.find(a => a.author === group.author)}
+              onRebuilt={onRebuilt}
             />
           )}
           {group.books.map(book => (
-            <DossierCard key={book.id} book={book} highlight={book.id === focusBookId} />
+            <DossierCard key={book.id} book={book} highlight={book.id === focusBookId} onRebuilt={onRebuilt} />
           ))}
         </div>
       ))}
@@ -534,7 +565,46 @@ function DossierView({ dossier, countsCaption }: { dossier: DossierResponse; cou
   )
 }
 
-function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boolean }) {
+/** 「从档案重建画像」 button shared by the book and author dossier cards.
+ *  POSTs /api/styles/rebuild-from-dossier and reports success upward so the
+ *  page can toast + switch to the 写作风格 tab. */
+function RebuildProfileButton({ payload, onRebuilt, colorClass }: {
+  payload: { book_id: string } | { author: string }
+  onRebuilt: (message: string) => void
+  colorClass: string
+}) {
+  const t = useT()
+  const [rebuilding, setRebuilding] = useState(false)
+
+  const handleRebuild = async () => {
+    if (rebuilding) return
+    setRebuilding(true)
+    try {
+      const res = await apiFetch<{ profile_id: string; name: string; rule_count: number }>(
+        '/api/styles/rebuild-from-dossier',
+        { method: 'POST', body: JSON.stringify(payload) },
+      )
+      onRebuilt(`${t('styles.dossier.rebuiltPrefix')}${res.name} · ${res.rule_count}${t('styles.dossier.rebuiltSuffix')}`)
+    } catch (e) {
+      alert(`${t('styles.dossier.rebuildFailed')}: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
+  return (
+    <button onClick={handleRebuild} disabled={rebuilding}
+      className={`px-3 py-1.5 text-xs border rounded-lg disabled:opacity-50 transition-colors ${colorClass}`}>
+      {rebuilding ? t('styles.dossier.rebuilding') : t('styles.dossier.rebuild')}
+    </button>
+  )
+}
+
+function DossierCard({ book, highlight, onRebuilt }: {
+  book: DossierBook
+  highlight?: boolean
+  onRebuilt: (message: string) => void
+}) {
   const t = useT()
   const cardRef = useRef<HTMLDivElement>(null)
   const { dossier, status, setStatus, running } = useDossierPolling(
@@ -571,6 +641,10 @@ function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boole
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <DossierStatusBadge status={status} />
+          {dossier && (
+            <RebuildProfileButton payload={{ book_id: book.id }} onRebuilt={onRebuilt}
+              colorClass="border-teal-600 text-teal-700 hover:bg-teal-50" />
+          )}
           <button onClick={handleConsolidate} disabled={starting || running}
             className="px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
             {running ? t('styles.dossier.consolidating') : t('styles.dossier.consolidate')}
@@ -596,10 +670,11 @@ function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boole
 /** Author-level consolidation card shown at the top of each author group.
  *  Backend routes are being added in parallel — the whole card is hidden by
  *  DossiersPanel when GET /api/decompile/authors is unavailable. */
-function AuthorDossierCard({ author, bookCount, summary }: {
+function AuthorDossierCard({ author, bookCount, summary, onRebuilt }: {
   author: string
   bookCount: number
   summary?: AuthorSummary
+  onRebuilt: (message: string) => void
 }) {
   const t = useT()
   const { dossier, status, setStatus, running } = useDossierPolling(
@@ -639,6 +714,10 @@ function AuthorDossierCard({ author, bookCount, summary }: {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <DossierStatusBadge status={status} />
+          {dossier && (
+            <RebuildProfileButton payload={{ author }} onRebuilt={onRebuilt}
+              colorClass="border-indigo-600 text-indigo-700 hover:bg-indigo-50" />
+          )}
           <button onClick={handleConsolidate} disabled={starting || running}
             className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
             {running ? t('styles.dossier.consolidating') : t('styles.dossier.author.consolidate')}

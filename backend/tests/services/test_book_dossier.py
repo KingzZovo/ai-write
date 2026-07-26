@@ -43,6 +43,78 @@ def test_select_stratified_edge_cases() -> None:
     assert bd.select_stratified([], 5) == []
 
 
+def test_select_style_representatives_reserves_outlier_slots() -> None:
+    """~30% of the slots go to rare lyrical/high-intensity registers,
+    stratified by position, while the base sample still spans the book."""
+    outlier_positions = [10, 30, 50, 70, 90]
+    cards = []
+    for i in range(100):
+        reg = "抒情决堤，悲怆高峰" if i in outlier_positions else "冷峻克制"
+        cards.append(({"emotional_register": reg}, f"slice-{i}", i))
+
+    reps = bd.select_style_representatives(cards, 10)
+    assert len(reps) == 10
+    outliers = [card for card, flag in reps if flag]
+    assert len(outliers) == round(10 * bd.OUTLIER_RESERVE_RATIO)  # 3 reserved
+    assert all(card[2] in outlier_positions for card in outliers)
+    # outlier slots are position-stratified: first + last burst kept
+    assert outliers[0][2] == 10 and outliers[-1][2] == 90
+    # base picks are unflagged and still cover the whole book
+    base = [card for card, flag in reps if not flag]
+    assert len(base) == 7
+    assert base[0][2] == 0 and base[-1][2] == 99
+
+
+def test_select_style_representatives_dominant_register_not_outlier() -> None:
+    """A high-intensity register that IS the dominant mode gets no reserved
+    slots — outliers must be rare relative to the corpus."""
+    cards = [({"emotional_register": "热烈昂扬"}, i, i) for i in range(50)]
+    reps = bd.select_style_representatives(cards, 10)
+    assert len(reps) == 10
+    assert all(flag is False for _, flag in reps)
+    assert [card for card, _ in reps] == bd.select_stratified(cards, 10)
+
+
+def test_select_style_representatives_edge_cases() -> None:
+    # n <= k: everything returned, nothing flagged
+    cards = [({"emotional_register": "抒情"}, i, i) for i in range(3)]
+    assert bd.select_style_representatives(cards, 30) == [(c, False) for c in cards]
+    assert bd.select_style_representatives(cards, 0) == []
+    # list-valued registers and non-dict profiles are tolerated
+    mixed = (
+        [({"emotional_register": ["冷峻", "克制"]}, i, i) for i in range(40)]
+        + [({"emotional_register": ["悲怆", "温柔"]}, 40, 40)]
+        + [("not a dict", 41, 41)]
+    )
+    reps = bd.select_style_representatives(mixed, 10)
+    flagged = [card for card, flag in reps if flag]
+    assert flagged == [({"emotional_register": ["悲怆", "温柔"]}, 40, 40)]
+
+
+def test_style_reduce_prompt_low_freq_burst_and_evidence_only_forbidden() -> None:
+    """The REDUCE prompt must ask for 主导模态 vs 低频爆发段 and forbid
+    inferring 禁忌 from mere statistical absence."""
+    text = bd._STYLE_REDUCE_INSTRUCTIONS
+    assert "low_freq_burst" in text
+    assert "低频爆发段" in text
+    assert "主导模态" in text
+    assert "register_outlier" in text
+    # 禁忌 only from explicit forbidden_tells evidence
+    assert "forbidden_tells" in text
+    assert "严禁把「统计上少见的写法」推断为禁忌" in text
+
+
+def test_render_style_block_includes_low_freq_burst() -> None:
+    block = bd.render_style_block({
+        "profile": {
+            "narrative_pov_rules": "第三人称有限视角",
+            "low_freq_burst": "每卷一次抒情高峰，篇幅约千字",
+        },
+    })
+    assert "低频爆发段：每卷一次抒情高峰，篇幅约千字" in block
+    assert len(block) <= bd.STYLE_BLOCK_CAP
+
+
 def test_aggregate_style_stats_counts_and_tolerance() -> None:
     cards = [
         {

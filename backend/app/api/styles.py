@@ -69,6 +69,22 @@ class BindRequest(BaseModel):
     bind_target_id: str | None = None
 
 
+class RebuildFromDossierRequest(BaseModel):
+    """Exactly one of book_id / author must be provided."""
+
+    book_id: str | None = None
+    author: str | None = None
+
+
+class RebuildFromDossierResponse(BaseModel):
+    profile_id: UUID
+    name: str
+    rule_count: int
+    anti_ai_count: int
+    created: bool  # False when an existing rebuilt profile was overwritten
+    bind_level: str
+
+
 class DetectRequest(BaseModel):
     text: str
     name: str = ""
@@ -664,6 +680,235 @@ async def extract_structure_by_author(
         "book_count": len(books),
         "structure": structure,
     }
+
+
+# =========================================================================
+# Rebuild a style profile from a consolidated dossier (档案 → 画像)
+# =========================================================================
+
+# Facet -> (label, weight, category); category values match the frontend's
+# CATEGORY_LABELS set. Weights follow the compiler tiers (>=0.85 必须保持,
+# >=0.65 优先保持).
+_DOSSIER_RULE_FACETS: list[tuple[str, str, float, str]] = [
+    ("narrative_pov_rules", "视角", 0.85, "structure"),
+    ("syntax_rhythm", "句法节奏", 0.8, "rhythm"),
+    ("dialogue_style", "对话", 0.8, "dialogue"),
+    ("sensory_rhetoric", "感官修辞", 0.7, "style"),
+    ("emotional_curve", "情绪基调", 0.75, "style"),
+    ("low_freq_burst", "低频爆发段", 0.7, "style"),
+    ("opening_patterns", "章节开场", 0.7, "structure"),
+    ("hook_patterns", "章末钩子", 0.8, "structure"),
+]
+
+# 禁忌 entries often arrive as imperatives ("避免大段抒情"); strip the leading
+# verb so the compiled instruction ("避免使用「…」") doesn't double-negate.
+_FORBIDDEN_VERB_PREFIX = ("避免", "禁止", "禁用", "不要", "勿用", "少用", "忌")
+
+
+def _facet_text(value) -> str:
+    if isinstance(value, list):
+        return "；".join(str(x).strip() for x in value if str(x).strip())
+    return str(value or "").strip()
+
+
+def derive_rules_from_dossier_style(profile: dict) -> list[dict]:
+    """Structured rules_json entries from a dossier style profile.
+
+    Each facet yields one weighted rule; signature_moves yields up to two.
+    """
+    rules: list[dict] = []
+    for key, label, weight, category in _DOSSIER_RULE_FACETS:
+        text = _facet_text(profile.get(key))
+        if text:
+            rules.append({
+                "rule": f"{label}：{text[:160]}",
+                "weight": weight,
+                "category": category,
+            })
+    moves = profile.get("signature_moves") or []
+    if isinstance(moves, str):
+        moves = [moves]
+    for move in [str(m).strip() for m in moves if str(m).strip()][:2]:
+        rules.append({
+            "rule": f"标志性手法：{move[:160]}",
+            "weight": 0.75,
+            "category": "style",
+        })
+    return rules
+
+
+def derive_anti_ai_from_forbidden(profile: dict) -> list[dict]:
+    """anti_ai_rules entries from the dossier's 禁忌 list."""
+    forbidden = profile.get("forbidden") or []
+    if isinstance(forbidden, str):
+        forbidden = [forbidden]
+    anti_ai: list[dict] = []
+    for item in forbidden:
+        text = str(item).strip()
+        if not text:
+            continue
+        for prefix in _FORBIDDEN_VERB_PREFIX:
+            if text.startswith(prefix) and len(text) > len(prefix):
+                text = text[len(prefix):].strip()
+                break
+        anti_ai.append({"pattern": text[:120], "replacement": "", "autoRewrite": False})
+    return anti_ai
+
+
+def derive_tone_keywords_from_dossier(style_data: dict) -> list[str]:
+    """Tone keywords from the dossier's vocab preferences.
+
+    Book dossiers carry ``stats.vocab_tone``; author dossiers carry the
+    merged cross-book table under ``cross_book.merged_top.vocab_tone``.
+    """
+    entries = (style_data.get("stats") or {}).get("vocab_tone")
+    if not entries:
+        merged = (style_data.get("cross_book") or {}).get("merged_top") or {}
+        entries = merged.get("vocab_tone")
+    keywords: list[str] = []
+    for e in entries or []:
+        value = str(e.get("value") or "").strip() if isinstance(e, dict) else str(e).strip()
+        if value and value not in keywords:
+            keywords.append(value)
+        if len(keywords) >= 8:
+            break
+    return keywords
+
+
+def _usable_style_data(dossier) -> dict | None:
+    """The dossier's style_data when it holds a real profile, else None."""
+    if not isinstance(dossier, dict):
+        return None
+    style_data = dossier.get("style_data")
+    if not isinstance(style_data, dict) or "error" in style_data:
+        return None
+    if not isinstance(style_data.get("profile"), dict) or not style_data["profile"]:
+        return None
+    return style_data
+
+
+@router.post("/rebuild-from-dossier", response_model=RebuildFromDossierResponse)
+async def rebuild_profile_from_dossier(
+    body: RebuildFromDossierRequest,
+    db: AsyncSession = Depends(get_db),
+) -> RebuildFromDossierResponse:
+    """Build/update a StyleProfile from a consolidated dossier (档案 → 画像).
+
+    The profile is the user's manual override layer on top of the dossier:
+    structured rules per facet, anti-AI rules from the dossier 禁忌, tone
+    keywords from vocab preferences. Named `<书名/作者>·档案重建`; running it
+    again overwrites the same-named profile (idempotent).
+
+    Book profiles bind bind_level='book' + bind_target_id=book_id (the
+    reference-book binding style_runtime.derive_reference_book_id consumes).
+    Author profiles stay unbound at the default 'global' level — the runtime
+    resolution chain has no author bind level; author dossiers reach
+    generation via settings style_reference.author_name, and the rebuilt
+    profile is selected explicitly (settings profile id) like any other.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.models.project import ReferenceBook
+
+    if bool(body.book_id) == bool(body.author):
+        raise HTTPException(
+            status_code=400, detail="必须且只能提供 book_id 或 author 之一"
+        )
+
+    bind_level = "global"
+    bind_target_id = None
+    source_book_id = None
+    if body.book_id:
+        book = await db.get(ReferenceBook, str(body.book_id))
+        if not book:
+            raise HTTPException(status_code=404, detail="参考书不存在")
+        style_data = _usable_style_data((book.metadata_json or {}).get("dossier"))
+        if style_data is None:
+            raise HTTPException(
+                status_code=404, detail="该书尚无可用的风格档案，请先聚合蒸馏"
+            )
+        base_name = (book.title or "").strip() or str(book.id)
+        source_book = book.title
+        source_ref = {"book_id": str(book.id)}
+        bind_level = "book"
+        bind_target_id = str(book.id)
+        source_book_id = book.id
+        description = f"由《{base_name}》书籍档案自动重建的风格画像"
+    else:
+        from app.models.author_dossier import AuthorDossier
+
+        author = (body.author or "").strip()
+        row = (
+            await db.execute(
+                select(AuthorDossier).where(AuthorDossier.author == author).limit(1)
+            )
+        ).scalar_one_or_none()
+        style_data = _usable_style_data(row.dossier_json) if row else None
+        if style_data is None:
+            raise HTTPException(
+                status_code=404, detail="该作者尚无可用的风格档案，请先按作者聚合"
+            )
+        base_name = author
+        source_book = f"author:{author}"
+        source_ref = {"author": author}
+        description = f"由作者「{author}」档案自动重建的风格画像"
+
+    profile_dict = style_data["profile"]
+    rules = derive_rules_from_dossier_style(profile_dict)
+    anti_ai = derive_anti_ai_from_forbidden(profile_dict)
+    keywords = derive_tone_keywords_from_dossier(style_data)
+    name = f"{base_name[:180]}·档案重建"
+
+    existing = (
+        await db.execute(
+            select(StyleProfile).where(StyleProfile.name == name).limit(1)
+        )
+    ).scalar_one_or_none()
+
+    config_marker = {"rebuilt_from_dossier": source_ref}
+    if existing is not None:
+        profile = existing
+        profile.description = description
+        profile.source_book = source_book
+        profile.source_book_id = source_book_id
+        profile.rules_json = rules
+        profile.anti_ai_rules = anti_ai
+        profile.tone_keywords = keywords
+        profile.bind_level = bind_level
+        profile.bind_target_id = bind_target_id
+        config = dict(profile.config_json or {})
+        config.update(config_marker)
+        profile.config_json = config
+        for field in ("rules_json", "anti_ai_rules", "tone_keywords", "config_json"):
+            flag_modified(profile, field)
+    else:
+        profile = StyleProfile(
+            name=name,
+            description=description,
+            source_book=source_book,
+            source_book_id=source_book_id,
+            rules_json=rules,
+            anti_ai_rules=anti_ai,
+            tone_keywords=keywords,
+            bind_level=bind_level,
+            bind_target_id=bind_target_id,
+            config_json=config_marker,
+        )
+        db.add(profile)
+
+    await db.flush()
+    await db.refresh(profile)
+    logger.info(
+        "rebuild-from-dossier: profile=%s name=%s rules=%d anti=%d created=%s",
+        profile.id, name, len(rules), len(anti_ai), existing is None,
+    )
+    return RebuildFromDossierResponse(
+        profile_id=profile.id,
+        name=profile.name,
+        rule_count=len(rules),
+        anti_ai_count=len(anti_ai),
+        created=existing is None,
+        bind_level=profile.bind_level,
+    )
 
 
 @router.get("/authors")

@@ -1,7 +1,9 @@
 """Injection-chain tests for author dossiers (app/services/style_runtime.py).
 
-Preference order for the production style injection:
+Base-layer preference order for the production style injection:
   book dossier style_block > author dossier style_block > compiled profile.
+With the layered model, a dossier base layer stacks with the profile's own
+compiled rules (override layer) when both exist.
 
 Also covers:
   - get_dossier_block accepting AuthorDossier rows (dossier_json) while the
@@ -23,6 +25,7 @@ from app.services.style_runtime import (
     production_style_text_for_profile,
     resolve_author_structure_block,
     resolve_style_context,
+    split_style_layers,
 )
 
 
@@ -104,6 +107,8 @@ _AUTHOR_SETTINGS = {"style_reference": {"author_name": "江南测试"}}
 
 @pytest.mark.asyncio
 async def test_book_dossier_wins_over_author_dossier():
+    """The BASE layer comes from the book dossier when both tiers exist; the
+    profile's own rules stack on top as the override layer."""
     book_id = str(uuid.uuid4())
     profile = _make_profile(bind_level="book", bind_target_id=book_id)
     book = SimpleNamespace(
@@ -118,8 +123,10 @@ async def test_book_dossier_wins_over_author_dossier():
     text, source, ref_id = await production_style_text_for_profile(
         db, profile, settings_json=_AUTHOR_SETTINGS
     )
-    assert source == "dossier"
-    assert text == "书级：冷峻白描。"
+    assert source == "layered:dossier"
+    base, override = split_style_layers(text)
+    assert base == "书级：冷峻白描。"
+    assert "短句为主，多留白" in override  # profile rules form the override layer
     assert ref_id == book_id
 
 
@@ -127,6 +134,30 @@ async def test_book_dossier_wins_over_author_dossier():
 async def test_author_dossier_used_when_book_dossier_missing():
     book_id = str(uuid.uuid4())
     profile = _make_profile(bind_level="book", bind_target_id=book_id)
+    book = SimpleNamespace(id=book_id, metadata_json={})  # no book dossier
+    db = _FakeDB(
+        objects={("ReferenceBook", book_id): book},
+        execute_results=[_scalar_result(_author_row())],
+    )
+    text, source, ref_id = await production_style_text_for_profile(
+        db, profile, settings_json=_AUTHOR_SETTINGS
+    )
+    assert source == "layered:author_dossier"
+    base, override = split_style_layers(text)
+    assert base == "作者惯用：短句冷峻。"
+    assert "短句为主，多留白" in override
+    assert ref_id == book_id
+
+
+@pytest.mark.asyncio
+async def test_author_dossier_single_layer_when_profile_has_no_rules():
+    """A rule-less profile contributes no override layer — the dossier stays
+    a single-layer injection with the pre-layering source label."""
+    book_id = str(uuid.uuid4())
+    profile = _make_profile(
+        bind_level="book", bind_target_id=book_id,
+        rules_json=[], anti_ai_rules=[], tone_keywords=[],
+    )
     book = SimpleNamespace(id=book_id, metadata_json={})  # no book dossier
     db = _FakeDB(
         objects={("ReferenceBook", book_id): book},

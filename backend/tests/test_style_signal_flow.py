@@ -623,9 +623,34 @@ def test_get_dossier_block_contract():
 
 
 @pytest.mark.asyncio
-async def test_production_style_text_prefers_dossier():
+async def test_production_style_text_dossier_base_with_profile_override():
+    """Layered model: the dossier style_block forms the base layer and the
+    profile's own compiled rules stack on top as the override layer."""
+    from app.services.style_runtime import split_style_layers
+
     book_id = str(uuid.uuid4())
     profile = _make_profile(bind_level="book", bind_target_id=book_id)
+    book = SimpleNamespace(
+        id=book_id,
+        metadata_json={"dossier": {"style_block": "冷峻白描，短句推进。"}},
+    )
+    db = _FakeDB(objects={("ReferenceBook", book_id): book})
+    text, source, ref_id = await production_style_text_for_profile(db, profile)
+    assert source == "layered:dossier"
+    base, override = split_style_layers(text)
+    assert base == "冷峻白描，短句推进。"
+    assert "短句为主，多留白" in override
+    assert ref_id == book_id
+
+
+@pytest.mark.asyncio
+async def test_production_style_text_dossier_alone_without_profile_rules():
+    """Single-layer fallback: a rule-less profile adds no override layer."""
+    book_id = str(uuid.uuid4())
+    profile = _make_profile(
+        bind_level="book", bind_target_id=book_id,
+        rules_json=[], anti_ai_rules=[], tone_keywords=[],
+    )
     book = SimpleNamespace(
         id=book_id,
         metadata_json={"dossier": {"style_block": "冷峻白描，短句推进。"}},

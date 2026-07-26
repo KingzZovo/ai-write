@@ -9,9 +9,12 @@ Priority resolution order:
   3. Book/project-level binding (bind_target_id == project_id)
   4. Global active profiles (lowest priority)
 
-Compiles the resolved profile(s) into prompt instructions, preferring a
-consolidated dossier style block (ReferenceBook.metadata_json['dossier'])
-when the profile is bound to a reference book that has one.
+Compiles the resolved profile(s) into prompt instructions. When a
+consolidated dossier style block (ReferenceBook.metadata_json['dossier'] or
+an AuthorDossier) AND the profile's own compiled rules both exist, they are
+stacked into a two-layer injection (基调层 dossier + 修正层 profile rules,
+the override layer having priority); otherwise the single available layer
+is used unchanged.
 """
 
 from __future__ import annotations
@@ -31,6 +34,18 @@ logger = logging.getLogger(__name__)
 # Size cap for the style block injected into writer prompts ([风格要求]).
 STYLE_INJECTION_MAX_CHARS = 1200
 
+# Layered style injection (基调层 + 修正层). When BOTH a dossier block and a
+# bound profile's own compiled rules exist, the injected content becomes two
+# labeled layers. Content budget: ~STYLE_STACK_MAX_CHARS total; the base
+# (dossier) layer gets at most STYLE_STACK_BASE_MAX_CHARS and is the ONLY
+# layer ever truncated — the override (author's own rules) keeps at least
+# STYLE_STACK_OVERRIDE_MIN_CHARS of the budget and is never cut.
+STYLE_STACK_MAX_CHARS = 1800
+STYLE_STACK_BASE_MAX_CHARS = 1200
+STYLE_STACK_OVERRIDE_MIN_CHARS = 400
+STYLE_BASE_LAYER_LABEL = "【基调层·来自书籍/作者档案】"
+STYLE_OVERRIDE_LAYER_LABEL = "【修正层·作者本人规则（优先级高于基调层）】"
+
 
 @dataclass
 class ResolvedStyle:
@@ -39,7 +54,9 @@ class ResolvedStyle:
     profile: StyleProfile | None = None
     reference_book_id: str | None = None
     style_text: str = ""
-    source: str = ""  # "dossier" | "author_dossier" | "compiled" | ""
+    # "dossier" | "author_dossier" | "compiled" | "layered:dossier" |
+    # "layered:author_dossier" | ""
+    source: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -71,12 +88,62 @@ def get_dossier_block(book, key: str) -> str:
     return block.strip() if isinstance(block, str) and block.strip() else ""
 
 
+def stack_style_layers(base_text: str, override_text: str) -> str:
+    """Assemble the layered [风格要求] content from base + override layers.
+
+    Both present -> two labeled layers, base (dossier) first, then the
+    override (the author's own compiled profile rules, higher priority).
+    Budget: ~STYLE_STACK_MAX_CHARS of content total. The base layer gets at
+    most STYLE_STACK_BASE_MAX_CHARS and shrinks further when the override is
+    long — the override is NEVER truncated (it keeps at least
+    STYLE_STACK_OVERRIDE_MIN_CHARS of the budget by construction).
+    Only one layer -> that text unchanged (single-layer behavior).
+    Neither -> "".
+    """
+    base = (base_text or "").strip()
+    override = (override_text or "").strip()
+    if not base or not override:
+        return base or override
+    base_budget = min(
+        STYLE_STACK_BASE_MAX_CHARS,
+        max(STYLE_STACK_MAX_CHARS - len(override), 0),
+    )
+    base = base[:base_budget].rstrip()
+    if not base:
+        # Override alone already exhausts the budget; degrade to single layer.
+        return override
+    return (
+        f"{STYLE_BASE_LAYER_LABEL}{base}\n"
+        f"{STYLE_OVERRIDE_LAYER_LABEL}{override}"
+    )
+
+
+def split_style_layers(style_text: str) -> tuple[str, str]:
+    """Split a layered style text back into (base, override).
+
+    Non-layered text returns (text, "") so single-layer consumers (e.g. the
+    chapter evaluator prompt) keep their current behavior.
+    """
+    text = (style_text or "").strip()
+    if not text or STYLE_OVERRIDE_LAYER_LABEL not in text:
+        return text, ""
+    base_part, override_part = text.split(STYLE_OVERRIDE_LAYER_LABEL, 1)
+    if base_part.startswith(STYLE_BASE_LAYER_LABEL):
+        base_part = base_part[len(STYLE_BASE_LAYER_LABEL):]
+    return base_part.strip(), override_part.strip()
+
+
 def build_style_injection_block(style_text: str, max_chars: int = STYLE_INJECTION_MAX_CHARS) -> str:
     """Build the writer-prompt style block, matching the async path's format
     (generation_tasks appends "\\n\\n[风格要求] " + style_text)."""
     text = (style_text or "").strip()
     if not text:
         return ""
+    if STYLE_OVERRIDE_LAYER_LABEL in text:
+        # Layered text is already budgeted by stack_style_layers (~1800 chars,
+        # override layer never truncated); slicing at max_chars here would cut
+        # the override layer that must survive intact.
+        return "[风格要求] " + text
     return "[风格要求] " + text[:max_chars]
 
 
@@ -292,19 +359,35 @@ async def resolve_reference_book_id(
     return await derive_reference_book_id(db, profile)
 
 
+def _profile_has_override_rules(profile: StyleProfile) -> bool:
+    """True when the profile carries author-authored rule content worth an
+    override layer (a bare name-only profile compiles to just a header line
+    and would add noise, not rules)."""
+    return bool(
+        (getattr(profile, "rules_json", None) or [])
+        or (getattr(profile, "anti_ai_rules", None) or [])
+        or (getattr(profile, "tone_keywords", None) or [])
+    )
+
+
 async def production_style_text_for_profile(
     db: AsyncSession, profile: StyleProfile, settings_json: dict | None = None
 ) -> tuple[str, str, str | None]:
     """Build the production writer-injection style text for a profile.
 
-    Returns (style_text, source, reference_book_id). Preference order:
-    book dossier style_block > author dossier style_block (when settings
-    carry ``style_reference.author_name``) > compile_style WITHOUT
-    sample_passages few-shot (PR-NO-RAW-INJECT).
+    Returns (style_text, source, reference_book_id). Layered model: the
+    dossier style_block (book dossier > author dossier, the latter when
+    settings carry ``style_reference.author_name``) forms the base layer;
+    the profile's own compiled rules (compile_style WITHOUT sample_passages
+    few-shot, PR-NO-RAW-INJECT) form the override layer. Both present ->
+    stacked two-layer text (source "layered:<dossier_source>"); only one ->
+    that single layer unchanged ("dossier" / "author_dossier" / "compiled").
     """
     from app.models.project import ReferenceBook
 
     reference_book_id = await derive_reference_book_id(db, profile)
+    dossier_block = ""
+    dossier_source = ""
     if reference_book_id:
         try:
             book = await db.get(ReferenceBook, reference_book_id)
@@ -313,15 +396,22 @@ async def production_style_text_for_profile(
         if book is not None:
             block = get_dossier_block(book, "style_block")
             if block:
-                return block, "dossier", reference_book_id
-    author = _settings_author_name(settings_json or {})
-    if author:
-        author_row = await load_author_dossier(db, author)
-        if author_row is not None:
-            block = get_dossier_block(author_row, "style_block")
-            if block:
-                return block, "author_dossier", reference_book_id
-    return compile_style(profile, include_samples=False), "compiled", reference_book_id
+                dossier_block, dossier_source = block, "dossier"
+    if not dossier_block:
+        author = _settings_author_name(settings_json or {})
+        if author:
+            author_row = await load_author_dossier(db, author)
+            if author_row is not None:
+                block = get_dossier_block(author_row, "style_block")
+                if block:
+                    dossier_block, dossier_source = block, "author_dossier"
+    if not dossier_block:
+        return compile_style(profile, include_samples=False), "compiled", reference_book_id
+    if not _profile_has_override_rules(profile):
+        return dossier_block, dossier_source, reference_book_id
+    compiled = compile_style(profile, include_samples=False)
+    stacked = stack_style_layers(dossier_block, compiled)
+    return stacked, f"layered:{dossier_source}", reference_book_id
 
 
 async def resolve_author_structure_block(
@@ -351,8 +441,8 @@ async def resolve_style_context(
     style_id: str | UUID | None = None,
 ) -> ResolvedStyle:
     """Full resolution: profile (explicit id > settings > bind chain) plus the
-    derived reference book id and the production style text (book dossier >
-    author dossier > compiled)."""
+    derived reference book id and the production style text (layered dossier
+    base + profile-rule override when both exist, else the single layer)."""
     settings_json = await _load_project_settings(db, project_id)
     profile: StyleProfile | None = None
     if style_id:

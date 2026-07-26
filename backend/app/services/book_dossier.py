@@ -55,6 +55,23 @@ AUTHOR_WORLD_BLOCK_CAP = 1200
 REPRESENTATIVE_CARDS = 30
 EVIDENCE_EXCERPT_CHARS = 120
 
+# Low-frequency signature sampling: pure stratified sampling over-represents
+# the dominant mode (e.g. 龙族's fast/tactical register) and misses the
+# rare-but-defining bursts (each volume's lyrical peak), which the REDUCE
+# model then misreads as 禁忌. Reserve ~30% of the representative slots for
+# emotional outliers — cards whose emotional_register carries a
+# lyrical/grief/tenderness/high-intensity marker that is RARE in this corpus
+# (share <= OUTLIER_MAX_SHARE). Live registers are free text (26k+ distinct
+# values in prod), so rarity is ranked per marker, not per raw value.
+OUTLIER_RESERVE_RATIO = 0.3
+OUTLIER_MAX_SHARE = 0.10
+_OUTLIER_REGISTER_MARKERS = (
+    "抒情", "煽情", "深情", "动情", "温柔", "温情", "温暖", "柔软",
+    "悲壮", "悲怆", "悲凉", "悲恸", "哀", "恸", "怆", "泪",
+    "苍凉", "怅", "伤感", "眷", "缱绻",
+    "热烈", "炽", "燃", "激昂", "昂扬", "决堤", "汹涌",
+)
+
 _CLIMAX_PAT = re.compile(r"高潮|决战|爆发|大战|摊牌|反杀|逆转")
 _PAYOFF_PAT = re.compile(r"回收|兑现|揭晓|应验|呼应|揭示")
 _PLANT_PAT = re.compile(r"埋|设下|铺垫|伏笔|留下|暗示")
@@ -96,6 +113,59 @@ def select_stratified(items: list, k: int) -> list:
         return [items[0]]
     idxs = sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
     return [items[i] for i in idxs]
+
+
+def _register_text(profile) -> str:
+    """The card's emotional_register as plain text (str or list tolerated)."""
+    val = (profile or {}).get("emotional_register") if isinstance(profile, dict) else None
+    if isinstance(val, list):
+        return "、".join(str(x) for x in val)
+    return str(val or "")
+
+
+def select_style_representatives(
+    cards: list, k: int, get_profile=None
+) -> list[tuple[object, bool]]:
+    """Pick ``k`` representative style cards: ~70% evenly spaced across the
+    book plus up to ~30% reserved for emotional-register outliers.
+
+    Deterministic: each card's register text is matched against
+    ``_OUTLIER_REGISTER_MARKERS``; marker frequencies are ranked across the
+    corpus and only RARE markers (share <= ``OUTLIER_MAX_SHARE``) qualify a
+    card as an outlier — a register that is itself the dominant mode is
+    already covered by the base sample. Outlier slots are themselves
+    stratified by position so bursts from every volume are seen.
+
+    Returns ``[(card, is_outlier)]`` in original (positional) order.
+    """
+    n = len(cards)
+    if k <= 0:
+        return []
+    if get_profile is None:
+        get_profile = lambda c: c[0]  # noqa: E731 — (profile, slice_id, seq) rows
+    if n <= k:
+        return [(c, False) for c in cards]
+
+    marker_counts: Counter[str] = Counter()
+    card_markers: list[frozenset[str]] = []
+    for c in cards:
+        text = _register_text(get_profile(c))
+        hits = frozenset(m for m in _OUTLIER_REGISTER_MARKERS if m in text)
+        card_markers.append(hits)
+        for m in hits:
+            marker_counts[m] += 1
+
+    rare = {m for m, cnt in marker_counts.items() if cnt / n <= OUTLIER_MAX_SHARE}
+    outlier_idx = [i for i, hits in enumerate(card_markers) if hits & rare]
+    reserve = min(len(outlier_idx), round(k * OUTLIER_RESERVE_RATIO))
+    picked_outliers = set(select_stratified(outlier_idx, reserve))
+
+    base_pool = [i for i in range(n) if i not in picked_outliers]
+    base_idx = set(select_stratified(base_pool, k - len(picked_outliers)))
+    return [
+        (cards[i], i in picked_outliers)
+        for i in sorted(picked_outliers | base_idx)
+    ]
 
 
 def _norm(val) -> str:
@@ -310,6 +380,7 @@ _STYLE_FIELDS = [
     ("dialogue_style", "对话"),
     ("sensory_rhetoric", "感官修辞"),
     ("emotional_curve", "情绪基调"),
+    ("low_freq_burst", "低频爆发段"),
     ("opening_patterns", "章节开场"),
     ("hook_patterns", "章末钩子"),
 ]
@@ -336,14 +407,16 @@ def render_style_block(style_data: dict) -> str:
     if not profile:
         return ""
     lines = ["【风格档案】"]
+    # Per-facet limits tightened from 140/180 when 低频爆发段 joined the
+    # block, so the cap still leaves room for 禁忌 and 例证 at the tail.
     for key, label in _STYLE_FIELDS:
-        v = _fmt_val(profile.get(key), limit=140)
+        v = _fmt_val(profile.get(key), limit=120)
         if v:
             lines.append(f"{label}：{v}")
-    moves = _fmt_val(profile.get("signature_moves"), limit=180)
+    moves = _fmt_val(profile.get("signature_moves"), limit=150)
     if moves:
         lines.append(f"标志性手法：{moves}")
-    forbidden = _fmt_val(profile.get("forbidden"), limit=140)
+    forbidden = _fmt_val(profile.get("forbidden"), limit=120)
     if forbidden:
         lines.append(f"禁忌：{forbidden}")
     quotes = profile.get("evidence_quotes") or []
@@ -425,19 +498,27 @@ def _dumps(obj) -> str:
 
 _STYLE_REDUCE_INSTRUCTIONS = (
     "以下是从一本参考小说的全部风格卡中确定性聚合出的统计数据，以及按全书顺序"
-    "分层抽取的代表性卡片（含片段摘录）。请归纳出全书级风格档案。只输出 JSON：\n"
+    "分层抽取的代表性卡片（含片段摘录；其中标注 register_outlier=true 的卡片"
+    "来自情绪语域偏离全书主导模态的低频段落）。请归纳出全书级风格档案，"
+    "并区分「主导模态」与「低频爆发段」。只输出 JSON：\n"
     '{"narrative_pov_rules": "叙事视角与切换规则", '
     '"syntax_rhythm": "句法节奏（长短句比例、段落长度）", '
     '"dialogue_style": "对话风格与密度", '
     '"sensory_rhetoric": "感官与修辞偏好", '
-    '"emotional_curve": "情绪基调曲线（全书走向）", '
+    '"emotional_curve": "情绪基调曲线（全书主导模态的走向）", '
+    '"low_freq_burst": "低频爆发段：作者何时及如何刻意打破自己的主导模态'
+    '（触发情境、语域如何转变、篇幅长短，例如每卷一次的抒情高峰）", '
     '"opening_patterns": "章节开场模式", '
     '"hook_patterns": "章末钩子模式", '
     '"signature_moves": ["标志性手法"], '
     '"forbidden": ["禁忌（反AI腔、该风格应避免的写法）"], '
     '"evidence_quotes": ["从代表性片段摘录的短例证"]}\n'
     "要求：每个字符串字段不超过120字；evidence_quotes 共2-3条、每条不超过60字、"
-    "必须出自代表性卡片的片段摘录且不含人名地名等专有名词。\n\n"
+    "必须出自代表性卡片的片段摘录且不含人名地名等专有名词。\n"
+    "禁忌判定：forbidden 只能来自聚合统计 forbidden_tells 或代表性卡片中的"
+    "显式禁忌证据；严禁把「统计上少见的写法」推断为禁忌——低频爆发段"
+    "（如集中出现的大段抒情）是作者刻意为之的手法，必须写入 low_freq_burst，"
+    "而不是 forbidden。\n\n"
 )
 
 _PLOT_REDUCE_INSTRUCTIONS = (
@@ -484,11 +565,11 @@ async def consolidate_style(
         raise ValueError("no style cards for book")
 
     stats = aggregate_style_stats([r[0] for r in cards])
-    reps = select_stratified(cards, REPRESENTATIVE_CARDS)
+    reps = select_style_representatives(cards, REPRESENTATIVE_CARDS)
 
     # Fetch short excerpts only for the ~30 representative slices — never
     # long verbatim passages, never the whole book.
-    rep_ids = [r[1] for r in reps]
+    rep_ids = [r[1] for r, _ in reps]
     excerpt_rows = await db.execute(
         select(ReferenceBookSlice.id, ReferenceBookSlice.raw_text).where(
             ReferenceBookSlice.id.in_(rep_ids)
@@ -497,8 +578,8 @@ async def consolidate_style(
     excerpts = {r[0]: (r[1] or "")[:EVIDENCE_EXCERPT_CHARS] for r in excerpt_rows.all()}
 
     rep_payload = []
-    for profile, slice_id, seq in reps:
-        rep_payload.append({
+    for (profile, slice_id, seq), is_outlier in reps:
+        entry = {
             "seq": seq,
             "profile": {
                 k: profile.get(k)
@@ -509,7 +590,10 @@ async def consolidate_style(
                 if profile.get(k)
             },
             "excerpt": excerpts.get(slice_id, ""),
-        })
+        }
+        if is_outlier:
+            entry["register_outlier"] = True
+        rep_payload.append(entry)
 
     user_content = (
         _STYLE_REDUCE_INSTRUCTIONS
