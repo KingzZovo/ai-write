@@ -7,11 +7,16 @@ import { usePolling } from '@/lib/usePolling'
 import { useT } from '@/lib/i18n/I18nProvider'
 import {
   type DossierResponse,
-  getDossierStatus,
+  type DossierStatusInfo,
+  getDossierStatusInfo,
+  parseDossierStatus,
+  parseDossierResponse,
   isDossierRunning,
-  hasDossierContent,
+  isDossierError,
+  formatElapsed,
   sectionError,
   formatSourceCounts,
+  sourceBooksCount,
 } from '@/lib/dossier'
 
 interface StyleRule {
@@ -365,9 +370,19 @@ interface DossierBook {
   metadata_json?: Record<string, unknown> | null
 }
 
+// GET /api/decompile/authors row (route may not exist yet → authors stays null
+// and all author-level UI is hidden).
+interface AuthorSummary {
+  author: string
+  book_count?: number
+  books_with_dossier?: number
+  dossier_status?: unknown
+}
+
 function DossiersPanel({ focusBookId }: { focusBookId: string | null }) {
   const t = useT()
   const [books, setBooks] = useState<DossierBook[]>([])
+  const [authors, setAuthors] = useState<AuthorSummary[] | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -375,6 +390,9 @@ function DossiersPanel({ focusBookId }: { focusBookId: string | null }) {
       .then(data => setBooks(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading(false))
+    apiFetch<AuthorSummary[]>('/api/decompile/authors')
+      .then(data => setAuthors(Array.isArray(data) ? data : null))
+      .catch(() => setAuthors(null))
   }, [])
 
   if (loading) return <p className="text-sm text-gray-400 text-center py-8">{t('styles.dossier.loading')}</p>
@@ -384,10 +402,31 @@ function DossiersPanel({ focusBookId }: { focusBookId: string | null }) {
     </div>
   )
 
+  // Group books by author (order of first appearance); authorless books last.
+  const groups: { author: string | null; books: DossierBook[] }[] = []
+  for (const book of books) {
+    const author = book.author?.trim() || null
+    const group = groups.find(g => g.author === author)
+    if (group) group.books.push(book)
+    else groups.push({ author, books: [book] })
+  }
+  groups.sort((a, b) => (a.author === null ? 1 : 0) - (b.author === null ? 1 : 0))
+
   return (
-    <div className="space-y-3">
-      {books.map(book => (
-        <DossierCard key={book.id} book={book} highlight={book.id === focusBookId} />
+    <div className="space-y-6">
+      {groups.map(group => (
+        <div key={group.author ?? '__none__'} className="space-y-3">
+          {group.author && authors !== null && (
+            <AuthorDossierCard
+              author={group.author}
+              bookCount={group.books.length}
+              summary={authors.find(a => a.author === group.author)}
+            />
+          )}
+          {group.books.map(book => (
+            <DossierCard key={book.id} book={book} highlight={book.id === focusBookId} />
+          ))}
+        </div>
       ))}
     </div>
   )
@@ -400,64 +439,127 @@ const DOSSIER_SECTIONS = [
 ] as const
 type DossierSectionKey = (typeof DOSSIER_SECTIONS)[number]['key']
 
+/** Shared fetch + poll loop for a dossier endpoint that answers
+ *  {status, dossier} (book- or author-level). Polls ~5s while the status
+ *  marker says running and stops as soon as the dossier itself shows up
+ *  (or a terminal state is reached). */
+function useDossierPolling(dossierPath: string, initialStatus: DossierStatusInfo | null) {
+  const [dossier, setDossier] = useState<DossierResponse | null>(null)
+  const [status, setStatus] = useState<DossierStatusInfo | null>(initialStatus)
+
+  const refresh = useCallback(async () => {
+    try {
+      const parsed = parseDossierResponse(await apiFetch<unknown>(dossierPath))
+      setDossier(parsed.dossier)
+      if (parsed.status) setStatus(parsed.status)
+      return parsed
+    } catch {
+      // 404 / route absent → "no dossier yet"; keep the last known status
+      return { status: null, dossier: null }
+    }
+  }, [dossierPath])
+
+  // queueMicrotask keeps the compiler lint happy about setState-in-effect
+  // (same pattern as GeneratePanel.refreshOutlineCounts).
+  useEffect(() => {
+    queueMicrotask(() => { void refresh() })
+  }, [refresh])
+
+  const running = isDossierRunning(status?.state)
+  usePolling(async (stop) => {
+    const { status: next, dossier: found } = await refresh()
+    if (found || (next && !isDossierRunning(next.state))) stop()
+  }, 5000, running)
+
+  return { dossier, status, setStatus, running }
+}
+
+/** Status badge (running + elapsed, or error message) next to a consolidate button. */
+function DossierStatusBadge({ status }: { status: DossierStatusInfo | null }) {
+  if (!status) return null
+  if (isDossierRunning(status.state)) {
+    const elapsed = formatElapsed(status.updatedAt)
+    return (
+      <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded animate-pulse">
+        {status.state}{elapsed && ` · ${elapsed}`}
+      </span>
+    )
+  }
+  return null
+}
+
+/** Three-section (style / plot / world) dossier body, shared by the book and
+ *  author cards. `countsCaption` overrides the default source_counts footer. */
+function DossierView({ dossier, countsCaption }: { dossier: DossierResponse; countsCaption?: string }) {
+  const t = useT()
+  const [section, setSection] = useState<DossierSectionKey>('style')
+
+  const blocks: Record<DossierSectionKey, { block?: string | null; data?: unknown }> = {
+    style: { block: dossier.style_block, data: dossier.style_data },
+    plot: { block: dossier.structure_block, data: dossier.plot_data },
+    world: { block: dossier.world_block, data: dossier.world_data },
+  }
+  const active = blocks[section]
+  const activeError = sectionError(active.data)
+  const counts = countsCaption ?? formatSourceCounts(dossier.source_counts)
+
+  return (
+    <div>
+      <div className="flex gap-1.5 mb-2">
+        {DOSSIER_SECTIONS.map(s => (
+          <button key={s.key} onClick={() => setSection(s.key)}
+            className={`px-2.5 py-1 text-xs rounded-full ${section === s.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>
+            {t(s.labelKey)}
+          </button>
+        ))}
+      </div>
+      {activeError && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+          {t('styles.dossier.sectionError')}: {activeError}
+        </p>
+      )}
+      {active.block ? (
+        <pre className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-gray-50 rounded-lg p-3 border border-gray-100 max-h-72 overflow-y-auto">
+          {active.block}
+        </pre>
+      ) : !activeError && (
+        <p className="text-xs text-gray-400">{t('styles.dossier.sectionEmpty')}</p>
+      )}
+      <p className="text-[10px] text-gray-400 mt-2">
+        {dossier.consolidated_at && `${t('styles.dossier.consolidatedAt')} ${formatDossierTime(dossier.consolidated_at)}`}
+        {dossier.consolidated_at && counts && ' · '}
+        {counts && (countsCaption ? counts : `${t('styles.dossier.sources')}: ${counts}`)}
+      </p>
+    </div>
+  )
+}
+
 function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boolean }) {
   const t = useT()
   const cardRef = useRef<HTMLDivElement>(null)
-  const [dossier, setDossier] = useState<DossierResponse | null>(null)
-  const [status, setStatus] = useState<string | null>(() => getDossierStatus(book.metadata_json))
+  const { dossier, status, setStatus, running } = useDossierPolling(
+    `/api/decompile/${book.id}/dossier`,
+    getDossierStatusInfo(book.metadata_json),
+  )
   const [starting, setStarting] = useState(false)
-  const [section, setSection] = useState<DossierSectionKey>('style')
-
-  const fetchDossier = useCallback(async () => {
-    try {
-      const data = await apiFetch<DossierResponse>(`/api/decompile/${book.id}/dossier`)
-      // 404 / absent / empty payload → treat as "no dossier yet" and hide the card view
-      setDossier(hasDossierContent(data) ? data : null)
-    } catch {
-      setDossier(null)
-    }
-  }, [book.id])
-
-  useEffect(() => { fetchDossier() }, [fetchDossier])
 
   useEffect(() => {
     if (highlight) cardRef.current?.scrollIntoView({ block: 'start' })
   }, [highlight])
-
-  // While consolidation is running, poll dossier_status (~5s) via the single
-  // book endpoint; on any terminal state re-fetch the dossier itself.
-  const running = isDossierRunning(status)
-  usePolling(async (stop) => {
-    const b = await apiFetch<DossierBook>(`/api/knowledge/books/${book.id}`)
-    const next = getDossierStatus(b?.metadata_json)
-    setStatus(next)
-    if (!isDossierRunning(next)) {
-      stop()
-      fetchDossier()
-    }
-  }, 5000, running)
 
   const handleConsolidate = async () => {
     if (starting || running) return
     setStarting(true)
     try {
       await apiFetch(`/api/decompile/${book.id}/consolidate`, { method: 'POST' })
-      setStatus('running')
+      // Optimistic: disable the button and start polling right away.
+      setStatus({ state: 'queued', updatedAt: new Date().toISOString(), message: null })
     } catch (e) {
       alert(`${t('styles.dossier.startFailed')}: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setStarting(false)
     }
   }
-
-  const blocks: Record<DossierSectionKey, { block?: string | null; data?: unknown }> = {
-    style: { block: dossier?.style_block, data: dossier?.style_data },
-    plot: { block: dossier?.structure_block, data: dossier?.plot_data },
-    world: { block: dossier?.world_block, data: dossier?.world_data },
-  }
-  const active = blocks[section]
-  const activeError = sectionError(active.data)
-  const counts = formatSourceCounts(dossier?.source_counts)
 
   return (
     <div ref={cardRef}
@@ -468,9 +570,7 @@ function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boole
           {book.author && <p className="text-xs text-gray-400 truncate">{book.author}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {running && status && (
-            <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded animate-pulse">{status}</span>
-          )}
+          <DossierStatusBadge status={status} />
           <button onClick={handleConsolidate} disabled={starting || running}
             className="px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
             {running ? t('styles.dossier.consolidating') : t('styles.dossier.consolidate')}
@@ -478,36 +578,84 @@ function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boole
         </div>
       </div>
 
+      {status && isDossierError(status.state) && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">
+          {t('styles.dossier.error')}{status.message ? `: ${status.message}` : ''}
+        </p>
+      )}
+
       {dossier ? (
-        <div>
-          <div className="flex gap-1.5 mb-2">
-            {DOSSIER_SECTIONS.map(s => (
-              <button key={s.key} onClick={() => setSection(s.key)}
-                className={`px-2.5 py-1 text-xs rounded-full ${section === s.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                {t(s.labelKey)}
-              </button>
-            ))}
-          </div>
-          {activeError && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
-              {t('styles.dossier.sectionError')}: {activeError}
-            </p>
-          )}
-          {active.block ? (
-            <pre className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-gray-50 rounded-lg p-3 border border-gray-100 max-h-72 overflow-y-auto">
-              {active.block}
-            </pre>
-          ) : !activeError && (
-            <p className="text-xs text-gray-400">{t('styles.dossier.sectionEmpty')}</p>
-          )}
-          <p className="text-[10px] text-gray-400 mt-2">
-            {dossier.consolidated_at && `${t('styles.dossier.consolidatedAt')} ${formatDossierTime(dossier.consolidated_at)}`}
-            {dossier.consolidated_at && counts && ' · '}
-            {counts && `${t('styles.dossier.sources')}: ${counts}`}
-          </p>
-        </div>
+        <DossierView dossier={dossier} />
       ) : (
         <p className="text-xs text-gray-400">{t('styles.dossier.none')}</p>
+      )}
+    </div>
+  )
+}
+
+/** Author-level consolidation card shown at the top of each author group.
+ *  Backend routes are being added in parallel — the whole card is hidden by
+ *  DossiersPanel when GET /api/decompile/authors is unavailable. */
+function AuthorDossierCard({ author, bookCount, summary }: {
+  author: string
+  bookCount: number
+  summary?: AuthorSummary
+}) {
+  const t = useT()
+  const { dossier, status, setStatus, running } = useDossierPolling(
+    `/api/decompile/authors/dossier?author=${encodeURIComponent(author)}`,
+    parseDossierStatus(summary?.dossier_status),
+  )
+  const [starting, setStarting] = useState(false)
+
+  const handleConsolidate = async () => {
+    if (starting || running) return
+    setStarting(true)
+    try {
+      await apiFetch('/api/decompile/authors/consolidate', {
+        method: 'POST',
+        body: JSON.stringify({ author }),
+      })
+      // Optimistic: disable the button and start polling right away.
+      setStatus({ state: 'queued', updatedAt: new Date().toISOString(), message: null })
+    } catch (e) {
+      alert(`${t('styles.dossier.startFailed')}: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const books = sourceBooksCount(dossier) ?? summary?.book_count ?? bookCount
+  const caption = `${t('styles.dossier.author.sourcesPrefix')}${books}${t('styles.dossier.author.sourcesSuffix')}`
+
+  return (
+    <div className="bg-white rounded-xl border border-indigo-200 p-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="min-w-0 flex items-center gap-2">
+          <h3 className="font-medium text-sm text-gray-900 truncate">{author}</h3>
+          <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded shrink-0">
+            {t('styles.dossier.author.card')}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <DossierStatusBadge status={status} />
+          <button onClick={handleConsolidate} disabled={starting || running}
+            className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+            {running ? t('styles.dossier.consolidating') : t('styles.dossier.author.consolidate')}
+          </button>
+        </div>
+      </div>
+
+      {status && isDossierError(status.state) && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">
+          {t('styles.dossier.error')}{status.message ? `: ${status.message}` : ''}
+        </p>
+      )}
+
+      {dossier ? (
+        <DossierView dossier={dossier} countsCaption={caption} />
+      ) : (
+        <p className="text-xs text-gray-400">{t('styles.dossier.author.none')}</p>
       )}
     </div>
   )

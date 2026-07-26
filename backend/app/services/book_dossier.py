@@ -47,6 +47,11 @@ STYLE_BLOCK_CAP = 1200
 STRUCTURE_BLOCK_CAP = 800
 WORLD_BLOCK_CAP = 1000
 
+# Author-tier caps (multi-book dossiers get slightly more room).
+AUTHOR_STYLE_BLOCK_CAP = 1500
+AUTHOR_STRUCTURE_BLOCK_CAP = 1000
+AUTHOR_WORLD_BLOCK_CAP = 1200
+
 REPRESENTATIVE_CARDS = 30
 EVIDENCE_EXCERPT_CHARS = 120
 
@@ -712,6 +717,445 @@ async def build_dossier(book_id: str, db: AsyncSession | None = None) -> dict:
                     "error": str(exc)[:500],
                 })
                 await db.commit()
+        except Exception:  # noqa: BLE001
+            await _safe_rollback(db)
+        return {"status": "error", "error": str(exc)}
+
+
+# =========================================================================
+# Author-tier consolidation (pyramid: consumes book dossiers, not raw cards)
+# =========================================================================
+
+_STYLE_COMPARE_FIELDS = (
+    "pov", "tense", "pacing", "emotional_register",
+    "vocab_tone", "signature_moves", "forbidden_tells",
+)
+
+
+def compare_style_stats(labeled_stats: list[tuple[str, dict]]) -> dict:
+    """Deterministic cross-book comparison of aggregated style stats.
+
+    ``labeled_stats``: ``[(label, aggregate_style_stats-shaped dict)]``.
+    For each categorical field the per-book top value is classified as
+    「作者惯用」 (identical across all books → ``consistent``) or
+    「单书特例」 (``divergent``, per-book values kept). Frequency tables are
+    additionally merged (summed counts) for the LLM payload.
+    """
+    consistent: dict = {}
+    divergent: dict = {}
+    merged: dict = {}
+    for field in _STYLE_COMPARE_FIELDS:
+        tops: dict[str, str] = {}
+        ctr: Counter[str] = Counter()
+        for label, stats in labeled_stats:
+            entries = (stats or {}).get(field) or []
+            for e in entries:
+                if isinstance(e, dict) and e.get("value"):
+                    ctr[str(e["value"])] += int(e.get("count") or 0)
+            if entries and isinstance(entries[0], dict) and entries[0].get("value"):
+                tops[label] = str(entries[0]["value"])
+        if ctr:
+            merged[field] = _top(ctr, 10)
+        values = set(tops.values())
+        if len(values) == 1 and len(tops) == len(labeled_stats):
+            consistent[field] = next(iter(values))
+        elif len(values) > 1:
+            divergent[field] = tops
+    return {"consistent": consistent, "divergent": divergent, "merged_top": merged}
+
+
+def compare_plot_stats(labeled_stats: list[tuple[str, dict]]) -> dict:
+    """Deterministic cross-book comparison of aggregated beat stats."""
+    per_book: dict[str, dict] = {}
+    for label, stats in labeled_stats:
+        stats = stats or {}
+        climax = stats.get("climax") or {}
+        fs = stats.get("foreshadow") or {}
+        per_book[label] = {
+            "avg_climax_gap": climax.get("avg_gap"),
+            "avg_foreshadow_distance": fs.get("avg_distance"),
+            "top_scene_types": [
+                e.get("value")
+                for e in (stats.get("scene_type_distribution") or [])[:3]
+                if isinstance(e, dict) and e.get("value")
+            ],
+        }
+    gaps = [
+        v["avg_climax_gap"] for v in per_book.values()
+        if isinstance(v["avg_climax_gap"], (int, float))
+    ]
+    dists = [
+        v["avg_foreshadow_distance"] for v in per_book.values()
+        if isinstance(v["avg_foreshadow_distance"], (int, float))
+    ]
+    summary = {
+        "climax_gap_range": [min(gaps), max(gaps)] if gaps else None,
+        "climax_gap_consistent": bool(gaps) and max(gaps) - min(gaps) <= 1,
+        "foreshadow_distance_range": [min(dists), max(dists)] if dists else None,
+        "foreshadow_distance_consistent": bool(dists) and max(dists) - min(dists) <= 1,
+    }
+    return {"per_book": per_book, "summary": summary}
+
+
+_AUTHOR_STYLE_MERGE_INSTRUCTIONS = (
+    "以下是同一位作者多本参考小说的全书级风格档案（各书以《书1》《书2》等占位符"
+    "标记，不含真实书名），以及确定性的跨书对比统计。请蒸馏出作者级风格档案：主"
+    "字段只写「作者惯用」（多本书一致的模式）；单本书独有的写法放入 book_specific"
+    "并标注对应《书N》。只输出 JSON：\n"
+    '{"narrative_pov_rules": "叙事视角与切换规则", '
+    '"syntax_rhythm": "句法节奏", "dialogue_style": "对话风格与密度", '
+    '"sensory_rhetoric": "感官与修辞偏好", "emotional_curve": "情绪基调曲线", '
+    '"opening_patterns": "章节开场模式", "hook_patterns": "章末钩子模式", '
+    '"signature_moves": ["跨书一致的标志性手法"], '
+    '"forbidden": ["禁忌（反AI腔、该作者风格应避免的写法）"], '
+    '"evidence_quotes": ["跨书通用的短例证"], '
+    '"book_specific": [{"book": "书1", "note": "该书独有的风格特例"}]}\n'
+    "要求：每个字符串字段不超过140字；book 字段必须使用输入中的《书N》占位符；"
+    "evidence_quotes 最多3条、每条不超过60字；不得出现真实书名、人名、地名等"
+    "专有名词。\n\n"
+)
+
+_AUTHOR_PLOT_MERGE_INSTRUCTIONS = (
+    "以下是同一位作者多本参考小说的全书级剧情架构档案（各书以《书1》《书2》等"
+    "占位符标记），以及确定性的跨书节奏对比（高潮间隔、铺垫→回收距离等）。请蒸馏"
+    "出作者级剧情架构档案：主字段只写「作者惯用」（跨书一致的结构模式）；单本书"
+    "独有的结构放入 book_specific 并标注对应《书N》。只输出 JSON：\n"
+    '{"macro_structure": "宏观结构（卷/弧形态）", '
+    '"chapter_beat_template": "章节节拍模板", '
+    '"conflict_escalation": "冲突升级模式", '
+    '"foreshadow_strategy": "伏笔管理策略", '
+    '"payoff_rhythm": "爽点节奏", '
+    '"book_specific": [{"book": "书1", "note": "该书独有的结构特例"}]}\n'
+    "要求：每个字符串字段不超过140字；book 字段必须使用《书N》占位符；"
+    "不得出现真实书名/人名/地名等专有名词，用「主角」「A势力」等占位符表述。\n\n"
+)
+
+_AUTHOR_WORLD_MERGE_INSTRUCTIONS = (
+    "以下是同一位作者多本参考小说的世界观架构档案（各书以《书1》《书2》等占位符"
+    "标记），以及确定性去重后的设计模式并集。请蒸馏出作者级世界观设计档案：主字段"
+    "只写「作者惯用」（跨书复现的系统设计模式）；单本书独有的设定思路放入"
+    " book_specific 并标注对应《书N》。只输出 JSON：\n"
+    '{"power_system": "力量体系设计模式", "rules_constraints": "规则约束设计", '
+    '"organizations": "组织架构设计", "geography": "地理格局设计", '
+    '"conflict_sources": "核心冲突源设计", '
+    '"design_patterns": ["跨书复现的世界观设计模式"], '
+    '"book_specific": [{"book": "书1", "note": "该书独有的设定特例"}]}\n'
+    "要求：每个字符串字段不超过150字；book 字段必须使用《书N》占位符；"
+    "不得出现真实书名或任何原书专有名词，一律抽象为「主角」「A势力」「圣器」等。\n\n"
+)
+
+
+async def _merge_author_style(
+    labeled: list[tuple[str, dict]], db: AsyncSession, counter: LLMCallCounter
+) -> dict:
+    """One LLM REDUCE over the books' style_data (profiles + compared stats)."""
+    profiles = [
+        {"book": label, "profile": (sd.get("profile") or {})} for label, sd in labeled
+    ]
+    comparison = compare_style_stats(
+        [(label, sd.get("stats") or {}) for label, sd in labeled]
+    )
+    user_content = (
+        _AUTHOR_STYLE_MERGE_INSTRUCTIONS
+        + "【各书风格档案】" + _dumps(profiles)
+        + "\n【确定性跨书对比】" + _dumps(comparison)
+    )
+    profile = await _run_registry_structured(
+        "author_style_merge", user_content, db, counter
+    )
+    quotes = profile.get("evidence_quotes") or []
+    if isinstance(quotes, str):
+        quotes = [quotes]
+    profile["evidence_quotes"] = [
+        str(q).strip()[:60] for q in quotes[:3] if str(q).strip()
+    ]
+    return {"profile": profile, "cross_book": comparison}
+
+
+async def _merge_author_plot(
+    labeled: list[tuple[str, dict]], db: AsyncSession, counter: LLMCallCounter
+) -> dict:
+    """One LLM REDUCE over the books' plot_data (profiles + compared stats)."""
+    profiles = [
+        {"book": label, "profile": (pd.get("profile") or {})} for label, pd in labeled
+    ]
+    comparison = compare_plot_stats(
+        [(label, pd.get("stats") or {}) for label, pd in labeled]
+    )
+    user_content = (
+        _AUTHOR_PLOT_MERGE_INSTRUCTIONS
+        + "【各书剧情架构档案】" + _dumps(profiles)
+        + "\n【确定性跨书对比】" + _dumps(comparison)
+    )
+    profile = await _run_registry_structured(
+        "author_plot_merge", user_content, db, counter
+    )
+    return {"profile": profile, "cross_book": comparison}
+
+
+async def _merge_author_world(
+    labeled: list[tuple[str, dict]], db: AsyncSession, counter: LLMCallCounter
+) -> dict:
+    """One LLM REDUCE over the books' world_data profiles."""
+    profiles = [
+        {"book": label, "profile": (wd.get("profile") or {})} for label, wd in labeled
+    ]
+    # Deterministic dedup: order-preserving union of per-book design patterns.
+    patterns: list[str] = []
+    for _, wd in labeled:
+        for p in (wd.get("profile") or {}).get("design_patterns") or []:
+            s = str(p).strip()
+            if s and s not in patterns:
+                patterns.append(s)
+    user_content = (
+        _AUTHOR_WORLD_MERGE_INSTRUCTIONS
+        + "【各书世界观档案】" + _dumps(profiles)
+        + "\n【设计模式并集】" + _dumps(patterns[:20])
+    )
+    profile = await _run_registry_structured(
+        "author_world_merge", user_content, db, counter
+    )
+    return {"profile": profile}
+
+
+def render_author_block(base_renderer, data: dict, cap: int) -> str:
+    """Render the book-tier block then append 「单书特例」 lines, capped.
+
+    ``book_specific`` entries reference the neutral 《书N》 labels; the real
+    titles live in the dossier's ``book_labels`` maps (blocks stay
+    proper-noun-free per the scrub discipline).
+    """
+    base = base_renderer(data)
+    profile = (data or {}).get("profile") or {}
+    lines: list[str] = []
+    for item in (profile.get("book_specific") or [])[:6]:
+        if isinstance(item, dict):
+            book = str(item.get("book") or "").strip()
+            note = _fmt_val(item.get("note"), limit=100)
+            if note:
+                lines.append(f"单书特例（{book or '某书'}）：{note}")
+        elif isinstance(item, str) and item.strip():
+            lines.append(f"单书特例：{item.strip()[:100]}")
+    if not base and not lines:
+        return ""
+    text = base + ("\n" if base and lines else "") + "\n".join(lines)
+    return _cap(text, cap)
+
+
+def _book_dossier_ready(book: ReferenceBook) -> bool:
+    meta = book.metadata_json or {}
+    if not isinstance(meta, dict):
+        return False
+    status = meta.get("dossier_status") or {}
+    return (
+        isinstance(meta.get("dossier"), dict)
+        and isinstance(status, dict)
+        and status.get("state") == "done"
+    )
+
+
+async def _get_or_create_author_row(db: AsyncSession, author: str):
+    from app.models.author_dossier import AuthorDossier
+
+    row = (
+        await db.execute(select(AuthorDossier).where(AuthorDossier.author == author))
+    ).scalar_one_or_none()
+    if row is None:
+        row = AuthorDossier(
+            author=author, status_json={}, dossier_json={}, source_book_ids_json=[]
+        )
+        db.add(row)
+        await db.flush()
+    return row
+
+
+def _set_author_status(row, **fields) -> None:
+    row.status_json = dict(fields)
+    flag_modified(row, "status_json")
+
+
+async def consolidate_author(author: str, db: AsyncSession | None = None) -> dict:
+    """Merge all of an author's per-book dossiers into one author dossier.
+
+    Pyramid principle: consumes the books' dossier ``style_data`` /
+    ``plot_data`` / ``world_data`` products, never the raw micro-cards. Books
+    missing a completed dossier are built first via :func:`build_dossier`
+    (expensive path, but convergent — subsequent runs reuse the stored
+    dossiers and cost exactly 3 LLM merge calls).
+
+    Output mirrors the book dossier contract (larger caps): ``{style_block
+    <=1500, structure_block <=1000, world_block <=1200, style_data,
+    plot_data, world_data, consolidated_at, source_counts: {books,
+    style_cards, beat_cards}}``, persisted to ``author_dossiers.dossier_json``
+    with a ``status_json`` marker (queued → running → done/error).
+    """
+    if db is None:
+        async with async_session_factory() as session:
+            return await consolidate_author(author, session)
+
+    author = (author or "").strip()
+    books = []
+    if author:
+        books = list(
+            (
+                await db.execute(
+                    select(ReferenceBook).where(ReferenceBook.author == author)
+                )
+            ).scalars().all()
+        )
+    if not books:
+        return {"status": "error", "error": "no reference books for author"}
+
+    row = await _get_or_create_author_row(db, author)
+    counter = LLMCallCounter()
+    try:
+        _set_author_status(row, state="running", updated_at=_now_iso())
+        await db.commit()
+
+        # Tier-1 convergence: build any missing per-book dossier first.
+        built: list[str] = []
+        for book in books:
+            if not _book_dossier_ready(book):
+                logger.info(
+                    "author consolidation %s: building missing book dossier "
+                    "for %s (%s)", author, book.title, book.id,
+                )
+                built.append(str(book.id))
+                res = await build_dossier(str(book.id), db)
+                if res.get("status") != "done":
+                    logger.warning(
+                        "author consolidation %s: book %s dossier build "
+                        "ended in %s", author, book.id, res.get("status"),
+                    )
+
+        # Re-read: build_dossier commits metadata updates.
+        books = list(
+            (
+                await db.execute(
+                    select(ReferenceBook).where(ReferenceBook.author == author)
+                )
+            ).scalars().all()
+        )
+        usable = [
+            b for b in books if isinstance((b.metadata_json or {}).get("dossier"), dict)
+        ]
+        if not usable:
+            raise RuntimeError("no per-book dossiers available for author")
+        usable.sort(key=lambda b: (str(b.created_at or ""), str(b.id)))
+        # Detach the scalars now: a failed merge section rolls the session
+        # back, which expires the ORM rows (async lazy refresh would crash).
+        usable_ids = [str(b.id) for b in usable]
+
+        book_labels: dict[str, dict] = {}
+        labeled_dossiers: list[tuple[str, dict]] = []
+        for i, b in enumerate(usable, start=1):
+            label = f"书{i}"
+            book_labels[label] = {"book_id": str(b.id), "title": b.title or ""}
+            labeled_dossiers.append((label, (b.metadata_json or {}).get("dossier") or {}))
+
+        # Same proper-noun discipline as the book tier: all titles + the
+        # author name are scrubbed from the blocks. Character names were
+        # already scrubbed at the book tier before this data was stored.
+        scrub_names = {author}
+        for b in usable:
+            title = (b.title or "").strip()
+            if len(title) >= 2:
+                scrub_names.add(title)
+
+        def _labeled_sections(key: str) -> list[tuple[str, dict]]:
+            out = []
+            for label, d in labeled_dossiers:
+                data = d.get(key)
+                if isinstance(data, dict) and "error" not in data and (data.get("profile") or {}):
+                    out.append((label, data))
+            return out
+
+        async def _section(name: str, labeled, merger) -> dict:
+            if not labeled:
+                return {"error": f"no book-level {name} data"}
+            try:
+                return await merger(labeled, db, counter)
+            except Exception as exc:  # noqa: BLE001
+                await _safe_rollback(db)
+                logger.warning(
+                    "author dossier section %s failed for %s: %s",
+                    name, author, exc,
+                )
+                return {"error": str(exc)[:500]}
+
+        style_data = await _section("style", _labeled_sections("style_data"), _merge_author_style)
+        plot_data = await _section("plot", _labeled_sections("plot_data"), _merge_author_plot)
+        world_data = await _section("world", _labeled_sections("world_data"), _merge_author_world)
+        for data in (style_data, plot_data, world_data):
+            if "error" not in data:
+                data["book_labels"] = book_labels
+
+        style_block = scrub_proper_nouns(
+            render_author_block(render_style_block, style_data, AUTHOR_STYLE_BLOCK_CAP),
+            scrub_names,
+        )
+        structure_block = scrub_proper_nouns(
+            render_author_block(render_structure_block, plot_data, AUTHOR_STRUCTURE_BLOCK_CAP),
+            scrub_names,
+        )
+        world_block = scrub_proper_nouns(
+            render_author_block(render_world_block, world_data, AUTHOR_WORLD_BLOCK_CAP),
+            scrub_names,
+        )
+
+        def _sum_counts(key: str) -> int:
+            total = 0
+            for _, d in labeled_dossiers:
+                total += int(((d.get("source_counts") or {}).get(key)) or 0)
+            return total
+
+        dossier = {
+            "style_block": _cap(style_block, AUTHOR_STYLE_BLOCK_CAP),
+            "structure_block": _cap(structure_block, AUTHOR_STRUCTURE_BLOCK_CAP),
+            "world_block": _cap(world_block, AUTHOR_WORLD_BLOCK_CAP),
+            "style_data": style_data,
+            "plot_data": plot_data,
+            "world_data": world_data,
+            "consolidated_at": _now_iso(),
+            "source_counts": {
+                "books": len(usable_ids),
+                "style_cards": _sum_counts("style_cards"),
+                "beat_cards": _sum_counts("beat_cards"),
+            },
+        }
+
+        all_failed = all(
+            "error" in section for section in (style_data, plot_data, world_data)
+        )
+        state = "error" if all_failed else "done"
+        row.dossier_json = dossier
+        flag_modified(row, "dossier_json")
+        row.source_book_ids_json = usable_ids
+        flag_modified(row, "source_book_ids_json")
+        _set_author_status(
+            row, state=state, updated_at=_now_iso(), llm_calls=counter.total
+        )
+        await db.commit()
+        logger.info(
+            "author dossier built for %s: state=%s, %d books (%d freshly "
+            "consolidated), %d LLM calls (%s)",
+            author, state, len(usable), len(built), counter.total,
+            dict(counter.by_task),
+        )
+        return {
+            "status": state,
+            "llm_calls": counter.total,
+            "dossier": dossier,
+            "built_books": built,
+        }
+    except Exception as exc:  # noqa: BLE001
+        await _safe_rollback(db)
+        logger.exception("author dossier build failed for %s", author)
+        try:
+            _set_author_status(
+                row, state="error", updated_at=_now_iso(), error=str(exc)[:500]
+            )
+            await db.commit()
         except Exception:  # noqa: BLE001
             await _safe_rollback(db)
         return {"status": "error", "error": str(exc)}

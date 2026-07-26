@@ -6,6 +6,7 @@ import { useGenerationStore } from '@/stores/generationStore'
 import { apiFetch } from '@/lib/api'
 import { getChapterGenOptions, saveChapterGenOptions } from '@/lib/chapterGenOptions'
 import { styleReferenceBookId } from '@/lib/styleReference'
+import { parseDossierStatus } from '@/lib/dossier'
 import { useT } from '@/lib/i18n/I18nProvider'
 
 interface StyleInfo {
@@ -149,6 +150,86 @@ function StyleSelector({ projectId }: { projectId?: string | null }) {
       <Link href="/styles" className="block text-xs text-blue-600 hover:text-blue-700">
         管理写法 ({styles.length}) &rarr;
       </Link>
+    </div>
+  )
+}
+
+// GET /api/decompile/authors row; the route is being added in parallel on the
+// backend, so the selector hides itself entirely when it is unavailable.
+interface AuthorDossierInfo {
+  author: string
+  dossier_status?: unknown
+}
+
+/** Optional author-level dossier selector (distillation rework). Lists authors
+ *  with a COMPLETED dossier and persists `style_reference.author_name` into
+ *  projects.settings_json — same save path as StyleSelector. */
+function AuthorDossierSelector({ projectId }: { projectId?: string | null }) {
+  const t = useT()
+  const [authors, setAuthors] = useState<string[] | null>(null)
+  const [selected, setSelected] = useState('')
+  const loadedRef = React.useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      apiFetch<AuthorDossierInfo[]>('/api/decompile/authors').catch(() => null),
+      projectId
+        ? apiFetch<ProjectSettingsResponse>(`/api/projects/${projectId}`).catch(() => ({} as ProjectSettingsResponse))
+        : Promise.resolve({} as ProjectSettingsResponse),
+    ]).then(([list, proj]) => {
+      if (cancelled) return
+      setAuthors(
+        Array.isArray(list)
+          ? list
+              .filter(a => typeof a.author === 'string' && a.author
+                && parseDossierStatus(a.dossier_status)?.state === 'done')
+              .map(a => a.author)
+          : null,
+      )
+      const settings = (proj && proj.settings_json) || {}
+      const styleRef = (settings.style_reference as Record<string, unknown> | undefined) || {}
+      if (typeof styleRef.author_name === 'string' && styleRef.author_name) {
+        setSelected(styleRef.author_name)
+      }
+      loadedRef.current = true
+    })
+    return () => { cancelled = true }
+  }, [projectId])
+
+  const handleChange = async (name: string) => {
+    setSelected(name)
+    if (!projectId || !loadedRef.current) return
+    try {
+      // Read-modify-write against fresh settings so we never clobber the
+      // style_reference fields StyleSelector may have just written.
+      const proj = await apiFetch<ProjectSettingsResponse>(`/api/projects/${projectId}`)
+      const settings = { ...((proj && proj.settings_json) || {}) }
+      const styleRef = { ...((settings.style_reference as Record<string, unknown> | undefined) || {}) }
+      if (name) styleRef.author_name = name
+      else delete styleRef.author_name // empty option clears the key
+      settings.style_reference = styleRef
+      await apiFetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings_json: settings }),
+      })
+    } catch { /* */ }
+  }
+
+  // Route unavailable, or nothing to pick and nothing persisted → hide.
+  if (authors === null || (authors.length === 0 && !selected)) return null
+  // Keep a stale persisted selection visible in the dropdown.
+  const options = selected && !authors.includes(selected) ? [selected, ...authors] : authors
+
+  return (
+    <div className="mt-3 space-y-1">
+      <label className="block text-xs font-medium text-gray-600">{t('generate.authorDossier.label')}</label>
+      <select value={selected} onChange={e => handleChange(e.target.value)}
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-300">
+        <option value="">{t('generate.authorDossier.none')}</option>
+        {options.map(a => <option key={a} value={a}>{a}</option>)}
+      </select>
+      <p className="text-[10px] text-gray-400">{t('generate.authorDossier.hint')}</p>
     </div>
   )
 }
@@ -449,6 +530,7 @@ export function GeneratePanel({
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">写作风格</h3>
         <StyleSelector projectId={projectId} />
+        <AuthorDossierSelector projectId={projectId} />
       </div>
 
       {/* Plot structure selector (optional) */}

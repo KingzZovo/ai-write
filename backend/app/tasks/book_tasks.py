@@ -211,6 +211,14 @@ def consolidate_reference_book(book_id: str):
     _run_async(build_dossier(book_id))
 
 
+@celery_app.task(name="tasks.consolidate_author")
+def consolidate_author_task(author: str):
+    """Build the author-level dossier (merges the author's book dossiers)."""
+    from app.services.book_dossier import consolidate_author
+
+    _run_async(consolidate_author(author))
+
+
 @celery_app.task(name="tasks.batch_test_sources")
 def batch_test_sources_task(source_ids: list[str]):
     """Batch test book sources for connectivity in background."""

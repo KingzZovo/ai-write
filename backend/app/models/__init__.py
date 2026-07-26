@@ -6,6 +6,7 @@ via a single import of this package.
 
 from app.db.session import Base
 from app.models.ask_user import AskUserPause
+from app.models.author_dossier import AuthorDossier
 from app.models.call_log import LLMCallLog
 from app.models.cascade_task import CascadeTask
 from app.models.decompile import BeatSheetCard, ReferenceBookSlice, StyleProfileCard
@@ -49,6 +50,7 @@ __all__ = [
     "Base",
     "AntiAITrap",
     "AskUserPause",
+    "AuthorDossier",
     "BeatPattern",
     "BeatSheetCard",
     "BookSource",

@@ -39,7 +39,7 @@ class ResolvedStyle:
     profile: StyleProfile | None = None
     reference_book_id: str | None = None
     style_text: str = ""
-    source: str = ""  # "dossier" | "compiled" | ""
+    source: str = ""  # "dossier" | "author_dossier" | "compiled" | ""
 
 
 # ---------------------------------------------------------------------------
@@ -53,11 +53,18 @@ class ResolvedStyle:
 
 
 def get_dossier_block(book, key: str) -> str:
-    """Return dossier[key] from a ReferenceBook when present, else ""."""
-    meta = getattr(book, "metadata_json", None) or {}
-    if not isinstance(meta, dict):
-        return ""
-    dossier = meta.get("dossier")
+    """Return dossier[key] from a ReferenceBook or AuthorDossier, else "".
+
+    Same accessor for both dossier granularities: ReferenceBook rows carry
+    ``metadata_json['dossier']``; AuthorDossier rows carry ``dossier_json``
+    directly (same contract shape, larger caps).
+    """
+    dossier = getattr(book, "dossier_json", None)  # AuthorDossier rows
+    if not isinstance(dossier, dict) or not dossier:
+        meta = getattr(book, "metadata_json", None) or {}
+        if not isinstance(meta, dict):
+            return ""
+        dossier = meta.get("dossier")
     if not isinstance(dossier, dict):
         return ""
     block = dossier.get(key)
@@ -71,6 +78,42 @@ def build_style_injection_block(style_text: str, max_chars: int = STYLE_INJECTIO
     if not text:
         return ""
     return "[风格要求] " + text[:max_chars]
+
+
+def _settings_author_name(settings_json: dict) -> str | None:
+    """Author binding from project settings (style_reference.author_name)."""
+    if not isinstance(settings_json, dict):
+        return None
+    style_ref = settings_json.get("style_reference") or {}
+    if isinstance(style_ref, dict):
+        name = style_ref.get("author_name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
+
+
+async def load_author_dossier(db: AsyncSession, author: str):
+    """Load the AuthorDossier row for an author, or None.
+
+    Tolerates a missing table (migration not applied yet): logs and rolls
+    the failed transaction back so the caller's session stays usable.
+    """
+    if not author:
+        return None
+    from app.models.author_dossier import AuthorDossier
+
+    try:
+        result = await db.execute(
+            select(AuthorDossier).where(AuthorDossier.author == author).limit(1)
+        )
+        return result.scalar_one_or_none()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("author dossier lookup failed for %s: %s", author, exc)
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
 
 
 def _settings_style_profile_id(settings_json: dict) -> str | None:
@@ -250,13 +293,14 @@ async def resolve_reference_book_id(
 
 
 async def production_style_text_for_profile(
-    db: AsyncSession, profile: StyleProfile
+    db: AsyncSession, profile: StyleProfile, settings_json: dict | None = None
 ) -> tuple[str, str, str | None]:
     """Build the production writer-injection style text for a profile.
 
-    Returns (style_text, source, reference_book_id). Prefers the consolidated
-    dossier style_block on the profile's reference book; falls back to
-    compile_style WITHOUT sample_passages few-shot (PR-NO-RAW-INJECT).
+    Returns (style_text, source, reference_book_id). Preference order:
+    book dossier style_block > author dossier style_block (when settings
+    carry ``style_reference.author_name``) > compile_style WITHOUT
+    sample_passages few-shot (PR-NO-RAW-INJECT).
     """
     from app.models.project import ReferenceBook
 
@@ -270,7 +314,34 @@ async def production_style_text_for_profile(
             block = get_dossier_block(book, "style_block")
             if block:
                 return block, "dossier", reference_book_id
+    author = _settings_author_name(settings_json or {})
+    if author:
+        author_row = await load_author_dossier(db, author)
+        if author_row is not None:
+            block = get_dossier_block(author_row, "style_block")
+            if block:
+                return block, "author_dossier", reference_book_id
     return compile_style(profile, include_samples=False), "compiled", reference_book_id
+
+
+async def resolve_author_structure_block(
+    db: AsyncSession, settings_json: dict | None
+) -> str:
+    """Author-tier structure injection block for an author-only binding.
+
+    When project settings carry ``style_reference.author_name`` but no
+    structure book resolves, this returns the author dossier's
+    structure_block through the same ``get_dossier_block`` accessor
+    generate.py already uses for book dossiers (AuthorDossier rows are
+    accepted by that helper directly).
+    """
+    author = _settings_author_name(settings_json or {})
+    if not author:
+        return ""
+    author_row = await load_author_dossier(db, author)
+    if author_row is None:
+        return ""
+    return get_dossier_block(author_row, "structure_block")
 
 
 async def resolve_style_context(
@@ -280,7 +351,9 @@ async def resolve_style_context(
     style_id: str | UUID | None = None,
 ) -> ResolvedStyle:
     """Full resolution: profile (explicit id > settings > bind chain) plus the
-    derived reference book id and the production style text."""
+    derived reference book id and the production style text (book dossier >
+    author dossier > compiled)."""
+    settings_json = await _load_project_settings(db, project_id)
     profile: StyleProfile | None = None
     if style_id:
         try:
@@ -288,10 +361,23 @@ async def resolve_style_context(
         except Exception:
             profile = None
     if profile is None:
-        profile = await resolve_active_profile(db, project_id, chapter_id)
+        profile = await resolve_active_profile(
+            db, project_id, chapter_id, settings_json=settings_json
+        )
     if profile is None:
+        # Author-only binding: no profile resolves, but a consolidated
+        # author dossier can still drive the style injection.
+        author = _settings_author_name(settings_json)
+        if author:
+            author_row = await load_author_dossier(db, author)
+            if author_row is not None:
+                block = get_dossier_block(author_row, "style_block")
+                if block:
+                    return ResolvedStyle(style_text=block, source="author_dossier")
         return ResolvedStyle()
-    style_text, source, reference_book_id = await production_style_text_for_profile(db, profile)
+    style_text, source, reference_book_id = await production_style_text_for_profile(
+        db, profile, settings_json=settings_json
+    )
     return ResolvedStyle(
         profile=profile,
         reference_book_id=reference_book_id,

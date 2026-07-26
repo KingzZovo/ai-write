@@ -12,6 +12,12 @@ Consolidation layer (book dossier):
 - POST /api/decompile/{id}/consolidate: aggregate micro-cards into one dossier
 - GET  /api/decompile/{id}/dossier: return dossier + status
 
+Consolidation layer (author dossier — Chinese author names travel in the
+query string / JSON body, never in path segments):
+- GET  /api/decompile/authors: distinct authors + dossier readiness counts
+- POST /api/decompile/authors/consolidate: merge the author's book dossiers
+- GET  /api/decompile/authors/dossier?author=...: author dossier + status
+
 The router carries no prefix (paths are spelled out per route) so the two URL
 spaces /api/reference-books and /api/decompile can share this one router
 without touching main.py.
@@ -270,6 +276,165 @@ class DossierResponse(BaseModel):
     book_id: UUID
     status: dict | None = None
     dossier: dict | None = None
+
+
+# =========================================================================
+# Consolidation layer — author dossier (cross-book)
+#
+# Registered BEFORE the /api/decompile/{book_id}/... routes so the literal
+# "authors" segment is not captured by the UUID path parameter. Author names
+# are Chinese, so they travel in the query string / JSON body, never in path
+# segments.
+# =========================================================================
+
+class AuthorConsolidateRequest(BaseModel):
+    author: str
+
+
+class AuthorDossierResponse(BaseModel):
+    author: str
+    status: dict | None = None
+    dossier: dict | None = None
+
+
+class AuthorSummary(BaseModel):
+    author: str
+    book_count: int
+    books_with_dossier: int
+    dossier_status: dict | None = None
+
+
+async def _author_book_count(db: AsyncSession, author: str) -> int:
+    return (
+        await db.scalar(
+            select(func.count(ReferenceBook.id)).where(
+                ReferenceBook.author == author
+            )
+        )
+    ) or 0
+
+
+async def _load_author_dossier_row(db: AsyncSession, author: str):
+    """AuthorDossier row or None; tolerates a not-yet-migrated table."""
+    from app.models.author_dossier import AuthorDossier
+
+    try:
+        result = await db.execute(
+            select(AuthorDossier).where(AuthorDossier.author == author).limit(1)
+        )
+        return result.scalar_one_or_none()
+    except Exception as exc:
+        logger.warning("author_dossiers lookup failed: %s", exc)
+        await db.rollback()
+        return None
+
+
+@router.get("/api/decompile/authors", response_model=list[AuthorSummary])
+async def list_authors(db: AsyncSession = Depends(get_db)) -> list[AuthorSummary]:
+    """All distinct reference-book authors with dossier readiness counts."""
+    rows = await db.execute(
+        select(
+            ReferenceBook.author,
+            ReferenceBook.metadata_json["dossier_status"],
+        ).where(ReferenceBook.author.isnot(None), ReferenceBook.author != "")
+    )
+    counts: dict[str, dict] = {}
+    for author, dossier_status in rows.all():
+        entry = counts.setdefault(author, {"book_count": 0, "books_with_dossier": 0})
+        entry["book_count"] += 1
+        if isinstance(dossier_status, dict) and dossier_status.get("state") == "done":
+            entry["books_with_dossier"] += 1
+
+    statuses: dict[str, dict] = {}
+    from app.models.author_dossier import AuthorDossier
+
+    try:
+        dossier_rows = await db.execute(
+            select(AuthorDossier.author, AuthorDossier.status_json)
+        )
+        statuses = {a: s for a, s in dossier_rows.all() if isinstance(s, dict) and s}
+    except Exception as exc:
+        logger.warning("author_dossiers listing failed: %s", exc)
+        await db.rollback()
+
+    return [
+        AuthorSummary(
+            author=author,
+            book_count=entry["book_count"],
+            books_with_dossier=entry["books_with_dossier"],
+            dossier_status=statuses.get(author),
+        )
+        for author, entry in sorted(counts.items())
+    ]
+
+
+@router.post(
+    "/api/decompile/authors/consolidate",
+    response_model=ConsolidateResponse,
+    status_code=202,
+)
+async def consolidate_author_route(
+    req: AuthorConsolidateRequest, db: AsyncSession = Depends(get_db)
+) -> ConsolidateResponse:
+    """Merge an author's per-book dossiers into one author dossier (async).
+
+    Marks the author_dossiers status marker as queued, then fires the celery
+    task; if the broker is unreachable, falls back to an in-process
+    background asyncio task (mirroring the per-book consolidate route).
+    """
+    author = (req.author or "").strip()
+    if not author or not await _author_book_count(db, author):
+        raise HTTPException(
+            status_code=404, detail="no reference books for author"
+        )
+
+    from app.services.book_dossier import _get_or_create_author_row
+
+    row = await _get_or_create_author_row(db, author)
+    row.status_json = {
+        "state": "queued",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    flag_modified(row, "status_json")
+    await db.commit()
+
+    try:
+        from app.tasks import celery_app  # noqa: WPS433
+
+        async_result = celery_app.send_task(
+            "tasks.consolidate_author",
+            args=[author],
+        )
+        return ConsolidateResponse(status="queued", task_id=async_result.id)
+    except Exception as exc:
+        logger.warning(
+            "celery enqueue failed for author consolidate, running in "
+            "background: %s", exc,
+        )
+        from app.services import book_dossier
+
+        task = asyncio.create_task(book_dossier.consolidate_author(author))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+        return ConsolidateResponse(status="started")
+
+
+@router.get("/api/decompile/authors/dossier", response_model=AuthorDossierResponse)
+async def get_author_dossier(
+    author: str, db: AsyncSession = Depends(get_db)
+) -> AuthorDossierResponse:
+    """Return the consolidated author dossier and its status marker."""
+    author = (author or "").strip()
+    row = await _load_author_dossier_row(db, author) if author else None
+    if not author or (row is None and not await _author_book_count(db, author)):
+        raise HTTPException(
+            status_code=404, detail="no reference books for author"
+        )
+    return AuthorDossierResponse(
+        author=author,
+        status=(row.status_json or None) if row is not None else None,
+        dossier=(row.dossier_json or None) if row is not None else None,
+    )
 
 
 @router.post(

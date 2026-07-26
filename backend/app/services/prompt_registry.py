@@ -410,6 +410,54 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
         ),
     },
     {
+        "task_type": "author_style_merge",
+        "name": "作者级风格合并",
+        "name_en": "Author Style Merge",
+        "description": "将同一作者多本书的全书级风格档案蒸馏为作者级风格档案（作者惯用 vs 单书特例）",
+        "description_en": "Distill one author's per-book style profiles into an author-level profile (habitual vs book-specific).",
+        "category": "Decompile",
+        "order": 154,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是作者风格总设计师。输入是同一作者多本书的全书级风格档案与确定性跨书对比，"
+            "不是原书全文。主字段只写跨书一致的「作者惯用」，单书独有写法放入 book_specific。"
+            "只输出 JSON。不得出现真实书名、人名、地名等专有名词。"
+        ),
+    },
+    {
+        "task_type": "author_plot_merge",
+        "name": "作者级剧情架构合并",
+        "name_en": "Author Plot Merge",
+        "description": "将同一作者多本书的剧情架构档案蒸馏为作者级架构档案（作者惯用 vs 单书特例）",
+        "description_en": "Distill one author's per-book plot-architecture profiles into an author-level profile.",
+        "category": "Decompile",
+        "order": 155,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是作者剧情架构分析师。输入是同一作者多本书的剧情架构档案与确定性跨书节奏对比。"
+            "主字段只写跨书一致的「作者惯用」结构模式，单书独有结构放入 book_specific。"
+            "只输出 JSON。不得出现真实书名/人名/地名等专有名词。"
+        ),
+    },
+    {
+        "task_type": "author_world_merge",
+        "name": "作者级世界观合并",
+        "name_en": "Author World Merge",
+        "description": "将同一作者多本书的世界观架构档案蒸馏为作者级设计模式档案",
+        "description_en": "Distill one author's per-book worldview dossiers into an author-level design-pattern profile.",
+        "category": "Decompile",
+        "order": 156,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是作者世界观系统设计师。输入是同一作者多本书的世界观架构档案与去重后的设计模式并集。"
+            "主字段只写跨书复现的「作者惯用」设计模式，单书独有设定放入 book_specific。"
+            "只输出 JSON。不得出现真实书名或任何原书专有名词。"
+        ),
+    },
+    {
         "task_type": "critic",
         "name": "一致性审校",
         "name_en": "Consistency Critic",
@@ -598,6 +646,9 @@ _TASK_TYPE_FALLBACK: dict[str, str] = {
     "plot_consolidation": "extraction",
     "world_arch_extraction": "extraction",
     "world_arch_merge": "extraction",
+    "author_style_merge": "extraction",
+    "author_plot_merge": "extraction",
+    "author_world_merge": "extraction",
     # Multi-agent chapter pipeline (subproject B): degrade to existing
     # prompts when no dedicated PromptAsset is configured.
     "logic_critic": "critic",
