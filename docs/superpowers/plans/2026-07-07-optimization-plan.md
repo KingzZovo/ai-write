@@ -10,6 +10,25 @@
 
 ---
 
+## 执行状态（2026-07-26 收口）
+
+| Task | 状态 | 说明 |
+|------|------|------|
+| 1 (.env.example 清理) | ✅ | commit 2d39c1c |
+| 2/12 (CORS 环境变量化) | ✅ | commit 2d39c1c |
+| 3/8 (os.getenv 收归 Settings) | ✅ | commit 2d39c1c |
+| 4/7 (context_pack 查询合并) | ✅ | 已在 _build_proximity 单查询取章 + 合并 outline 查询（随 0af5efa 提交） |
+| 5 (context_pack 文件拆分) | ⏭️ 跳过 | 判断：单一内聚域（dataclass+渲染+builder），拆散跨文件反伤导航；风险>收益 |
+| 6 (knowledge_tasks 拆分) | ✅ | commit 1a02308：generation/book/analysis/common 四模块 + 兼容 facade |
+| 9 (异常分级) | ✅ | context_pack 各层 SQLAlchemyError 上抛、其余降级带 project/ch 上下文日志（随 0af5efa） |
+| 9' (前端测试框架) | ✅ | commit 612bdbf：Vitest + 12 tests |
+| 10 (消除 any) | ✅ | projectStore 本已零 any；knowledge/styles/foreshadow/sentry 类型化，eslint 78→18 |
+| 11 (ErrorBoundary) | ✅ | commit b37d11d |
+
+剩余 10 个 eslint error 全部为 react-compiler `setState-in-effect`（行为级重构，另行排期）。
+
+---
+
 ## Phase 概览
 
 | Phase | 目标 | 预估耗时 | 依赖 |
