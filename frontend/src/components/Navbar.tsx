@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { getToken, clearToken } from '@/lib/api'
@@ -15,6 +15,14 @@ const NAV_LINKS: Array<{ href: string; key: MessageKey }> = [
   { href: '/filter-words', key: 'nav.filterWords' },
   { href: '/prompts', key: 'nav.prompts' },
   { href: '/settings', key: 'nav.settings' },
+]
+
+// Global utility pages, grouped under a "工具" dropdown on desktop and
+// appended to the drawer on mobile.
+const TOOL_LINKS: Array<{ href: string; key: MessageKey }> = [
+  { href: '/logs', key: 'nav.logs' },
+  { href: '/vector', key: 'nav.vector' },
+  { href: '/settings/writing-engine', key: 'nav.writingEngine' },
 ]
 
 export function Navbar() {
@@ -87,6 +95,7 @@ export function Navbar() {
             </Link>
           )
         })}
+        <ToolsMenu pathname={pathname} />
       </div>
 
       {/* Spacer to push right cluster to the edge on mobile */}
@@ -110,7 +119,7 @@ export function Navbar() {
           className="safe-area-x md:hidden fixed left-0 right-0 top-12 bg-white border-b border-gray-200 shadow-popover"
         >
           <ul className="flex flex-col py-2">
-            {NAV_LINKS.map(({ href, key }) => {
+            {[...NAV_LINKS, ...TOOL_LINKS].map(({ href, key }) => {
               const isActive = pathname.startsWith(href)
               return (
                 <li key={href}>
@@ -132,5 +141,58 @@ export function Navbar() {
         </div>
       )}
     </nav>
+  )
+}
+
+function ToolsMenu({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const t = useT()
+
+  useEffect(() => { setOpen(false) }, [pathname])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const isActive = TOOL_LINKS.some(({ href }) => pathname.startsWith(href))
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid="nav-tools"
+        className={`text-sm font-medium transition-colors ${
+          isActive ? 'text-blue-600' : 'text-gray-600 hover:text-gray-900'
+        }`}
+      >
+        {t('nav.tools')} ▾
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-2 w-36 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {TOOL_LINKS.map(({ href, key }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setOpen(false)}
+              className={`block px-3 py-2 text-sm ${
+                pathname.startsWith(href)
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {t(key)}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

@@ -204,10 +204,19 @@ async def test_hook_manager_update_entities_dispatches_only():
 
     Regression guard: any cypher MERGE for Character with flat
     c.status/c.location was the source of the 49 GqlStatus warnings.
+
+    Global-axis fix: the hook now resolves the chapter's id via
+    (volume_id, chapter_idx) — the local idx alone is ambiguous across
+    volumes — and passes it to the dispatcher.
     """
     from app.services import hook_manager as hm
 
-    mgr = hm.HookManager()
+    fake_db = MagicMock()
+    fake_result = MagicMock()
+    fake_result.scalar_one_or_none.return_value = "ch-id-vol2"
+    fake_db.execute = AsyncMock(return_value=fake_result)
+
+    mgr = hm.HookManager(db=fake_db)
 
     with patch.object(
         hm, "dispatch_entity_extraction", return_value=True
@@ -216,6 +225,7 @@ async def test_hook_manager_update_entities_dispatches_only():
     ) as mock_get_neo4j:
         await mgr._update_entities(
             project_id="p-1",
+            volume_id="vol-2",
             chapter_idx=3,
             chapter_text="some chapter text",
         )
@@ -224,6 +234,7 @@ async def test_hook_manager_update_entities_dispatches_only():
     kwargs = mock_dispatch.call_args.kwargs
     assert kwargs["project_id"] == "p-1"
     assert kwargs["chapter_idx"] == 3
+    assert kwargs["chapter_id"] == "ch-id-vol2"
     assert kwargs["caller"] == "HookManager.run_post_hooks"
     # Critical: no neo4j driver was even fetched (no inline writes)
     mock_get_neo4j.assert_not_called()
@@ -310,13 +321,15 @@ async def test_extract_chapter_async_idempotent_on_completed_marker():
     fake_driver = MagicMock()
     fake_driver.session = MagicMock(return_value=fake_session)
 
-    # Patch init_neo4j to be a no-op + force _driver to our fake
+    # Patch init_neo4j to be a no-op + force _driver to our fake.
+    # _resolve_chapter is stubbed (its own behavior is covered in
+    # tests/test_global_chapter_idx.py): resolution now happens BEFORE the
+    # marker claim because the marker is keyed on the book-global idx.
     import app.db.neo4j as neo4j_mod
     with patch.object(neo4j_mod, "init_neo4j", new=AsyncMock(return_value=None)), \
          patch.object(neo4j_mod, "_driver", fake_driver), \
-         patch.object(entity_tasks, "_load_chapter_text",
-                      new=AsyncMock(side_effect=AssertionError(
-                          "chapter loader must not run when marker=completed"))):
+         patch.object(entity_tasks, "_resolve_chapter",
+                      new=AsyncMock(return_value=(2, "章节正文"))):
         result = await entity_tasks._extract_chapter_async(
             project_id="p-1",
             chapter_idx=2,
@@ -325,3 +338,4 @@ async def test_extract_chapter_async_idempotent_on_completed_marker():
 
     assert result["status"] == "skipped"
     assert result["reason"] == "already_completed"
+    assert result["global_idx"] == 2

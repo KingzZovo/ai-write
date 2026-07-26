@@ -64,6 +64,42 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   return res.json()
 }
 
+/** Download a binary API response (e.g. /api/export/...) with the auth header,
+ *  saving it via a temporary object URL. apiFetch is JSON-only. */
+export async function apiDownload(path: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    cache: 'no-store',
+    headers: { ...authHeaders() },
+  })
+  if (res.status === 401) {
+    clearToken()
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login'
+    }
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }))
+    const detail = error?.detail
+    throw new Error(typeof detail === 'string' ? detail : 'Download failed')
+  }
+  const blob = await res.blob()
+  // Backend sends RFC 5987 filename*=UTF-8''... for Chinese titles.
+  const cd = res.headers.get('content-disposition') || ''
+  const match = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+  const filename = match
+    ? decodeURIComponent(match[1])
+    : (path.split('/').pop() || 'download')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function apiSSE(
   path: string,
   body: Record<string, unknown>,

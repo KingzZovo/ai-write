@@ -148,6 +148,13 @@ class HookManager:
         """
         result = HookResult()
 
+        # ``chapter_idx`` is volume-local; character-state comparisons run on
+        # the book-global axis (character_states.chapter_start / Neo4j
+        # chapter_start are global). Fail-safe: falls back to the local value.
+        global_idx = await self._resolve_global_idx(
+            project_id, volume_id, chapter_idx
+        )
+
         # 1. Foreshadow proximity check
         try:
             foreshadow_result = await self._check_foreshadows(
@@ -167,7 +174,7 @@ class HookManager:
         # 2. Character consistency check
         try:
             char_warnings = await self._check_character_consistency(
-                project_id, chapter_idx, chapter_outline
+                project_id, global_idx, chapter_outline
             )
             result.warnings.extend(char_warnings)
         except Exception:
@@ -228,28 +235,37 @@ class HookManager:
             except Exception:
                 logger.exception("Post-hook %s failed", name)
 
+        # ``chapter_idx`` is volume-local. Foreshadow bookkeeping columns
+        # (planted_chapter / resolved_chapter) are book-global by convention
+        # (see foreshadow_lifecycle.chapter_global_idx), so those hooks get
+        # the resolved global idx; the summary/entity hooks stay volume-scoped
+        # via ``volume_id`` + local idx, which identifies the chapter uniquely.
+        global_idx = await self._resolve_global_idx(
+            project_id, volume_id, chapter_idx
+        )
+
         # 1. Entity extraction (Celery dispatch -- fast)
         await _run_step(
             "_update_entities",
-            self._update_entities(project_id, chapter_idx, chapter_text),
+            self._update_entities(project_id, volume_id, chapter_idx, chapter_text),
             timeout=30.0,
         )
         # 2. Chapter summary (1 LLM call)
         await _run_step(
             "_generate_summary",
-            self._generate_summary(project_id, chapter_idx, chapter_text),
+            self._generate_summary(project_id, volume_id, chapter_idx, chapter_text),
             timeout=180.0,
         )
         # 3. Foreshadow resolution check (N LLM calls -- one per active foreshadow)
         await _run_step(
             "_check_foreshadow_resolution",
-            self._check_foreshadow_resolution(project_id, chapter_idx, chapter_text),
+            self._check_foreshadow_resolution(project_id, global_idx, chapter_text),
             timeout=300.0,
         )
         # 4. Register new foreshadows (1 LLM extraction call)
         await _run_step(
             "_register_new_foreshadows",
-            self._register_new_foreshadows(project_id, chapter_idx, chapter_text),
+            self._register_new_foreshadows(project_id, global_idx, chapter_text),
             timeout=180.0,
         )
 
@@ -257,6 +273,43 @@ class HookManager:
             "Post-hooks completed for project=%s chapter=%d",
             project_id, chapter_idx,
         )
+
+    async def _resolve_global_idx(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+    ) -> int:
+        """Convert the volume-local ``chapter_idx`` into the book-global index.
+
+        Same convention as ``foreshadow_lifecycle.chapter_global_idx`` (and
+        ``Chapter.global_idx``): chapters in lower-volume_idx volumes + local
+        idx, so global == local for single-volume projects. Fail-safe:
+        returns the local value on any error (hooks must never block
+        generation).
+        """
+        try:
+            db = await self._get_db()
+            vol_idx = (
+                await db.execute(
+                    select(Volume.volume_idx).where(Volume.id == str(volume_id))
+                )
+            ).scalar_one_or_none()
+            if vol_idx is None:
+                return int(chapter_idx)
+            from app.services.foreshadow_lifecycle import chapter_global_idx
+
+            return int(
+                await chapter_global_idx(
+                    db, str(project_id), int(vol_idx), int(chapter_idx)
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Global chapter idx resolution failed (volume_id=%s, local=%s): %s",
+                volume_id, chapter_idx, exc,
+            )
+            return int(chapter_idx)
 
     # ==================================================================
     # Pre-generation hooks
@@ -284,6 +337,10 @@ class HookManager:
     ) -> list[str]:
         """Verify characters referenced in outline are alive and in
         correct location by querying Neo4j.
+
+        ``chapter_idx`` must be BOOK-GLOBAL here (run_pre_hooks resolves
+        it): both ``character_states.chapter_start`` and the Neo4j
+        chapter_start edges live on the global axis.
 
         Returns:
             List of warning strings. Empty if all checks pass.
@@ -425,6 +482,7 @@ class HookManager:
     async def _update_entities(
         self,
         project_id: str | UUID,
+        volume_id: str | UUID,
         chapter_idx: int,
         chapter_text: str,
     ) -> None:
@@ -436,27 +494,55 @@ class HookManager:
         Character-[:HAS_STATE]->CharacterState schema). This hook only
         dispatches.
 
+        ``chapter_idx`` is volume-local and ambiguous across volumes, so we
+        resolve the chapter's id via ``volume_id`` and pass it along — the
+        task uses it to land on the right chapter and its book-global index.
+
         ``chapter_text`` is intentionally unused: the task re-loads the
         canonical text from Postgres so the contract is the same whether
         dispatch comes from batch_generator (with text) or from a save-
         path hook (without text).
         """
         del chapter_text  # acknowledged but unused -- task reloads from DB
+        chapter_id = None
+        try:
+            db = await self._get_db()
+            chapter_id = (
+                await db.execute(
+                    select(Chapter.id)
+                    .where(
+                        Chapter.volume_id == str(volume_id),
+                        Chapter.chapter_idx == int(chapter_idx),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "chapter_id resolution for entity dispatch failed "
+                "(volume=%s ch=%s): %s",
+                volume_id, chapter_idx, exc,
+            )
         dispatch_entity_extraction(
             project_id=project_id,
             chapter_idx=chapter_idx,
+            chapter_id=chapter_id,
             caller="HookManager.run_post_hooks",
         )
 
     async def _generate_summary(
         self,
         project_id: str | UUID,
+        volume_id: str | UUID,
         chapter_idx: int,
         chapter_text: str,
     ) -> None:
         """Generate and store a chapter summary.
 
         The summary is saved to the Chapter.summary field in PostgreSQL.
+        ``chapter_idx`` is volume-local, so the lookup is scoped to
+        ``volume_id`` — a project-wide idx match returned multiple rows
+        (MultipleResultsFound) from volume 2 onward.
         """
         # B2' (v1.5.0): use async router + tier-aware fallback so this hook
         # is celery-loop-safe and resilient to single-endpoint INTERNAL_ERROR
@@ -494,21 +580,13 @@ class HookManager:
         if not summary_text:
             return
 
-        # Find and update the chapter in the database
+        # Find and update the chapter in the database. chapter_idx is
+        # volume-local: scope by volume_id so the match is unique.
         db = await self._get_db()
 
-        # Get volume IDs for this project
-        vol_result = await db.execute(
-            select(Volume.id).where(Volume.project_id == str(project_id))
-        )
-        volume_ids = list(vol_result.scalars().all())
-        if not volume_ids:
-            return
-
-        # Find the chapter by index
         chapter_result = await db.execute(
             select(Chapter).where(
-                Chapter.volume_id.in_(volume_ids),
+                Chapter.volume_id == str(volume_id),
                 Chapter.chapter_idx == chapter_idx,
             )
         )

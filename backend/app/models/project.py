@@ -14,7 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy import Boolean
+from sqlalchemy import Boolean, event, func, select
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -102,6 +102,16 @@ class Chapter(Base):
     )
     title = Column(String(500), nullable=False)
     chapter_idx = Column(Integer, nullable=False)
+    # Book-global 1-based chapter index. ``chapter_idx`` stays volume-local
+    # (user-visible numbering restarts each volume); ``global_idx`` is the
+    # canonical monotonic axis the memory subsystem queries on (extraction
+    # markers, character_states/character_locations.chapter_start, timeline
+    # anchors, strand tracker). Convention matches
+    # ``foreshadow_lifecycle.chapter_global_idx``: chapters in lower-volume_idx
+    # volumes + local idx, so global == local for single-volume projects.
+    # Stamped by ``_set_chapter_global_idx`` below; backfilled by migration
+    # a1001915.
+    global_idx = Column(Integer, nullable=True, index=True)
     outline_json = Column(JSON, default=dict)
     content_text = Column(Text, default="")
     word_count = Column(Integer, default=0)
@@ -129,6 +139,51 @@ class Chapter(Base):
         cascade="all, delete-orphan",
         order_by="ChapterEvaluation.created_at",
     )
+
+
+@event.listens_for(Chapter, "before_insert")
+def _set_chapter_global_idx(mapper, connection, target) -> None:
+    """Stamp ``Chapter.global_idx`` at insert time.
+
+    All chapter-creation sites (api/chapters.py, api/volumes.py) go through
+    an ORM ``session.add`` flush, so this listener keeps ``global_idx``
+    maintained without touching every creation site. Chapters of the same
+    volume don't count toward each other's base (strict ``volume_idx <``),
+    so bulk-creating a whole volume in one flush stays correct.
+
+    Fail-open: on any error the column is left NULL — readers treat NULL as
+    "not on the global axis" and consumers fall back to computing via
+    ``foreshadow_lifecycle.chapter_global_idx``. Chapter creation must never
+    fail because of this bookkeeping.
+    """
+    if target.global_idx is not None:
+        return
+    if target.volume_id is None or target.chapter_idx is None:
+        return
+    try:
+        vol = Volume.__table__
+        ch = Chapter.__table__
+        project_id_sq = (
+            select(vol.c.project_id)
+            .where(vol.c.id == target.volume_id)
+            .scalar_subquery()
+        )
+        volume_idx_sq = (
+            select(vol.c.volume_idx)
+            .where(vol.c.id == target.volume_id)
+            .scalar_subquery()
+        )
+        base = connection.execute(
+            select(func.count(ch.c.id))
+            .select_from(ch.join(vol, ch.c.volume_id == vol.c.id))
+            .where(
+                vol.c.project_id == project_id_sq,
+                vol.c.volume_idx < volume_idx_sq,
+            )
+        ).scalar()
+        target.global_idx = int(base or 0) + int(target.chapter_idx)
+    except Exception:  # pragma: no cover - defensive, see docstring
+        target.global_idx = None
 
 
 class Outline(Base):

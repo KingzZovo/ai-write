@@ -109,6 +109,41 @@ def _sync_single_shot_llm_kwargs() -> dict[str, float | int | bool]:
     }
 
 
+# SSE-HEARTBEAT (2026-07-26): interval between keep-alive comment frames
+# emitted while a long non-yielding phase (logic critic / drafter / rewrite /
+# evaluator) runs. Must stay well under nginx proxy_read_timeout (600s).
+_SSE_HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+
+async def _yield_with_heartbeat(
+    coro, interval: float = _SSE_HEARTBEAT_INTERVAL_SECONDS
+) -> AsyncGenerator[tuple[bool, object], None]:
+    """Await ``coro`` while keeping the SSE connection alive.
+
+    Yields ``(False, ": ping\\n\\n")`` heartbeat frames while the coroutine is
+    still running, then a final ``(True, result)``. SSE comment lines (leading
+    colon) are protocol-safe: parsers only act on ``data:`` lines, but proxies
+    (nginx proxy_read_timeout=600s) see traffic and keep the pipe open during
+    LLM calls that would otherwise emit nothing for >600s.
+
+    The coroutine's exception is re-raised when its result is retrieved, so
+    existing try/except blocks around call sites behave unchanged. If the
+    consuming generator is closed mid-flight (client disconnect), the inner
+    task is cancelled instead of being orphaned.
+    """
+    task = asyncio.ensure_future(coro)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=interval)
+            if done:
+                break
+            yield False, ": ping\n\n"
+        yield True, task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+
+
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
 
@@ -398,8 +433,25 @@ async def generate_chapter(
                 orchestrator = SceneOrchestrator()
                 effective_target_words = req.target_words or target_words
 
+                # SceneOrchestrator awaits this callback just before each
+                # scene's first chunk; a callback cannot yield into this SSE
+                # generator, so it buffers the frame and the chunk loops below
+                # drain the buffer before emitting the next text chunk (same
+                # spirit as collected_text for text). SceneBrief only carries
+                # its own 1-based idx/title — the orchestrator does not pass
+                # the plan size to the callback — so ``total`` is null.
+                _pending_scene_events: list[str] = []
+
                 async def _on_scene_start(scene) -> None:  # type: ignore[no-untyped-def]
-                    pass  # placeholder; SSE "scene" events can be added later
+                    payload = {
+                        "event": "scene",
+                        "scene_idx": int(getattr(scene, "idx", 0) or 0),
+                        "total": None,
+                        "title": getattr(scene, "title", "") or "",
+                    }
+                    _pending_scene_events.append(
+                        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    )
 
                 try:
                     stream_iter = orchestrator.orchestrate_chapter_stream(
@@ -414,9 +466,14 @@ async def generate_chapter(
                         on_scene_start=_on_scene_start,
                     )
                     async for chunk in stream_iter:
+                        while _pending_scene_events:
+                            yield _pending_scene_events.pop(0)
                         if chunk:
                             collected_text.append(chunk)
                         yield f"data: {json.dumps({'text': chunk})}\n\n"
+                    # A scene that produced zero chunks leaves its event queued.
+                    while _pending_scene_events:
+                        yield _pending_scene_events.pop(0)
                 except Exception as scene_err:
                     # Root-cause guard: SceneOrchestrator is strict about scene_planner.
                     # If planning fails, fall back to the single-shot chapter generator
@@ -429,13 +486,24 @@ async def generate_chapter(
                     # regenerates the full chapter, so keeping them would
                     # duplicate content in the saved full_text.
                     collected_text.clear()
+                    _pending_scene_events.clear()
                     yield f"data: {json.dumps({'event': 'fallback_restart'}, ensure_ascii=False)}\n\n"
-                    generated_text = await _run_single_shot_generator()
+                    generated_text = ""
+                    async for _hb_done, _hb_val in _yield_with_heartbeat(_run_single_shot_generator()):
+                        if _hb_done:
+                            generated_text = _hb_val
+                        else:
+                            yield _hb_val
                     if generated_text:
                         collected_text.append(generated_text)
                     yield f"data: {json.dumps({'text': generated_text}, ensure_ascii=False)}\n\n"
             else:
-                generated_text = await _run_single_shot_generator()
+                generated_text = ""
+                async for _hb_done, _hb_val in _yield_with_heartbeat(_run_single_shot_generator()):
+                    if _hb_done:
+                        generated_text = _hb_val
+                    else:
+                        yield _hb_val
                 if generated_text:
                     collected_text.append(generated_text)
                 yield f"data: {json.dumps({'text': generated_text}, ensure_ascii=False)}\n\n"
@@ -471,16 +539,23 @@ async def generate_chapter(
                         from app.db.session import async_session_factory
                         from app.services.chapter_pipeline import run_chapter_pipeline
                         async with async_session_factory() as quality_db:
-                            pipeline_result = await run_chapter_pipeline(
-                                text=full_text,
-                                db=quality_db,
-                                project_id=req.project_id,
-                                chapter_id=req.chapter_id,
-                                target_word_count=target_words,
-                                chapter_outline=chapter_outline,
-                                prev_chapter_tail=(previous_text or "")[-1500:],
-                                skip_polish=False,
-                            )
+                            pipeline_result = None
+                            async for _hb_done, _hb_val in _yield_with_heartbeat(
+                                run_chapter_pipeline(
+                                    text=full_text,
+                                    db=quality_db,
+                                    project_id=req.project_id,
+                                    chapter_id=req.chapter_id,
+                                    target_word_count=target_words,
+                                    chapter_outline=chapter_outline,
+                                    prev_chapter_tail=(previous_text or "")[-1500:],
+                                    skip_polish=False,
+                                )
+                            ):
+                                if _hb_done:
+                                    pipeline_result = _hb_val
+                                else:
+                                    yield _hb_val
                         # logic_critic 报告作为独立可选事件（前端可选消费，不破坏既有事件）。
                         yield f"data: {json.dumps({'event': 'logic_critic_done', **pipeline_result.to_echo_report()}, ensure_ascii=False)}\n\n"
                         quality_gate_result = pipeline_result.quality_gate_result
@@ -778,13 +853,20 @@ async def generate_chapter(
                         # 1) Score the current saved version.
                         yield f"data: {json.dumps({'event': 'evaluating', 'round': round_idx})}\n\n"
                         evaluator = ChapterEvaluator()
-                        eval_result = await evaluator.evaluate(
-                            chapter_text=current_text,
-                            chapter_outline=revise_outline,
-                            previous_summary=evaluation_context,
-                            style_profile=resolved_style,
-                            cognition_ledger_text=cognition_ledger_text,
-                        )
+                        eval_result = None
+                        async for _hb_done, _hb_val in _yield_with_heartbeat(
+                            evaluator.evaluate(
+                                chapter_text=current_text,
+                                chapter_outline=revise_outline,
+                                previous_summary=evaluation_context,
+                                style_profile=resolved_style,
+                                cognition_ledger_text=cognition_ledger_text,
+                            )
+                        ):
+                            if _hb_done:
+                                eval_result = _hb_val
+                            else:
+                                yield _hb_val
                         _x4_inc_revise("scored")  # v1.6.0 X4 metric: revise round outcome
                         scored_payload = json.dumps({
                             "event": "scored",
@@ -845,9 +927,14 @@ async def generate_chapter(
                         targeted_text: str | None = None
                         if targeted_revision_enabled():
                             try:
-                                span_result = await revise_spans(
-                                    current_text, eval_result.issues,
-                                )
+                                span_result = None
+                                async for _hb_done, _hb_val in _yield_with_heartbeat(
+                                    revise_spans(current_text, eval_result.issues)
+                                ):
+                                    if _hb_done:
+                                        span_result = _hb_val
+                                    else:
+                                        yield _hb_val
                                 if span_result.spans_revised > 0:
                                     targeted_text = span_result.text
                                     targeted_payload = json.dumps({
@@ -902,9 +989,13 @@ async def generate_chapter(
                                                 n_scenes_hint=req.n_scenes_hint,
                                                 on_scene_start=_on_scene_start,
                                             ):
+                                                while _pending_scene_events:
+                                                    yield _pending_scene_events.pop(0)
                                                 if chunk:
                                                     revised_chunks.append(chunk)
                                                 yield f"data: {json.dumps({'text': chunk, 'revise_round': round_idx})}\n\n"
+                                            while _pending_scene_events:
+                                                yield _pending_scene_events.pop(0)
                                         except Exception as revise_scene_err:
                                             # Root-cause policy: do NOT lottery-fallback to a different
                                             # generator when we are trying to meet a strict quality bar.
@@ -997,13 +1088,20 @@ async def generate_chapter(
                         # the converged score even if we never met threshold.
                         try:
                             evaluator = ChapterEvaluator()
-                            final_eval = await evaluator.evaluate(
-                                chapter_text=current_text,
-                                chapter_outline=revise_outline,
-                                previous_summary=evaluation_context,
-                                style_profile=resolved_style,
-                                cognition_ledger_text=cognition_ledger_text,
-                            )
+                            final_eval = None
+                            async for _hb_done, _hb_val in _yield_with_heartbeat(
+                                evaluator.evaluate(
+                                    chapter_text=current_text,
+                                    chapter_outline=revise_outline,
+                                    previous_summary=evaluation_context,
+                                    style_profile=resolved_style,
+                                    cognition_ledger_text=cognition_ledger_text,
+                                )
+                            ):
+                                if _hb_done:
+                                    final_eval = _hb_val
+                                else:
+                                    yield _hb_val
                             final_payload = json.dumps({
                                 "event": "scored",
                                 "round": max_rounds + 1,
@@ -1140,14 +1238,21 @@ async def generate_chapter(
                             yield f"data: {json.dumps({'event': 'quality_rewrite_start', 'rounds': 2}, ensure_ascii=False)}\n\n"
                         from app.db.session import async_session_factory
                         async with async_session_factory() as quality_db2:
-                            final_quality_result = await apply_chapter_quality_gate(
-                                text=current_text,
-                                db=quality_db2,
-                                project_id=req.project_id,
-                                chapter_id=req.chapter_id,
-                                target_word_count=target_words,
-                                skip_polish=False,
-                            )
+                            final_quality_result = None
+                            async for _hb_done, _hb_val in _yield_with_heartbeat(
+                                apply_chapter_quality_gate(
+                                    text=current_text,
+                                    db=quality_db2,
+                                    project_id=req.project_id,
+                                    chapter_id=req.chapter_id,
+                                    target_word_count=target_words,
+                                    skip_polish=False,
+                                )
+                            ):
+                                if _hb_done:
+                                    final_quality_result = _hb_val
+                                else:
+                                    yield _hb_val
                         final_quality_meta = final_quality_result.to_safe_metadata()
                         if final_quality_result.status != "passed":
                             _persist_on_block = _cfg.QUALITY_GATE_PERSIST_ON_BLOCK
@@ -1284,6 +1389,9 @@ async def generate_chapter(
         except Exception as e:
             logger.exception("Generation failed")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            # Terminate like every other exit path so clients waiting on the
+            # [DONE] sentinel don't hang until their own timeout.
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_stream(),

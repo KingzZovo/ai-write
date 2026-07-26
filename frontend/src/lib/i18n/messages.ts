@@ -18,6 +18,10 @@ export const zh = {
   "nav.filterWords": "过滤词",
   "nav.prompts": "Prompt",
   "nav.settings": "设置",
+  "nav.tools": "工具",
+  "nav.logs": "LLM 日志",
+  "nav.vector": "向量存储",
+  "nav.writingEngine": "写作引擎",
   "auth.logout": "登出",
   "locale.switch": "语言",
   "locale.zh": "中文",
@@ -146,6 +150,12 @@ export const zh = {
   "strand.sublabel.constellation": "星群",
   "strand.chapterPrefix": "第",
   "strand.chapterSuffix": "章",
+  "project.export": "导出",
+  "project.export.failed": "导出失败",
+  "project.link.characters": "角色",
+  "project.link.relationshipGraph": "关系图",
+  "project.link.cascadeTasks": "联动任务",
+  "project.link.changelog": "变更记录",
 } as const
 
 export type MessageKey = keyof typeof zh
@@ -160,6 +170,10 @@ export const en: Record<MessageKey, string> = {
   "nav.filterWords": "Filter Words",
   "nav.prompts": "Prompts",
   "nav.settings": "Settings",
+  "nav.tools": "Tools",
+  "nav.logs": "LLM Logs",
+  "nav.vector": "Vector Store",
+  "nav.writingEngine": "Writing Engine",
   "auth.logout": "Log out",
   "locale.switch": "Language",
   "locale.zh": "中文",
@@ -288,6 +302,12 @@ export const en: Record<MessageKey, string> = {
   "strand.sublabel.constellation": "Constellation",
   "strand.chapterPrefix": "Ch.",
   "strand.chapterSuffix": "",
+  "project.export": "Export",
+  "project.export.failed": "Export failed",
+  "project.link.characters": "Characters",
+  "project.link.relationshipGraph": "Relationship Graph",
+  "project.link.cascadeTasks": "Cascade Tasks",
+  "project.link.changelog": "Changelog",
 }
 
 export const catalogs = { zh, en } as const

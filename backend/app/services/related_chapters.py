@@ -11,11 +11,12 @@ to re-read for consistency. Zero embeddings, explainable, and it won't miss a
 causally-related chapter just because it's semantically dissimilar (e.g. the
 chapter that planted a foreshadow).
 
-V1 signal coverage (see C3 plan): foreshadow planting (book-global idx) and
-secondary-cast last_seen are usable; foreshadow *advancement* has no record
-(planting only); character_states.chapter_start is volume-local (handled by the
-caller, flagged in reasons); the relationship projection has no chapter column
-so that path is skipped in V1.
+Signal coverage (see C3 plan): foreshadow planting (book-global idx),
+secondary-cast last_seen, and recent character-state changes
+(character_states.chapter_start, book-global since entity_tasks moved to the
+global chapter axis) are usable; foreshadow *advancement* has no record
+(planting only); the relationship projection has no chapter column so that
+path is still skipped.
 """
 
 from __future__ import annotations
@@ -84,6 +85,10 @@ async def find_related_chapters(
 ) -> list[dict]:
     """Look back through structured signals for chapters related to this one.
 
+    ``chapter_idx`` is the BOOK-GLOBAL index of the chapter being generated
+    (same axis as ``Foreshadow.planted_chapter`` and
+    ``character_states.chapter_start``).
+
     Returns ranked ``[{chapter, reasons, signals, summary}]`` or [] when the
     restraint gates fire. Fail-safe: any error returns [] (never blocks build).
     """
@@ -92,7 +97,9 @@ async def find_related_chapters(
 
         from app.models.project import (
             Chapter,
+            Character,
             CharacterAppearance,
+            CharacterState,
             Foreshadow,
             Volume,
         )
@@ -163,13 +170,33 @@ async def find_related_chapters(
                         {"chapter": int(last_seen), "reason": f"角色「{name}」上次出场"}
                     )
 
-        # Path 3 (recent character-state changes): DROPPED in V1.
-        # character_states.chapter_start is volume-LOCAL and the table carries
-        # no volume scope, so a [current-window, current) query would match
-        # other volumes' local indices and surface wrong/confusing global
-        # chapter numbers. Re-enable once CharacterState carries a volume id (or
-        # stores a book-global chapter index). Paths 1+2 are clean (global idx).
+        # Path 3: recent character-state changes. Re-enabled now that
+        # character_states.chapter_start is book-global (entity_tasks writes
+        # on the global axis; pre-existing rows all came from volume 1 where
+        # global == local), so the look-back window can no longer collide
+        # with other volumes' local indices.
         state_hits: list[dict] = []
+        try:
+            st_rows = (
+                await db.execute(
+                    select(Character.name, CharacterState.chapter_start)
+                    .select_from(CharacterState)
+                    .join(Character, Character.id == CharacterState.character_id)
+                    .where(
+                        CharacterState.project_id == str(project_id),
+                        CharacterState.chapter_start >= int(chapter_idx) - state_window,
+                        CharacterState.chapter_start < int(chapter_idx),
+                    )
+                )
+            ).all()
+            for name, cs in st_rows:
+                if cs is None or not name:
+                    continue
+                state_hits.append(
+                    {"chapter": int(cs), "reason": f"角色「{name}」状态最近变化"}
+                )
+        except Exception as e:
+            logger.debug("character-state signal skipped: %s", e)
 
         ranked = rank_related_chapters(
             total,
@@ -209,32 +236,23 @@ async def _chapter_summary(db, project_id, global_idx: int) -> str:
 
         from app.models.project import Chapter, Volume
 
-        # Resolve global idx by walking volumes in order (cheap; small N).
-        vol_rows = (
+        # Chapter.global_idx is the canonical book-global axis (backfilled by
+        # migration a1001915, stamped on insert) — direct lookup.
+        row = (
             await db.execute(
-                select(Volume.id, Volume.volume_idx)
-                .where(Volume.project_id == str(project_id))
-                .order_by(Volume.volume_idx)
-            )
-        ).all()
-        from app.services.foreshadow_lifecycle import get_volume_first_global_idx
-
-        for vol_id, vol_idx in vol_rows:
-            base = await get_volume_first_global_idx(db, project_id, vol_idx)
-            local = global_idx - base
-            if local < 0:
-                continue
-            row = (
-                await db.execute(
-                    select(Chapter.summary, Chapter.title)
-                    .where(Chapter.volume_id == vol_id, Chapter.chapter_idx == local)
-                    .limit(1)
+                select(Chapter.summary, Chapter.title)
+                .join(Volume, Chapter.volume_id == Volume.id)
+                .where(
+                    Volume.project_id == str(project_id),
+                    Chapter.global_idx == int(global_idx),
                 )
-            ).first()
-            if row:
-                summary, title = row
-                text = (summary or title or "").strip()
-                return text[:80]
+                .limit(1)
+            )
+        ).first()
+        if row:
+            summary, title = row
+            text = (summary or title or "").strip()
+            return text[:80]
     except Exception as e:  # pragma: no cover - defensive
         logger.debug("_chapter_summary failed for idx=%s: %s", global_idx, e)
     return ""

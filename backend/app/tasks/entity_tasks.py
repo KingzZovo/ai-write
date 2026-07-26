@@ -3,16 +3,22 @@
 Owns the Neo4j Character/CharacterState/RELATES_TO/AT_LOCATION write path.
 For each (project_id, chapter_idx) it:
 
-1. Marks the chapter via an ``ExtractionMarker`` node in Neo4j (atomic
-   MERGE with status). Skips work if status='completed'.
-2. Lazily ensures Neo4j constraints/indexes via
+1. Resolves the target chapter (preferring ``chapter_id``; the dispatched
+   ``chapter_idx`` is volume-LOCAL and ambiguous across volumes) and its
+   BOOK-GLOBAL index (``Chapter.global_idx``). All downstream keys/values
+   (marker, extraction chapter_start, materialized PG projections) live on
+   the global axis so volumes never collide.
+2. Marks the chapter via an ``ExtractionMarker`` node in Neo4j (atomic
+   MERGE with status), keyed on the global idx. Skips work if
+   status='completed'.
+3. Lazily ensures Neo4j constraints/indexes via
    ``EntityTimelineService.initialize_graph`` (idempotent, no-op once
    constraints exist). This guarantees the read-side query (the source of
    the 49 GqlStatus warnings) sees label/property metadata.
-3. Loads the chapter's ``content_text`` from Postgres and runs
-   ``EntityTimelineService.extract_and_update`` which performs the
-   tier-aware LLM extraction + multi-statement Neo4j writes.
-4. On success flips the marker to ``completed``; on failure flips to
+4. Runs ``EntityTimelineService.extract_and_update`` on the chapter's
+   ``content_text`` (tier-aware LLM extraction + multi-statement Neo4j
+   writes), passing the global idx so timeline edges are book-global.
+5. On success flips the marker to ``completed``; on failure flips to
    ``failed`` and lets celery retry with exponential backoff.
 
 Designed to:
@@ -25,11 +31,16 @@ Designed to:
 - Never block user-facing chapter save: failures are logged + retried
   asynchronously, never propagated.
 
-Idempotency: the ExtractionMarker is keyed on (project_id, chapter_idx)
-with a unique constraint. A second call sees status='completed' and
-becomes a no-op. The Marker pattern lives in Neo4j (not Postgres) so we
-avoid an alembic migration for v1.5.0; the marker auto-vanishes when the
-project is deleted via the existing wipe path.
+Idempotency: the ExtractionMarker is keyed on (project_id, BOOK-GLOBAL
+chapter idx) with a unique constraint. A second call sees
+status='completed' and becomes a no-op. The Neo4j property is still named
+``chapter_idx`` on purpose: volume-1 markers written before the global-axis
+fix carried the local idx, which equals the global idx for volume 1, so
+they stay valid; volume-2+ chapters get fresh non-colliding keys (their
+extraction never actually ran, so re-running heals them). The Marker
+pattern lives in Neo4j (not Postgres) so we avoid an alembic migration
+for v1.5.0; the marker auto-vanishes when the project is deleted via the
+existing wipe path.
 """
 
 from __future__ import annotations
@@ -786,8 +797,12 @@ async def _materialize_entities_to_postgres(
 # ---------------------------------------------------------------------------
 
 
-async def _claim_marker(driver, project_id: str, chapter_idx: int) -> str:
-    """Atomically claim the (project, chapter) extraction slot.
+async def _claim_marker(driver, project_id: str, global_idx: int) -> str:
+    """Atomically claim the (project, book-global chapter) extraction slot.
+
+    The Neo4j property is still named ``chapter_idx`` for backward
+    compatibility with pre-existing volume-1 markers (local == global
+    there); the value passed here MUST be the book-global index.
 
     Returns the marker status seen at claim time:
     - 'new'       -> just created, proceed with extraction
@@ -803,28 +818,28 @@ async def _claim_marker(driver, project_id: str, chapter_idx: int) -> str:
             "ON MATCH SET m.attempts = coalesce(m.attempts, 0) + 1, "
             "             m.last_seen = $now "
             "RETURN m.status AS status",
-            pid=project_id, idx=int(chapter_idx), now=now,
+            pid=project_id, idx=int(global_idx), now=now,
         )
         record = await result.single()
         return record["status"] if record else "new"
 
 
-async def _mark_completed(driver, project_id: str, chapter_idx: int) -> None:
+async def _mark_completed(driver, project_id: str, global_idx: int) -> None:
     now = datetime.now(timezone.utc).isoformat()
     async with driver.session() as session:
         await session.run(
             "MATCH (m:ExtractionMarker {project_id: $pid, chapter_idx: $idx}) "
             "SET m.status = 'completed', m.completed_at = $now",
-            pid=project_id, idx=int(chapter_idx), now=now,
+            pid=project_id, idx=int(global_idx), now=now,
         )
 
 
-async def _mark_failed(driver, project_id: str, chapter_idx: int, err: str) -> None:
+async def _mark_failed(driver, project_id: str, global_idx: int, err: str) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (m:ExtractionMarker {project_id: $pid, chapter_idx: $idx}) "
             "SET m.status = 'failed', m.last_error = $err",
-            pid=project_id, idx=int(chapter_idx), err=err[:500],
+            pid=project_id, idx=int(global_idx), err=err[:500],
         )
 
 
@@ -841,26 +856,63 @@ async def _ensure_marker_constraint(driver) -> None:
         logger.warning("Failed to ensure ExtractionMarker constraint: %s", e)
 
 
-async def _load_chapter_text(project_id: str, chapter_idx: int) -> str | None:
-    """Load chapter.content_text by (project_id, chapter_idx) via volume join."""
+async def _resolve_chapter(
+    project_id: str,
+    chapter_idx: int,
+    chapter_id: str | None,
+) -> tuple[int, str | None] | None:
+    """Resolve the target chapter -> (book-global idx, content_text).
+
+    ``chapter_idx`` is volume-LOCAL (1-based per volume), so on its own it
+    is ambiguous across volumes. Resolution therefore prefers
+    ``chapter_id`` (passed by every ``dispatch_for_chapter`` persistence
+    site and by HookManager). Without it we fall back to the match in the
+    HIGHEST volume: id-less dispatches come from the volume currently
+    being written, and for single-volume projects the fallback is exact.
+
+    The returned index is ``Chapter.global_idx``; when that column is NULL
+    (row predates migration a1001915 in an un-backfilled environment) it
+    is computed via ``foreshadow_lifecycle.chapter_global_idx``.
+
+    Returns None when no matching chapter exists.
+    """
     from sqlalchemy import select
     from app.db.session import async_session_factory
     from app.models.project import Chapter, Volume
 
     async with async_session_factory() as db:
-        # Chapter belongs to a Volume which belongs to a Project.
         stmt = (
-            select(Chapter.content_text)
-            .join(Volume, Chapter.volume_id == Volume.id)
-            .where(
-                Volume.project_id == str(project_id),
-                Chapter.chapter_idx == int(chapter_idx),
+            select(
+                Chapter.global_idx,
+                Chapter.chapter_idx,
+                Chapter.content_text,
+                Volume.volume_idx,
             )
-            .limit(1)
+            .join(Volume, Chapter.volume_id == Volume.id)
+            .where(Volume.project_id == str(project_id))
         )
-        result = await db.execute(stmt)
-        row = result.first()
-        return row[0] if row and row[0] else None
+        if chapter_id:
+            stmt = stmt.where(Chapter.id == str(chapter_id))
+        else:
+            logger.warning(
+                "entity_extraction resolving without chapter_id "
+                "(project=%s local_idx=%s): falling back to highest volume",
+                project_id, chapter_idx,
+            )
+            stmt = stmt.where(
+                Chapter.chapter_idx == int(chapter_idx)
+            ).order_by(Volume.volume_idx.desc())
+        row = (await db.execute(stmt.limit(1))).first()
+        if row is None:
+            return None
+        global_idx, local_idx, content, vol_idx = row[0], row[1], row[2], row[3]
+        if global_idx is None:
+            from app.services.foreshadow_lifecycle import chapter_global_idx
+
+            global_idx = await chapter_global_idx(
+                db, str(project_id), int(vol_idx), int(local_idx)
+            )
+        return int(global_idx), content
 
 
 async def _extract_chapter_async(
@@ -890,11 +942,31 @@ async def _extract_chapter_async(
         }
 
     await _ensure_marker_constraint(driver)
-    claim_status = await _claim_marker(driver, project_id, chapter_idx)
+
+    # Resolve the chapter FIRST: the dispatched chapter_idx is volume-local
+    # and ambiguous across volumes; the marker and every downstream write
+    # are keyed on the book-global index instead.
+    resolved = await _resolve_chapter(project_id, chapter_idx, chapter_id)
+    if resolved is None:
+        logger.warning(
+            "entity_extraction skip: chapter not found "
+            "(project=%s ch=%s chapter_id=%s caller=%s)",
+            project_id, chapter_idx, chapter_id, caller,
+        )
+        return {
+            "status": "skipped",
+            "reason": "chapter_not_found",
+            "project_id": project_id,
+            "chapter_idx": chapter_idx,
+        }
+    global_idx, chapter_text = resolved
+
+    claim_status = await _claim_marker(driver, project_id, global_idx)
     if claim_status == "completed":
         logger.info(
-            "entity_extraction skip: already completed (project=%s ch=%d caller=%s)",
-            project_id, chapter_idx, caller,
+            "entity_extraction skip: already completed "
+            "(project=%s ch=%d global=%d caller=%s)",
+            project_id, chapter_idx, global_idx, caller,
         )
 
         # v1.9: even when extraction is already completed, we still want the
@@ -902,7 +974,7 @@ async def _extract_chapter_async(
         # backfill by re-dispatching the extraction task.
         await _materialize_entities_to_postgres(
             project_id=project_id,
-            chapter_idx=chapter_idx,
+            chapter_idx=global_idx,
             caller=caller,
         )
         return {
@@ -910,6 +982,7 @@ async def _extract_chapter_async(
             "reason": "already_completed",
             "project_id": project_id,
             "chapter_idx": chapter_idx,
+            "global_idx": global_idx,
         }
 
     # Wrap the entire post-claim path so ANY failure (DB load, neo4j init,
@@ -918,16 +991,16 @@ async def _extract_chapter_async(
     # session_factory bug), making it impossible to distinguish 'never ran'
     # from 'ran and failed' when triaging from cypher-shell.
     try:
-        chapter_text = await _load_chapter_text(project_id, chapter_idx)
         if not chapter_text:
             await _mark_failed(
-                driver, project_id, chapter_idx, "empty_or_missing_content"
+                driver, project_id, global_idx, "empty_or_missing_content"
             )
             return {
                 "status": "skipped",
                 "reason": "empty_chapter",
                 "project_id": project_id,
                 "chapter_idx": chapter_idx,
+                "global_idx": global_idx,
             }
 
         service = EntityTimelineService(driver)
@@ -936,23 +1009,27 @@ async def _extract_chapter_async(
         # CharacterState / property metadata in Neo4j -- which is precisely
         # what the 49 GqlStatus warnings complained about not existing.
         await service.initialize_graph(project_id)
-        await service.extract_and_update(project_id, chapter_idx, chapter_text)
+        # Book-global idx: Neo4j chapter_start/chapter_end edges (and the PG
+        # character_states / character_locations projections materialized
+        # from them) all live on the single monotonic global axis.
+        await service.extract_and_update(project_id, global_idx, chapter_text)
 
         # v1.9: materialize Neo4j entity snapshot into Postgres read models.
         await _materialize_entities_to_postgres(
             project_id=project_id,
-            chapter_idx=chapter_idx,
+            chapter_idx=global_idx,
             caller=caller,
         )
     except Exception as e:
-        await _mark_failed(driver, project_id, chapter_idx, repr(e)[:500])
+        await _mark_failed(driver, project_id, global_idx, repr(e)[:500])
         raise
 
-    await _mark_completed(driver, project_id, chapter_idx)
+    await _mark_completed(driver, project_id, global_idx)
     return {
         "status": "ok",
         "project_id": project_id,
         "chapter_idx": chapter_idx,
+        "global_idx": global_idx,
         "caller": caller,
         "prior_marker_status": claim_status,
     }

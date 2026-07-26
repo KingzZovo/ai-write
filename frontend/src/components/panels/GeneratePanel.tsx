@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiFetch } from '@/lib/api'
+import { getChapterGenOptions, saveChapterGenOptions } from '@/lib/chapterGenOptions'
 
 interface StyleInfo {
   id: string
@@ -361,6 +362,14 @@ export function GeneratePanel({
         )}
       </div>
 
+      {/* PR-GEN-UX Task 4: per-chapter generation options (指令 / 目标字数) */}
+      {selectedChapterId && (
+        <div className="border-t pt-4">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">本章生成选项</h3>
+          <ChapterGenOptionsEditor key={selectedChapterId} chapterId={selectedChapterId} />
+        </div>
+      )}
+
       {/* Generation buttons */}
       <div className="border-t pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">内容生成</h3>
@@ -476,6 +485,54 @@ function StructureSelector({ projectId }: { projectId?: string | null }) {
           {structures.find((s) => s.book_id === selectedId)?.structure_summary || ''}
         </p>
       )}
+    </div>
+  )
+}
+
+// PR-GEN-UX Task 4: 指令 + 目标字数 inputs, persisted per-chapter in
+// localStorage (see lib/chapterGenOptions.ts). DesktopWorkspace reads them
+// when it builds the /api/generate/chapter payload.
+function ChapterGenOptionsEditor({ chapterId }: { chapterId: string }) {
+  // Mounted with key={chapterId}, so lazy init re-reads storage per chapter.
+  const [instruction, setInstruction] = useState(
+    () => getChapterGenOptions(chapterId).userInstruction,
+  )
+  const [targetWordsText, setTargetWordsText] = useState(() => {
+    const words = getChapterGenOptions(chapterId).targetWords
+    return words != null ? String(words) : ''
+  })
+
+  const persist = (nextInstruction: string, nextWordsText: string) => {
+    const n = parseInt(nextWordsText.trim(), 10)
+    saveChapterGenOptions(chapterId, {
+      userInstruction: nextInstruction.trim(),
+      targetWords: Number.isNaN(n) || n <= 0 ? null : n,
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">指令（可选，随本章生成一起发送）</label>
+        <textarea
+          value={instruction}
+          onChange={(e) => { setInstruction(e.target.value); persist(e.target.value, targetWordsText) }}
+          placeholder="例如：多写对话，结尾留悬念..."
+          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none h-20 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-gray-600">目标字数</label>
+        <input
+          type="number"
+          min={1}
+          value={targetWordsText}
+          onChange={(e) => { setTargetWordsText(e.target.value); persist(instruction, e.target.value) }}
+          placeholder="默认"
+          className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-lg placeholder-gray-400"
+        />
+        <span className="text-[10px] text-gray-400">留空使用章节 / 项目默认</span>
+      </div>
     </div>
   )
 }

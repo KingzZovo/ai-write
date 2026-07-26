@@ -53,7 +53,7 @@ export function ProjectListPage() {
     async function computeFor(p: Project) {
       try {
         const vols = await apiFetch<VolumeBrief[]>(`/api/projects/${p.id}/volumes`)
-        const chs = await apiFetch<ChapterBrief[]>(`/api/projects/${p.id}/chapters`)
+        const chs = await apiFetch<ChapterBrief[]>(`/api/projects/${p.id}/chapters?lightweight=true`)
         if (cancelled) return
         const totalWords = chs.reduce((s, c) => s + (c.word_count || 0), 0)
         setStats((prev) => ({

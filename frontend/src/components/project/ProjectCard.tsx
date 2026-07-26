@@ -1,6 +1,10 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { apiDownload } from '@/lib/api'
+import { useT } from '@/lib/i18n/I18nProvider'
+import type { MessageKey } from '@/lib/i18n/messages'
 import type { Project } from '@/stores/projectStore'
 
 export interface ProjectStats {
@@ -99,27 +103,103 @@ export function ProjectCard({
         </div>
       </div>
       {!selectable && (
-        <ProjectCardMenu
-          onRename={() => onRename(project)}
-          onSettings={() => onSettings(project)}
-          onDelete={() => onDelete(project)}
-        />
+        <div
+          className="absolute top-2 right-2 flex items-center gap-1"
+          onClick={stop}
+        >
+          <ExportMenu projectId={project.id} />
+          <ProjectCardMenu
+            projectId={project.id}
+            onRename={() => onRename(project)}
+            onSettings={() => onSettings(project)}
+            onDelete={() => onDelete(project)}
+          />
+        </div>
       )}
     </div>
   )
 }
 
+// TXT first: the author reads output in the legado reader app.
+const EXPORT_FORMATS = ['txt', 'epub', 'pdf', 'docx'] as const
+
+function ExportMenu({ projectId }: { projectId: string }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const t = useT()
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const download = async (fmt: string) => {
+    setOpen(false)
+    setBusy(true)
+    try {
+      await apiDownload(`/api/export/projects/${projectId}.${fmt}`)
+    } catch (err) {
+      alert(`${t('project.export.failed')}: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        className="px-1.5 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500 text-xs disabled:opacity-50"
+        aria-label="export"
+        title={t('project.export')}
+      >
+        {busy ? '…' : t('project.export')}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-24 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-10">
+          {EXPORT_FORMATS.map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => download(fmt)}
+              className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 uppercase"
+            >
+              {fmt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Project-scoped tool pages, linked from the card's context menu.
+const PROJECT_LINKS: Array<{ path: (id: string) => string; key: MessageKey }> = [
+  { path: (id) => `/characters?id=${id}`, key: 'project.link.characters' },
+  { path: (id) => `/relationship-graph?id=${id}`, key: 'project.link.relationshipGraph' },
+  { path: (id) => `/cascade-tasks?project_id=${id}`, key: 'project.link.cascadeTasks' },
+  { path: (id) => `/changelog?id=${id}`, key: 'project.link.changelog' },
+]
+
 function ProjectCardMenu({
+  projectId,
   onRename,
   onSettings,
   onDelete,
 }: {
+  projectId: string
   onRename: () => void
   onSettings: () => void
   onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const t = useT()
 
   useEffect(() => {
     if (!open) return
@@ -131,7 +211,7 @@ function ProjectCardMenu({
   }, [open])
 
   return (
-    <div ref={ref} className="absolute top-2 right-2" onClick={(e) => e.stopPropagation()}>
+    <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500"
@@ -141,6 +221,17 @@ function ProjectCardMenu({
       </button>
       {open && (
         <div className="absolute right-0 mt-1 w-28 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-10">
+          {PROJECT_LINKS.map(({ path, key }) => (
+            <Link
+              key={key}
+              href={path(projectId)}
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              {t(key)}
+            </Link>
+          ))}
+          <div className="border-t border-gray-100" />
           <button
             onClick={() => { setOpen(false); onRename() }}
             className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"

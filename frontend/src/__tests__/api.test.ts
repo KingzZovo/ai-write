@@ -90,6 +90,70 @@ describe('apiFetch', () => {
   })
 })
 
+describe('apiDownload', () => {
+  const mockFetch = vi.fn()
+
+  beforeEach(() => {
+    vi.resetModules()
+    mockFetch.mockReset()
+    vi.stubGlobal('fetch', mockFetch)
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => key === 'auth_token' ? 'test-token' : null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    })
+  })
+
+  it('sends auth header and saves blob under the RFC 5987 filename', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) =>
+          name === 'content-disposition'
+            ? "attachment; filename=\"x.txt\"; filename*=UTF-8''%E6%88%91%E7%9A%84%E5%B0%8F%E8%AF%B4.txt"
+            : null,
+      },
+      blob: () => Promise.resolve(new Blob(['第1章'])),
+    })
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const { apiDownload } = await import('@/lib/api')
+    const anchors: string[] = []
+    const origAppend = document.body.appendChild.bind(document.body)
+    vi.spyOn(document.body, 'appendChild').mockImplementation((node) => {
+      if (node instanceof HTMLAnchorElement) anchors.push(node.download)
+      return origAppend(node)
+    })
+    await apiDownload('/api/export/projects/p1.txt')
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/export/projects/p1.txt',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
+      }),
+    )
+    expect(anchors).toEqual(['我的小说.txt'])
+    expect(click).toHaveBeenCalled()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock')
+    click.mockRestore()
+    vi.mocked(document.body.appendChild).mockRestore()
+  })
+
+  it('throws detail message on non-ok response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ detail: 'project not found' }),
+    })
+    const { apiDownload } = await import('@/lib/api')
+    await expect(apiDownload('/api/export/projects/p1.txt')).rejects.toThrow('project not found')
+  })
+})
+
 describe('apiSSE', () => {
   const mockFetch = vi.fn()
 

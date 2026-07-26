@@ -27,6 +27,7 @@ import { OutlineTree } from '@/components/outline/OutlineTree'
 import { VolumeOutlineBlock } from '@/components/outline/VolumeOutlineBlock'
 import { OutlineEditor, type OutlineEditTarget } from '@/components/outline/OutlineEditor'
 import { GeneratePanel, getSelectedStyleId } from '@/components/panels/GeneratePanel'
+import { RewriteMenu } from '@/components/editor/RewriteMenu'
 
 // Lazy load heavy panels — only loaded when their workbench tab/drawer is opened
 const ForeshadowPanel = dynamic(() => import('@/components/panels/ForeshadowPanel').then(m => ({ default: m.ForeshadowPanel })), { ssr: false })
@@ -48,6 +49,8 @@ import {
 import type { Project, Volume, Chapter } from '@/stores/projectStore'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiFetch, apiSSE } from '@/lib/api'
+import { routeGenerationEvent } from '@/lib/generationEvents'
+import { getChapterGenOptions } from '@/lib/chapterGenOptions'
 
 // ----------------------------------------------------------------
 // Types for API responses
@@ -253,6 +256,19 @@ export default function DesktopWorkspace() {
   const [creativeInput, setCreativeInput] = useState('')
   const [outlinePreview, setOutlinePreview] = useState('')
   const [generationError, setGenerationError] = useState<string | null>(null)
+  // PR-GEN-UX: progress strip (phase + elapsed) and warning banners for the
+  // chapter-generation SSE stream. Phase is non-null only while a chapter
+  // generation is streaming (outline generation does not touch it).
+  const [generationPhase, setGenerationPhase] = useState<string | null>(null)
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null)
+  const [generationWarnings, setGenerationWarnings] = useState<string[]>([])
+  // PR-GEN-UX Task 5: selection-based rewrite over the chapter textarea.
+  const [rewriteSel, setRewriteSel] = useState<{
+    start: number
+    end: number
+    text: string
+    position: { top: number; left: number }
+  } | null>(null)
   // PR-OL1: AI-suggested volume plan parsed from staged SSE done event.
   const [volumePlan, setVolumePlan] = useState<Array<{idx:number; title:string; theme:string; core_conflict:string; est_chapters:number}> | null>(null)
   // PR-OL3: edit mode for the volume plan card.
@@ -310,6 +326,13 @@ export default function DesktopWorkspace() {
   const generationBaselineRef = useRef<{ content: string; status: Chapter['status'] } | null>(null)
   const generationSavedRef = useRef(false)
   const generationFailedRef = useRef(false)
+  // PR-GEN-UX Task 2: user pressed 取消 — keep the partial buffer instead of
+  // rolling back to the baseline in onDone.
+  const generationCancelledRef = useRef(false)
+  // PR-GEN-UX Task 3: truncated/refusal events mean the backend saved the
+  // chapter with status 'draft'; the later `saved` event must not mark it
+  // completed.
+  const generationDraftRef = useRef(false)
   // Task F2: tracks the live SSE stream. Aborted before starting a new
   // stream (regenerate / re-click) and on unmount, so a stale stream cannot
   // keep reading and setState on a dead component.
@@ -858,6 +881,8 @@ export default function DesktopWorkspace() {
   useEffect(() => {
     if (!selectedChapterId || !currentProject) return
     setActiveView('editor')
+    // PR-GEN-UX Task 5: selection offsets from the previous chapter are stale.
+    setRewriteSel(null)
 
     apiFetch<ChapterRes>(
       `/api/projects/${currentProject.id}/chapters/${selectedChapterId}`
@@ -921,13 +946,22 @@ export default function DesktopWorkspace() {
     }
     generationSavedRef.current = false
     generationFailedRef.current = false
+    generationCancelledRef.current = false
+    generationDraftRef.current = false
     setGenerationError(null)
+    setGenerationWarnings([])
+    setGenerationPhase('准备生成...')
+    setGenerationStartedAt(Date.now())
+    setRewriteSel(null)
     setIsGenerating(true)
     resetStreamContent()
     generationBufferRef.current = ''
     setEditorContent('')
     setActiveView('editor')
     updateChapterStatus(selectedChapterId, 'generating')
+
+    // PR-GEN-UX Task 4: per-chapter options, included only when non-empty.
+    const genOpts = getChapterGenOptions(selectedChapterId)
 
     sseControllerRef.current?.abort()
     sseControllerRef.current = apiSSE(
@@ -936,6 +970,8 @@ export default function DesktopWorkspace() {
         project_id: currentProject.id,
         chapter_id: selectedChapterId,
         style_id: getSelectedStyleId(),
+        ...(genOpts.userInstruction ? { user_instruction: genOpts.userInstruction } : {}),
+        ...(genOpts.targetWords ? { target_words: genOpts.targetWords } : {}),
       },
       (text) => {
         generationBufferRef.current += text
@@ -945,14 +981,34 @@ export default function DesktopWorkspace() {
       },
       () => {
         setIsGenerating(false)
+        setGenerationPhase(null)
+        setGenerationStartedAt(null)
         if (generationFailedRef.current) {
           updateChapterStatus(selectedChapterId, 'needs_review')
           lastSavedRef.current = generationBufferRef.current
           return
         }
         if (generationSavedRef.current) {
-          updateChapterStatus(selectedChapterId, 'completed')
+          // PR-GEN-UX Task 3: truncated/refusal → backend persisted as draft.
+          updateChapterStatus(
+            selectedChapterId,
+            generationDraftRef.current ? 'draft' : 'completed',
+          )
           lastSavedRef.current = generationBufferRef.current
+          return
+        }
+        // PR-GEN-UX Task 2: user-initiated cancel — keep whatever partial
+        // text is in the buffer (it is NOT saved server-side; the normal
+        // autosave path picks it up on the next edit).
+        if (generationCancelledRef.current) {
+          updateChapterStatus(
+            selectedChapterId,
+            generationBaselineRef.current?.status ?? 'draft',
+          )
+          setGenerationWarnings((prev) => [
+            ...prev,
+            '已取消生成。已保留当前部分文本（尚未自动保存；在编辑区修改后会照常自动保存）。',
+          ])
           return
         }
         const baseline = generationBaselineRef.current
@@ -965,6 +1021,16 @@ export default function DesktopWorkspace() {
       },
       (evt) => {
         const eventName = String(evt.event ?? evt.status ?? '')
+        // PR-GEN-UX Task 1/3: progress strip + truncated/refusal/save_failed
+        // banners. Pure routing lives in lib/generationEvents.ts.
+        const routed = routeGenerationEvent(evt)
+        if (routed) {
+          if (routed.progress) setGenerationPhase(routed.progress)
+          const warning = routed.warning
+          if (warning) setGenerationWarnings((prev) => [...prev, warning])
+          if (routed.error) setGenerationError(routed.error)
+          if (routed.savedAsDraft) generationDraftRef.current = true
+        }
         if (eventName === 'fallback_restart' || eventName === 'revise_restart') {
           // Backend Task 3 (b5273da): the scene stream failed mid-way and the
           // single-shot fallback will re-send the FULL chapter text next.
@@ -993,7 +1059,10 @@ export default function DesktopWorkspace() {
         }
         if (eventName === 'saved') {
           generationSavedRef.current = true
-          updateChapterStatus(selectedChapterId, 'completed')
+          updateChapterStatus(
+            selectedChapterId,
+            generationDraftRef.current ? 'draft' : 'completed',
+          )
           return
         }
         if (eventName === 'quality_failed') {
@@ -1073,6 +1142,88 @@ export default function DesktopWorkspace() {
     updateChapterStatus,
     refreshOutlineReadiness,
   ])
+
+  // PR-GEN-UX Task 2: cancel the live chapter stream. apiSSE's AbortError
+  // path still fires onDone, which sees generationCancelledRef and keeps the
+  // partial buffer instead of rolling back.
+  const handleCancelGeneration = useCallback(() => {
+    generationCancelledRef.current = true
+    sseControllerRef.current?.abort()
+  }, [])
+
+  // PR-GEN-UX Task 6: open an outline in the centre editor from GeneratePanel's
+  // 查看大纲 buttons. Mirrors the sidebar tree-click path (onSelectOutline).
+  const handleViewOutline = useCallback(
+    (level: string) => {
+      let target: OutlineEditTarget | null = null
+      if (level === 'book') {
+        if (bookOutlineId) {
+          target = {
+            type: 'book',
+            outlineId: bookOutlineId,
+            initialJson: bookOutlineData,
+            title: '全书大纲',
+          }
+        }
+      } else if (level === 'volume') {
+        // Prefer the selected chapter's volume; fall back to the first volume
+        // that has an outline.
+        const selected = chapters.find((c) => c.id === selectedChapterId)
+        const selVolume = selected
+          ? volumes.find((v) => v.id === (selected.volume_id ?? selected.volumeId))
+          : null
+        const preferredIdx = selVolume
+          ? selVolume.volume_idx ?? selVolume.volumeIdx
+          : null
+        const idx =
+          typeof preferredIdx === 'number' && volumeOutlineIds[preferredIdx]
+            ? preferredIdx
+            : Object.keys(volumeOutlineIds)
+                .map(Number)
+                .sort((a, b) => a - b)[0]
+        if (idx !== undefined && volumeOutlineIds[idx]) {
+          const idxVolume = volumes.find((v) => (v.volume_idx ?? v.volumeIdx) === idx)
+          target = {
+            type: 'volume',
+            outlineId: volumeOutlineIds[idx],
+            initialJson: volumeOutlines[idx] ?? null,
+            title: `${idxVolume?.title || `第${idx}卷`} · 分卷大纲`,
+            volumeIdx: idx,
+          }
+        }
+      } else if (level === 'chapter') {
+        const ch = chapters.find((c) => c.id === selectedChapterId)
+        if (ch) {
+          const oj = ch.outline_json as Record<string, unknown> | string | null | undefined
+          target = {
+            type: 'chapter',
+            chapterId: ch.id,
+            initialJson:
+              typeof oj === 'object' && oj !== null
+                ? oj
+                : typeof oj === 'string'
+                  ? { raw_text: oj }
+                  : null,
+            title: `${ch.title || ''} · 章节大纲`,
+          }
+        }
+      }
+      if (!target) return
+      setOutlineEditorTarget(target)
+      selectChapter(null)
+      setActiveView('editor')
+    },
+    [
+      bookOutlineId,
+      bookOutlineData,
+      chapters,
+      volumes,
+      volumeOutlineIds,
+      volumeOutlines,
+      selectedChapterId,
+      selectChapter,
+    ],
+  )
 
   // ----------------------------------------------------------------
   // Helpers: extract volume/chapter titles from outline text
@@ -1869,16 +2020,64 @@ export default function DesktopWorkspace() {
                     >
                       {isGenerating ? '生成中...' : '生成本章'}
                     </button>
+                    {/* PR-GEN-UX Task 1/2: phase + elapsed + cancel */}
+                    {isGenerating && generationPhase && (
+                      <GenerationProgressStrip
+                        phase={generationPhase}
+                        startedAt={generationStartedAt}
+                        onCancel={handleCancelGeneration}
+                      />
+                    )}
                     {generationError && (
                       <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                         {generationError}
                       </div>
                     )}
+                    {/* PR-GEN-UX Task 3: truncated/refusal/cancel notices */}
+                    {generationWarnings.map((warning, i) => (
+                      <div
+                        key={`${i}-${warning.slice(0, 12)}`}
+                        className="mt-2 flex items-start justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                      >
+                        <span>{warning}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setGenerationWarnings((prev) => prev.filter((_, wi) => wi !== i))
+                          }
+                          className="shrink-0 text-amber-700 hover:underline"
+                        >
+                          关闭
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
                 <textarea
                   value={editorContent}
                   onChange={(e) => handleEditorChange(e.target.value)}
+                  onMouseUp={(e) => {
+                    // PR-GEN-UX Task 5: selection-based rewrite. Plain-textarea
+                    // offsets are enough; the menu anchors at the mouseup point.
+                    if (isGenerating || !selectedChapterId) return
+                    const ta = e.currentTarget
+                    const start = ta.selectionStart ?? 0
+                    const end = ta.selectionEnd ?? 0
+                    const text = editorContent.slice(start, end)
+                    if (end > start && text.trim()) {
+                      setRewriteSel({
+                        start,
+                        end,
+                        text,
+                        position: {
+                          top: Math.min(e.clientY + 10, window.innerHeight - 160),
+                          left: Math.max(8, Math.min(e.clientX, window.innerWidth - 400)),
+                        },
+                      })
+                    } else {
+                      setRewriteSel(null)
+                    }
+                  }}
                   placeholder={
                     selectedChapterId
                       ? '章节内容将在此显示。点击 "生成本章" 按钮开始生成...'
@@ -1888,6 +2087,29 @@ export default function DesktopWorkspace() {
                   style={{ fontFamily: "'Noto Serif SC', serif" }}
                   readOnly={isGenerating}
                 />
+                {rewriteSel && !isGenerating && selectedChapterId && (
+                  <RewriteMenu
+                    selectedText={rewriteSel.text}
+                    contextBefore={editorContent.slice(
+                      Math.max(0, rewriteSel.start - 500),
+                      rewriteSel.start,
+                    )}
+                    contextAfter={editorContent.slice(rewriteSel.end, rewriteSel.end + 500)}
+                    position={rewriteSel.position}
+                    onAccept={(newText) => {
+                      // Splice the rewrite into the chapter; handleEditorChange
+                      // drives the normal debounced autosave path.
+                      handleEditorChange(
+                        editorContent.slice(0, rewriteSel.start) +
+                          newText +
+                          editorContent.slice(rewriteSel.end),
+                      )
+                      setRewriteSel(null)
+                    }}
+                    onReject={() => setRewriteSel(null)}
+                    onClose={() => setRewriteSel(null)}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -1972,6 +2194,7 @@ export default function DesktopWorkspace() {
                     outlineReadinessLoading={outlineReadinessLoading}
                     onGenerate={handleGenerateChapter}
                     onGenerateOutline={handleGenerateOutline}
+                    onViewOutline={handleViewOutline}
                   />
                 </WorkbenchCard>
 
@@ -2206,6 +2429,47 @@ function detectVolumeCount(text: string): number {
 // ================================================================
 // End of module
 // ================================================================
+
+// PR-GEN-UX Task 1/2: compact status line shown above the chapter textarea
+// while generation streams — current phase, elapsed time, cancel button.
+function GenerationProgressStrip({
+  phase,
+  startedAt,
+  onCancel,
+}: {
+  phase: string
+  startedAt: number | null
+  onCancel: () => void
+}) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const elapsed = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0
+  const mm = Math.floor(elapsed / 60)
+  const ss = String(elapsed % 60).padStart(2, '0')
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+        <span className="truncate">{phase}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="tabular-nums text-blue-600">
+          {mm}:{ss}
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded border border-blue-300 bg-white px-2 py-0.5 text-blue-700 hover:bg-blue-100"
+        >
+          取消生成
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function ChapterTargetWordsEditor({
   projectId,

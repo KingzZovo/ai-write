@@ -200,6 +200,12 @@ class ContextPack:
     to maximize the LLM's context utilization efficiency.
     """
 
+    # Book-global index of the chapter being generated (0 = unknown). Set by
+    # ``ContextPackBuilder.build``; strand-gap arithmetic and every other
+    # book-global comparison must use this, never the volume-local
+    # ``current_outline["chapter_idx"]``.
+    global_chapter_idx: int = 0
+
     # Layer 1: Proximity (~40%)
     recent_summaries: list[str] = field(default_factory=list)  # last 5 chapters
     current_content: str = ""
@@ -543,7 +549,8 @@ class ContextPack:
             l2_parts.append(f"【已知矛盾(务必避免)】\n{cc_text}")
 
         strand_warnings = self.strand_tracker.get_warnings(
-            self.current_outline.get("chapter_idx", 0)
+            self.global_chapter_idx
+            or self.current_outline.get("chapter_idx", 0)
         )
         if strand_warnings:
             sw_text = "\n".join(strand_warnings)
@@ -735,6 +742,7 @@ class ContextPackBuilder:
                 chapter_idx, exc,
             )
             global_chapter_idx = int(chapter_idx)
+        pack.global_chapter_idx = int(global_chapter_idx)
 
         # Layer 1: Proximity
         await self._build_proximity(pack, project_id, volume_id, chapter_idx)
@@ -750,8 +758,8 @@ class ContextPackBuilder:
         # Layer 3: RAG
         await self._build_rag(pack, project_id, chapter_idx)
 
-        # Strand warnings
-        warnings = pack.strand_tracker.get_warnings(chapter_idx)
+        # Strand warnings (strand tracker lives on the book-global axis)
+        warnings = pack.strand_tracker.get_warnings(global_chapter_idx)
         pack.writing_guidance.extend(warnings)
 
         # PR-AI1: inject naming/glossary directive so chapter generation
@@ -979,15 +987,23 @@ class ContextPackBuilder:
     ) -> None:
         """Build Layer 2: world rules, character cards, foreshadows, timeline.
 
-        ``chapter_idx`` is volume-local (DB ``Chapter.chapter_idx``) and keeps
-        driving every local-domain query here. ``global_chapter_idx`` is the
-        book-global equivalent (see ``_resolve_global_chapter_idx``) and is
-        used only where the comparison target is book-global —
-        ``Foreshadow.planted_chapter`` in the debt computation. Defaults to
-        ``chapter_idx`` when not provided (legacy behavior).
+        ``chapter_idx`` is volume-local (DB ``Chapter.chapter_idx``).
+        ``global_chapter_idx`` is the book-global equivalent (see
+        ``_resolve_global_chapter_idx``) and drives every comparison whose
+        target lives on the book-global axis: ``Foreshadow.planted_chapter``
+        (debt computation), ``character_locations.chapter_start``, the
+        timeline anchors (``Chapter.global_idx``), Neo4j character-state
+        lookups, related-chapter recall and the strand tracker. Defaults to
+        ``chapter_idx`` when not provided (correct for single-volume
+        projects, where global == local).
         """
         db = await self._get_db()
         pid = str(project_id)
+        gidx = (
+            int(global_chapter_idx)
+            if global_chapter_idx is not None
+            else int(chapter_idx)
+        )
 
         # World rules from PostgreSQL
         try:
@@ -1018,7 +1034,9 @@ class ContextPackBuilder:
                     .join(Location, Location.id == CharacterLocation.location_id)
                     .where(
                         CharacterLocation.project_id == pid,
-                        CharacterLocation.chapter_start <= chapter_idx,
+                        # chapter_start is book-global (written by
+                        # entity_tasks on the global axis).
+                        CharacterLocation.chapter_start <= gidx,
                     )
                     .order_by(
                         CharacterLocation.character_id.asc(),
@@ -1065,9 +1083,10 @@ class ContextPackBuilder:
 
                 pack.character_cards.append(card)
 
-            # Enrich from Neo4j if available
+            # Enrich from Neo4j if available (chapter_start edges are
+            # book-global, so query at the global idx)
             await self._enrich_characters_from_neo4j(
-                pack, pid, chapter_idx
+                pack, pid, gidx
             )
         except SQLAlchemyError:
             raise
@@ -1124,23 +1143,28 @@ class ContextPackBuilder:
         except Exception as e:
             logger.warning("Failed to load foreshadow triplets (project=%s, ch=%d): %s", pid, chapter_idx, e)
 
-        # Timeline anchors from chapter summaries with key events
+        # Timeline anchors from chapter summaries with key events.
+        # Ordered/filtered on the book-global index: the volume-local idx
+        # interleaved every volume's chapters into a fake chronology from
+        # volume 2 onward. Rows with NULL global_idx (pre-backfill) are
+        # excluded rather than mis-ordered.
         try:
             timeline_result = await db.execute(
-                select(Chapter.chapter_idx, Chapter.summary)
+                select(Chapter.global_idx, Chapter.summary)
                 .join(Volume, Chapter.volume_id == Volume.id)
                 .where(
                     Volume.project_id == pid,
                     Chapter.summary.isnot(None),
                     Chapter.summary != "",
-                    Chapter.chapter_idx <= chapter_idx,
+                    Chapter.global_idx.isnot(None),
+                    Chapter.global_idx <= gidx,
                 )
-                .order_by(Chapter.chapter_idx.asc())
+                .order_by(Chapter.global_idx.asc())
             )
             for row in timeline_result.all():
                 if row.summary and len(row.summary) > 10:
                     anchor = TimeAnchor(
-                        chapter_idx=row.chapter_idx,
+                        chapter_idx=row.global_idx,
                         event=row.summary[:100],
                     )
                     pack.timeline_anchors.append(anchor)
@@ -1194,7 +1218,7 @@ class ContextPackBuilder:
             )
 
             related = await find_related_chapters(
-                db, pid, None, chapter_idx, pack.current_outline or {}
+                db, pid, None, gidx, pack.current_outline or {}
             )
             recall = render_recall_block(related, max_chars=600)
 
@@ -1239,8 +1263,8 @@ class ContextPackBuilder:
         except Exception as e:
             logger.warning("Failed to load narrative compass: %s", e)
 
-        # Build strand tracker from recent chapters
-        await self._build_strand_tracker(pack, pid, chapter_idx)
+        # Build strand tracker from recent chapters (book-global window)
+        await self._build_strand_tracker(pack, pid, gidx)
 
     async def _enrich_characters_from_neo4j(
         self,
@@ -1248,7 +1272,11 @@ class ContextPackBuilder:
         project_id: str,
         chapter_idx: int,
     ) -> None:
-        """Enrich character cards with state from Neo4j knowledge graph."""
+        """Enrich character cards with state from Neo4j knowledge graph.
+
+        ``chapter_idx`` must be BOOK-GLOBAL: Neo4j chapter_start/chapter_end
+        edges are written on the global axis by entity_tasks.
+        """
         try:
             from app.db.neo4j import get_neo4j
 
@@ -1324,7 +1352,11 @@ class ContextPackBuilder:
         project_id: str,
         chapter_idx: int,
     ) -> None:
-        """Analyze recent chapters to track Quest/Fire/Constellation strands."""
+        """Analyze recent chapters to track Quest/Fire/Constellation strands.
+
+        ``chapter_idx`` must be BOOK-GLOBAL (the tracker queries and reports
+        on ``Chapter.global_idx``).
+        """
         try:
             from app.services.strand_tracker import StrandTrackerService
 

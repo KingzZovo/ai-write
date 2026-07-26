@@ -133,7 +133,8 @@ class StrandTrackerService:
         """Analyze a single chapter's text for strand presence.
 
         Args:
-            chapter_idx: The chapter index.
+            chapter_idx: The chapter index (book-global when called from
+                ``analyze_strands`` / ``get_strand_history``).
             text: Full text or summary of the chapter.
 
         Returns:
@@ -195,11 +196,16 @@ class StrandTrackerService:
 
         Args:
             project_id: The project to analyze.
-            current_chapter_idx: The current chapter index.
+            current_chapter_idx: The current BOOK-GLOBAL chapter index
+                (``Chapter.global_idx``; equals the volume-local idx for
+                single-volume projects). The volume-local idx used to be
+                queried project-wide here, which pulled a scrambled chapter
+                set from every volume at once.
             lookback: How many previous chapters to analyze.
 
         Returns:
-            StrandTracker with last appearance data and warnings.
+            StrandTracker with last appearance data (book-global indices)
+            and warnings.
         """
         db = await self._get_db()
         pid = str(project_id)
@@ -207,16 +213,18 @@ class StrandTrackerService:
         tracker = StrandTracker()
 
         try:
-            # Get recent chapters
+            # Get recent chapters on the book-global axis. Rows with NULL
+            # global_idx (pre-backfill) are excluded rather than mis-matched.
             result = await db.execute(
-                select(Chapter.chapter_idx, Chapter.summary, Chapter.content_text, Chapter.outline_json)
+                select(Chapter.global_idx, Chapter.summary, Chapter.content_text, Chapter.outline_json)
                 .join(Volume, Chapter.volume_id == Volume.id)
                 .where(
                     Volume.project_id == pid,
-                    Chapter.chapter_idx <= current_chapter_idx,
-                    Chapter.chapter_idx > max(0, current_chapter_idx - lookback),
+                    Chapter.global_idx.isnot(None),
+                    Chapter.global_idx <= current_chapter_idx,
+                    Chapter.global_idx > max(0, current_chapter_idx - lookback),
                 )
-                .order_by(Chapter.chapter_idx.asc())
+                .order_by(Chapter.global_idx.asc())
             )
             chapters = result.all()
 
@@ -245,7 +253,7 @@ class StrandTrackerService:
                 )
                 if not text:
                     continue
-                analysis = self.analyze_text(row.chapter_idx, text)
+                analysis = self.analyze_text(row.global_idx, text)
                 analyses.append(analysis)
 
             # Find last chapter where each strand was dominant or significant
@@ -280,28 +288,30 @@ class StrandTrackerService:
 
         Args:
             project_id: The project to analyze.
-            from_chapter: Start chapter index.
-            to_chapter: End chapter index (None = latest).
+            from_chapter: Start BOOK-GLOBAL chapter index.
+            to_chapter: End BOOK-GLOBAL chapter index (None = latest).
 
         Returns:
-            List of StrandAnalysis objects, one per chapter.
+            List of StrandAnalysis objects, one per chapter, in book-global
+            order.
         """
         db = await self._get_db()
         pid = str(project_id)
 
         try:
             query = (
-                select(Chapter.chapter_idx, Chapter.summary, Chapter.content_text, Chapter.outline_json)
+                select(Chapter.global_idx, Chapter.summary, Chapter.content_text, Chapter.outline_json)
                 .join(Volume, Chapter.volume_id == Volume.id)
                 .where(
                     Volume.project_id == pid,
-                    Chapter.chapter_idx >= from_chapter,
+                    Chapter.global_idx.isnot(None),
+                    Chapter.global_idx >= from_chapter,
                 )
-                .order_by(Chapter.chapter_idx.asc())
+                .order_by(Chapter.global_idx.asc())
             )
 
             if to_chapter is not None:
-                query = query.where(Chapter.chapter_idx <= to_chapter)
+                query = query.where(Chapter.global_idx <= to_chapter)
 
             result = await db.execute(query)
             chapters = result.all()
@@ -322,7 +332,7 @@ class StrandTrackerService:
                     or (row.content_text or "")[:1000]
                     or _outline_text[:1000]
                 )
-                analysis = self.analyze_text(row.chapter_idx, text)
+                analysis = self.analyze_text(row.global_idx, text)
                 analyses.append(analysis)
 
             return analyses
@@ -341,7 +351,8 @@ class StrandTrackerService:
 
         Args:
             tracker: Current strand tracker state.
-            current_chapter: The chapter being planned.
+            current_chapter: The BOOK-GLOBAL index of the chapter being
+                planned (same axis as the tracker's last_*_chapter fields).
             genre: The genre of the novel.
 
         Returns:
