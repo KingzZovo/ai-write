@@ -94,6 +94,24 @@ def looks_like_refusal(text: str) -> bool:
     return any(phrase in text for phrase in _REFUSAL_PHRASES)
 
 
+def chapter_persist_status(text: str, quality_meta: dict | None = None) -> str:
+    """Decide the status a chapter save should carry (PR-BLOCKED-STATUS).
+
+    ``draft`` when any of these hold, ``completed`` otherwise:
+
+    - the text looks truncated (ends mid-sentence), or
+    - the text contains refusal boilerplate (image-model misroute), or
+    - the quality gate persisted it on block (``persisted_on_block`` in the
+      save metadata) — persist-on-block keeps the best draft so nothing is
+      lost, but a blocked chapter must never be silently marked completed.
+    """
+    if looks_truncated(text) or looks_like_refusal(text):
+        return "draft"
+    if quality_meta and quality_meta.get("persisted_on_block"):
+        return "draft"
+    return "completed"
+
+
 _LEXICAL_CLEANUP_REPLACEMENTS = {
     "半寸": "一点",
     "半息": "一瞬",

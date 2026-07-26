@@ -102,6 +102,58 @@ def compute_effective_tier(
     return "standard"
 
 
+def _should_merge_system_for_model(model: str) -> bool:
+    """True when this model name matches settings.LLM_MERGE_SYSTEM_INTO_USER_MODELS.
+
+    Comma-separated substring patterns (e.g. ``"claude-"``). Workaround for
+    relay channels that drop/replace the system role (observed 2026-07-26 on
+    relay claude-* — an agent shell swallowed system messages, so scene_planner
+    / scene_writer / evaluators lost all story context).
+    """
+    from app.config import settings
+
+    raw = getattr(settings, "LLM_MERGE_SYSTEM_INTO_USER_MODELS", "") or ""
+    patterns = [p.strip() for p in raw.split(",") if p.strip()]
+    return bool(model) and any(p in model for p in patterns)
+
+
+def merge_system_into_user(messages: list[dict]) -> list[dict]:
+    """Fold all system-role content into the first user message (non-mutating).
+
+    The system block is prefixed under a 【系统指令】 header ahead of the user
+    ask so instruction priority reads top-down. History order of user /
+    assistant turns is preserved. No system messages → returned unchanged.
+    """
+    sys_parts = [
+        (m.get("content") or "")
+        for m in messages
+        if m.get("role") == "system" and (m.get("content") or "").strip()
+    ]
+    if not sys_parts:
+        return messages
+    sys_block = "\n\n".join(sys_parts)
+    rest = [m for m in messages if m.get("role") != "system"]
+    out: list[dict] = []
+    merged = False
+    for m in rest:
+        if not merged and m.get("role") == "user":
+            out.append(
+                {
+                    **m,
+                    "content": (
+                        f"【系统指令（必须严格遵守）】\n{sys_block}\n\n"
+                        f"【用户输入】\n{m.get('content') or ''}"
+                    ),
+                }
+            )
+            merged = True
+        else:
+            out.append(m)
+    if not merged:
+        out.insert(0, {"role": "user", "content": f"【系统指令（必须严格遵守）】\n{sys_block}"})
+    return out
+
+
 @dataclass
 class TaskRouteConfig:
     provider_key: str

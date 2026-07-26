@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     CHAPTER_MAX_REWRITE_ROUNDS: int = 2
     QUALITY_GATE_PERSIST_ON_BLOCK: bool = True
 
+    # --- LLM relay workarounds ---
+    # Comma-separated model-name substrings whose relay channel drops the
+    # system role (e.g. "claude-"). For matching models, system content is
+    # folded into the first user message. Empty = disabled.
+    LLM_MERGE_SYSTEM_INTO_USER_MODELS: str = ""
+
     # --- Scene Planner ---
     ALLOW_SCENE_PLANNER_FALLBACK: bool = True
     SCENE_PLANNER_TIMEOUT_SECONDS: float = 180.0

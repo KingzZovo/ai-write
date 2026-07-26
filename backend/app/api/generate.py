@@ -18,7 +18,7 @@ from app.services.chapter_target_words import (
     CHAPTER_DEFAULT_WORD_COUNT,
     resolve_chapter_target_word_count,
 )
-from app.services.chapter_quality_gate import apply_chapter_quality_gate, looks_truncated, looks_like_refusal
+from app.services.chapter_quality_gate import apply_chapter_quality_gate, chapter_persist_status, looks_truncated, looks_like_refusal
 from app.services.chapter_generator import ChapterGenerator
 from app.services.chinese_prose_mechanics_checker import analyze_chinese_prose_mechanics
 from app.services.prose_sanitizer import sanitize_prose
@@ -546,11 +546,12 @@ async def generate_chapter(
                                 "prose_sanitizer stripped meta leakage chapter_id=%s hits=%s",
                                 req.chapter_id, _leak_hits,
                             )
-                        _truncated = looks_truncated(text_to_save)
-                        _refusal = looks_like_refusal(text_to_save)
                         target_chapter.content_text = text_to_save
                         target_chapter.word_count = len(text_to_save)
-                        target_chapter.status = "draft" if (_truncated or _refusal) else "completed"
+                        # PR-BLOCKED-STATUS (2026-07-26): truncation, refusal, OR a
+                        # persist-on-block save all downgrade to draft — a blocked
+                        # chapter must never be silently marked completed.
+                        target_chapter.status = chapter_persist_status(text_to_save, quality_meta)
                         await save_db.commit()
                         # PR-FORESHADOW-LIFECYCLE: persist foreshadows from chapter outline_json after content saved
                         try:
