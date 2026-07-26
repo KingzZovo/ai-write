@@ -6,6 +6,38 @@ import type { BookSource, ReferenceBook, CrawlTask } from '@/stores/knowledgeSto
 import { apiFetch } from '@/lib/api'
 import { usePolling } from '@/lib/usePolling'
 
+interface SourcesResponse {
+  sources: BookSource[]
+  total: number
+  total_pages: number
+  groups?: string[]
+}
+
+interface BatchTestProgress {
+  tested: number
+  total: number
+  passed: number
+  failed: number
+  ok?: number
+  message?: string
+  status?: string
+  [key: string]: unknown
+}
+
+interface SearchResult {
+  title: string
+  author?: string
+  url?: string
+  source?: string
+  cover?: string
+  book_url?: string
+  source_id?: string
+  source_name?: string
+  kind?: string
+  intro?: string
+  [key: string]: unknown
+}
+
 type TabKey = 'sources' | 'books' | 'crawl' | 'explore'
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -47,7 +79,7 @@ export default function KnowledgePage() {
 /* ─── Sources Tab ──────────────────────────────────────────── */
 
 function SourcesTab() {
-  const [sources, setSources] = useState<any[]>([])
+  const [sources, setSources] = useState<BookSource[]>([])
   const [loading, setLoading] = useState(true)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -64,7 +96,7 @@ function SourcesTab() {
   // Batch operations
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchTesting, setBatchTesting] = useState(false)
-  const [batchTestResult, setBatchTestResult] = useState<any>(null)
+  const [batchTestResult, setBatchTestResult] = useState<BatchTestProgress | null>(null)
 
   const fetchSources = useCallback(async (p = page, s = search, g = selectedGroup) => {
     setLoading(true)
@@ -72,7 +104,7 @@ function SourcesTab() {
       const params = new URLSearchParams({ page: String(p), page_size: '30' })
       if (s) params.set('search', s)
       if (g) params.set('group', g)
-      const data = await apiFetch<any>(`/api/knowledge/sources?${params}`)
+      const data = await apiFetch<SourcesResponse>(`/api/knowledge/sources?${params}`)
       setSources(data.sources || [])
       setTotal(data.total || 0)
       setTotalPages(data.total_pages || 1)
@@ -86,7 +118,7 @@ function SourcesTab() {
     fetchSources()
   }
 
-  const importSources = async (arr: any[]) => {
+  const importSources = async (arr: Record<string, unknown>[]) => {
     await apiFetch('/api/knowledge/sources/import', {
       method: 'POST', body: JSON.stringify({ sources_json: arr })
     })
@@ -135,7 +167,7 @@ function SourcesTab() {
     if (selected.size === sources.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(sources.map((s: any) => s.id)))
+      setSelected(new Set(sources.map((s) => s.id)))
     }
   }
 
@@ -163,8 +195,8 @@ function SourcesTab() {
       setBatchTesting(false)
       return
     }
-    const progress = await apiFetch<any>('/api/knowledge/sources/test-progress')
-    setBatchTestResult((prev: any) => ({ ...prev, ...progress }))
+    const progress = await apiFetch<BatchTestProgress>("/api/knowledge/sources/test-progress")
+    setBatchTestResult((prev: BatchTestProgress | null) => ({ ...prev, ...progress }))
     if (progress.tested >= progress.total) {
       stop()
       setBatchTestStartedAt(null)
@@ -178,7 +210,7 @@ function SourcesTab() {
     setBatchTesting(true)
     setBatchTestResult(null)
     try {
-      const data = await apiFetch<any>('/api/knowledge/sources/batch-test', {
+      const data = await apiFetch<BatchTestProgress>('/api/knowledge/sources/batch-test', {
         method: 'POST',
         body: JSON.stringify(ids ? { source_ids: ids } : {}),
       })
@@ -194,7 +226,7 @@ function SourcesTab() {
 
   const handleDeleteFailed = async () => {
     if (!confirm('确定删除全部测试失败的书源？此操作不可撤销。')) return
-    const data = await apiFetch<any>('/api/knowledge/sources/delete-all-failed', { method: 'POST' })
+    const data = await apiFetch<{deleted: number}>('/api/knowledge/sources/delete-all-failed', { method: 'POST' })
     alert(`已删除 ${data.deleted} 个失败书源`)
     setSelected(new Set())
     setBatchTestResult(null)
@@ -356,7 +388,7 @@ function SourcesTab() {
           </label>
 
           {sources.map((source) => {
-            const s = source as any
+            const s = source
             const score = s.score ?? 5
             const scoreColor = score >= 7 ? 'text-green-600' : score >= 4 ? 'text-yellow-600' : 'text-red-600'
             const enabled = s.enabled === 1
@@ -500,7 +532,7 @@ function BooksTab() {
           </button>
           <button onClick={async () => {
             try {
-              const authors = await apiFetch<any[]>('/api/styles/authors')
+              const authors = await apiFetch<{author: string, book_count: number}[]>('/api/styles/authors')
               for (const a of authors) {
                 if (a.book_count >= 1) {
                   await apiFetch(`/api/styles/detect-by-author/${encodeURIComponent(a.author)}`, { method: 'POST' })
@@ -624,7 +656,7 @@ function BooksTab() {
       ) : (
         <div className="space-y-3">
           {books.map((book) => {
-            const qualityScore = (book.metadata_json as any)?.quality_score?.overall
+            const qualityScore = (book.metadata_json?.quality_score as {overall?: number} | undefined)?.overall
             const statusLabel: Record<string, string> = {
               pending: '等待处理', cleaning: '解析中', extracting: '评分中',
               crawling: '抓取中', ready: '已就绪', completed: '已完成',
@@ -651,13 +683,13 @@ function BooksTab() {
                 </div>
                 {/* Vector & chunk status */}
                 <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400">
-                  <span>切片: {(book as any).chunk_count || 0}</span>
-                  <span>向量: {(book as any).vector_count || 0}/{(book as any).chunk_count || 0}</span>
-                  {(book as any).vector_count > 0 && (book as any).vector_count >= (book as any).chunk_count && (
+                  <span>切片: {book.chunk_count || 0}</span>
+                  <span>向量: {book.vector_count || 0}/{book.chunk_count || 0}</span>
+                  {(book.vector_count ?? 0) > 0 && (book.vector_count ?? 0) >= (book.chunk_count ?? 0) && (
                     <span className="text-green-500">向量化完成</span>
                   )}
-                  {(book as any).vector_count > 0 && (book as any).vector_count < (book as any).chunk_count && (
-                    <span className="text-yellow-500">向量化中 {Math.round(((book as any).vector_count / (book as any).chunk_count) * 100)}%</span>
+                  {(book.vector_count ?? 0) > 0 && (book.vector_count ?? 0) < (book.chunk_count ?? 0) && (
+                    <span className="text-yellow-500">向量化中 {Math.round(((book.vector_count ?? 0) / (book.chunk_count || 1)) * 100)}%</span>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
@@ -673,26 +705,26 @@ function BooksTab() {
                   }} className="px-2.5 py-1 text-xs bg-indigo-50 text-indigo-600 rounded">向量化</button>
                   <button onClick={async () => {
                     try {
-                      const data = await apiFetch<any>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
+                      const data = await apiFetch<{name?: string, message?: string}>(`/api/styles/detect-from-book/${book.id}`, { method: 'POST' })
                       alert(`已提取写法：${data.name}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
                   }} className="px-2.5 py-1 text-xs bg-purple-50 text-purple-600 rounded">提取写法</button>
                   <button onClick={async () => {
                     try {
-                      const data = await apiFetch<any>(`/api/styles/extract-structure/${book.id}`, { method: 'POST' })
+                      const data = await apiFetch<{structure?: {structure_summary?: string}, message?: string}>(`/api/styles/extract-structure/${book.id}`, { method: 'POST' })
                       alert(`已提取架构：${JSON.stringify(data.structure?.structure_summary || '完成').slice(0, 100)}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
                   }} className="px-2.5 py-1 text-xs bg-orange-50 text-orange-600 rounded">提取架构</button>
                   <button onClick={async () => {
                     try {
-                      const data = await apiFetch<any>(`/api/reference-books/${book.id}/reprocess`, { method: 'POST' })
+                      const data = await apiFetch<{status?: string, message?: string}>(`/api/reference-books/${book.id}/reprocess`, { method: 'POST' })
                       alert(`反编译已${data.status === 'queued' ? '排队' : '完成'}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '反编译失败') }
                   }} className="px-2.5 py-1 text-xs bg-teal-50 text-teal-600 rounded" title="v0.6: 风格剖面 + 情节骨架 + 脱敏样本">反编译</button>
                   {book.status === 'partial' && (
                     <button onClick={async () => {
                       try {
-                        const data = await apiFetch<any>(`/api/reference-books/${book.id}/retry-missing`, { method: 'POST' })
+                        const data = await apiFetch<{status?: string, message?: string}>(`/api/reference-books/${book.id}/retry-missing`, { method: 'POST' })
                         alert(`重试缺失片段已${data.status === 'queued' ? '排队' : '完成'}`)
                       } catch (e) { alert(e instanceof Error ? e.message : '重试失败') }
                     }} className="px-2.5 py-1 text-xs bg-amber-50 text-amber-600 rounded" title="仅对缺失 cards 的 slice 重跑 style/beat 分支">重试缺失</button>
@@ -716,7 +748,7 @@ function CrawlTab() {
   // Smart search
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searching, setSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searchMsg, setSearchMsg] = useState('')
   const [crawling, setCrawling] = useState<string | null>(null)
 
@@ -732,7 +764,7 @@ function CrawlTab() {
     setSearchResults([])
     setSearchMsg('')
     try {
-      const data = await apiFetch<any>('/api/knowledge/crawl-tasks/smart', {
+      const data = await apiFetch<{books?: SearchResult[], message?: string}>('/api/knowledge/crawl-tasks/smart', {
         method: 'POST',
         body: JSON.stringify({ keyword: searchKeyword }),
       })
@@ -745,8 +777,8 @@ function CrawlTab() {
     }
   }
 
-  const handleStartCrawl = async (book: any) => {
-    setCrawling(book.book_url)
+  const handleStartCrawl = async (book: SearchResult) => {
+    setCrawling(book.book_url ?? null)
     try {
       await apiFetch('/api/knowledge/crawl-tasks', {
         method: 'POST',
@@ -793,7 +825,7 @@ function CrawlTab() {
 
         {searchResults.length > 0 && (
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {searchResults.map((book: any, idx: number) => (
+            {searchResults.map((book: SearchResult, idx: number) => (
               <div key={idx} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm text-gray-900 truncate">{book.title}</div>
@@ -885,11 +917,11 @@ function ExploreTab() {
   const [mode, setMode] = useState<'ranking' | 'search'>('ranking')
   const [rankingSource, setRankingSource] = useState('quark_male_hot')
   const [rankingCategory, setRankingCategory] = useState('全部')
-  const [books, setBooks] = useState<any[]>([])
+  const [books, setBooks] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchKeyword, setSearchKeyword] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
 
   const handleSearch = async () => {
@@ -898,7 +930,7 @@ function ExploreTab() {
     setError('')
     setMode('search')
     try {
-      const data = await apiFetch<any>('/api/knowledge/search', {
+      const data = await apiFetch<{books?: SearchResult[]}>('/api/knowledge/search', {
         method: 'POST',
         body: JSON.stringify({ keyword: searchKeyword }),
       })
@@ -921,7 +953,7 @@ function ExploreTab() {
     setRankingSource(src)
     setRankingCategory(cat)
     try {
-      const data = await apiFetch<any>('/api/knowledge/rankings/fetch', {
+      const data = await apiFetch<{books?: SearchResult[], error?: string}>('/api/knowledge/rankings/fetch', {
         method: 'POST',
         body: JSON.stringify({ source_key: src, category: cat }),
       })
@@ -967,7 +999,7 @@ function ExploreTab() {
         <div className="space-y-2">
           {searchResults.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-4">暂无搜索结果</p>
-          ) : searchResults.map((book: any, idx: number) => (
+          ) : searchResults.map((book: SearchResult, idx: number) => (
             <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
               <div className="flex justify-between items-start">
                 <div className="flex-1 min-w-0">
@@ -1011,7 +1043,7 @@ function ExploreTab() {
         <p className="text-sm text-gray-400 text-center py-8">加载排行榜...</p>
       ) : books.length > 0 ? (
         <div className="space-y-2">
-          {books.map((book: any, idx: number) => (
+          {books.map((book: SearchResult, idx: number) => (
             <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
               <div className="flex justify-between items-start">
                 <div className="flex-1 min-w-0">
@@ -1021,7 +1053,7 @@ function ExploreTab() {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 ml-7">
                     <span className="text-xs text-gray-500">{book.author}</span>
-                    {book.word_count && <span className="text-[10px] text-gray-400">{book.word_count}</span>}
+                    {Boolean(book.word_count) && <span className="text-[10px] text-gray-400">{String(book.word_count)}</span>}
                   </div>
                 </div>
                 {book.kind && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded shrink-0">{book.kind}</span>}

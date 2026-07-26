@@ -1,13 +1,18 @@
 import { create } from 'zustand'
 import { apiFetch } from '@/lib/api'
-
 export interface BookSource {
   id: string
   name: string
   sourceUrl: string
+  source_url?: string
   sourceGroup: string | null
+  source_group?: string | null
   enabled: number
   lastTestOk: number
+  last_test_ok?: number
+  score?: number
+  success_count?: number
+  fail_count?: number
 }
 
 export interface ReferenceBook {
@@ -19,6 +24,8 @@ export interface ReferenceBook {
   total_words: number
   status: string
   metadata_json: Record<string, unknown>
+  chunk_count?: number
+  vector_count?: number
 }
 
 export interface CrawlTask {

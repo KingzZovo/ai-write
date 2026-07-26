@@ -14,6 +14,33 @@ interface FilterWord {
   hit_count: number
 }
 
+interface AnalyzeHit {
+  word: string
+  count: number
+  severity: string
+}
+
+interface AnalyzeResult {
+  total_hits: number
+  hits: AnalyzeHit[]
+}
+
+interface DetectedWord {
+  word: string
+  reason: string
+  replacement?: string
+}
+
+interface DetectResult {
+  message: string
+  detected: DetectedWord[]
+}
+
+interface ImportResult {
+  imported: number
+  skipped: number
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   ai_trace: 'AI 痕迹',
   cliche: '陈词滥调',
@@ -46,10 +73,10 @@ export default function FilterWordsPage() {
   const [newReplacement, setNewReplacement] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [analyzeText, setAnalyzeText] = useState('')
-  const [analyzeResult, setAnalyzeResult] = useState<any>(null)
+  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [detecting, setDetecting] = useState(false)
-  const [detectResult, setDetectResult] = useState<any>(null)
+  const [detectResult, setDetectResult] = useState<DetectResult | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [importText, setImportText] = useState('')
   const [importing, setImporting] = useState(false)
@@ -101,7 +128,7 @@ export default function FilterWordsPage() {
     if (!analyzeText.trim()) return
     setAnalyzing(true)
     try {
-      const data = await apiFetch<any>('/api/filter-words/analyze', {
+      const data = await apiFetch<AnalyzeResult>('/api/filter-words/analyze', {
         method: 'POST',
         body: JSON.stringify({ text: analyzeText }),
       })
@@ -114,7 +141,7 @@ export default function FilterWordsPage() {
     if (!analyzeText.trim()) return
     setDetecting(true)
     try {
-      const data = await apiFetch<any>('/api/filter-words/ai-detect', {
+      const data = await apiFetch<DetectResult>('/api/filter-words/ai-detect', {
         method: 'POST',
         body: JSON.stringify({ text: analyzeText }),
       })
@@ -209,7 +236,7 @@ export default function FilterWordsPage() {
                 } else {
                   wordList = trimmed.split('\n').map(l => l.trim()).filter(Boolean)
                 }
-                const data = await apiFetch<any>('/api/filter-words/import', {
+                const data = await apiFetch<ImportResult>('/api/filter-words/import', {
                   method: 'POST',
                   body: JSON.stringify({ words: wordList }),
                 })
@@ -282,7 +309,7 @@ export default function FilterWordsPage() {
           <div className="bg-gray-50 rounded-lg p-3">
             <h3 className="text-sm font-medium text-gray-700 mb-2">扫描结果：{analyzeResult.total_hits} 处命中</h3>
             <div className="flex flex-wrap gap-2">
-              {analyzeResult.hits?.map((h: any, i: number) => (
+              {analyzeResult.hits?.map((h: AnalyzeHit, i: number) => (
                 <span key={i} className={`px-2 py-1 rounded text-xs ${SEVERITY_COLORS[h.severity] || 'bg-gray-100'}`}>
                   {h.word} ×{h.count}
                 </span>
@@ -295,7 +322,7 @@ export default function FilterWordsPage() {
           <div className="bg-purple-50 rounded-lg p-3">
             <h3 className="text-sm font-medium text-purple-700 mb-2">{detectResult.message}</h3>
             <div className="space-y-1">
-              {detectResult.detected?.map((d: any, i: number) => (
+              {detectResult.detected?.map((d: DetectedWord, i: number) => (
                 <div key={i} className="text-xs text-gray-700">
                   <span className="font-medium">{d.word}</span>
                   <span className="text-gray-400 ml-2">{d.reason}</span>
