@@ -259,8 +259,8 @@ celery -A app.tasks:celery_app beat --loglevel=info
 
 > 全流程测试暴露、根因在上游 LLM relay、产品侧尚待加固的问题。详见 `CHANGELOG.md [1.9.5]`。
 
-- **图像拒绝话术污染正文**（待修）：relay 偶尔把 scene_writer 的文本请求误路由到图像模型，返回拒绝语（如「我可以搜索图片，但目前似乎无法为您创建任何图片」），被当场景拼入正文。因其以句号结尾，骗过了截断检测（`looks_truncated`）。计划加「已知拒绝话术」检测门。
-- **relay 批次级 JSON 健壮性**（待修）：分卷大纲逐批生成时，单批 JSON 解析失败会令整卷大纲作废（`_parse_error` → 0 章物化）；卷越大（批次越多）越易中招。已用全书前提锚点缓解题材跑偏，但 json_repair + strict retry 的批次级恢复仍是深层待办。中短卷（≤3 批次/~12 章）实测稳定。
+- ~~**图像拒绝话术污染正文**~~（已修，2026-07-04）：relay 偶尔把 scene_writer 的文本请求误路由到图像模型，返回拒绝语（如「我可以搜索图片，但目前似乎无法为您创建任何图片」），被当场景拼入正文。因其以句号结尾，骗过了截断检测（`looks_truncated`）。已加纯函数 `looks_like_refusal`（`chapter_quality_gate.py`，多词拒绝话术黑名单，单词如「图片」不误判），挂到 generate.py 四个存库站点，命中即标 draft + SSE `refusal` 事件。根因仍在 relay 路由层。
+- ~~**relay 批次级 JSON 健壮性**~~（已修，2026-07-04）：分卷大纲逐批生成时，单批 JSON 解析失败会令整卷大纲作废（`_parse_error` → 0 章物化）；卷越大（批次越多）越易中招。`_parse_json` 现在 `json.loads` 失败后回退到 `json_repair`（项目已依赖，镜像 `prompt_registry._try_parse_structured`），可恢复截断/未闭合 JSON。同时修了衍生坑：json_repair 恢复的**部分 meta**（缺 `chapter_count`）会从 `_fallback_volume_meta` 回填计数而非中止 V2。
 - **章节字数方差**：`target_words`/`target_chapter_words` 只有下限门（< target×0.5）无上限；scene_writer 每场约 1850 字。`target_words=3200`（→3 场）落 4000–8000 带较稳，但仍有 LLM 方差（偶发短章）。截断/短章会被 persist-on-block 保留并标 draft，不会静默丢失。
 
 ## 路线图
