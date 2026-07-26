@@ -50,17 +50,16 @@ export default function LogsPage() {
     project_id: '', chapter_id: '', task_type: '', status: '',
   })
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(() => {
     const qs = Object.entries(filters)
       .filter(([, v]) => v)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join('&')
-    try {
-      const r = await apiFetch<{ logs: LogRow[] }>(
-        `/api/call-logs?limit=100${qs ? '&' + qs : ''}`
-      )
-      setLogs(r.logs)
-    } catch { /* */ }
+    apiFetch<{ logs: LogRow[] }>(
+      `/api/call-logs?limit=100${qs ? '&' + qs : ''}`
+    )
+      .then((r) => setLogs(r.logs))
+      .catch(() => { /* */ })
   }, [filters])
 
   useEffect(() => { fetchLogs() }, [fetchLogs])

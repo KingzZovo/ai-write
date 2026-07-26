@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { getToken, clearToken } from '@/lib/api'
@@ -25,16 +25,22 @@ const TOOL_LINKS: Array<{ href: string; key: MessageKey }> = [
   { href: '/settings/writing-engine', key: 'nav.writingEngine' },
 ]
 
+const emptySubscribe = () => () => {}
+
 export function Navbar() {
   const pathname = usePathname()
-  const [authenticated, setAuthenticated] = useState(false)
+  // Re-read on every render (navigations re-render via usePathname); the
+  // server snapshot (false) keeps the navbar out of the prerendered HTML.
+  const authenticated = useSyncExternalStore(emptySubscribe, () => !!getToken(), () => false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [prevPathname, setPrevPathname] = useState(pathname)
   const t = useT()
 
-  useEffect(() => {
-    setAuthenticated(!!getToken())
+  // Close the drawer on navigation (adjust-state-during-render pattern).
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname)
     setMenuOpen(false)
-  }, [pathname])
+  }
 
   if (!authenticated) return null
 
@@ -146,10 +152,15 @@ export function Navbar() {
 
 function ToolsMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false)
+  const [prevPathname, setPrevPathname] = useState(pathname)
   const ref = useRef<HTMLDivElement>(null)
   const t = useT()
 
-  useEffect(() => { setOpen(false) }, [pathname])
+  // Close the dropdown on navigation (adjust-state-during-render pattern).
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname)
+    setOpen(false)
+  }
 
   useEffect(() => {
     if (!open) return

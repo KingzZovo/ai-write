@@ -128,19 +128,25 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
   const [chars, setChars] = useState<Character[]>([])
   const [rels, setRels] = useState<Relationship[]>([])
   const [states, setStates] = useState<CharState[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(!!projectId)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [groupBy, setGroupBy] = useState<"importance" | "identity" | "name" | "none">("importance")
   const [hideMinor, setHideMinor] = useState(true)
-  const [overrides, setOverrides] = useState<Record<string, Importance>>({})
+  const [overrides, setOverrides] = useState<Record<string, Importance>>(() => getImportanceOverrides(projectId))
+  const [prevProjectId, setPrevProjectId] = useState(projectId)
   const t = useT()
 
-  const load = useCallback((withSpinner: boolean) => {
+  // Reset spinner/overrides when the project changes (adjust-state-during-render).
+  if (prevProjectId !== projectId) {
+    setPrevProjectId(projectId)
+    setLoading(!!projectId)
+    setOverrides(getImportanceOverrides(projectId))
+  }
+
+  const load = useCallback(() => {
     if (!projectId) return
-    if (withSpinner) setLoading(true)
-    setError(null)
     Promise.all([
       apiFetch<Character[] | CharResp>(`/api/projects/${projectId}/characters`).catch(() => ({ characters: [] } as CharResp)),
       apiFetch<Relationship[] | RelResp>(`/api/projects/${projectId}/relationships`).catch(() => ({ relationships: [] } as RelResp)),
@@ -149,13 +155,13 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
       setChars(Array.isArray(c) ? c : (c.characters || []))
       setRels(Array.isArray(r) ? r : (r.relationships || []))
       setStates(Array.isArray(s) ? s : (s.states || []))
-    }).catch(e => setError(String(e?.message || e))).finally(() => { if (withSpinner) setLoading(false) })
+      setError(null)
+    }).catch(e => setError(String(e?.message || e))).finally(() => setLoading(false))
   }, [projectId])
 
   useEffect(() => {
-    load(true)
-    setOverrides(getImportanceOverrides(projectId))
-  }, [projectId, load])
+    load()
+  }, [load])
 
   const charById = useMemo(() => Object.fromEntries(chars.map(c => [c.id, c])), [chars])
 
@@ -374,11 +380,11 @@ export function CharacterCardPanel({ projectId }: { projectId: string }) {
                           <div className="space-y-0.5">
                             {rel.out.map(r => {
                               const target = charById[r.target_id]
-                              return <RelationLine key={r.id} from={c.name} to={target?.name || "?"} rel={r} projectId={projectId} onChanged={() => load(false)} />
+                              return <RelationLine key={r.id} from={c.name} to={target?.name || "?"} rel={r} projectId={projectId} onChanged={() => load()} />
                             })}
                             {rel.in.map(r => {
                               const s = charById[r.source_id]
-                              return <RelationLine key={r.id} from={s?.name || "?"} to={c.name} rel={r} reverse projectId={projectId} onChanged={() => load(false)} />
+                              return <RelationLine key={r.id} from={s?.name || "?"} to={c.name} rel={r} reverse projectId={projectId} onChanged={() => load()} />
                             })}
                           </div>
                         </div>

@@ -29,19 +29,28 @@ function composeKey(base: string, projectId?: string): string {
   return base
 }
 
-function usePersistedFlag(key: string, defaultValue = false) {
-  const [value, setValue] = useState<boolean>(defaultValue)
+function readPersistedFlag(key: string, defaultValue: boolean): boolean {
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (raw === '1') return true
+    if (raw === '0') return false
+  } catch {
+    /* ignore */
+  }
+  return defaultValue
+}
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(key)
-      if (raw === '1') setValue(true)
-      else if (raw === '0') setValue(false)
-      else setValue(defaultValue)
-    } catch {
-      /* ignore */
-    }
-  }, [key, defaultValue])
+function usePersistedFlag(key: string, defaultValue = false) {
+  // WorkspaceLayout only renders inside ssr:false workspaces, so reading
+  // localStorage in the initializer is hydration-safe.
+  const [value, setValue] = useState<boolean>(() => readPersistedFlag(key, defaultValue))
+  const [prevKey, setPrevKey] = useState(key)
+
+  // Re-read when the key changes (adjust-state-during-render pattern).
+  if (prevKey !== key) {
+    setPrevKey(key)
+    setValue(readPersistedFlag(key, defaultValue))
+  }
 
   const set = useCallback(
     (next: boolean) => {

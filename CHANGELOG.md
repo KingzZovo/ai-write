@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.10.0] - 2026-07-26
+
+四路审计（记忆子系统/生成流水线/前端/规划文档）后的机制级大修 + 功能补全（提交 231f06e / 563e096 / 2670d60 / df219fb，pytest 912 全绿，vitest 58 全绿）。核心发现：大量关键机制"已建成但未接线"。
+
+### 修复（静默失效机制接线）
+
+- **system 折叠 workaround 死代码**：`merge_system_into_user` 接入 `OpenAIProvider.generate/generate_stream` 两个必经点，`LLM_MERGE_SYSTEM_INTO_USER_MODELS=claude-` 真正生效。
+- **章节全局编号**（migration a1001915）：新增 `chapters.global_idx`（before_insert 监听器维护 + 存量回填）。根修实体抽取第 2 卷起全部提前返回（ExtractionMarker 撞键）、时间线锚点跨卷错序、角色位置串卷、hook 摘要 MultipleResultsFound；strand/quality/世界快照全部换轴。
+- **长篇记忆断链**：章节摘要生成时自动嵌入 Qdrant（此前 L3 RAG 永远为空）；检索加 project_id 过滤（跨项目污染）；卷摘要自动回填（`volume_summaries` 此前零写入方 = 跨卷失忆）；向量维度统一修正为实际 2048；`rag_query_rewrite` 消费端键名对齐 schema。
+- **伏笔链路**：lifecycle 落库状态 `pending`→`planted`（消费端只认 planted/ripening/ready）；`source` 列（migration a1001914）保护 PG-only 伏笔不被 materialize 删除同步抹掉。
+- **前端 revise 追加 bug**：`apiSSE` 按 `revise_round` 变化发 `revise_restart`，修订文本替换而非追加（此前自动保存可把好文本覆盖成多倍长坏文本）。
+- **celery 生成路径**：7 个持久化点全部接实体抽取；认知账本撤销 `passed` 门控（needs_review 入库即入账本，与 SSE 对齐）。
+
+### 修复（流水线健壮性）
+
+- 流式调用（scene_writer）首块前重试（400 限 2 次）+ Prometheus/用量账本全覆盖 + `include_usage` 运行时探测；场景双路失败时 ≥200 字部分保全为 draft（`partial_saved` 事件）；SSE 15 秒心跳防 nginx 600s 断连；`scene` 进度事件；异常路径补 `[DONE]`；scene-planner 预算钳制到可达上限；人性化处理确定性化；拒答检测扩充（前 200 字符 + 引号外）；重写轮数走 Settings。
+
+### 修复（实体图谱卫生）
+
+- RELATES_TO 改 MERGE 并真正设置约束属性（重复边根治，存量清理 35 条）；别名折叠（materialize 前全名单过 `profile_json.aliases`，出场统计并入正主）；世界规则近重复（同类目 >0.8 bigram Jaccard 或包含）改为更新而非累积。
+
+### 新功能
+
+- **编辑面**：章节摘要/排序（重算 global_idx）API 化；neo4j-settings 通道补齐关系 PUT/DELETE、世界规则 PUT/DELETE（PG 同步收敛）、角色 DELETE（级联清理）；角色页/设定面板从 410 死路切到该通道；伏笔面板编辑/标记回收/删除；关系行编辑/删除。
+- **工作区**：后台生成队列（异步 API + 5s 轮询 + 断线恢复 + 取消端点带持久标记）；本章摘要编辑条；新建章节/分卷、章节上移下移、分卷 20 上限移除；生成进度条（场景/评分/修订轮+计时）+ 取消按钮 + 截断/拒答警示；每章指令+目标字数；选段重写（RewriteMenu）接线；关系图/版本对比页入口。
+- **导出**：新增 `.txt` 端点（legado 友好）；项目卡 TXT/EPUB/PDF/DOCX 下载；「工具」导航（日志/向量库/写作引擎）；首页章节请求轻量化。
+- **模型分配**（prompt_assets）：claude-sonnet-5 写正文（generation 16384 tokens）、claude-opus-5 大纲/审查（判分温度 0.3）、gemini-3.5-flash 工具类。
+- **运维**：`OPENAI_COMPAT_MIN_INTERVAL_SECONDS` 8→2（号池恢复后）；`CONTEXT_PACK_TOKEN_BUDGET`/`CONTEXT_PACK_MAX_CHARACTER_CARDS` 可配置（角色卡按章相关性封顶 + character_states 覆盖冻结档案）。
+
 ## [1.9.5] - 2026-07-04
 
 全流程测试驱动的稳定性修复（分支 `rescue/2026-05-17-baseline`，全程 TDD，707 pytest 全绿）+ 前端全面汉化。

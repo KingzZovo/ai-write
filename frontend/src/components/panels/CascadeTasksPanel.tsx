@@ -118,14 +118,14 @@ function CascadeTaskDetailModal({
 }) {
   const t = useT()
   const [full, setFull] = useState<CascadeTaskRow>(task)
-  const [loading, setLoading] = useState(false)
+  // Fetch starts on mount, so loading begins true; the modal is keyed by
+  // task id, so a task switch remounts with fresh initial state.
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Re-fetch the row from /{task_id} for freshest data (covers running rows).
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
     apiFetch<CascadeTaskRow>(
       `/api/projects/${projectId}/cascade-tasks/${task.id}`,
     )
@@ -467,6 +467,7 @@ export function CascadeTasksPanel({
 
       {openTask && (
         <CascadeTaskDetailModal
+          key={openTask.id}
           projectId={projectId}
           task={openTask}
           onClose={() => setOpenTask(null)}

@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { Component, Suspense, useEffect, useState } from 'react'
+import { Component, Suspense, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AskUserPrompt } from '@/components/AskUserPrompt'
@@ -61,16 +61,24 @@ const MobileWorkspace = dynamic(() => import('@/components/workspace/MobileWorks
   ),
 })
 
+const emptySubscribe = () => () => {}
+
 export default function WorkspacePage() {
-  const [ready, setReady] = useState(false)
-  const [mobile, setMobile] = useState(false)
+  // Viewport class is sampled once per mount (cached closure) so the workspace
+  // variant never switches mid-session; the server snapshot (null) keeps the
+  // prerendered loading HTML until hydration completes.
+  const [readViewport] = useState(() => {
+    let cached: 'mobile' | 'desktop' | null = null
+    return () => {
+      if (cached === null) cached = window.innerWidth < 768 ? 'mobile' : 'desktop'
+      return cached
+    }
+  })
+  const viewport = useSyncExternalStore<'mobile' | 'desktop' | null>(
+    emptySubscribe, readViewport, () => null
+  )
 
-  useEffect(() => {
-    setMobile(window.innerWidth < 768)
-    setReady(true)
-  }, [])
-
-  if (!ready) {
+  if (!viewport) {
     return (
       <div className="flex items-center justify-center h-screen pt-12 bg-gray-50">
         <p className="text-gray-400">加载工作区...</p>
@@ -85,7 +93,7 @@ export default function WorkspacePage() {
       </div>
     }>
       <ErrorBoundary>
-        {mobile ? <MobileWorkspace /> : <DesktopWorkspace />}
+        {viewport === 'mobile' ? <MobileWorkspace /> : <DesktopWorkspace />}
         <Suspense fallback={null}>
           <AskUserMount />
         </Suspense>

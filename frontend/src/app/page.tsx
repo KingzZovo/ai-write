@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import { getToken } from '@/lib/api'
+
+const emptySubscribe = () => () => {}
 
 const ProjectListPage = dynamic(
   () => import('@/components/project/ProjectListPage').then((m) => m.ProjectListPage),
@@ -17,13 +19,11 @@ const ProjectListPage = dynamic(
 )
 
 export default function Home() {
-  const [checked, setChecked] = useState(false)
+  // Server snapshot (false) keeps the prerendered loading HTML; the client
+  // snapshot reads the token so no effect-driven setState is needed.
+  const checked = useSyncExternalStore(emptySubscribe, () => !!getToken(), () => false)
   useEffect(() => {
-    if (!getToken()) {
-      window.location.href = '/login'
-      return
-    }
-    setChecked(true)
+    if (!getToken()) window.location.href = '/login'
   }, [])
   if (!checked) {
     return (

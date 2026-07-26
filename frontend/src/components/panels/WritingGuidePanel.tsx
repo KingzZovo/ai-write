@@ -96,14 +96,22 @@ export function WritingGuidePanel({ projectId }: { projectId?: string | null }) 
   const [activeModules, setActiveModules] = useState<Set<string>>(new Set(DEFAULT_MODULES))
   const [showProhibitions, setShowProhibitions] = useState(false)
   const [selectedGenre, setSelectedGenre] = useState('')
-  const [loaded, setLoaded] = useState(false)
+  // loaded gates the persist effect below; it starts true only when there is
+  // no project to fetch, and resets on projectId change (adjust-state-during-
+  // render) so stale modules are never persisted to the new project.
+  const [loaded, setLoaded] = useState(!projectId)
+  const [prevProjectId, setPrevProjectId] = useState(projectId)
   const projectRef = useRef<ProjectShape | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  if (prevProjectId !== projectId) {
+    setPrevProjectId(projectId)
+    setLoaded(!projectId)
+  }
+
   // Load from project.settings_json.writing_guide on mount or projectId change
   useEffect(() => {
-    if (!projectId) { setLoaded(true); return }
-    setLoaded(false)
+    if (!projectId) return
     apiFetch<ProjectShape>(`/api/projects/${projectId}`)
       .then((p) => {
         projectRef.current = p

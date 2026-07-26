@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import { getToken } from '@/lib/api'
+
+const emptySubscribe = () => () => {}
 
 const TrashListPage = dynamic(
   () => import('@/components/project/TrashListPage').then((m) => m.TrashListPage),
@@ -10,13 +12,11 @@ const TrashListPage = dynamic(
 )
 
 export default function TrashPage() {
-  const [ok, setOk] = useState(false)
+  // Server snapshot (false) keeps the prerendered loading HTML; the client
+  // snapshot reads the token so no effect-driven setState is needed.
+  const ok = useSyncExternalStore(emptySubscribe, () => !!getToken(), () => false)
   useEffect(() => {
-    if (!getToken()) {
-      window.location.href = '/login'
-      return
-    }
-    setOk(true)
+    if (!getToken()) window.location.href = '/login'
   }, [])
   if (!ok) {
     return (

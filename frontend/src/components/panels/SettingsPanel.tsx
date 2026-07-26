@@ -34,33 +34,41 @@ export function SettingsPanel({ projectId }: SettingsPanelProps) {
   const [tab, setTab] = useState<'characters' | 'world'>('characters')
   const [characters, setCharacters] = useState<Character[]>([])
   const [worldRules, setWorldRules] = useState<WorldRule[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [editingChar, setEditingChar] = useState<string | null>(null)
   const [charSaveError, setCharSaveError] = useState<string | null>(null)
   const [showAddChar, setShowAddChar] = useState(false)
   const [showAddRule, setShowAddRule] = useState(false)
   const [editingRule, setEditingRule] = useState<string | null>(null)
+  const [prevProjectId, setPrevProjectId] = useState(projectId)
 
-  const fetchCharacters = async () => {
-    if (!projectId) return
-    try {
-      const data = await apiFetch<Character[] | CharResp>(`/api/projects/${projectId}/characters`)
-      const arr = Array.isArray(data) ? data : (data.characters || [])
-      setCharacters(arr)
-    } catch { setCharacters([]) }
+  // Reset the spinner when the project changes (adjust-state-during-render).
+  if (prevProjectId !== projectId) {
+    setPrevProjectId(projectId)
+    setLoading(true)
   }
 
-  const fetchWorldRules = async () => {
-    if (!projectId) return
-    try {
-      const data = await apiFetch<WorldRule[] | RuleResp>(`/api/projects/${projectId}/world-rules`)
-      const arr = Array.isArray(data) ? data : (data.world_rules || data.rules || [])
-      setWorldRules(arr)
-    } catch { setWorldRules([]) }
+  const fetchCharacters = () => {
+    if (!projectId) return Promise.resolve()
+    return apiFetch<Character[] | CharResp>(`/api/projects/${projectId}/characters`)
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : (data.characters || [])
+        setCharacters(arr)
+      })
+      .catch(() => setCharacters([]))
+  }
+
+  const fetchWorldRules = () => {
+    if (!projectId) return Promise.resolve()
+    return apiFetch<WorldRule[] | RuleResp>(`/api/projects/${projectId}/world-rules`)
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : (data.world_rules || data.rules || [])
+        setWorldRules(arr)
+      })
+      .catch(() => setWorldRules([]))
   }
 
   useEffect(() => {
-    setLoading(true)
     Promise.all([fetchCharacters(), fetchWorldRules()]).finally(() => setLoading(false))
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
