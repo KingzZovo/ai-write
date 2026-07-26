@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # system role (e.g. "claude-"). For matching models, system content is
     # folded into the first user message. Empty = disabled.
     LLM_MERGE_SYSTEM_INTO_USER_MODELS: str = ""
+    # Comma-separated model-name substrings whose relay burns the whole output
+    # budget on hidden thinking for NON-streaming completions, returning empty
+    # text with output_tokens == max_tokens (observed 2026-07-26 on relay
+    # claude-*; streaming the same request works). Matching models route
+    # non-stream generate() through internal streaming and assemble the full
+    # text before returning. Empty = disabled.
+    LLM_FORCE_INTERNAL_STREAM_MODELS: str = "claude-"
 
     # --- Scene Planner ---
     ALLOW_SCENE_PLANNER_FALLBACK: bool = True

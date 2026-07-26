@@ -81,6 +81,13 @@ class TestWriteRequest(BaseModel):
 class TestWriteResponse(BaseModel):
     text: str
     style_name: str
+    # Which prompt mode ran: currently always "production_equivalent" — the
+    # style block is built exactly like the writer-injection path (dossier
+    # preference, compile without sample few-shot, 1200-char cap).
+    mode: str = "production_equivalent"
+    # Where the style text came from: "dossier" or "compiled".
+    style_source: str = ""
+    style_block_chars: int = 0
 
 
 # =========================================================================
@@ -420,27 +427,47 @@ async def test_write(
     body: TestWriteRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TestWriteResponse:
-    """Generate a test passage using a selected style profile."""
+    """Generate a test passage using a selected style profile.
+
+    Production-equivalent: the style block is built exactly like the chapter
+    writer injection (dossier style_block preferred, compile_style without
+    sample_passages few-shot, same [风格要求] format and 1200-char cap), so
+    the test result reflects what generation actually receives.
+    """
     profile = await db.get(StyleProfile, str(style_id))
     if not profile:
         raise HTTPException(status_code=404, detail="写法不存在")
 
-    from app.services.style_compiler import compile_style
     from app.services.model_router import get_model_router
+    from app.services.style_runtime import (
+        build_style_injection_block,
+        production_style_text_for_profile,
+    )
 
-    style_prompt = compile_style(profile)
+    style_text, style_source, _ref_book_id = await production_style_text_for_profile(db, profile)
+    style_block = build_style_injection_block(style_text)
     router = get_model_router()
+
+    user_content = body.prompt
+    if style_block:
+        user_content = f"{body.prompt}\n\n{style_block}"
 
     result = await router.generate(
         task_type="generation",
         messages=[
-            {"role": "system", "content": f"你是一个小说作家。请严格按照以下写法指导来写作：\n\n{style_prompt}"},
-            {"role": "user", "content": body.prompt},
+            {"role": "system", "content": "你是一个小说作家。"},
+            {"role": "user", "content": user_content},
         ],
         max_tokens=1024,
     )
 
-    return TestWriteResponse(text=result.text, style_name=profile.name)
+    return TestWriteResponse(
+        text=result.text,
+        style_name=profile.name,
+        mode="production_equivalent",
+        style_source=style_source,
+        style_block_chars=len(style_block),
+    )
 
 
 @router.post("/compile-preview")
@@ -497,10 +524,14 @@ async def extract_book_structure(
 
     structure = await extract_plot_structure(combined)
 
-    # Persist in book metadata
-    metadata = book.metadata_json or {}
+    # Persist in book metadata. Copy + flag_modified so SQLAlchemy actually
+    # emits an UPDATE — reassigning the same dict is a silent no-op on JSON
+    # columns (mirrors reference_ingestor's persistence pattern).
+    from sqlalchemy.orm.attributes import flag_modified
+    metadata = dict(book.metadata_json or {})
     metadata["plot_structure"] = structure
     book.metadata_json = metadata
+    flag_modified(book, "metadata_json")
     await db.flush()
 
     return {"book_title": book.title, "structure": structure}
@@ -618,11 +649,14 @@ async def extract_structure_by_author(
     combined = "\n\n".join(all_samples[:8])
     structure = await extract_plot_structure(combined)
 
-    # Store as author-level structure
+    # Store as author-level structure. Copy + flag_modified so the JSON
+    # column mutation actually emits an UPDATE (see extract_book_structure).
+    from sqlalchemy.orm.attributes import flag_modified
     for book in books:
-        metadata = book.metadata_json or {}
+        metadata = dict(book.metadata_json or {})
         metadata["author_structure"] = structure
         book.metadata_json = metadata
+        flag_modified(book, "metadata_json")
     await db.flush()
 
     return {

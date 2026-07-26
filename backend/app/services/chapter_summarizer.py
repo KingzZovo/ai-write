@@ -164,12 +164,14 @@ async def summarize_and_save_chapter(
         return False, chapter.summary
 
     project_id = None
+    volume_idx = None
     try:
         from app.models.project import Volume
         if chapter.volume_id is not None:
             volume = await db.get(Volume, str(chapter.volume_id))
             if volume is not None:
                 project_id = volume.project_id
+                volume_idx = volume.volume_idx
     except Exception:
         pass
 
@@ -195,6 +197,8 @@ async def summarize_and_save_chapter(
         chapter_idx=chapter.chapter_idx,
         chapter_title=chapter.title or "",
         summary=summary,
+        global_idx=chapter.global_idx,
+        volume_idx=volume_idx,
     )
     return True, summary
 
@@ -206,6 +210,8 @@ async def upsert_chapter_summary_embedding(
     chapter_idx: int | None,
     chapter_title: str,
     summary: str,
+    global_idx: int | None = None,
+    volume_idx: int | None = None,
 ) -> bool:
     """Embed a chapter summary and upsert it into the project's summary shard.
 
@@ -265,6 +271,13 @@ async def upsert_chapter_summary_embedding(
                             "chapter_idx": chapter_idx,
                             "chapter_title": chapter_title or "",
                             "summary": summary,
+                            # Book-global context (E2E 2026-07-26): without
+                            # these, two volumes' "chapter 1" points were
+                            # indistinguishable in recall results. Point id
+                            # stays (volume_id, chapter_idx)-keyed, so existing
+                            # points get enriched on their next overwrite.
+                            "global_idx": global_idx,
+                            "volume_idx": volume_idx,
                         },
                     )
                 ],

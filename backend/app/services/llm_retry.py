@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+
+class LLMEmptyCompletionError(RuntimeError):
+    """HTTP-200 completion with empty text while output_tokens hit max_tokens.
+
+    Observed 2026-07-26 on OpenAI-compat relays fronting claude-*: the
+    upstream burns the entire output budget on hidden thinking and returns no
+    content. Treated as a transient upstream failure so it retries within the
+    caller's existing attempt budget instead of surfacing as a "successful"
+    empty result (which downstream turns into JSON-parse failures / all-zero
+    evaluation scores / blocked chapters). A plain empty response WITHOUT the
+    budget-exhausted signature is not wrapped in this error.
+    """
+
 # Defaults tuned for the slice-grain calls (style abstraction / beat
 # extraction / single-text embedding). Total worst-case wall time before
 # giving up: ~30s (2 + 4 + 8 + 16 + jitter), which still fits inside
@@ -41,10 +54,14 @@ def _is_retryable(exc: BaseException) -> bool:
         / ``InternalServerError``
       * Generic ``TimeoutError``, ``ConnectionError``, ``OSError``
       * Anything whose string repr carries a 5xx/429 HTTP status
+      * ``LLMEmptyCompletionError`` (empty text with the output budget
+        exhausted — relay thinking-burn, see class docstring)
 
     Everything else (auth, schema validation, 4xx other than 429) is
     treated as a hard failure so we don't masquerade real bugs as flakes.
     """
+    if isinstance(exc, LLMEmptyCompletionError):
+        return True
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionError)):
         return True
     # OSError covers many low-level socket / DNS issues without forcing

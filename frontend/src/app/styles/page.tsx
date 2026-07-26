@@ -1,7 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
+import { usePolling } from '@/lib/usePolling'
+import { useT } from '@/lib/i18n/I18nProvider'
+import {
+  type DossierResponse,
+  getDossierStatus,
+  isDossierRunning,
+  hasDossierContent,
+  sectionError,
+  formatSourceCounts,
+} from '@/lib/dossier'
 
 interface StyleRule {
   rule: string
@@ -41,7 +52,21 @@ const CATEGORY_LABELS: Record<string, string> = {
   combat: '战斗', description: '描写', custom: '自定义',
 }
 
+// useSearchParams() must live inside a Suspense boundary so the page can be
+// statically prerendered (same pattern as /workspace).
 export default function StylesPage() {
+  return (
+    <Suspense fallback={null}>
+      <StylesPageInner />
+    </Suspense>
+  )
+}
+
+function StylesPageInner() {
+  const t = useT()
+  const searchParams = useSearchParams()
+  // Deep link from the knowledge page: /styles?tab=dossiers&book=<id>
+  const focusBookId = searchParams?.get('book') || null
   const [styles, setStyles] = useState<StyleProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [editingStyle, setEditingStyle] = useState<StyleProfile | null>(null)
@@ -49,6 +74,7 @@ export default function StylesPage() {
   const [showDetect, setShowDetect] = useState(false)
   const [testWriteId, setTestWriteId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState('')
+  const [testMode, setTestMode] = useState<string | null>(null)
   const [testLoading, setTestLoading] = useState(false)
 
   const fetchStyles = useCallback(async () => {
@@ -59,7 +85,10 @@ export default function StylesPage() {
     finally { setLoading(false) }
   }, [])
 
-  const [activeTab, setActiveTab] = useState<'styles' | 'structures'>('styles')
+  const [activeTab, setActiveTab] = useState<'styles' | 'structures' | 'dossiers'>(() => {
+    const tab = searchParams?.get('tab')
+    return tab === 'structures' || tab === 'dossiers' ? tab : 'styles'
+  })
 
   useEffect(() => { fetchStyles() }, [fetchStyles])
 
@@ -81,12 +110,17 @@ export default function StylesPage() {
     setTestWriteId(id)
     setTestLoading(true)
     setTestResult('')
+    setTestMode(null)
     try {
-      const data = await apiFetch<{ text: string }>(`/api/styles/${id}/test-write`, {
+      const data = await apiFetch<{ text: string; mode?: string }>(`/api/styles/${id}/test-write`, {
         method: 'POST',
         body: JSON.stringify({ prompt: '写一段200字的场景描写，一个人走在雨中的小巷里。' }),
       })
       setTestResult(data.text)
+      // Distillation rework: the backend runs test-write through the real
+      // generation pipeline and may report which mode it used. Only shown
+      // when the field is present.
+      setTestMode(typeof data.mode === 'string' && data.mode ? data.mode : null)
     } catch (e) {
       setTestResult(e instanceof Error ? e.message : '试写失败')
     } finally {
@@ -133,16 +167,23 @@ export default function StylesPage() {
             <h3 className="text-sm font-semibold text-gray-900">
               试写结果 — {styles.find(s => s.id === testWriteId)?.name}
             </h3>
-            <button onClick={() => { setTestWriteId(null); setTestResult('') }}
+            <button onClick={() => { setTestWriteId(null); setTestResult(''); setTestMode(null) }}
               className="text-xs text-gray-400 hover:text-gray-600">关闭</button>
           </div>
           {testLoading ? (
             <div className="text-sm text-gray-400 animate-pulse">正在用选定写法生成中...</div>
           ) : (
-            <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-lg p-4 border border-gray-100"
-              style={{ fontFamily: "'Noto Serif SC', serif" }}>
-              {testResult}
-            </div>
+            <>
+              <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-lg p-4 border border-gray-100"
+                style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                {testResult}
+              </div>
+              {testMode && (
+                <p className="text-[10px] text-gray-400 mt-2">
+                  {t('styles.testWrite.mode')}: {testMode === 'production' || testMode === 'production_equivalent' ? t('styles.testWrite.productionEquivalent') : testMode}
+                </p>
+              )}
+            </>
           )}
         </div>
       )}
@@ -157,10 +198,17 @@ export default function StylesPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg ${activeTab === 'structures' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`}>
           剧情架构
         </button>
+        <button onClick={() => setActiveTab('dossiers')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg ${activeTab === 'dossiers' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`}>
+          {t('styles.dossier.tab')}
+        </button>
       </div>
 
       {/* Architecture section */}
       {activeTab === 'structures' && <StructuresPanel />}
+
+      {/* Book dossier section (distillation rework) */}
+      {activeTab === 'dossiers' && <DossiersPanel focusBookId={focusBookId} />}
 
       {/* Style cards */}
       {activeTab === 'styles' && (loading ? (
@@ -305,6 +353,169 @@ function StructuresPanel() {
       ))}
     </div>
   )
+}
+
+/* ─── Book Dossiers Panel (distillation rework) ───────────── */
+
+interface DossierBook {
+  id: string
+  title: string
+  author?: string | null
+  status?: string
+  metadata_json?: Record<string, unknown> | null
+}
+
+function DossiersPanel({ focusBookId }: { focusBookId: string | null }) {
+  const t = useT()
+  const [books, setBooks] = useState<DossierBook[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiFetch<DossierBook[]>('/api/knowledge/books')
+      .then(data => setBooks(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <p className="text-sm text-gray-400 text-center py-8">{t('styles.dossier.loading')}</p>
+  if (books.length === 0) return (
+    <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+      <p className="text-sm text-gray-500">{t('styles.dossier.empty')}</p>
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      {books.map(book => (
+        <DossierCard key={book.id} book={book} highlight={book.id === focusBookId} />
+      ))}
+    </div>
+  )
+}
+
+const DOSSIER_SECTIONS = [
+  { key: 'style', labelKey: 'styles.dossier.section.style' },
+  { key: 'plot', labelKey: 'styles.dossier.section.plot' },
+  { key: 'world', labelKey: 'styles.dossier.section.world' },
+] as const
+type DossierSectionKey = (typeof DOSSIER_SECTIONS)[number]['key']
+
+function DossierCard({ book, highlight }: { book: DossierBook; highlight?: boolean }) {
+  const t = useT()
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [dossier, setDossier] = useState<DossierResponse | null>(null)
+  const [status, setStatus] = useState<string | null>(() => getDossierStatus(book.metadata_json))
+  const [starting, setStarting] = useState(false)
+  const [section, setSection] = useState<DossierSectionKey>('style')
+
+  const fetchDossier = useCallback(async () => {
+    try {
+      const data = await apiFetch<DossierResponse>(`/api/decompile/${book.id}/dossier`)
+      // 404 / absent / empty payload → treat as "no dossier yet" and hide the card view
+      setDossier(hasDossierContent(data) ? data : null)
+    } catch {
+      setDossier(null)
+    }
+  }, [book.id])
+
+  useEffect(() => { fetchDossier() }, [fetchDossier])
+
+  useEffect(() => {
+    if (highlight) cardRef.current?.scrollIntoView({ block: 'start' })
+  }, [highlight])
+
+  // While consolidation is running, poll dossier_status (~5s) via the single
+  // book endpoint; on any terminal state re-fetch the dossier itself.
+  const running = isDossierRunning(status)
+  usePolling(async (stop) => {
+    const b = await apiFetch<DossierBook>(`/api/knowledge/books/${book.id}`)
+    const next = getDossierStatus(b?.metadata_json)
+    setStatus(next)
+    if (!isDossierRunning(next)) {
+      stop()
+      fetchDossier()
+    }
+  }, 5000, running)
+
+  const handleConsolidate = async () => {
+    if (starting || running) return
+    setStarting(true)
+    try {
+      await apiFetch(`/api/decompile/${book.id}/consolidate`, { method: 'POST' })
+      setStatus('running')
+    } catch (e) {
+      alert(`${t('styles.dossier.startFailed')}: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const blocks: Record<DossierSectionKey, { block?: string | null; data?: unknown }> = {
+    style: { block: dossier?.style_block, data: dossier?.style_data },
+    plot: { block: dossier?.structure_block, data: dossier?.plot_data },
+    world: { block: dossier?.world_block, data: dossier?.world_data },
+  }
+  const active = blocks[section]
+  const activeError = sectionError(active.data)
+  const counts = formatSourceCounts(dossier?.source_counts)
+
+  return (
+    <div ref={cardRef}
+      className={`bg-white rounded-xl border p-4 ${highlight ? 'border-blue-300 ring-1 ring-blue-200' : 'border-gray-200'}`}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="min-w-0">
+          <h3 className="font-medium text-sm text-gray-900 truncate">{book.title}</h3>
+          {book.author && <p className="text-xs text-gray-400 truncate">{book.author}</p>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {running && status && (
+            <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded animate-pulse">{status}</span>
+          )}
+          <button onClick={handleConsolidate} disabled={starting || running}
+            className="px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
+            {running ? t('styles.dossier.consolidating') : t('styles.dossier.consolidate')}
+          </button>
+        </div>
+      </div>
+
+      {dossier ? (
+        <div>
+          <div className="flex gap-1.5 mb-2">
+            {DOSSIER_SECTIONS.map(s => (
+              <button key={s.key} onClick={() => setSection(s.key)}
+                className={`px-2.5 py-1 text-xs rounded-full ${section === s.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                {t(s.labelKey)}
+              </button>
+            ))}
+          </div>
+          {activeError && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+              {t('styles.dossier.sectionError')}: {activeError}
+            </p>
+          )}
+          {active.block ? (
+            <pre className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-gray-50 rounded-lg p-3 border border-gray-100 max-h-72 overflow-y-auto">
+              {active.block}
+            </pre>
+          ) : !activeError && (
+            <p className="text-xs text-gray-400">{t('styles.dossier.sectionEmpty')}</p>
+          )}
+          <p className="text-[10px] text-gray-400 mt-2">
+            {dossier.consolidated_at && `${t('styles.dossier.consolidatedAt')} ${formatDossierTime(dossier.consolidated_at)}`}
+            {dossier.consolidated_at && counts && ' · '}
+            {counts && `${t('styles.dossier.sources')}: ${counts}`}
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400">{t('styles.dossier.none')}</p>
+      )}
+    </div>
+  )
+}
+
+function formatDossierTime(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
 /* ─── Style Create/Edit Form ───────────────────────────────── */

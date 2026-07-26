@@ -5,12 +5,15 @@ import Link from 'next/link'
 import { useGenerationStore } from '@/stores/generationStore'
 import { apiFetch } from '@/lib/api'
 import { getChapterGenOptions, saveChapterGenOptions } from '@/lib/chapterGenOptions'
+import { styleReferenceBookId } from '@/lib/styleReference'
+import { useT } from '@/lib/i18n/I18nProvider'
 
 interface StyleInfo {
   id: string
   name: string
   is_active: number
   bind_level: string
+  bind_target_id?: string | null
   rules_json: { rule: string }[]
   tone_keywords: string[]
 }
@@ -89,7 +92,13 @@ function StyleSelector({ projectId }: { projectId?: string | null }) {
     if (!projectId || !loadedRef.current) return
     const settings = { ...(projectSettingsRef.current || {}) }
     const prevRef = (settings.style_reference as Record<string, unknown> | undefined) || {}
-    settings.style_reference = { ...prevRef, profile_id: id || null }
+    // Distillation rework: for book-bound profiles also persist the reference
+    // book id so structure/world dossiers resolve even without the profile.
+    settings.style_reference = {
+      ...prevRef,
+      profile_id: id || null,
+      reference_book_id: styleReferenceBookId(styles.find(s => s.id === id)),
+    }
     // Also write the legacy flat key for back-compat with older readers
     settings.style_profile_id = id || null
     projectSettingsRef.current = settings
@@ -189,6 +198,7 @@ export function GeneratePanel({
   onGenerateOutline,
   onViewOutline,
 }: GeneratePanelProps) {
+  const t = useT()
   const { isGenerating } = useGenerationStore()
   const [endpoints, setEndpoints] = useState<EndpointInfo[]>([])
   const [tasks, setTasks] = useState<TaskConfig[]>([])
@@ -197,6 +207,26 @@ export function GeneratePanel({
   // outline 存在性状态。key: book/volume/chapter
   const [outlineCounts, setOutlineCounts] = useState<Record<string, number>>({ book: 0, volume: 0, chapter: 0 })
   const [confirmLevel, setConfirmLevel] = useState<string | null>(null)
+  // UX hazard fix: when the chapter already has prose, gate 生成章节正文
+  // behind a confirm (the previous version stays in 版本历史).
+  const [confirmProse, setConfirmProse] = useState(false)
+  // Keyed by chapter id so switching chapters resets to 0 without a
+  // synchronous setState in the effect body.
+  const [proseInfo, setProseInfo] = useState<{ chapterId: string; words: number } | null>(null)
+  const chapterWordCount = proseInfo && proseInfo.chapterId === selectedChapterId ? proseInfo.words : 0
+
+  useEffect(() => {
+    if (!selectedChapterId || isGenerating) return // refresh once generation finishes
+    let cancelled = false
+    apiFetch<{ word_count?: number | null; content_text?: string | null }>(`/api/chapters/${selectedChapterId}`)
+      .then(c => {
+        if (cancelled) return
+        const words = c.word_count || (c.content_text ? c.content_text.trim().length : 0)
+        setProseInfo({ chapterId: selectedChapterId, words })
+      })
+      .catch(() => { if (!cancelled) setProseInfo({ chapterId: selectedChapterId, words: 0 }) })
+    return () => { cancelled = true }
+  }, [selectedChapterId, isGenerating])
   const refreshOutlineCounts = useCallback(async () => {
     if (!projectId) return
     try {
@@ -392,15 +422,24 @@ export function GeneratePanel({
             onView={() => onViewOutline?.("chapter")}
             onGenerate={() => outlineCounts.chapter > 0 ? setConfirmLevel("chapter") : onGenerateOutline?.("chapter")}
           />
-          <button onClick={onGenerate} disabled={isGenerating || !hasEndpoints || !canGenerateChapterProse}
+          <button
+            onClick={() => chapterWordCount > 0 ? setConfirmProse(true) : onGenerate?.()}
+            disabled={isGenerating || !hasEndpoints || !canGenerateChapterProse}
             className="w-full px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg shadow-sm transition-all duration-150 hover:bg-green-700 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
-            {isGenerating ? "生成中..." : "生成章节正文"}
+            {isGenerating ? "生成中..." : chapterWordCount > 0 ? t('generate.prose.regen') : "生成章节正文"}
           </button>
           {confirmLevel && (
             <ConfirmModal
               level={confirmLevel}
               onCancel={() => setConfirmLevel(null)}
               onConfirm={() => { onGenerateOutline?.(confirmLevel); setConfirmLevel(null) }}
+            />
+          )}
+          {confirmProse && (
+            <ProseRegenConfirmModal
+              wordCount={chapterWordCount}
+              onCancel={() => setConfirmProse(false)}
+              onConfirm={() => { setConfirmProse(false); onGenerate?.() }}
             />
           )}
         </div>
@@ -561,6 +600,29 @@ function OutlineButtonRow({ label, colorClass, count, disabled, onView, onGenera
       className={`w-full px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-all duration-150 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${colorClass}`}>
       ⚡ 生成{label}
     </button>
+  )
+}
+
+// Confirm gate for regenerating a chapter that already has prose (same look
+// as ConfirmModal below). Purely presentational; the generate handler is
+// unchanged and only runs after explicit confirmation.
+function ProseRegenConfirmModal({ wordCount, onCancel, onConfirm }: {
+  wordCount: number; onCancel: () => void; onConfirm: () => void
+}) {
+  const t = useT()
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:starting:opacity-0">
+      <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-3 motion-safe:transition-[opacity,transform] motion-safe:duration-200 motion-safe:starting:scale-95 motion-safe:starting:opacity-0">
+        <h3 className="text-base font-semibold tracking-tight text-stone-900">{t('generate.prose.regenTitle')}</h3>
+        <p className="text-sm text-stone-600">
+          {t('generate.prose.regenBodyPrefix')}{wordCount.toLocaleString()}{t('generate.prose.regenBodySuffix')}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="px-3 py-1.5 text-sm text-stone-700 rounded-md transition-colors duration-150 hover:bg-stone-100">取消</button>
+          <button onClick={onConfirm} className="px-3 py-1.5 text-sm font-medium bg-red-600 text-white rounded-md shadow-sm transition-all duration-150 hover:bg-red-700 motion-safe:active:scale-[0.98]">{t('generate.prose.regenConfirm')}</button>
+        </div>
+      </div>
+    </div>
   )
 }
 

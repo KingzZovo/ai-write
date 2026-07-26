@@ -79,3 +79,75 @@ class TestMetaStructureLeakageGate:
         text = "[CH-7]的旧账，[VOL-2]才会清算。"
         report = analyze_chinese_prose_mechanics(text)
         assert report.meta_structure_leakage_count >= 2
+
+
+class TestHalfwidthPunctNormalization:
+    """E2E defect (2026-07-26): half-width commas contaminating CJK prose
+    ("皮带轮卡了一下,又转起来"). The sanitizer converts half-width , ; : ? !
+    to full-width ONLY in CJK context; numbers, code, URLs and latin text are
+    never touched. Normalization is silent — it never populates ``hits``."""
+
+    def test_live_e2e_sample_comma_converted(self):
+        cleaned, hits = sanitize_prose("皮带轮卡了一下,又转起来")
+        assert cleaned == "皮带轮卡了一下，又转起来"
+        assert hits == []
+
+    def test_all_five_punct_between_cjk_converted(self):
+        cleaned, _ = sanitize_prose("你走吗?走!好;那就:现在,出发")
+        assert cleaned == "你走吗？走！好；那就：现在，出发"
+
+    def test_comma_after_digit_before_cjk_converted(self):
+        # Rule B: half-width comma directly followed by CJK (no space) is
+        # converted even when the preceding char is not CJK.
+        cleaned, _ = sanitize_prose("转速升到3000,又稳了下来")
+        assert cleaned == "转速升到3000，又稳了下来"
+
+    def test_comma_after_closing_quote_before_cjk_converted(self):
+        cleaned, _ = sanitize_prose("“走吧”,他说")
+        assert cleaned == "“走吧”，他说"
+
+    def test_thousands_separator_untouched(self):
+        text = "账上还有1,000元，够撑三个月。"
+        cleaned, hits = sanitize_prose(text)
+        assert cleaned == text
+        assert hits == []
+
+    def test_latin_sentence_untouched(self):
+        text = "Sorry, I can't. 他摇了摇头。"
+        cleaned, _ = sanitize_prose(text)
+        assert cleaned == text
+
+    def test_url_untouched(self):
+        text = "他把地址抄下来：http://example.com/a,b?q=1!raw 一个字没改。"
+        cleaned, _ = sanitize_prose(text)
+        assert cleaned == text
+
+    def test_comma_before_space_then_cjk_untouched(self):
+        # Latin convention "x, 中文" keeps the space-delimited comma.
+        text = "他念出那串代号 alpha, 然后停住。"
+        cleaned, _ = sanitize_prose(text)
+        assert cleaned == text
+
+    def test_punct_before_non_cjk_quote_untouched(self):
+        # Conservative: comma before a closing quote (not CJK) is left alone.
+        text = "他低声说“够了,”便不再开口。"
+        cleaned, _ = sanitize_prose(text)
+        assert "够了," in cleaned
+
+    def test_mixed_sentence_converts_only_cjk_context(self):
+        text = "他敲下print(1,2),又核对了1,024条记录,才发现问题:参数错了"
+        cleaned, _ = sanitize_prose(text)
+        # ",又" and ",才" hit rule B; "(1,2" and "1,024" are digit-adjacent.
+        assert cleaned == "他敲下print(1,2)，又核对了1,024条记录，才发现问题：参数错了"
+
+    def test_normalization_combined_with_leak_strip(self):
+        cleaned, hits = sanitize_prose("正如[CH-5]那晚,他又听见了皮带轮的声音")
+        assert "[CH-5]" not in cleaned
+        assert ",他" not in cleaned and "，他" in cleaned
+        assert hits == ["[CH-5]"]
+
+    def test_fullwidth_text_returned_unchanged(self):
+        text = "夜色沉了下来。她把灯拧亮，继续翻检桌上的旧信。"
+        cleaned, hits = sanitize_prose(text)
+        assert cleaned == text
+        assert hits == []

@@ -1,7 +1,9 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
+import { useT } from '@/lib/i18n/I18nProvider'
 import type { BookSource, ReferenceBook, CrawlTask } from '@/stores/knowledgeStore'
 import { apiFetch } from '@/lib/api'
 import { usePolling } from '@/lib/usePolling'
@@ -452,6 +454,7 @@ function SourcesTab() {
 /* ─── Books Tab ────────────────────────────────────────────── */
 
 function BooksTab() {
+  const t = useT()
   const { books, loading, error, fetchBooks, deleteBook, scoreBook } =
     useKnowledgeStore()
   const [showUpload, setShowUpload] = useState(false)
@@ -715,6 +718,11 @@ function BooksTab() {
                       alert(`已提取架构：${JSON.stringify(data.structure?.structure_summary || '完成').slice(0, 100)}`)
                     } catch (e) { alert(e instanceof Error ? e.message : '提取失败') }
                   }} className="px-2.5 py-1 text-xs bg-orange-50 text-orange-600 rounded">提取架构</button>
+                  <Link href={`/styles?tab=dossiers&book=${book.id}`}
+                    className="px-2.5 py-1 text-xs bg-cyan-50 text-cyan-600 rounded hover:bg-cyan-100"
+                    title="查看该书的聚合档案（写法 / 剧情架构 / 世界观）">
+                    {t('knowledge.books.dossier')}
+                  </Link>
                   <button onClick={async () => {
                     try {
                       const data = await apiFetch<{status?: string, message?: string}>(`/api/reference-books/${book.id}/reprocess`, { method: 'POST' })

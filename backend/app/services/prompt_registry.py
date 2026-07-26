@@ -342,6 +342,73 @@ BUILTIN_PROMPTS: list[dict[str, Any]] = [
             "绝不更改描述性词汇、动作词、形容词。只输出脱敏后的纯文本。"
         ),
     },
+    # Dossier consolidation layer (book_dossier / worldview_extractor).
+    # Full output-format instructions are carried in user_content, so these
+    # degrade cleanly to the generic 'extraction' prompt via
+    # _TASK_TYPE_FALLBACK until an operator binds a dedicated endpoint.
+    {
+        "task_type": "style_consolidation",
+        "name": "全书风格归纳",
+        "name_en": "Book Style Consolidation",
+        "description": "将全书风格卡的聚合统计+代表性卡片归纳为全书级风格档案",
+        "description_en": "Reduce aggregated style-card stats + representative cards into one book-level style profile.",
+        "category": "Decompile",
+        "order": 150,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是全书风格总设计师。输入是确定性聚合的风格统计与分层抽取的代表性卡片，"
+            "不是原书全文。请归纳全书级风格档案，只输出 JSON。"
+            "不得出现书中人名/地名等专有名词；例证每条不超过60字。"
+        ),
+    },
+    {
+        "task_type": "plot_consolidation",
+        "name": "全书剧情架构归纳",
+        "name_en": "Book Plot Consolidation",
+        "description": "将节拍卡的按章聚合统计归纳为全书级剧情架构档案",
+        "description_en": "Reduce per-chapter beat-card statistics into one book-level plot-architecture profile.",
+        "category": "Decompile",
+        "order": 151,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是剧情架构分析师。输入是确定性聚合的节拍统计（场景类型分布、高潮间隔、"
+            "铺垫→回收距离等）与可复用骨架模板。请归纳全书级剧情架构档案，只输出 JSON。"
+            "不得出现书中人名/地名等专有名词。"
+        ),
+    },
+    {
+        "task_type": "world_arch_extraction",
+        "name": "世界观架构抽取",
+        "name_en": "Worldview Architecture Extraction",
+        "description": "从抽样片段批量提取力量体系/规则约束/组织架构/地理格局/核心冲突源",
+        "description_en": "Extract power-system/rules/organizations/geography/conflict-source candidates from sampled slices.",
+        "category": "Decompile",
+        "order": 152,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是世界观架构抽取器。从小说片段中提取世界观架构要素，只输出 JSON。"
+            "除 proper_nouns 字段外，其余内容一律用「主角」「A势力」等占位符抽象表述。"
+        ),
+    },
+    {
+        "task_type": "world_arch_merge",
+        "name": "世界观架构合并",
+        "name_en": "Worldview Architecture Merge",
+        "description": "将分批抽取的世界观要素合并为可复用的系统设计模式档案",
+        "description_en": "Merge batched worldview candidates into a reusable system-design-pattern dossier.",
+        "category": "Decompile",
+        "order": 153,
+        "always_enabled": 0,
+        "mode": "structured",
+        "system_prompt": (
+            "你是世界观系统设计师。将去重后的世界观要素候选合并为「世界观架构档案」，"
+            "描述系统设计模式（力量体系如何分层、规则如何制造冲突），只输出 JSON。"
+            "不得出现任何原书专有名词，一律抽象为「主角」「A势力」「圣器」等占位符。"
+        ),
+    },
     {
         "task_type": "critic",
         "name": "一致性审校",
@@ -525,6 +592,12 @@ _TASK_TYPE_FALLBACK: dict[str, str] = {
     "characters_extraction": "extraction",
     "world_rules_extraction": "extraction",
     "relationships_extraction": "extraction",
+    # Dossier consolidation layer: instructions live in user_content, so the
+    # generic extraction prompt is a safe degrade target pre-seed.
+    "style_consolidation": "extraction",
+    "plot_consolidation": "extraction",
+    "world_arch_extraction": "extraction",
+    "world_arch_merge": "extraction",
     # Multi-agent chapter pipeline (subproject B): degrade to existing
     # prompts when no dedicated PromptAsset is configured.
     "logic_critic": "critic",

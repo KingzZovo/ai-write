@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api'
 import type { Project } from '@/stores/projectStore'
+import { styleReferenceBookId } from '@/lib/styleReference'
 
 const GENRES = [
   { label: '玄幻', code: 'xuanhuan' },
@@ -27,7 +28,14 @@ const MODULES = [
 
 const DEFAULT_MODULES = ['show_not_tell', 'micro_tension', 'info_weaving']
 
-interface StyleInfo { id: string; name: string; rules_json?: Record<string, unknown>[]; is_active?: boolean }
+interface StyleInfo {
+  id: string
+  name: string
+  rules_json?: Record<string, unknown>[]
+  is_active?: boolean
+  bind_level?: string
+  bind_target_id?: string | null
+}
 interface StructureInfo { book_id: string; book_title: string; arc_pattern?: string; structure_summary?: string }
 
 export function NewProjectModal({
@@ -73,7 +81,12 @@ export function NewProjectModal({
     try {
       const settings_json: Record<string, unknown> = {
         writing_guide: { active_modules: activeModules, genre_code: genreCode || null },
-        style_reference: { profile_id: styleId || null },
+        // Distillation rework: for book-bound profiles also persist the
+        // reference book id so structure/world dossiers resolve.
+        style_reference: {
+          profile_id: styleId || null,
+          reference_book_id: styleReferenceBookId(styles.find(s => s.id === styleId)),
+        },
         style_profile_id: styleId || null,
         plot_structure: { structure_book_id: structureBookId || null },
       }

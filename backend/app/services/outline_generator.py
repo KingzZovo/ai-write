@@ -485,6 +485,41 @@ def compute_scale(
     }
 
 
+def resolve_chapters_per_volume_pref(settings_json: dict | None) -> tuple[int, int] | None:
+    """Resolve an explicit chapters-per-volume (lo, hi) range from settings_json.
+
+    Reads the keys the project-settings API stores (and api/generate.py's
+    compute_scale path already consumes): ``chapters_per_volume_min`` /
+    ``chapters_per_volume_max`` / ``chapters_per_volume_target``. Values are
+    clamped to [1, 50]; non-numeric / non-positive values are ignored. Returns
+    ``None`` when no key carries a usable value — callers must then keep the
+    legacy behaviour (plan-driven counts, 10-chapter fallback).
+    """
+    if not isinstance(settings_json, dict):
+        return None
+
+    def _clamped(key: str) -> int | None:
+        try:
+            value = int(settings_json.get(key))
+        except (TypeError, ValueError):
+            return None
+        if value < 1:
+            return None
+        return min(value, 50)
+
+    lo = _clamped("chapters_per_volume_min")
+    hi = _clamped("chapters_per_volume_max")
+    tgt = _clamped("chapters_per_volume_target")
+    candidates = [v for v in (lo, hi, tgt) if v is not None]
+    if not candidates:
+        return None
+    lo = lo if lo is not None else min(candidates)
+    hi = hi if hi is not None else max(candidates)
+    if hi < lo:
+        lo, hi = hi, lo
+    return lo, hi
+
+
 def _format_scale_directive(scale: dict) -> str:
     """Render a hard-constraint paragraph from a compute_scale() result."""
     twc = scale["target_word_count"]
@@ -616,6 +651,33 @@ class OutlineGenerator:
         if not self.project_id:
             return None
         return {"project_id": self.project_id, "task_type": task_type}
+
+    async def _load_chapters_per_volume_pref(self) -> tuple[int, int] | None:
+        """Read the project's chapters-per-volume preference from settings_json.
+
+        E2E defect (2026-07-26): a project configured for 3-4 chapters/volume
+        still got 10-chapter staged volume outlines because this path never
+        consulted settings. Reads the same keys api/generate.py's compute_scale
+        already uses (``chapters_per_volume_min`` / ``chapters_per_volume_max``
+        / ``chapters_per_volume_target``). Returns a clamped (lo, hi) range, or
+        None when the project carries no explicit setting so legacy behaviour
+        (model/plan-driven counts) is preserved. Never raises.
+        """
+        if not self.project_id:
+            return None
+        try:
+            from app.db.session import async_session_factory
+            from app.models.project import Project
+
+            async with async_session_factory() as db:
+                proj = await db.get(Project, self.project_id)
+                proj_settings = proj.settings_json if proj is not None else None
+            if not isinstance(proj_settings, dict):
+                return None
+            return resolve_chapters_per_volume_pref(proj_settings)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("chapters-per-volume setting load failed: %s", exc)
+            return None
 
 
     @staticmethod
@@ -1412,11 +1474,34 @@ class OutlineGenerator:
         Returns the merged dict with the same shape the legacy call produced:
         ``{...meta, "chapter_summaries": [...]}``.
         """
+        # E2E fix (2026-07-26): honor the project's explicit chapters-per-volume
+        # setting. Threaded into BOTH the meta prompt (hard instruction) and the
+        # fallback meta (parse-failure path), so the count no longer silently
+        # reverts to the 10-chapter default.
+        cpv_pref = await self._load_chapters_per_volume_pref()
+        preferred_chapter_count: int | None = None
+        cpv_directive = ""
+        if cpv_pref is not None:
+            cpv_lo, cpv_hi = cpv_pref
+            preferred_chapter_count = cpv_hi
+            if cpv_lo == cpv_hi:
+                cpv_directive = f"本卷章数（chapter_count）必须等于 {cpv_lo}。"
+            else:
+                cpv_directive = (
+                    f"本卷章数（chapter_count）必须在 {cpv_lo}-{cpv_hi} 之间。"
+                )
+            cpv_directive = (
+                "\n\n【章数硬约束（项目设置）】"
+                + cpv_directive
+                + "此约束优先于全书大纲中的任何章数建议。"
+            )
+
         # Stage V1 — meta.
         meta_ctx = (
             f"全书大纲：\n{json.dumps(book_outline, ensure_ascii=False, indent=2)}\n\n"
             f"请生成第 {volume_idx} 卷的元信息（不包含章节摘要）。"
         )
+        meta_ctx += cpv_directive
         if user_notes:
             meta_ctx += f"\n\n用户补充说明：{user_notes}"
 
@@ -1439,7 +1524,12 @@ class OutlineGenerator:
         meta = self._parse_json(meta_result.text)
         if not isinstance(meta, dict) or meta.get("_parse_error"):
             logger.warning("Staged volume outline: meta parse failed; using fallback meta")
-            meta = self._fallback_volume_meta(book_outline, volume_idx, user_notes)
+            meta = self._fallback_volume_meta(
+                book_outline,
+                volume_idx,
+                user_notes,
+                preferred_chapter_count=preferred_chapter_count,
+            )
 
         # Normalize chapter_count to int; fall back gracefully.
         # PR-OUTLINE-JSON-REPAIR (2026-07-04): json_repair can now recover a
@@ -1458,7 +1548,12 @@ class OutlineGenerator:
                 "backfilling meta from fallback",
                 raw_cc,
             )
-            fallback = self._fallback_volume_meta(book_outline, volume_idx, user_notes)
+            fallback = self._fallback_volume_meta(
+                book_outline,
+                volume_idx,
+                user_notes,
+                preferred_chapter_count=preferred_chapter_count,
+            )
             for key, value in fallback.items():
                 if not meta.get(key):
                     meta[key] = value
@@ -1779,7 +1874,12 @@ class OutlineGenerator:
         return str(book_outline.get("raw_text") or "")
 
     @staticmethod
-    def _fallback_volume_meta(book_outline: dict, volume_idx: int, user_notes: str = "") -> dict:
+    def _fallback_volume_meta(
+        book_outline: dict,
+        volume_idx: int,
+        user_notes: str = "",
+        preferred_chapter_count: int | None = None,
+    ) -> dict:
         plan_item: dict | None = None
         raw_plan = book_outline.get("volume_plan") if isinstance(book_outline, dict) else None
         if isinstance(raw_plan, list):
@@ -1796,7 +1896,17 @@ class OutlineGenerator:
         theme = _note_value("本卷主题") or (str(plan_item.get("theme")) if plan_item and plan_item.get("theme") else "")
         conflict = _note_value("本卷核心冲突") or (str(plan_item.get("core_conflict")) if plan_item and plan_item.get("core_conflict") else theme)
         chapter_match = re.search(r"chapter_count=(\d+)", user_notes or "")
-        chapter_count = int(chapter_match.group(1)) if chapter_match else int(plan_item.get("est_chapters") or 10) if plan_item else 10
+        # Precedence: explicit user_notes count > project setting
+        # (chapters_per_volume_* in settings_json, resolved by the caller) >
+        # book-outline plan estimate > legacy default 10.
+        if chapter_match:
+            chapter_count = int(chapter_match.group(1))
+        elif preferred_chapter_count is not None:
+            chapter_count = int(preferred_chapter_count)
+        elif plan_item:
+            chapter_count = int(plan_item.get("est_chapters") or 10)
+        else:
+            chapter_count = 10
         return {
             "volume_idx": volume_idx,
             "title": title,

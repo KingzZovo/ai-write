@@ -75,7 +75,44 @@ class TestUpsertChapterSummaryEmbedding:
             "chapter_idx": 7,
             "chapter_title": "风起",
             "summary": "主角在雨夜发现了旧信。",
+            # Global-context keys always present (None when caller has no
+            # chapter row at hand) so both writers keep an identical shape.
+            "global_idx": None,
+            "volume_idx": None,
         }
+
+    @pytest.mark.asyncio
+    async def test_payload_carries_global_and_volume_idx(self, monkeypatch):
+        # E2E defect (2026-07-26): two volumes' "chapter 1" points were
+        # indistinguishable — the payload must carry book-global context.
+        from app.services.chapter_summarizer import upsert_chapter_summary_embedding
+
+        monkeypatch.setattr(
+            "app.services.feature_extractor.generate_embedding",
+            AsyncMock(return_value=[0.1] * 8),
+        )
+        client = _mock_qdrant_client_cls(monkeypatch)
+
+        volume_id = uuid.uuid4()
+        ok = await upsert_chapter_summary_embedding(
+            project_id=uuid.uuid4(),
+            volume_id=volume_id,
+            chapter_idx=1,
+            chapter_title="潮起",
+            summary="第二卷开卷。",
+            global_idx=13,
+            volume_idx=2,
+        )
+
+        assert ok is True
+        point = client.upsert.await_args.kwargs["points"][0]
+        assert point.payload["global_idx"] == 13
+        assert point.payload["volume_idx"] == 2
+        # Point id scheme unchanged: still (volume_id, chapter_idx)-keyed so
+        # existing points get enriched on their next overwrite.
+        assert point.id == int(
+            hashlib.md5(f"{volume_id}_1".encode()).hexdigest()[:16], 16
+        )
 
     @pytest.mark.asyncio
     async def test_embedding_failure_returns_false_without_raising(self, monkeypatch):
@@ -149,6 +186,7 @@ class TestSummarizeAndSaveDispatchesUpsert:
             volume_id=volume.id,
             title="第一章",
             chapter_idx=3,
+            global_idx=3,
             content_text="正文" * 200,
             summary=None,
         )
@@ -194,6 +232,8 @@ class TestSummarizeAndSaveDispatchesUpsert:
             chapter_idx=chapter.chapter_idx,
             chapter_title=chapter.title,
             summary="本章摘要。",
+            global_idx=chapter.global_idx,
+            volume_idx=volume.volume_idx,
         )
 
     @pytest.mark.asyncio

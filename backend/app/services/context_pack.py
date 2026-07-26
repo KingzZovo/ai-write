@@ -254,6 +254,10 @@ class ContextPack:
     rag_snippets: list[str] = field(default_factory=list)
     dialogue_samples: dict[str, list[str]] = field(default_factory=dict)
     style_samples: list[str] = field(default_factory=list)
+    # Reference-book style/beat recall lines (three-way recall). Rendered in
+    # the L3 style block (budget shared with style_samples) instead of
+    # competing with chapter summaries for the rag_snippets[:5] slots.
+    style_recall: list[str] = field(default_factory=list)
 
     # Meta (~7%)
     writing_guidance: list[str] = field(default_factory=list)
@@ -631,9 +635,13 @@ class ContextPack:
                 ds_parts.append(f"{char_name}:\n{sample_lines}")
             l3_parts.append(f"【角色对话样本】\n" + "\n".join(ds_parts))
 
+        style_block_parts: list[str] = []
+        if self.style_recall:
+            style_block_parts.append("\n".join(self.style_recall[:6]))
         if self.style_samples:
-            ss_text = "\n---\n".join(self.style_samples[:3])
-            l3_parts.append(f"【风格参考】\n{ss_text}")
+            style_block_parts.append("\n---\n".join(self.style_samples[:3]))
+        if style_block_parts:
+            l3_parts.append("【风格参考】\n" + "\n---\n".join(style_block_parts))
 
         l3_text = "\n\n".join(l3_parts)
         l3_text = self._truncate_to_budget(l3_text, budget_l3)
@@ -1779,7 +1787,9 @@ class ContextPackBuilder:
 
                 if os.getenv("CONTEXT_PACK_V2_ENABLED", "false").lower() in ("1", "true", "yes"):
                     try:
-                        await self._v2_three_way_recall(pack, embedding, client)
+                        await self._v2_three_way_recall(
+                            pack, embedding, client, str(project_id)
+                        )
                     except Exception as v2_exc:
                         logger.debug("v2 three-way recall skipped: %s", v2_exc)
             except Exception:
@@ -1846,36 +1856,60 @@ class ContextPackBuilder:
             return out.strip()
         return query_text
 
-    async def _v2_three_way_recall(self, pack: ContextPack, embedding: list, client) -> None:
-        """v0.6 ContextPack v2: pull style_profiles + beat_sheets + redacted samples
-        from the reference book bound to this project."""
-        from app.services.qdrant_store import QdrantStore
+    async def _v2_three_way_recall(
+        self, pack: ContextPack, embedding: list, client, project_id: str
+    ) -> None:
+        """v0.6 ContextPack v2: pull style_profiles + beat_sheets recall lines
+        from the reference book bound to this project.
 
-        # Resolve bound reference book via project settings
-        project_id = getattr(pack, "project_id", None) or getattr(pack.meta, "project_id", None)
-        ref_book_id: str | None = None
-        if project_id:
-            try:
-                db = await self._get_db()
-                project = await db.get(Project, project_id)
-                if project:
-                    ref = (project.settings_json or {}).get("style_reference", {})
-                    ref_book_id = ref.get("reference_book_id") or ref.get("book_id")
-            except Exception:
-                ref_book_id = None
+        The book id is resolved through the full binding chain (settings
+        style_reference keys, then the resolved style profile's book binding).
+        Without a resolved book id the recall is SKIPPED — an unfiltered
+        search would mix style/beat lines from every ingested book.
+        Recall lines land in ``pack.style_recall`` (own L3 render slot),
+        never in rag_snippets where the [:5] cap truncated them away.
+        """
+        from app.services.qdrant_store import QdrantStore
+        from app.services.style_runtime import get_dossier_block, resolve_reference_book_id
+
+        db = await self._get_db()
+        ref_book_id = await resolve_reference_book_id(db, project_id)
+        if not ref_book_id:
+            logger.debug(
+                "v2 three-way recall skipped: no reference book resolved for project %s",
+                project_id,
+            )
+            return
+
+        # Dossier preference: a consolidated style_block on the reference book
+        # replaces the vector style recall (it is the authoritative digest).
+        dossier_style_block = ""
+        try:
+            from app.models.project import ReferenceBook
+
+            book = await db.get(ReferenceBook, ref_book_id)
+            if book is not None:
+                dossier_style_block = get_dossier_block(book, "style_block")
+        except Exception:
+            dossier_style_block = ""
 
         store = QdrantStore(client)
-        # style_profiles: structured style prompts (top 3)
-        style_hits = await store.search_style_profiles(embedding, book_id=ref_book_id, top_k=3)
-        for h in style_hits:
-            prof = (h.get("payload") or {}).get("profile") or {}
-            if prof:
-                line = (
-                    f"[风格] pov={prof.get('pov','?')} 节奏={prof.get('sentence_rhythm','?')} "
-                    f"情感={prof.get('emotional_register','?')} "
-                    f"词汇={','.join(prof.get('vocab_tone') or [])}"
-                )
-                pack.rag_snippets.append(line)
+        if dossier_style_block:
+            pack.style_recall.append(dossier_style_block)
+        else:
+            # style_profiles: structured style prompts (top 3)
+            style_hits = await store.search_style_profiles(
+                embedding, book_id=ref_book_id, top_k=3
+            )
+            for h in style_hits:
+                prof = (h.get("payload") or {}).get("profile") or {}
+                if prof:
+                    line = (
+                        f"[风格] pov={prof.get('pov','?')} 节奏={prof.get('sentence_rhythm','?')} "
+                        f"情感={prof.get('emotional_register','?')} "
+                        f"词汇={','.join(prof.get('vocab_tone') or [])}"
+                    )
+                    pack.style_recall.append(line)
         # beat_sheets: entity-redacted plot scaffolds (top 2)
         beat_hits = await store.search_beat_sheets(embedding, book_id=ref_book_id, top_k=2)
         for h in beat_hits:
@@ -1885,7 +1919,7 @@ class ContextPackBuilder:
                     f"[骨架] {beat.get('scene_type','?')}: {beat.get('reusable_pattern','?')} "
                     f"→ {beat.get('outcome','?')}"
                 )
-                pack.rag_snippets.append(line)
+                pack.style_recall.append(line)
         # PR-NO-RAW-INJECT (2026-05-05): style_samples_redacted disabled.
         # Injecting reference-book passages (even after entity redaction) is plagiarism territory.
         # Only abstract style descriptors above are kept.
@@ -1927,7 +1961,8 @@ class ContextPackBuilder:
 
             # ---- Path A: aggregated StyleProfile ----
             style_profile_id = (
-                style_ref.get("profile_id")
+                settings_json.get("style_profile_id")
+                or style_ref.get("profile_id")
                 or settings_json.get("default_style_profile_id")
             )
             if style_profile_id:

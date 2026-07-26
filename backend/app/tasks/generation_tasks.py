@@ -85,6 +85,31 @@ async def _dispatch_chapter_entities(chapter, db, project_id) -> None:
         )
 
 
+async def _backfill_volume_summary_safe(volume_id) -> None:
+    """Fire-safe cross-volume memory backfill after a chapter persist.
+
+    E2E defect (2026-07-26): the needs_review early-return branches (quality
+    gate / fact contract / salvage persists) saved the chapter and dispatched
+    summarize + entity extraction but returned before the
+    ``backfill_prev_volume_summary`` call on the final-save path — so a volume
+    whose chapters all landed as needs_review never produced the previous
+    volume's VolumeSummary row (the L2 bridge context_pack reads for chapters
+    1-3 of the next volume). Threaded into every persist branch, mirroring
+    ``_dispatch_chapter_entities``. Opens its own DB session downstream and
+    never raises — it must not fail the save.
+    """
+    if not volume_id:
+        return
+    try:
+        from app.services.memory import backfill_prev_volume_summary
+
+        await backfill_prev_volume_summary(str(volume_id))
+    except Exception as volsum_err:
+        logger.warning(
+            "Volume-summary backfill failed after chapter save: %s", volsum_err
+        )
+
+
 def _humanize_chapter_text(full_text: str, *, seed_key: str) -> str:
     """Deterministic anti-uniformity pass over generated prose.
 
@@ -448,10 +473,15 @@ async def _run_async_generation_impl(task_id: str):
             style_id = params.get("style_id") or _settings_style_profile_id(project_settings)
             if style_id:
                 from app.models.project import StyleProfile
-                from app.services.style_compiler import compile_style
+                from app.services.style_runtime import production_style_text_for_profile
                 profile = await db.get(StyleProfile, style_id)
                 if profile:
-                    style_text = compile_style(profile)
+                    # Production style chain (PR-NO-RAW-INJECT): prefer the
+                    # dossier style_block, else compile WITHOUT sample-passage
+                    # few-shot — same [风格要求] content as the SSE path.
+                    style_text, _style_source, _style_ref = (
+                        await production_style_text_for_profile(db, profile)
+                    )
             if not style_text:
                 from app.services.style_runtime import resolve_style_prompt
                 style_text = await resolve_style_prompt(db, project_id) or ""
@@ -493,8 +523,11 @@ async def _run_async_generation_impl(task_id: str):
             if structure_text:
                 enhanced = f"{enhanced}\n\n{structure_text}"
 
-            # Generate based on task_type
-            generator = OutlineGenerator()
+            # Generate based on task_type. project_id must be threaded so the
+            # staged volume path can read settings_json (chapters_per_volume_*)
+            # — without it the E2E chapters-per-volume fix is a no-op on the
+            # celery path (and outline LLM calls skip usage logging).
+            generator = OutlineGenerator(project_id=project_id)
             collected = []
 
             # v4.6 reliability: normalize streamed chunks before appending/joining.
@@ -823,6 +856,9 @@ async def _run_async_generation_impl(task_id: str):
                                 if generated_chapter_id_safe:
                                     await _dispatch_chapter_entities(
                                         persist_chapter, persist_db, project_id
+                                    )
+                                    await _backfill_volume_summary_safe(
+                                        getattr(persist_chapter, "volume_id", None)
                                     )
                             logger.warning(
                                 "force_direct_chapter persisted via fresh session task_id=%s chapter_id=%s chars=%d",
@@ -1391,6 +1427,7 @@ async def _run_async_generation_impl(task_id: str):
                             except Exception as sum_err:
                                 logger.warning("Auto chapter summarize failed after quality-gate review save: %s", sum_err)
                             await _dispatch_chapter_entities(ch, db, project_id)
+                            await _backfill_volume_summary_safe(volume_id_for_eval)
                             return
                         if quality_result.rewrite_rounds > 0:
                             logger.info(
@@ -1443,6 +1480,7 @@ async def _run_async_generation_impl(task_id: str):
                         except Exception as sum_err:
                             logger.warning("Auto chapter summarize failed after quality-gate error save: %s", sum_err)
                         await _dispatch_chapter_entities(ch, db, project_id)
+                        await _backfill_volume_summary_safe(volume_id_for_eval)
                         return
 
                 try:
@@ -1490,6 +1528,7 @@ async def _run_async_generation_impl(task_id: str):
                         except Exception as sum_err:
                             logger.warning("Auto chapter summarize failed after fact-contract review save: %s", sum_err)
                         await _dispatch_chapter_entities(ch, db, project_id)
+                        await _backfill_volume_summary_safe(volume_id_for_eval)
                         return
                 except Exception as fact_err:
                     logger.warning(
@@ -1530,6 +1569,7 @@ async def _run_async_generation_impl(task_id: str):
                     except Exception as sum_err:
                         logger.warning("Auto chapter summarize failed after fact-contract error save: %s", sum_err)
                     await _dispatch_chapter_entities(ch, db, project_id)
+                    await _backfill_volume_summary_safe(volume_id_for_eval)
                     return
 
                 ch.content_text = full_text
@@ -1580,11 +1620,7 @@ async def _run_async_generation_impl(task_id: str):
                 # can never block or fail the save; awaited (not create_task)
                 # because the celery event loop closes when the task returns.
                 # Cheap no-op unless the prev volume lacks a summary row.
-                try:
-                    from app.services.memory import backfill_prev_volume_summary
-                    await backfill_prev_volume_summary(str(volume_id_for_eval))
-                except Exception as volsum_err:
-                    logger.warning("Volume-summary backfill failed after evaluation: %s", volsum_err)
+                await _backfill_volume_summary_safe(volume_id_for_eval)
                 # Cognition ledger ingestion on every FINAL save (audit
                 # 2026-07-26). Q3 v1.9.1 gated this on `passed`, but that was
                 # lossy: a needs_review final save still persists full_text as
@@ -1791,6 +1827,9 @@ async def _run_async_generation_impl(task_id: str):
                         await db2.commit()
                         if ch2 is not None:
                             await _dispatch_chapter_entities(ch2, db2, project_id)
+                            await _backfill_volume_summary_safe(
+                                getattr(ch2, "volume_id", None)
+                            )
                     logger.warning(
                         "Async generation salvaged produced prose after persistence/session error task_id=%s chars=%d err=%s",
                         task_id,

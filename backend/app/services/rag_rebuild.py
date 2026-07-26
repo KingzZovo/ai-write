@@ -54,7 +54,7 @@ async def rebuild_rag_for_project_async(
 
     try:
         result = await db.execute(
-            select(Chapter)
+            select(Chapter, Volume.volume_idx)
             .join(Volume, Chapter.volume_id == Volume.id)
             .where(
                 Volume.project_id == project_id,
@@ -63,7 +63,7 @@ async def rebuild_rag_for_project_async(
             )
             .order_by(Chapter.chapter_idx.asc())
         )
-        chapters = list(result.scalars().all())
+        chapters = list(result.all())
 
         qdrant = AsyncQdrantClient(
             host=getattr(settings, "QDRANT_HOST", "localhost"),
@@ -78,7 +78,7 @@ async def rebuild_rag_for_project_async(
         done = 0
         failed: list[str] = []
 
-        for ch in chapters:
+        for ch, vol_idx in chapters:
             try:
                 data = await run_structured_prompt(
                     "summary",
@@ -111,6 +111,10 @@ async def rebuild_rag_for_project_async(
                                 "chapter_idx": ch.chapter_idx,
                                 "chapter_title": ch.title or "",
                                 "summary": summary,
+                                # Book-global context — keep in lockstep with
+                                # chapter_summarizer.upsert_chapter_summary_embedding.
+                                "global_idx": ch.global_idx,
+                                "volume_idx": vol_idx,
                             },
                         )
                     ],

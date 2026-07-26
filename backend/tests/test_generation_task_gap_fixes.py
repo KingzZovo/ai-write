@@ -256,3 +256,105 @@ def test_stage_needs_review_sanitizes_meta_leakage():
     assert task.char_count == len(out) == ch.word_count
     assert task.status == "needs_review"
     assert ch.status == "needs_review"
+
+
+# ---------------------------------------------------------------------------
+# 5. Volume-summary backfill on EVERY persist branch (E2E defect 2026-07-26:
+#    vol2 ch1 persisted needs_review, all vol1 prerequisites met, yet no
+#    VolumeSummary row — the early-return branches skipped the backfill).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_backfill_volume_summary_safe_calls_memory_helper(monkeypatch):
+    from app.services import memory
+
+    calls: list[str] = []
+
+    async def fake_backfill(volume_id):
+        calls.append(volume_id)
+        return True
+
+    monkeypatch.setattr(memory, "backfill_prev_volume_summary", fake_backfill)
+
+    await gt._backfill_volume_summary_safe("vol-123")
+    assert calls == ["vol-123"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_volume_summary_safe_noop_without_volume_id(monkeypatch):
+    from app.services import memory
+
+    called = []
+
+    async def fake_backfill(volume_id):
+        called.append(volume_id)
+        return True
+
+    monkeypatch.setattr(memory, "backfill_prev_volume_summary", fake_backfill)
+    await gt._backfill_volume_summary_safe(None)
+    await gt._backfill_volume_summary_safe("")
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_volume_summary_safe_never_raises(monkeypatch):
+    from app.services import memory
+
+    async def boom(volume_id):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(memory, "backfill_prev_volume_summary", boom)
+    # Must swallow: the backfill is fire-safe and never fails the save.
+    await gt._backfill_volume_summary_safe("vol-123")
+
+
+def test_every_entity_dispatch_site_is_paired_with_volume_backfill():
+    """Every chapter-persist branch in the async-generation task dispatches
+    entity extraction; each of those sites must ALSO fire the volume-summary
+    backfill (the needs_review early returns previously skipped it)."""
+    impl = _func(_parse_generation_tasks(), "_run_async_generation_impl")
+
+    dispatch_calls = [
+        n
+        for n in ast.walk(impl)
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "id", None) == "_dispatch_chapter_entities"
+    ]
+    backfill_calls = [
+        n
+        for n in ast.walk(impl)
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "id", None) == "_backfill_volume_summary_safe"
+    ]
+    assert dispatch_calls, "expected entity-dispatch sites in _run_async_generation_impl"
+    assert len(backfill_calls) >= len(dispatch_calls), (
+        f"{len(dispatch_calls)} entity-dispatch site(s) but only "
+        f"{len(backfill_calls)} _backfill_volume_summary_safe call(s) — a "
+        "persist branch is missing its cross-volume memory backfill"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 6. Async style resolution uses the production chain (no raw sample-passage
+#    few-shot): settings-declared style_id must go through
+#    style_runtime.production_style_text_for_profile, not bare compile_style.
+# ---------------------------------------------------------------------------
+
+
+def test_async_style_resolution_uses_production_helper():
+    impl = _func(_parse_generation_tasks(), "_run_async_generation_impl")
+
+    call_names = {
+        getattr(n.func, "id", None)
+        for n in ast.walk(impl)
+        if isinstance(n, ast.Call)
+    }
+    assert "production_style_text_for_profile" in call_names, (
+        "async path must resolve style via "
+        "style_runtime.production_style_text_for_profile"
+    )
+    assert "compile_style" not in call_names, (
+        "async path must not call compile_style directly — it injects raw "
+        "sample passages that production paths strip"
+    )

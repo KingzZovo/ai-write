@@ -279,11 +279,23 @@ async def generate_chapter(
         if sb_id:
             from app.models.project import ReferenceBook
             from app.services.plot_structure import compile_structure_prompt
+            from app.services.style_runtime import (
+                get_dossier_block,
+                scrub_reference_proper_nouns,
+            )
             book = await db.get(ReferenceBook, sb_id)
-            if book and book.metadata_json:
-                ps = (book.metadata_json or {}).get("plot_structure")
-                if ps and isinstance(ps, dict) and "error" not in ps:
-                    structure_prompt = compile_structure_prompt(ps) or ""
+            if book:
+                # Prefer the consolidated dossier structure block; fall back
+                # to compiling the stored plot_structure extraction.
+                structure_prompt = get_dossier_block(book, "structure_block")
+                if not structure_prompt and book.metadata_json:
+                    ps = (book.metadata_json or {}).get("plot_structure")
+                    if ps and isinstance(ps, dict) and "error" not in ps:
+                        structure_prompt = compile_structure_prompt(ps) or ""
+                if structure_prompt:
+                    # Structure prompts have leaked source-book character names
+                    # (e.g. 西泽尔/密涅瓦) into new projects; scrub known names.
+                    structure_prompt = scrub_reference_proper_nouns(structure_prompt, book)
     except Exception as e:
         logger.warning("Plot structure resolve failed: %s", e)
 
@@ -341,21 +353,17 @@ async def generate_chapter(
         project_settings.get("target_chapter_words"),
     )
 
-    # Resolve style: explicit style_id > manual text > auto-resolve
+    # Resolve style: manual text > explicit style_id > settings/bind chain.
+    # resolve_style_context prefers the reference book's consolidated dossier
+    # style_block over compile_style, and compiles without raw sample few-shot.
     resolved_style = req.style_instruction
-    if not resolved_style and req.style_id:
-        try:
-            from app.models.project import StyleProfile
-            from app.services.style_compiler import compile_style
-            profile = await db.get(StyleProfile, req.style_id)
-            if profile:
-                resolved_style = compile_style(profile)
-        except Exception as e:
-            logger.warning("Style compile failed: %s", e)
     if not resolved_style:
         try:
-            from app.services.style_runtime import resolve_style_prompt
-            resolved_style = await resolve_style_prompt(db, req.project_id, req.chapter_id) or ""
+            from app.services.style_runtime import resolve_style_context
+            _style_ctx = await resolve_style_context(
+                db, req.project_id, req.chapter_id, style_id=req.style_id
+            )
+            resolved_style = _style_ctx.style_text
         except Exception as e:
             logger.warning("Style resolve failed: %s", e)
 
@@ -380,6 +388,16 @@ async def generate_chapter(
                     effective_user_instruction
                     + f"\n\n【本章目标字数】软目标约 {target_words} 字。默认单章可在 2000-6000 字内自然浮动；不要为凑字数补空话、重复心理剖白、制度解释或大纲外剧情。"
                 )
+            # Style threading (mirrors the async path's [风格要求] block):
+            # effective_user_instruction reaches BOTH ChapterGenerator.generate
+            # and SceneOrchestrator.orchestrate_chapter_stream (-> scene_writer).
+            if resolved_style:
+                from app.services.style_runtime import build_style_injection_block
+                _style_block = build_style_injection_block(resolved_style)
+                if _style_block:
+                    effective_user_instruction = (
+                        effective_user_instruction + "\n\n" + _style_block
+                    ).strip()
             if structure_prompt:
                 effective_user_instruction = (
                     effective_user_instruction + "\n\n" + structure_prompt
@@ -1643,10 +1661,23 @@ async def generate_outline(
         try:
             from app.models.project import ReferenceBook
             from app.services.plot_structure import compile_structure_prompt
+            from app.services.style_runtime import (
+                get_dossier_block,
+                scrub_reference_proper_nouns,
+            )
             structure_book = await db.get(ReferenceBook, structure_book_id)
-            plot_structure = (structure_book.metadata_json or {}).get("plot_structure") if structure_book else None
-            if isinstance(plot_structure, dict) and "error" not in plot_structure:
-                structure_instruction = compile_structure_prompt(plot_structure) or ""
+            if structure_book is not None:
+                # Prefer the consolidated dossier structure block.
+                structure_instruction = get_dossier_block(structure_book, "structure_block")
+                if not structure_instruction:
+                    plot_structure = (structure_book.metadata_json or {}).get("plot_structure")
+                    if isinstance(plot_structure, dict) and "error" not in plot_structure:
+                        structure_instruction = compile_structure_prompt(plot_structure) or ""
+                if structure_instruction:
+                    # Scrub source-book proper nouns (西泽尔/密涅瓦-class leaks).
+                    structure_instruction = scrub_reference_proper_nouns(
+                        structure_instruction, structure_book
+                    )
         except Exception as _structure_err:
             logger.warning("Outline plot structure resolve failed: %s", _structure_err)
 

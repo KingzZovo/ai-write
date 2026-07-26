@@ -284,6 +284,9 @@ export default function DesktopWorkspace() {
     text: string
     position: { top: number; left: number }
   } | null>(null)
+  // PR-WS-OVERWRITE-GUARD: when the chapter already has substantial prose,
+  // 生成本章 / 后台生成本章 first arm this inline confirm instead of firing.
+  const [pendingRegenerate, setPendingRegenerate] = useState<'inline' | 'background' | null>(null)
   // PR-OL1: AI-suggested volume plan parsed from staged SSE done event.
   const [volumePlan, setVolumePlan] = useState<Array<{idx:number; title:string; theme:string; core_conflict:string; est_chapters:number}> | null>(null)
   // PR-OL3: edit mode for the volume plan card.
@@ -898,6 +901,8 @@ export default function DesktopWorkspace() {
     setActiveView('editor')
     // PR-GEN-UX Task 5: selection offsets from the previous chapter are stale.
     setRewriteSel(null)
+    // PR-WS-OVERWRITE-GUARD: an armed confirm belongs to the previous chapter.
+    setPendingRegenerate(null)
 
     apiFetch<ChapterRes>(
       `/api/projects/${currentProject.id}/chapters/${selectedChapterId}`
@@ -1365,12 +1370,18 @@ export default function DesktopWorkspace() {
   }
   const outlineMissingLayers = outlineReadiness?.missing_layers || []
   const canGenerateChapterProse = Boolean(selectedChapterId && outlineReadiness?.ready)
+  // PR-WS-OVERWRITE-GUARD: >50 non-whitespace-trimmed chars counts as real
+  // prose (ignores whitespace stubs); below that, one-click generation stays.
+  const chapterContentChars = editorContent.trim().length
+  const chapterHasContent = Boolean(selectedChapterId && chapterContentChars > 50)
   const outlineReadinessText = !selectedChapterId
     ? '先选中一章，再看这章的链路状态。'
     : outlineReadinessLoading
       ? '正在检查大纲链路...'
       : outlineReadiness?.ready
-        ? '链路完整，可生成正文。'
+        ? chapterHasContent
+          ? `本章已有正文（${chapterContentChars.toLocaleString()} 字）。大纲链路完整，可在下方重新生成（将覆盖当前内容）。`
+          : '链路完整，可生成正文。'
         : outlineReadiness?.block_message || '大纲链路未完成。'
   const completedChapters = chapters.filter((c) => c.status === 'completed').length
   const reviewChapters = chapters.filter((c) => c.status === 'needs_review').length
@@ -2149,22 +2160,72 @@ export default function DesktopWorkspace() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={handleGenerateChapter}
+                        onClick={
+                          // PR-WS-OVERWRITE-GUARD: existing prose → arm confirm first.
+                          chapterHasContent
+                            ? () => setPendingRegenerate('inline')
+                            : handleGenerateChapter
+                        }
                         disabled={isGenerating || !canGenerateChapterProse}
                         className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg shadow-sm transition-all duration-150 hover:bg-green-700 motion-safe:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isGenerating ? '生成中...' : '生成本章'}
+                        {isGenerating ? '生成中...' : chapterHasContent ? '重新生成本章' : '生成本章'}
                       </button>
                       {/* PR-WS-QUEUE: submit to the background queue instead of streaming */}
                       <button
-                        onClick={handleBackgroundGenerate}
+                        onClick={
+                          chapterHasContent
+                            ? () => setPendingRegenerate('background')
+                            : handleBackgroundGenerate
+                        }
                         disabled={isGenerating || !canGenerateChapterProse || chapterHasActiveTask}
                         title="提交到后台队列生成，可离开页面稍后回来查看"
                         className="px-4 py-2 text-sm border border-emerald-600 text-emerald-700 rounded-lg transition-colors duration-150 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {chapterHasActiveTask ? '后台生成中...' : '后台生成本章'}
+                        {chapterHasActiveTask
+                          ? '后台生成中...'
+                          : chapterHasContent
+                            ? '后台重新生成'
+                            : '后台生成本章'}
                       </button>
                     </div>
+                    {/* PR-WS-OVERWRITE-GUARD: inline confirm before overwriting existing prose */}
+                    {pendingRegenerate && chapterHasContent && !isGenerating && (
+                      <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:starting:-translate-y-1 motion-safe:starting:opacity-0">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                          <span className="min-w-0">
+                            本章已有 {chapterContentChars.toLocaleString()} 字正文，
+                            {pendingRegenerate === 'background' ? '后台重新生成' : '重新生成'}
+                            将覆盖当前内容。旧内容会保留在版本历史中，可随时恢复。
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 pl-[22px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const mode = pendingRegenerate
+                              setPendingRegenerate(null)
+                              if (mode === 'background') {
+                                void handleBackgroundGenerate()
+                              } else {
+                                handleGenerateChapter()
+                              }
+                            }}
+                            className="rounded-md bg-amber-600 px-3 py-1 font-medium text-white transition-all duration-150 hover:bg-amber-700 motion-safe:active:scale-[0.97]"
+                          >
+                            确认重新生成
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingRegenerate(null)}
+                            className="rounded-md border border-amber-300 px-3 py-1 text-amber-700 transition-colors duration-150 hover:bg-amber-100"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {/* PR-GEN-UX Task 1/2: phase + elapsed + cancel */}
                     {isGenerating && generationPhase && (
                       <GenerationProgressStrip

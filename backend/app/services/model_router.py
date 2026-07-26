@@ -102,6 +102,16 @@ def compute_effective_tier(
     return "standard"
 
 
+def _model_matches_setting(model: str, setting_name: str) -> bool:
+    """True when ``model`` contains any comma-separated substring pattern
+    stored in ``settings.<setting_name>`` (e.g. ``"claude-"``)."""
+    from app.config import settings
+
+    raw = getattr(settings, setting_name, "") or ""
+    patterns = [p.strip() for p in raw.split(",") if p.strip()]
+    return bool(model) and any(p in model for p in patterns)
+
+
 def _should_merge_system_for_model(model: str) -> bool:
     """True when this model name matches settings.LLM_MERGE_SYSTEM_INTO_USER_MODELS.
 
@@ -110,11 +120,23 @@ def _should_merge_system_for_model(model: str) -> bool:
     relay claude-* — an agent shell swallowed system messages, so scene_planner
     / scene_writer / evaluators lost all story context).
     """
-    from app.config import settings
+    return _model_matches_setting(model, "LLM_MERGE_SYSTEM_INTO_USER_MODELS")
 
-    raw = getattr(settings, "LLM_MERGE_SYSTEM_INTO_USER_MODELS", "") or ""
-    patterns = [p.strip() for p in raw.split(",") if p.strip()]
-    return bool(model) and any(p in model for p in patterns)
+
+def _should_force_internal_stream_for_model(model: str) -> bool:
+    """True when this model name matches settings.LLM_FORCE_INTERNAL_STREAM_MODELS.
+
+    Comma-separated substring patterns (same matching style as
+    ``LLM_MERGE_SYSTEM_INTO_USER_MODELS``). Workaround for relay channels whose
+    NON-streaming completions burn the whole output budget on hidden thinking
+    and return empty text with ``output_tokens == max_tokens`` (observed
+    2026-07-26 on relay claude-* — streaming the identical request works).
+    Matching models have ``OpenAIProvider.generate`` open a stream internally
+    and assemble the full text before returning, so callers that requested a
+    non-streaming completion (evaluation / drafter / rewrite) still receive a
+    plain completed ``GenerationResult``.
+    """
+    return _model_matches_setting(model, "LLM_FORCE_INTERNAL_STREAM_MODELS")
 
 
 def merge_system_into_user(messages: list[dict]) -> list[dict]:
@@ -372,6 +394,32 @@ def _resolve_nonstream_timeout(request_timeout, task_type: str) -> float:
     return 45
 
 
+def _raise_if_empty_thinking_burn(
+    usage: "TokenUsage", max_tokens: int, *, model: str, task_type: str
+) -> None:
+    """Empty text + output budget exhausted ⇒ raise a retryable error.
+
+    E2E evidence (2026-07-26): relay claude-* returned HTTP-200 completions
+    with empty content and ``output_tokens == max_tokens`` — the upstream spent
+    the whole budget on hidden thinking. Returning that as success poisons the
+    pipeline (evaluator JSON parse fails → all-zero scores; rewrites come back
+    empty → chapter permanently blocked). Raising ``LLMEmptyCompletionError``
+    (recognized by ``llm_retry._is_retryable``) lets the existing attempt
+    budget retry in place, and lets tier fallback move endpoints when the
+    budget is spent — instead of success-with-empty. The 95% threshold
+    tolerates relays whose token accounting is slightly off; an empty response
+    below it keeps the old behavior (cooldown, empty result returned).
+    """
+    if max_tokens > 0 and usage.output_tokens >= int(max_tokens * 0.95):
+        from app.services.llm_retry import LLMEmptyCompletionError
+
+        raise LLMEmptyCompletionError(
+            f"empty completion with output budget exhausted "
+            f"(model={model} task={task_type} "
+            f"output_tokens={usage.output_tokens} max_tokens={max_tokens})"
+        )
+
+
 class OpenAIProvider(BaseProvider):
     name = "openai"
 
@@ -415,12 +463,21 @@ class OpenAIProvider(BaseProvider):
         # attempt discards its partial chunks and starts fresh next try.
         from app.services.llm_retry import call_with_retry
 
+        # Relay thinking-burn workaround: for matching models, a non-streaming
+        # caller (evaluation / stream=False) is served via the internally
+        # streamed branch below — the full text is assembled before returning,
+        # so caller semantics are unchanged.
+        caller_nonstream = task_type == "evaluation" or stream_mode is False
+        force_internal_stream = (
+            caller_nonstream and _should_force_internal_stream_for_model(model)
+        )
+
         async def _one_attempt() -> GenerationResult:
             # Evaluation expects one bounded JSON object. For direct chapter
             # generation we now honor `stream=False` so callers can opt into a
             # full non-streaming completion and avoid transport-side SSE issues.
             await _wait_openai_compat_turn(self.base_url, model, task_type)
-            if task_type == "evaluation" or stream_mode is False:
+            if caller_nonstream and not force_internal_stream:
                 timeout = _resolve_nonstream_timeout(request_timeout, task_type)
                 resp = await self.client.chat.completions.create(
                     model=model, messages=messages,
@@ -432,22 +489,31 @@ class OpenAIProvider(BaseProvider):
                 text = ""
                 if resp.choices and resp.choices[0].message:
                     text = resp.choices[0].message.content or ""
-                if not text.strip():
-                    await _cooldown_openai_compat_empty(self.base_url, model, task_type)
                 u = getattr(resp, "usage", None)
                 usage = TokenUsage(
                     getattr(u, 'prompt_tokens', 0) or 0,
                     getattr(u, 'completion_tokens', 0) or 0,
                     getattr(u, 'total_tokens', 0) or 0,
                 ) if u else TokenUsage()
+                if not text.strip():
+                    await _cooldown_openai_compat_empty(self.base_url, model, task_type)
+                    _raise_if_empty_thinking_burn(
+                        usage, max_tokens, model=model, task_type=task_type)
                 return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
+            # Internally-streamed completion. Reached when the caller streams
+            # (historical path) or when force_internal_stream rerouted a
+            # non-streaming caller; the latter keeps its non-stream timeout
+            # semantics (httpx applies it per read gap on a stream).
+            stream_timeout = request_timeout
+            if force_internal_stream:
+                stream_timeout = _resolve_nonstream_timeout(request_timeout, task_type)
             chunks: list[str] = []
             stream = await self._create_chat_stream(dict(
                 model=model, messages=messages,
                 temperature=temperature, max_tokens=max_tokens,
                 extra_body=extra_body or None,
-                timeout=request_timeout if request_timeout is not None else None,
+                timeout=stream_timeout,
             ))
             usage = TokenUsage()
             cached_tokens = 0
@@ -470,11 +536,21 @@ class OpenAIProvider(BaseProvider):
             text = "".join(chunks)
             if not text.strip():
                 await _cooldown_openai_compat_empty(self.base_url, model, task_type)
+                _raise_if_empty_thinking_burn(
+                    usage, max_tokens, model=model, task_type=task_type)
             return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
-        attempts = 1 if task_type == "evaluation" or stream_mode is False else 4
+        attempts = 1 if caller_nonstream else 4
         if retry_attempts is not None and int(retry_attempts) > 0:
             attempts = int(retry_attempts)
+        if force_internal_stream:
+            # Floor at 2: non-streaming callers default to (or explicitly pass)
+            # attempts=1 to bound long non-stream timeouts, but that single
+            # attempt would defeat the retryable empty-thinking-burn fix — the
+            # first burned response would propagate instead of healing in
+            # place. Internally-streamed empty attempts fail fast (no long
+            # timeout to stack), so one in-place retry is safe.
+            attempts = max(attempts, 2)
         return await call_with_retry(
             _one_attempt, label=f"openai_chat[{task_type}:{model}]",
             attempts=attempts,

@@ -209,6 +209,18 @@ def upgrade() -> None:
     # 5) Attach all existing rows as the historical partition. Existing
     #    compatible indexes are matched by definition (names irrelevant);
     #    only the composite PK index and created_at index get built here.
+    # ATTACH requires the child to carry a same-named CHECK whose stored
+    # expression matches the parent's exactly. The live table's legacy
+    # constraint normalizes differently (varchar[]->text[] cast placement),
+    # so rebuild it on the child from the exact DDL the parent used —
+    # both then normalize identically and ATTACH merges them.
+    op.execute(
+        "ALTER TABLE llm_call_logs_hist"
+        " DROP CONSTRAINT IF EXISTS ck_llm_call_logs_tier_used"
+    )
+    op.execute(
+        f"ALTER TABLE llm_call_logs_hist ADD {_TIER_CHECK_SQL}"
+    )
     op.execute(
         f"ALTER TABLE llm_call_logs ATTACH PARTITION llm_call_logs_hist"
         f" FOR VALUES FROM (MINVALUE) TO ('{_ts(upper)}')"

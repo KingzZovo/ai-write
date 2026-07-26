@@ -203,6 +203,14 @@ async def _process_uploaded_book_async(book_id: str, file_path: str, filename: s
                 pass
 
 
+@celery_app.task(name="tasks.consolidate_reference_book")
+def consolidate_reference_book(book_id: str):
+    """Build the per-book dossier (style/plot/world consolidation)."""
+    from app.services.book_dossier import build_dossier
+
+    _run_async(build_dossier(book_id))
+
+
 @celery_app.task(name="tasks.batch_test_sources")
 def batch_test_sources_task(source_ids: list[str]):
     """Batch test book sources for connectivity in background."""

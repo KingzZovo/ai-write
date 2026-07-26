@@ -7,17 +7,28 @@
 - GET  /api/reference-books/{id}/style-profiles: list style profile cards
 - GET  /api/reference-books/{id}/beat-sheets: list beat sheet cards
 - GET  /api/reference-books/{id}/decompile-status: progress summary
+
+Consolidation layer (book dossier):
+- POST /api/decompile/{id}/consolidate: aggregate micro-cards into one dossier
+- GET  /api/decompile/{id}/dossier: return dossier + status
+
+The router carries no prefix (paths are spelled out per route) so the two URL
+spaces /api/reference-books and /api/decompile can share this one router
+without touching main.py.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.session import get_db
 from app.models.decompile import BeatSheetCard, ReferenceBookSlice, StyleProfileCard
@@ -25,7 +36,13 @@ from app.models.project import ReferenceBook
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/reference-books", tags=["decompile"])
+router = APIRouter(tags=["decompile"])
+
+_PREFIX = "/api/reference-books"
+
+# Keep strong references to inline background consolidations so they are not
+# garbage-collected mid-run (celery-unavailable fallback path).
+_bg_tasks: set[asyncio.Task] = set()
 
 
 class SliceOut(BaseModel):
@@ -74,7 +91,7 @@ class DecompileStatus(BaseModel):
     error_message: str | None = None
 
 
-@router.post("/{book_id}/reprocess", response_model=ReprocessResponse)
+@router.post(_PREFIX + "/{book_id}/reprocess", response_model=ReprocessResponse)
 async def reprocess(book_id: UUID, db: AsyncSession = Depends(get_db)) -> ReprocessResponse:
     book = await db.get(ReferenceBook, str(book_id))
     if book is None:
@@ -97,7 +114,7 @@ async def reprocess(book_id: UUID, db: AsyncSession = Depends(get_db)) -> Reproc
         return ReprocessResponse(status=summary.get("status", "unknown"))
 
 
-@router.post("/{book_id}/retry-missing", response_model=ReprocessResponse)
+@router.post(_PREFIX + "/{book_id}/retry-missing", response_model=ReprocessResponse)
 async def retry_missing(
     book_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> ReprocessResponse:
@@ -134,7 +151,7 @@ async def retry_missing(
         return ReprocessResponse(status=summary.get("status", "unknown"))
 
 
-@router.get("/{book_id}/slices", response_model=list[SliceOut])
+@router.get(_PREFIX + "/{book_id}/slices", response_model=list[SliceOut])
 async def list_slices(
     book_id: UUID,
     limit: int = 200,
@@ -149,7 +166,7 @@ async def list_slices(
     return [SliceOut.model_validate(s) for s in rows.scalars().all()]
 
 
-@router.get("/{book_id}/style-profiles", response_model=list[StyleProfileOut])
+@router.get(_PREFIX + "/{book_id}/style-profiles", response_model=list[StyleProfileOut])
 async def list_style_profiles(
     book_id: UUID,
     limit: int = 200,
@@ -164,7 +181,7 @@ async def list_style_profiles(
     return [StyleProfileOut.model_validate(r) for r in rows.scalars().all()]
 
 
-@router.get("/{book_id}/beat-sheets", response_model=list[BeatSheetOut])
+@router.get(_PREFIX + "/{book_id}/beat-sheets", response_model=list[BeatSheetOut])
 async def list_beat_sheets(
     book_id: UUID,
     limit: int = 200,
@@ -179,7 +196,7 @@ async def list_beat_sheets(
     return [BeatSheetOut.model_validate(r) for r in rows.scalars().all()]
 
 
-@router.get("/{book_id}/decompile-status", response_model=DecompileStatus)
+@router.get(_PREFIX + "/{book_id}/decompile-status", response_model=DecompileStatus)
 async def decompile_status(
     book_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -237,4 +254,82 @@ async def decompile_status(
         retry_max_attempts=int(retry_meta.get("max_attempts") or 0),
         last_run_at=retry_meta.get("last_run_at"),
         error_message=book.error_message,
+    )
+
+
+# =========================================================================
+# Consolidation layer — book dossier
+# =========================================================================
+
+class ConsolidateResponse(BaseModel):
+    status: str
+    task_id: str | None = None
+
+
+class DossierResponse(BaseModel):
+    book_id: UUID
+    status: dict | None = None
+    dossier: dict | None = None
+
+
+@router.post(
+    "/api/decompile/{book_id}/consolidate",
+    response_model=ConsolidateResponse,
+    status_code=202,
+)
+async def consolidate(
+    book_id: UUID, db: AsyncSession = Depends(get_db)
+) -> ConsolidateResponse:
+    """Aggregate the book's micro-cards into one dossier (async, idempotent).
+
+    Marks ``metadata_json['dossier_status']`` as queued, then fires the
+    celery task; if the broker is unreachable, falls back to an in-process
+    background asyncio task. Re-runs overwrite the stored dossier.
+    """
+    book = await db.get(ReferenceBook, str(book_id))
+    if book is None:
+        raise HTTPException(status_code=404, detail="reference book not found")
+
+    meta = dict(book.metadata_json or {})
+    meta["dossier_status"] = {
+        "state": "queued",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    book.metadata_json = meta
+    flag_modified(book, "metadata_json")
+    await db.commit()
+
+    try:
+        from app.tasks import celery_app  # noqa: WPS433
+
+        async_result = celery_app.send_task(
+            "tasks.consolidate_reference_book",
+            args=[str(book_id)],
+        )
+        return ConsolidateResponse(status="queued", task_id=async_result.id)
+    except Exception as exc:
+        logger.warning(
+            "celery enqueue failed for consolidate, running in background: %s", exc
+        )
+        from app.services.book_dossier import build_dossier
+
+        task = asyncio.create_task(build_dossier(str(book_id)))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+        return ConsolidateResponse(status="started")
+
+
+@router.get("/api/decompile/{book_id}/dossier", response_model=DossierResponse)
+async def get_dossier(
+    book_id: UUID, db: AsyncSession = Depends(get_db)
+) -> DossierResponse:
+    """Return the consolidated dossier and its status marker."""
+    book = await db.get(ReferenceBook, str(book_id))
+    if book is None:
+        raise HTTPException(status_code=404, detail="reference book not found")
+    meta = book.metadata_json or {}
+    return DossierResponse(
+        book_id=book_id,
+        status=meta.get("dossier_status"),
+        dossier=meta.get("dossier"),
     )

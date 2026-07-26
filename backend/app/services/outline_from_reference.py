@@ -27,6 +27,28 @@ from app.services.prompt_registry import run_text_prompt
 logger = logging.getLogger(__name__)
 
 
+# A full book can carry tens of thousands of beat lines (~1.3M chars) — far
+# beyond any single prompt. Stratified sampling keeps an evenly-spaced subset
+# across the book's whole range, preserving chapter order.
+MAX_BEAT_SKETCH_LINES = 400
+
+
+def _stratified_sample(lines: list[str], max_lines: int = MAX_BEAT_SKETCH_LINES) -> list[str]:
+    """Evenly-spaced sample of at most ``max_lines``, preserving order."""
+    n = len(lines)
+    if n <= max_lines:
+        return lines
+    step = (n - 1) / (max_lines - 1)
+    picked: list[str] = []
+    last_idx = -1
+    for i in range(max_lines):
+        idx = round(i * step)
+        if idx != last_idx:
+            picked.append(lines[idx])
+            last_idx = idx
+    return picked
+
+
 async def _load_beat_sketch(book_id: str, db: AsyncSession) -> str:
     rows = await db.execute(
         select(BeatSheetCard, ReferenceBookSlice)
@@ -42,7 +64,7 @@ async def _load_beat_sketch(book_id: str, db: AsyncSession) -> str:
         pattern = beat.get("reusable_pattern") or beat.get("summary") or ""
         chap = slc.chapter_idx if slc.chapter_idx is not None else "-"
         lines.append(f"[ch{chap}/{slc.sequence_id}] {scene_type}: {pattern} => {outcome}")
-    return "\n".join(lines)
+    return "\n".join(_stratified_sample(lines))
 
 
 async def build_outline_from_reference(

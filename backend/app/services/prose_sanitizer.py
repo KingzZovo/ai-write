@@ -33,17 +33,41 @@ _CHAPTER_REF_RE = re.compile(
     r"|后续第\s*[0-9零一二三四五六七八九十百]+\s*[章卷]"
 )
 
+# Half-width punctuation contamination (E2E 2026-07-26): generated prose mixes
+# half-width commas into CJK sentences ("皮带轮卡了一下,又转起来"). Normalize
+# conservatively so numbers ("1,000"), code, URLs and latin text are never
+# touched:
+#   - , ; : ? ! directly BETWEEN two CJK characters -> full-width equivalent
+#   - a half-width comma directly FOLLOWED by a CJK character (no space) ->
+#     full-width comma (covers "…了”,他说" / "3000,又转起来" style joins)
+_CJK = "㐀-䶿一-鿿豈-﫿"
+_HALFWIDTH_TO_FULLWIDTH = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
+_PUNCT_BETWEEN_CJK_RE = re.compile(rf"(?<=[{_CJK}])([,;:?!])(?=[{_CJK}])")
+_COMMA_BEFORE_CJK_RE = re.compile(rf",(?=[{_CJK}])")
+
+
+def _normalize_halfwidth_punct(text: str) -> str:
+    """Convert half-width punctuation to full-width in CJK context only."""
+    text = _PUNCT_BETWEEN_CJK_RE.sub(
+        lambda m: _HALFWIDTH_TO_FULLWIDTH[m.group(1)], text
+    )
+    return _COMMA_BEFORE_CJK_RE.sub("，", text)
+
 
 def sanitize_prose(text: str) -> tuple[str, list[str]]:
     """Strip meta/structural leakage from generated prose.
 
     Returns ``(cleaned_text, hits)`` where ``hits`` lists the raw leaked
-    fragments that were removed (for logging/telemetry). When nothing leaks,
-    ``hits`` is empty and the text is returned unchanged.
+    fragments that were removed (for logging/telemetry). Half-width
+    punctuation between CJK characters is normalized to full-width as a
+    silent pass — it is a mechanical cleanup, not leakage, so it does not
+    populate ``hits``. When nothing leaks and no punctuation needs
+    normalizing, the text is returned unchanged.
     """
     if not text:
         return text, []
 
+    text = _normalize_halfwidth_punct(text)
     hits: list[str] = []
 
     def _record(m: re.Match) -> str:
