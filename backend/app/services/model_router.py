@@ -396,6 +396,10 @@ class OpenAIProvider(BaseProvider):
         stream_mode = kw.pop("stream", True)
         request_timeout = kw.pop("request_timeout", None)
         retry_attempts = kw.pop("retry_attempts", None)
+        # Relay workaround: some channels drop the system role for claude-*
+        # models; fold system into the first user message before sending.
+        if _should_merge_system_for_model(model):
+            messages = merge_system_into_user(messages)
         if _OPENAI_CACHE_ENABLED and not self.base_url:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
 
@@ -479,6 +483,9 @@ class OpenAIProvider(BaseProvider):
         # v1.6.0 Y2: prompt_cache_key on stream too (native OpenAI only)
         extra_body = {}
         task_type = kw.get('task_type', 'unknown')
+        # Relay workaround: fold system into first user message (see generate)
+        if _should_merge_system_for_model(model):
+            messages = merge_system_into_user(messages)
         if _OPENAI_CACHE_ENABLED and not self.base_url:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
         await _wait_openai_compat_turn(self.base_url, model, task_type)

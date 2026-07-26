@@ -965,12 +965,14 @@ export default function DesktopWorkspace() {
       },
       (evt) => {
         const eventName = String(evt.event ?? evt.status ?? '')
-        if (eventName === 'fallback_restart') {
+        if (eventName === 'fallback_restart' || eventName === 'revise_restart') {
           // Backend Task 3 (b5273da): the scene stream failed mid-way and the
           // single-shot fallback will re-send the FULL chapter text next.
           // Discard the partial scene chunks streamed so far — i.e. return
           // the streaming buffer to its empty generation-start state — so the
           // resent full text is not appended onto stale partial scenes.
+          // revise_restart (emitted by apiSSE on a new revise_round) is the
+          // same situation: the auto-revise loop re-sends the full chapter.
           generationBufferRef.current = ''
           resetStreamContent()
           setEditorContent('')

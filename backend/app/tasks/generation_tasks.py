@@ -1480,6 +1480,17 @@ async def _run_async_generation_impl(task_id: str):
                     await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
                 except Exception as sum_err:
                     logger.warning("Auto chapter summarize failed after evaluation: %s", sum_err)
+                # Cross-volume memory: backfill the PREVIOUS volume's
+                # VolumeSummary row (L2 bridge read by context_pack for
+                # chapters 1-3 of a volume). Runs after the commit above so it
+                # can never block or fail the save; awaited (not create_task)
+                # because the celery event loop closes when the task returns.
+                # Cheap no-op unless the prev volume lacks a summary row.
+                try:
+                    from app.services.memory import backfill_prev_volume_summary
+                    await backfill_prev_volume_summary(str(volume_id_for_eval))
+                except Exception as volsum_err:
+                    logger.warning("Volume-summary backfill failed after evaluation: %s", volsum_err)
                 # Q3 v1.9.1 (review fix): character cognition ledger ingestion
                 # only when the final evaluation passed. needs_review saves
                 # (passed=False, ch.status='needs_review') await manual review

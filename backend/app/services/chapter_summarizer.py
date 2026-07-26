@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 _MAX_INPUT_CHARS = 6000
 _MIN_INPUT_CHARS = 200
 
+# Same collection the manual rebuild endpoint writes (services/rag_rebuild.py)
+# and context_pack L3 RAG reads. Points written here MUST stay interchangeable
+# with rag_rebuild's: same deterministic id per (volume_id, chapter_idx), same
+# payload keys.
+CHAPTER_SUMMARY_COLLECTION = "chapter_summaries"
+
 _USER_TEMPLATE = (
     "请用 80-160 个中文字概括下面这章内容。"
     "只写事实发生了什么、人物状态变化、新引出的问题。"
@@ -173,4 +179,98 @@ async def summarize_and_save_chapter(
         return False, ""
     chapter.summary = summary
     await db.commit()
+
+    # RAG-L3 fix: mirror the summary into the Qdrant chapter_summaries
+    # collection so vector recall works on normally-generated novels, not just
+    # after a manual rebuild. Failure-tolerant by contract — the chapter (and
+    # its summary) are already committed above and must stay saved.
+    await upsert_chapter_summary_embedding(
+        project_id=project_id,
+        volume_id=chapter.volume_id,
+        chapter_idx=chapter.chapter_idx,
+        chapter_title=chapter.title or "",
+        summary=summary,
+    )
     return True, summary
+
+
+async def upsert_chapter_summary_embedding(
+    *,
+    project_id: Any,
+    volume_id: Any,
+    chapter_idx: int | None,
+    chapter_title: str,
+    summary: str,
+) -> bool:
+    """Embed a chapter summary and upsert it into Qdrant chapter_summaries.
+
+    Follows services/rag_rebuild.py's conventions exactly (deterministic point
+    id from md5(f"{volume_id}_{chapter_idx}"), same payload shape) so points
+    from this path and the manual rebuild endpoint overwrite each other cleanly.
+
+    Never raises — an embedding/Qdrant failure logs a warning and returns
+    False so the chapter save path is never broken.
+    """
+    if not summary or project_id is None or volume_id is None or chapter_idx is None:
+        return False
+    try:
+        import hashlib
+
+        from qdrant_client import AsyncQdrantClient
+        from qdrant_client.models import Distance, PointStruct, VectorParams
+
+        from app.config import settings
+        from app.services.feature_extractor import generate_embedding
+
+        vector = await generate_embedding(summary)
+        if not vector:
+            return False
+
+        client = AsyncQdrantClient(
+            host=getattr(settings, "QDRANT_HOST", "localhost"),
+            port=getattr(settings, "QDRANT_PORT", 6333),
+        )
+        try:
+            try:
+                await client.get_collection(CHAPTER_SUMMARY_COLLECTION)
+            except Exception:
+                # Create with the dimension the configured embedding model
+                # actually returns (2048 for nvidia/llama-nemotron-embed-vl-1b-v2)
+                # instead of a hardcoded constant — the 4096/1536 constants in
+                # qdrant_store/rag_rebuild predate the current model.
+                await client.create_collection(
+                    collection_name=CHAPTER_SUMMARY_COLLECTION,
+                    vectors_config=VectorParams(
+                        size=len(vector), distance=Distance.COSINE
+                    ),
+                )
+            key = f"{volume_id}_{chapter_idx}"
+            point_id = int(hashlib.md5(key.encode()).hexdigest()[:16], 16)
+            await client.upsert(
+                collection_name=CHAPTER_SUMMARY_COLLECTION,
+                points=[
+                    PointStruct(
+                        id=point_id,
+                        vector=vector,
+                        payload={
+                            "project_id": str(project_id),
+                            "volume_id": str(volume_id),
+                            "chapter_idx": chapter_idx,
+                            "chapter_title": chapter_title or "",
+                            "summary": summary,
+                        },
+                    )
+                ],
+            )
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
+        return True
+    except Exception as e:
+        logger.warning(
+            "chapter summary Qdrant upsert failed (volume_id=%s idx=%s): %s",
+            volume_id, chapter_idx, e,
+        )
+        return False

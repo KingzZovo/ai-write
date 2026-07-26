@@ -634,6 +634,22 @@ async def generate_chapter(
                             logger.warning(
                                 "Chapter summarize after auto-save failed: %s", sum_err
                             )
+                        # Cross-volume memory: fire-and-forget backfill of the
+                        # PREVIOUS volume's VolumeSummary row (the L2 bridge
+                        # read by context_pack for chapters 1-3 of a volume).
+                        # Own session, never raises; must never block or fail
+                        # the save, hence create_task instead of await.
+                        try:
+                            from app.services.memory import backfill_prev_volume_summary
+                            _volsum_task = asyncio.create_task(
+                                backfill_prev_volume_summary(str(target_chapter.volume_id))
+                            )
+                            _CHAPTER_SAVE_BG_TASKS.add(_volsum_task)
+                            _volsum_task.add_done_callback(_CHAPTER_SAVE_BG_TASKS.discard)
+                        except Exception as _volsum_err:
+                            logger.warning(
+                                "Volume-summary backfill dispatch failed: %s", _volsum_err
+                            )
                         # Q3 v1.9.1 (review fix): cognition ledger ingestion
                         # intentionally NOT here. Extracting at draft-save time
                         # polluted the ledger with the chapter's own facts

@@ -109,6 +109,7 @@ export function apiSSE(
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let lastReviseRound: number | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -129,6 +130,17 @@ export function apiSSE(
           try {
             const parsed = JSON.parse(data)
             if (typeof parsed.text === 'string') {
+              // Auto-revise rounds re-send the FULL rewritten text tagged with
+              // revise_round (backend generate.py). Signal a restart before the
+              // first chunk of each new round so callers reset their buffer and
+              // replace the previous draft instead of appending onto it.
+              if (
+                typeof parsed.revise_round === 'number' &&
+                parsed.revise_round !== lastReviseRound
+              ) {
+                lastReviseRound = parsed.revise_round
+                onEvent?.({ event: 'revise_restart', revise_round: parsed.revise_round })
+              }
               onChunk(parsed.text)
             } else if (onEvent) {
               onEvent(parsed)

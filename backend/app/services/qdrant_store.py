@@ -39,7 +39,11 @@ class QdrantStore:
     COLLECTIONS: dict[str, dict[str, Any]] = {
         "plots": {"size": 4096, "distance": "Cosine"},
         "styles": {"size": 4096, "distance": "Cosine"},
-        "chapter_summaries": {"size": 4096, "distance": "Cosine"},
+        # 2048 = nvidia/llama-nemotron-embed-vl-1b-v2, the configured embedding
+        # model (matches the live collection). The previous 4096 declaration
+        # would make a fresh install create a collection that rejects every
+        # write from the generation path and rag_rebuild.
+        "chapter_summaries": {"size": 2048, "distance": "Cosine"},
         # v0.6 decompile collections
         "style_profiles": {"size": 4096, "distance": "Cosine"},
         "beat_sheets": {"size": 4096, "distance": "Cosine"},

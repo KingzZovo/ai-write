@@ -8,7 +8,11 @@ the first user message for models matched by
 ``settings.LLM_MERGE_SYSTEM_INTO_USER_MODELS`` (comma-separated substrings).
 """
 
+import asyncio
+from types import SimpleNamespace
+
 from app.services.model_router import (
+    OpenAIProvider,
     _should_merge_system_for_model,
     merge_system_into_user,
 )
@@ -91,3 +95,73 @@ class TestMergeSystemIntoUser:
         merge_system_into_user(msgs)
         assert msgs[0]["content"] == "S"
         assert msgs[1]["content"] == "U"
+
+
+def _fake_openai_client(captured: dict):
+    """Fake AsyncOpenAI client capturing chat.completions.create kwargs."""
+
+    async def create(**kwargs):
+        captured.update(kwargs)
+        if kwargs.get("stream"):
+            async def _aiter():
+                yield SimpleNamespace(choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content="ok"))])
+            return _aiter()
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1,
+                                  total_tokens=2),
+        )
+
+    return SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=create)))
+
+
+class TestOpenAIProviderWiring:
+    """The merge must actually run on the OpenAIProvider request path."""
+
+    MSGS = [
+        {"role": "system", "content": "主角叫虞千帆。"},
+        {"role": "user", "content": "写第一场。"},
+    ]
+
+    def _provider(self, captured: dict) -> OpenAIProvider:
+        provider = OpenAIProvider(api_key="k", base_url="")
+        provider._client = _fake_openai_client(captured)
+        return provider
+
+    def test_generate_merges_for_matching_model(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "LLM_MERGE_SYSTEM_INTO_USER_MODELS", "claude-")
+        captured: dict = {}
+        asyncio.run(self._provider(captured).generate(
+            self.MSGS, model="claude-sonnet-5", stream=False))
+        sent = captured["messages"]
+        assert all(m["role"] != "system" for m in sent)
+        assert "虞千帆" in sent[0]["content"]
+        assert "写第一场。" in sent[0]["content"]
+
+    def test_generate_keeps_system_for_non_matching_model(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "LLM_MERGE_SYSTEM_INTO_USER_MODELS", "claude-")
+        captured: dict = {}
+        asyncio.run(self._provider(captured).generate(
+            self.MSGS, model="gpt-4o", stream=False))
+        sent = captured["messages"]
+        assert sent[0]["role"] == "system"
+        assert sent is self.MSGS or sent == self.MSGS
+
+    def test_generate_stream_merges_for_matching_model(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "LLM_MERGE_SYSTEM_INTO_USER_MODELS", "claude-")
+        captured: dict = {}
+
+        async def _consume():
+            async for _ in self._provider(captured).generate_stream(
+                    self.MSGS, model="claude-sonnet-5"):
+                pass
+
+        asyncio.run(_consume())
+        sent = captured["messages"]
+        assert all(m["role"] != "system" for m in sent)
+        assert "虞千帆" in sent[0]["content"]

@@ -89,3 +89,100 @@ describe('apiFetch', () => {
     expect(result).toBeUndefined()
   })
 })
+
+describe('apiSSE', () => {
+  const mockFetch = vi.fn()
+
+  beforeEach(() => {
+    vi.resetModules()
+    mockFetch.mockReset()
+    vi.stubGlobal('fetch', mockFetch)
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    })
+  })
+
+  function mockSSEResponse(events: Record<string, unknown>[]) {
+    const encoder = new TextEncoder()
+    const payload = events
+      .map((e) => `data: ${JSON.stringify(e)}\n`)
+      .join('') + 'data: [DONE]\n'
+    let sent = false
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (sent) return Promise.resolve({ done: true, value: undefined })
+            sent = true
+            return Promise.resolve({ done: false, value: encoder.encode(payload) })
+          },
+          cancel: () => Promise.resolve(),
+        }),
+      },
+    })
+  }
+
+  function runSSE(events: Record<string, unknown>[]) {
+    mockSSEResponse(events)
+    const chunks: string[] = []
+    const emitted: Record<string, unknown>[] = []
+    return new Promise<{ chunks: string[]; emitted: Record<string, unknown>[] }>(
+      async (resolve, reject) => {
+        const { apiSSE } = await import('@/lib/api')
+        apiSSE(
+          '/api/generate/chapter',
+          {},
+          (text) => chunks.push(text),
+          () => resolve({ chunks, emitted }),
+          (evt) => emitted.push(evt),
+          (err) => reject(err),
+        )
+      },
+    )
+  }
+
+  it('routes text chunks to onChunk and other events to onEvent', async () => {
+    const { chunks, emitted } = await runSSE([
+      { text: 'hello ' },
+      { text: 'world' },
+      { event: 'saved' },
+    ])
+    expect(chunks).toEqual(['hello ', 'world'])
+    expect(emitted).toEqual([{ event: 'saved' }])
+  })
+
+  it('emits revise_restart before the first chunk of each new revise round', async () => {
+    const order: string[] = []
+    mockSSEResponse([
+      { text: 'original ' },
+      { text: 'draft' },
+      { text: 'revised v1 part1 ', revise_round: 1 },
+      { text: 'revised v1 part2', revise_round: 1 },
+      { text: 'revised v2', revise_round: 2 },
+    ])
+    await new Promise<void>(async (resolve, reject) => {
+      const { apiSSE } = await import('@/lib/api')
+      apiSSE(
+        '/api/generate/chapter',
+        {},
+        (text) => order.push(`chunk:${text}`),
+        () => resolve(),
+        (evt) => order.push(`event:${evt.event}:${evt.revise_round}`),
+        (err) => reject(err),
+      )
+    })
+    expect(order).toEqual([
+      'chunk:original ',
+      'chunk:draft',
+      'event:revise_restart:1',
+      'chunk:revised v1 part1 ',
+      'chunk:revised v1 part2',
+      'event:revise_restart:2',
+      'chunk:revised v2',
+    ])
+  })
+})

@@ -155,10 +155,10 @@ async def _insert_foreshadow_if_new(
             """
             INSERT INTO foreshadows (
               id, project_id, type, description, planted_chapter,
-              status, created_at, resolve_conditions_json, resolution_blueprint_json
+              status, source, created_at, resolve_conditions_json, resolution_blueprint_json
             ) VALUES (
               gen_random_uuid(), :pid, :type, :desc, :pch,
-              'pending', now(), CAST(:rh AS json), CAST(:rb AS json)
+              'planted', 'lifecycle', now(), CAST(:rh AS json), CAST(:rb AS json)
             )
             """
         ),

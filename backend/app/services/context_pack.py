@@ -1352,7 +1352,7 @@ class ContextPackBuilder:
 
         # Search Qdrant for relevant snippets
         if entities:
-            await self._search_qdrant_snippets(pack, entities)
+            await self._search_qdrant_snippets(pack, entities, pid)
 
         # Get dialogue samples from PostgreSQL characters
         try:
@@ -1440,8 +1440,13 @@ class ContextPackBuilder:
         self,
         pack: ContextPack,
         entities: list[str],
+        project_id: str,
     ) -> None:
-        """Search Qdrant for relevant content based on extracted entities."""
+        """Search Qdrant for relevant content based on extracted entities.
+
+        Scoped to ``project_id`` via a payload filter — without it another
+        project's chapter summaries could be injected as facts.
+        """
         try:
             from app.services.feature_extractor import generate_embedding
 
@@ -1462,9 +1467,19 @@ class ContextPackBuilder:
             )
 
             try:
+                from qdrant_client.models import FieldCondition, Filter, MatchValue
+
                 results = await client.search(
                     collection_name="chapter_summaries",
                     query_vector=embedding,
+                    query_filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="project_id",
+                                match=MatchValue(value=str(project_id)),
+                            ),
+                        ],
+                    ),
                     limit=5,
                     score_threshold=0.4,
                 )

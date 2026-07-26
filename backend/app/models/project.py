@@ -488,6 +488,10 @@ class Foreshadow(Base):
     narrative_proximity = Column(Float, default=0.0)
     status = Column(String(20), default="planted")
     resolved_chapter = Column(Integer, nullable=True)
+    # Origin marker: 'neo4j' = materialized from Neo4j (subject to deletion
+    # sync in entity_tasks), 'lifecycle' = planted PG-only by
+    # foreshadow_lifecycle. NULL = legacy/unknown, never deletion-synced.
+    source = Column(String(20), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 

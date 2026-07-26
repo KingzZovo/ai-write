@@ -508,10 +508,13 @@ async def _materialize_entities_to_postgres(
                 created_orgs += int(getattr(result, "rowcount", 0) or 0)
 
             # Foreshadows: upsert by primary key id.
+            # source='neo4j' marks rows as Neo4j-materialized so the deletion
+            # sync below can tell them apart from PG-only rows (e.g. the
+            # foreshadow_lifecycle outline pipeline, which never writes Neo4j).
             if foreshadows:
                 fs_rows = []
                 for f in foreshadows:
-                    fs_rows.append({"project_id": project_id, **f})
+                    fs_rows.append({"project_id": project_id, "source": "neo4j", **f})
                 stmt = insert(Foreshadow).values(fs_rows)
                 stmt = stmt.on_conflict_do_update(
                     index_elements=[Foreshadow.id],
@@ -525,17 +528,23 @@ async def _materialize_entities_to_postgres(
                         "status": stmt.excluded.status,
                         "resolved_chapter": stmt.excluded.resolved_chapter,
                         "project_id": stmt.excluded.project_id,
+                        "source": stmt.excluded.source,
                     },
                 )
                 result = await db.execute(stmt)
                 upserted_foreshadows += int(getattr(result, "rowcount", 0) or 0)
 
             # Foreshadows: deletion sync.
-            # Materialize is the reconciliation step, so Postgres should not keep
-            # foreshadows that were deleted from Neo4j.
+            # Materialize reconciles only rows that originated from Neo4j
+            # (source='neo4j', stamped by the upsert above). PG-only rows
+            # (foreshadow_lifecycle inserts, legacy rows with source NULL)
+            # were never in Neo4j, so their absence there is not deletion.
             neo4j_fs_ids = {f.get("id") for f in foreshadows if f.get("id")}
             pg_fs_rows = await db.execute(
-                select(Foreshadow.id).where(Foreshadow.project_id == project_id)
+                select(Foreshadow.id).where(
+                    Foreshadow.project_id == project_id,
+                    Foreshadow.source == "neo4j",
+                )
             )
             pg_fs_ids = {str(r[0]) for r in pg_fs_rows.all()}
             stale_ids = sorted(pg_fs_ids - neo4j_fs_ids)

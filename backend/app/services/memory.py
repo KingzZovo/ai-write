@@ -42,7 +42,10 @@ logger = logging.getLogger(__name__)
 
 # Qdrant collection for chapter summary embeddings
 CHAPTER_SUMMARY_COLLECTION = "chapter_summaries"
-EMBEDDING_DIM = 1536  # text-embedding-3-small
+# Dimension of the configured embedding model. The live collections are 2048
+# (nvidia/llama-nemotron-embed-vl-1b-v2); the old 1536 (text-embedding-3-small)
+# value would create an incompatible collection on a fresh install.
+EMBEDDING_DIM = 2048
 
 
 # ---------------------------------------------------------------------------
@@ -621,3 +624,77 @@ class HierarchicalMemory:
             )
         except Exception as e:
             logger.warning("Failed to store chapter summary embedding: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Cross-volume memory backfill
+# ---------------------------------------------------------------------------
+
+
+async def backfill_prev_volume_summary(volume_id: str) -> bool:
+    """Ensure the volume BEFORE ``volume_id`` has a VolumeSummary row.
+
+    Cross-volume memory fix: VolumeSummary rows previously had zero writers, so
+    the L2 bridge in context_pack (prev-volume summaries injected for chapters
+    1-3 of each volume) was always empty. Called fire-and-forget after each
+    chapter save; a no-op unless the previous volume exists, has chapter
+    summaries, and lacks a VolumeSummary row — so the LLM call fires at most
+    once per volume transition.
+
+    Opens its own DB session (safe to run detached from the save transaction).
+    Never raises. Returns True only when a new row was written.
+    """
+    try:
+        from app.db.session import async_session_factory
+
+        async with async_session_factory() as db:
+            volume = await db.get(Volume, str(volume_id))
+            if volume is None:
+                return False
+            prev_result = await db.execute(
+                select(Volume)
+                .where(
+                    Volume.project_id == volume.project_id,
+                    Volume.volume_idx < volume.volume_idx,
+                )
+                .order_by(Volume.volume_idx.desc())
+                .limit(1)
+            )
+            prev_volume = prev_result.scalar_one_or_none()
+            if prev_volume is None:
+                return False
+            existing = await db.execute(
+                select(VolumeSummary.id)
+                .where(VolumeSummary.volume_id == prev_volume.id)
+                .limit(1)
+            )
+            if existing.scalar_one_or_none() is not None:
+                return False
+
+            memory = HierarchicalMemory(db)
+            summary_text = await memory.generate_volume_summary(str(prev_volume.id))
+            if not summary_text.strip():
+                return False
+
+            # Re-check before insert: a concurrent save may have backfilled
+            # while the LLM call was in flight.
+            recheck = await db.execute(
+                select(VolumeSummary.id)
+                .where(VolumeSummary.volume_id == prev_volume.id)
+                .limit(1)
+            )
+            if recheck.scalar_one_or_none() is not None:
+                return False
+
+            db.add(VolumeSummary(volume_id=prev_volume.id, summary_text=summary_text))
+            await db.commit()
+            logger.info(
+                "Backfilled VolumeSummary for volume %s (project %s)",
+                prev_volume.id, volume.project_id,
+            )
+            return True
+    except Exception as e:
+        logger.warning(
+            "backfill_prev_volume_summary failed (volume_id=%s): %s", volume_id, e
+        )
+        return False

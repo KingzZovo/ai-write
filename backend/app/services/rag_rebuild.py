@@ -77,7 +77,7 @@ async def rebuild_rag_for_project_async(
             try:
                 await qdrant.create_collection(
                     collection_name=CHAPTER_SUMMARY_COLLECTION,
-                    vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+                    vectors_config=VectorParams(size=2048, distance=Distance.COSINE),
                 )
             except Exception:
                 pass
