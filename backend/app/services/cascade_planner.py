@@ -83,6 +83,7 @@ CONTRACT_OUTLINE_VIOLATIONS: frozenset[str] = frozenset(
         "information_rule_violation",
         "mechanism_rule_violation",
         "result_strength_violation",
+        "name_consistency_violation",
     }
 )
 

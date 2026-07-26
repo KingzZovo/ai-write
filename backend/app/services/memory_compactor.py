@@ -99,7 +99,7 @@ async def compact_project_memory(
             for p in batch:
                 payload = p.payload or {}
                 texts.append(
-                    f"第{payload.get('chapter_idx','?')}章 {payload.get('chapter_title','')}: "
+                    f"[CH-{payload.get('chapter_idx','?')}] {payload.get('chapter_title','')}: "
                     f"{payload.get('summary','')}"
                 )
             joined = "\n".join(texts)

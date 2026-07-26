@@ -252,7 +252,7 @@ def render_recall_block(items: list[dict], max_chars: int = 600) -> str:
         reasons = "；".join(it.get("reasons", [])) or "相关"
         summary = it.get("summary") or ""
         suffix = f"（{summary}）" if summary else ""
-        lines.append(f"- 第{it['chapter']}章：{reasons}{suffix}")
+        lines.append(f"- [CH-{it['chapter']}]：{reasons}{suffix}")
 
     out: list[str] = []
     used = 0

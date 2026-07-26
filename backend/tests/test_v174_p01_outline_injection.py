@@ -48,7 +48,7 @@ class TestContextPackOutlineFields:
         )
         prompt = pack.to_system_prompt(token_budget=8000)
         assert "【本卷大纲】" in prompt
-        assert "《第1卷 雾城失名》" in prompt
+        assert "《[VOL-1] 雾城失名》" in prompt
         assert "核心冲突：" in prompt
         assert "情感弧线：" in prompt
         assert "新登场角色：" in prompt
@@ -67,7 +67,7 @@ class TestContextPackOutlineFields:
     def test_render_handles_missing_optional_fields(self):
         pack = ContextPack(volume_outline={"title": "only", "volume_idx": 2})
         block = pack._render_volume_outline_block()
-        assert "《第2卷 only》" in block
+        assert "《[VOL-2] only》" in block
         assert "核心冲突" not in block
 
     def test_render_handles_malformed_foreshadows(self):
@@ -78,7 +78,7 @@ class TestContextPackOutlineFields:
             "turning_points": None,
         })
         block = pack._render_volume_outline_block()
-        assert "《第1卷 x》" in block
+        assert "《[VOL-1] x》" in block
         assert "已埋伏笔" not in block
         assert "新登场角色" not in block
         assert "转折点" not in block

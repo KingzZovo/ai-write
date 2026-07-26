@@ -88,7 +88,7 @@ def test_render_recall_budget_and_empty():
     ]
     block = render_recall_block(items, max_chars=600)
     assert 0 < len(block) <= 600
-    assert "相关历史章回读" in block and "第5章" in block
+    assert "相关历史章回读" in block and "[CH-5]" in block
     assert render_recall_block([]) == ""
 
 

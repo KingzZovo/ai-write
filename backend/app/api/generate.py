@@ -3,7 +3,7 @@
 import json
 import logging
 import asyncio
-import os
+from app.config import settings as _cfg
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,9 +18,10 @@ from app.services.chapter_target_words import (
     CHAPTER_DEFAULT_WORD_COUNT,
     resolve_chapter_target_word_count,
 )
-from app.services.chapter_quality_gate import apply_chapter_quality_gate, looks_truncated
+from app.services.chapter_quality_gate import apply_chapter_quality_gate, looks_truncated, looks_like_refusal
 from app.services.chapter_generator import ChapterGenerator
 from app.services.chinese_prose_mechanics_checker import analyze_chinese_prose_mechanics
+from app.services.prose_sanitizer import sanitize_prose
 from app.services.outline_readiness import (
     LAYER_LABELS,
     build_outline_readiness_report,
@@ -102,8 +103,8 @@ def _sync_single_shot_llm_kwargs() -> dict[str, float | int | bool]:
     draft before persistence.
     """
     return {
-        "request_timeout": float(os.getenv("SYNC_SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS", "840")),
-        "retry_attempts": int(os.getenv("SYNC_SINGLE_SHOT_LLM_RETRY_ATTEMPTS", "1")),
+        "request_timeout": _cfg.SYNC_SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS,
+        "retry_attempts": _cfg.SYNC_SINGLE_SHOT_LLM_RETRY_ATTEMPTS,
         "stream": False,
     }
 
@@ -489,8 +490,7 @@ async def generate_chapter(
                             # gate cannot reach a clean pass, optionally keep its
                             # best improved text (with a quality warning) instead
                             # of discarding it and stranding stale/placeholder prose.
-                            import os as _pob_os
-                            _persist_on_block = _pob_os.getenv("QUALITY_GATE_PERSIST_ON_BLOCK") == "1"
+                            _persist_on_block = _cfg.QUALITY_GATE_PERSIST_ON_BLOCK
                             _pob_text = quality_gate_result.final_text or ""
                             if _persist_on_block and _pob_text.strip():
                                 yield f"data: {json.dumps({'event': 'quality_failed', 'status': quality_gate_result.status, 'reason': quality_gate_result.warning_reason, 'rounds': quality_gate_result.rewrite_rounds, 'persisted_on_block': True, 'report': quality_gate_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
@@ -537,10 +537,20 @@ async def generate_chapter(
                         # stream ended with no terminal punctuation) must NOT be
                         # silently marked completed. Persist the text (nothing is
                         # lost) but downgrade status to draft and surface the signal.
+                        # Mechanism-level meta/structure leakage guard: strip
+                        # any "第X章"/context-delimiter that leaked into prose
+                        # before it is ever persisted (both gen paths funnel here).
+                        text_to_save, _leak_hits = sanitize_prose(text_to_save)
+                        if _leak_hits:
+                            logger.warning(
+                                "prose_sanitizer stripped meta leakage chapter_id=%s hits=%s",
+                                req.chapter_id, _leak_hits,
+                            )
                         _truncated = looks_truncated(text_to_save)
+                        _refusal = looks_like_refusal(text_to_save)
                         target_chapter.content_text = text_to_save
                         target_chapter.word_count = len(text_to_save)
-                        target_chapter.status = "draft" if _truncated else "completed"
+                        target_chapter.status = "draft" if (_truncated or _refusal) else "completed"
                         await save_db.commit()
                         # PR-FORESHADOW-LIFECYCLE: persist foreshadows from chapter outline_json after content saved
                         try:
@@ -649,6 +659,8 @@ async def generate_chapter(
                         cognition_ingest_text = full_text
                         if looks_truncated(full_text):
                             yield f"data: {json.dumps({'event': 'truncated', 'status': 'draft', 'reason': 'midsentence_ending', 'chapter_id': _saved_id, 'word_count': _wc}, ensure_ascii=False)}\n\n"
+                        if looks_like_refusal(full_text):
+                            yield f"data: {json.dumps({'event': 'refusal', 'status': 'draft', 'reason': 'image_model_refusal', 'chapter_id': _saved_id, 'word_count': _wc}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'status': 'saved', 'chapter_id': _saved_id, 'word_count': _wc})}\n\n"
                 except asyncio.CancelledError:
                     # SSE pipe cancelled mid-save; bg task continues commit independently.
@@ -934,10 +946,16 @@ async def generate_chapter(
                                     # text but downgrade to draft so a dangling revision is
                                     # never silently promoted to completed (parity with the
                                     # initial-save path in _persist_chapter_now).
+                                    revised_text, _rev_leak = sanitize_prose(revised_text)
+                                    if _rev_leak:
+                                        logger.warning(
+                                            "prose_sanitizer stripped meta leakage (revise) chapter_id=%s hits=%s",
+                                            revise_chapter_id, _rev_leak,
+                                        )
                                     _rev_truncated = looks_truncated(revised_text)
                                     ch2.content_text = revised_text
                                     ch2.word_count = len(revised_text)
-                                    ch2.status = "draft" if _rev_truncated else "completed"
+                                    ch2.status = "draft" if (_rev_truncated or looks_like_refusal(revised_text)) else "completed"
                                     await save_db2.commit()
                                     saved_payload = json.dumps({
                                         "status": "saved",
@@ -1115,10 +1133,9 @@ async def generate_chapter(
                             )
                         final_quality_meta = final_quality_result.to_safe_metadata()
                         if final_quality_result.status != "passed":
-                            import os as _pob_os2
-                            _persist_on_block2 = _pob_os2.getenv("QUALITY_GATE_PERSIST_ON_BLOCK") == "1"
+                            _persist_on_block = _cfg.QUALITY_GATE_PERSIST_ON_BLOCK
                             _pob_text2 = final_quality_result.final_text or ""
-                            if _persist_on_block2 and _pob_text2.strip():
+                            if _persist_on_block and _pob_text2.strip():
                                 if isinstance(final_quality_meta, dict):
                                     final_quality_meta = {**final_quality_meta, "persisted_on_block": True}
                                 yield f"data: {json.dumps({'event': 'quality_failed', 'status': final_quality_result.status, 'reason': final_quality_result.warning_reason, 'rounds': final_quality_result.rewrite_rounds, 'persisted_on_block': True, 'report': final_quality_result.final_report.to_safe_dict()}, ensure_ascii=False)}\n\n"
@@ -1181,8 +1198,7 @@ async def generate_chapter(
                 # draft does not become the active chapter.
                 if (not accepted_final) and aborted_with_blocking:
                     try:
-                        import os as _rb_os
-                        _rb_persist_on_block = _rb_os.getenv("QUALITY_GATE_PERSIST_ON_BLOCK") == "1"
+                        _rb_persist_on_block = _cfg.QUALITY_GATE_PERSIST_ON_BLOCK
                         _rb_text = resolve_rollback_text(
                             baseline_text=baseline_text_before_run or "",
                             current_text=current_text or "",
@@ -1201,7 +1217,7 @@ async def generate_chapter(
                                 # off a dangling chapter as completed.
                                 ch_rb.status = (
                                     "completed"
-                                    if (_rb_text or "").strip() and not looks_truncated(_rb_text)
+                                    if (_rb_text or "").strip() and not looks_truncated(_rb_text) and not looks_like_refusal(_rb_text)
                                     else "draft"
                                 )
                                 await rb_db.commit()

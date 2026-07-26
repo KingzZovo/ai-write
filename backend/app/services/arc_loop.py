@@ -256,7 +256,7 @@ def build_next_chapter_brief(state: ArcState, *, arc_beats: list[dict] | None = 
         f"【本弧】{state.title}",
         f"【本弧到目前的故事线】\n{state.running_outline}" if state.running_outline else "",
         f"【作者指定的下一步方向】{state.next_direction}" if state.next_direction else "",
-        f"【本章（第{next_chapter_idx}章）大纲 beat】{beat}" if beat else "",
+        f"【本章（[CH-{next_chapter_idx}]）大纲 beat】{beat}" if beat else "",
         "请据此写这一章。保持与上文连贯，不要引入本弧之外的长线伏笔。",
     ]
     return "\n".join(p for p in parts if p)

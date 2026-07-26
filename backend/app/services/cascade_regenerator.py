@@ -202,7 +202,7 @@ class CascadeRegenerator:
                 db=self.db,
                 chapter_id=chapter.id,
                 user_instruction=(
-                    f"请根据以上设定和大纲，重新生成第{chapter.chapter_idx}章"
+                    f"请根据以上设定和大纲，重新生成 [CH-{chapter.chapter_idx}]"
                     f"《{chapter.title}》的正文内容。"
                 ),
             )

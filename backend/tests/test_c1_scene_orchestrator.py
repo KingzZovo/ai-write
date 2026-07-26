@@ -43,6 +43,9 @@ class _FakePack:
 
     def __init__(self, system_prompt: str = "<world rules>\n<chapter outline body>") -> None:
         self._system_prompt = system_prompt
+        # Fix1 roster injection reads pack.character_cards; real ContextPack
+        # always defines it, so the fake mirrors that contract.
+        self.character_cards: list = []
 
     def to_system_prompt(self) -> str:
         return self._system_prompt

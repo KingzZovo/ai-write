@@ -95,7 +95,7 @@ async def check_cross_chapter_consistency(
     parts = []
     for idx, title, content in chapter_texts:
         excerpt = content[:800] + ("\n...\n" + content[-400:] if len(content) > 1200 else "")
-        parts.append(f"【第{idx}章 {title}】\n{excerpt}")
+        parts.append(f"【[CH-{idx}] {title}】\n{excerpt}")
 
     combined = "\n\n---\n\n".join(parts)
 

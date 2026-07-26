@@ -344,6 +344,7 @@ class ChineseProseMechanicsReport:
     dialogue_paragraph_rate: float = 0.0
     procedural_exposition_cluster_count: int = 0
     story_bible_leakage_count: int = 0
+    meta_structure_leakage_count: int = 0
     directional_listing_count: int = 0
     awkward_register_count: int = 0
     limited_pov_leak_count: int = 0
@@ -404,6 +405,7 @@ class ChineseProseMechanicsReport:
             "dialogue_paragraph_rate": self.dialogue_paragraph_rate,
             "procedural_exposition_cluster_count": self.procedural_exposition_cluster_count,
             "story_bible_leakage_count": self.story_bible_leakage_count,
+            "meta_structure_leakage_count": self.meta_structure_leakage_count,
             "directional_listing_count": self.directional_listing_count,
             "awkward_register_count": self.awkward_register_count,
             "limited_pov_leak_count": self.limited_pov_leak_count,
@@ -581,6 +583,35 @@ def _count_story_bible_leakage(paragraphs: list[str]) -> int:
         elif term_hits >= 1 and has_dialogue and has_public_context:
             count += 1
     return count
+
+
+
+def _count_meta_structure_leakage(text: str) -> int:
+    """Count chapter/volume meta labels leaked into generated prose.
+
+    Neutral context delimiters like bare [CH-1] are treated as leakage when they
+    appear in final novel text; same for 第X章 / 本章完 etc.
+    """
+    src = text or ""
+    if not src.strip():
+        return 0
+    patterns = (
+        r"第\s*\d+\s*章",
+        r"第\s*[一二三四五六七八九十百千零两〇]+\s*章",
+        r"第\s*\d+\s*卷",
+        r"第\s*[一二三四五六七八九十百千零两〇]+\s*卷",
+        r"\[CH-\d+\]",
+        r"\[VOL-\d+\]",
+        r"本章开始",
+        r"本章完",
+        r"本章结束",
+        r"下章预告",
+        r"未完待续",
+    )
+    total = 0
+    for pat in patterns:
+        total += len(re.findall(pat, src))
+    return total
 
 
 def _directional_listing_stats(paragraph: str) -> tuple[int, set[str]]:
@@ -821,6 +852,7 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
     report.short_paragraph_density = _short_paragraph_density(paragraphs)
     report.procedural_exposition_cluster_count = _count_procedural_exposition_clusters(paragraphs)
     report.story_bible_leakage_count = _count_story_bible_leakage(paragraphs)
+    report.meta_structure_leakage_count = _count_meta_structure_leakage(text)
     report.directional_listing_count = _count_directional_listings(paragraphs)
     report.awkward_register_count = _count_unique_regex_hits(text, AWKWARD_REGISTER_PATTERNS)
     report.limited_pov_leak_count = _count_unique_regex_hits(text, LIMITED_POV_LEAK_PATTERNS)
@@ -890,6 +922,7 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
         )
         or report.procedural_exposition_cluster_count
         or report.story_bible_leakage_count
+        or report.meta_structure_leakage_count
         or report.directional_listing_count
         or report.awkward_register_count
         or report.limited_pov_leak_count

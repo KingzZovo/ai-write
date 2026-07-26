@@ -114,7 +114,7 @@ def render_compass_anchor(compass: dict, current_chapter_idx: int = 0, max_chars
     if active:
         lines.append("活跃长线（不得提前收束/遗忘）：" + "；".join(a for a in active if a))
     if scale.get("min_chapters") and scale.get("max_chapters"):
-        prog = f"，当前第{current_chapter_idx}章" if current_chapter_idx else ""
+        prog = f"，当前 [CH-{current_chapter_idx}]" if current_chapter_idx else ""
         lines.append(
             f"全书规模：约{scale['min_chapters']}-{scale['max_chapters']}章{prog}"
         )

@@ -118,9 +118,9 @@ def render_roster_block(
     for name, last_seen in items:
         gap = current_idx - last_seen
         if gap > _RECALL_GAP:
-            lines.append(f"- {name}：上次出场第{last_seen}章（已隔{gap}章），写到时回读对齐。")
+            lines.append(f"- {name}：上次出场 [CH-{last_seen}]（已隔{gap}章），写到时回读对齐。")
         else:
-            lines.append(f"- {name}：上次出场第{last_seen}章。")
+            lines.append(f"- {name}：上次出场 [CH-{last_seen}]。")
 
     out: list[str] = []
     used = 0

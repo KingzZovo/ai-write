@@ -148,6 +148,7 @@ CHINESE_PROSE_MECHANICS_PROMPT = """\
 - 短对白密度限制：短对白密度不得过半；短句可以用于压迫，但不能把整章写成剧本回合或口令梯子。
 - 短段落密度限制：短段落密度不得超过 0.35；同一动作、同一证据链和同一轮施压应合并成有呼吸的自然段。
 - 程序性解释簇限制：旧库、码头、灯籍、封存、回封、待验等制度/证据说明不能由专家 NPC 一口气讲完，必须拆进物证、争执、误解和局部记录中。
+- meta_structure_leakage_zero：正文严禁出现任何元叙事/大纲结构引用。禁止在正文（含旁白与对白）中写“第X章/第X卷/上一章/下一章/后续章节/本章/大纲/走向/伏笔/钩子/场景N”等结构性词语。人物不知道自己活在小说的第几章，只能用具体时间、事件、地点和人物记忆来指代过去或将来（如“三天前在疗养院”“陈默上次给的补丁”“从合租房暗格带出来的U盘”），不得用章节编号或大纲条目来指代情节。
 """
 
 def issue_violation_type(issue: dict[str, Any]) -> str:
@@ -239,7 +240,7 @@ def preflight_scene_blueprint_prompt(chapter_idx: int | None = None) -> str:
     volume-local 1-based) the golden-three-chapters opening constraints are
     appended (Q4, adapted from QMAI).
     """
-    chapter_label = f"第{chapter_idx}章" if chapter_idx else "本章"
+    chapter_label = f"[CH-{chapter_idx}]" if chapter_idx else "本章"
     prompt = f"""
 【direct_generation_first_{BLUEPRINT_VERSION}｜空间可行性、信息遮蔽、巧合摩擦与中文行文约束】
 目标：{chapter_label}写正文前，必须先在内部执行 outline_execution_units / chapter_outline_unit_ledger / outline_beat_execution_ledger / foreshadow_control_ledger / character_state_ledger / pacing_budget_ledger / evidence_permission_ledger / mechanism_boundary_ledger / inference_uncertainty_ledger / time_window_budget / spatial_feasibility_ledger / channel_occlusion_ledger / coincidence_friction_ledger / dialogue_density_ledger / anchor_audit_before_prose / micro_continuity_budget。不要输出合同、表格、自检、分析、JSON 或说明；最终只输出小说正文。

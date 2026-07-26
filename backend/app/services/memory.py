@@ -90,7 +90,7 @@ CHAPTER_SUMMARY_PROMPT = """\
 2. 出场人物及状态变化
 3. 重要伏笔或转折
 
-章节编号：第{chapter_idx}章
+章节编号：[CH-{chapter_idx}]
 
 章节内容：
 {chapter_text}
@@ -241,7 +241,7 @@ class HierarchicalMemory:
             )
             rows = result.all()
             for vs, vol_title, vol_idx in rows:
-                header = f"第{vol_idx}卷《{vol_title}》摘要："
+                header = f"[VOL-{vol_idx}]《{vol_title}》摘要："
                 parts.append(f"{header}\n{vs.summary_text}")
         except Exception as e:
             logger.warning("Failed to gather volume summaries: %s", e)
@@ -281,7 +281,7 @@ class HierarchicalMemory:
                 parts.append("=== 本卷章节摘要 ===")
                 for ch in current_chapters:
                     parts.append(
-                        f"第{ch.chapter_idx}章《{ch.title}》：{ch.summary}"
+                        f"[CH-{ch.chapter_idx}]《{ch.title}》：{ch.summary}"
                     )
 
             # Vector search for related historical summaries from other volumes
@@ -375,7 +375,7 @@ class HierarchicalMemory:
                 prev_chapter = prev_result.scalar_one_or_none()
                 if prev_chapter and prev_chapter.content_text:
                     parts.append(
-                        f"【上一章 第{prev_chapter.chapter_idx}章"
+                        f"【上一章 [CH-{prev_chapter.chapter_idx}]"
                         f"《{prev_chapter.title}》】\n{prev_chapter.content_text}"
                     )
 
@@ -389,7 +389,7 @@ class HierarchicalMemory:
             curr_chapter = curr_result.scalar_one_or_none()
             if curr_chapter and curr_chapter.content_text:
                 parts.append(
-                    f"【本章已有内容 第{curr_chapter.chapter_idx}章"
+                    f"【本章已有内容 [CH-{curr_chapter.chapter_idx}]"
                     f"《{curr_chapter.title}》】\n{curr_chapter.content_text}"
                 )
 
@@ -518,7 +518,7 @@ class HierarchicalMemory:
                 return ""
 
             chapter_summaries_text = "\n".join(
-                f"第{ch.chapter_idx}章《{ch.title}》：{ch.summary}"
+                f"[CH-{ch.chapter_idx}]《{ch.title}》：{ch.summary}"
                 for ch in chapters
                 if ch.summary
             )
@@ -598,7 +598,7 @@ class HierarchicalMemory:
             # Convert first 16 hex chars to int for Qdrant point ID
             point_id_int = int(point_id_hash[:16], 16)
 
-            label = f"第{chapter_idx}章"
+            label = f"[CH-{chapter_idx}]"
             if chapter_title:
                 label += f"《{chapter_title}》"
 

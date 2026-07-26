@@ -151,12 +151,12 @@ def render_debt_warning(debt: dict) -> str:
     for entry in debt.get("criticals") or []:
         lines.append(
             f"  - [滞留未推进] {entry.get('description', '')}"
-            f"（埋于第{entry.get('planted_chapter')}章，已搁置 {entry.get('age')} 章）"
+            f"（埋于 [CH-{entry.get('planted_chapter')}]，已搁置 {entry.get('age')} 章）"
         )
     for entry in debt.get("warnings") or []:
         lines.append(
             f"  - [推进后停滞] {entry.get('description', '')}"
-            f"（埋于第{entry.get('planted_chapter')}章，已搁置 {entry.get('age')} 章）"
+            f"（埋于 [CH-{entry.get('planted_chapter')}]，已搁置 {entry.get('age')} 章）"
         )
     lines.append("本章必须优先推进或回收上述既有伏笔，禁止新埋伏笔。")
     return "\n".join(lines)

@@ -65,6 +65,35 @@ def looks_truncated(text: str) -> bool:
     return last_char not in _SENTENCE_TERMINALS
 
 
+# PR-CH-REFUSAL (2026-07-04): relay occasionally misroutes a scene_writer text
+# call to an image model, which replies with assistant/service refusal
+# boilerplate (e.g. "我可以搜索图片，但目前似乎无法为您创建任何图片"). The
+# orchestrator appends it as a scene; because it ends on 「。」 it slips past
+# looks_truncated and the chapter is saved "completed" carrying a refusal
+# instead of prose. These are DISTINCTIVE multi-word phrases that never occur
+# in real narrative — single tokens like "图片" are deliberately excluded so
+# legitimate prose ("她翻看着旧图片") is not flagged.
+_REFUSAL_PHRASES = (
+    "无法为您创建任何图片",
+    "尚未开通图片创建功能",
+    "无法为您生成图片",
+    "我无法创建图片",
+    "我不能生成图片",
+)
+
+
+def looks_like_refusal(text: str) -> bool:
+    """Return True when the text contains known assistant/service refusal
+    boilerplate (typically an image-model misroute) rather than story prose.
+
+    Matches distinctive multi-word phrases only, so ordinary prose that merely
+    mentions 图片/登录 is not flagged. Empty/blank text is NOT flagged.
+    """
+    if not text or not text.strip():
+        return False
+    return any(phrase in text for phrase in _REFUSAL_PHRASES)
+
+
 _LEXICAL_CLEANUP_REPLACEMENTS = {
     "半寸": "一点",
     "半息": "一瞬",
@@ -219,6 +248,7 @@ def _quality_penalty(report: ChineseProseMechanicsReport) -> int:
         + int(max(0.0, report.short_paragraph_density - 0.35) * 500)
         + report.procedural_exposition_cluster_count * 260
         + report.story_bible_leakage_count * 360
+        + report.meta_structure_leakage_count * 500
         + report.directional_listing_count * 260
         + report.mundane_logic_violation_count * 420
         + report.awkward_register_count * 260
@@ -338,6 +368,7 @@ def _build_rewrite_user_content(
         "short_paragraph_density": initial_report.short_paragraph_density,
         "procedural_exposition_cluster_count": initial_report.procedural_exposition_cluster_count,
         "story_bible_leakage_count": initial_report.story_bible_leakage_count,
+        "meta_structure_leakage_count": initial_report.meta_structure_leakage_count,
         "directional_listing_count": initial_report.directional_listing_count,
         "awkward_register_count": initial_report.awkward_register_count,
         "limited_pov_leak_count": initial_report.limited_pov_leak_count,
@@ -373,6 +404,7 @@ def _build_rewrite_user_content(
         "- 破坏排比式短问短答；连续短句交锋必须加入答非所问、抢白、动作打断或直接抛结论。\n"
         "- 删除三步外、一指宽、影子外、几寸、一尺、一丈、几步、几尺、几丈等静态物理测绘词；半步只可用于逼近/退开等动态压迫。\n"
         "- 删除履历式自白；往事作证最多两句，不许从几岁讲到几岁。\n\n"
+        "- meta_structure_leakage_zero：删除正文中的第X章/第X卷/[CH-n]/本章开始/本章完等元结构标签；章节编号不得进入小说正文。\n\n"
         "- setting_name_dialogue_zero：删除设定名朗读。路人、新闻、店员、邻居、广告、海报和闲聊不得讨论执行者、血裔、旧神、奥丁等核心名词；改成封路、停电、绕路、物价、黑车、查得紧、上面、那帮人、那种事、清道等生活影响和代词。\n"
         "- directional_listing_zero：删除左边/右边/东头/西头/前后导览式罗列；环境只抓一个与氛围或剧情冲突的核心反差点。\n\n"
         "- mundane_scene_plausibility：修正不合生活逻辑的日常场景。烤肠摊只卖摊位合理物，不顺手出现临期面包、热水、汤锅；便利店不硬塞消毒水味和温水；大雨院子里不要安排人群围电视。\n"
@@ -433,6 +465,24 @@ async def apply_chapter_quality_gate(
     original_text = text or ""
     initial_report = analyze_chinese_prose_mechanics(original_text)
     min_target = _min_target_word_count(target_word_count, min_target_word_ratio)
+
+    if project_id and original_text:
+        try:
+            from app.models.project import Character
+            from sqlalchemy import select
+
+            stmt = select(Character.name).where(Character.project_id == project_id)
+            res = await db.execute(stmt)
+            char_names = [row[0] for row in res.all() if row[0]]
+            for name in char_names:
+                if name not in original_text:
+                    logger.warning(
+                        "quality_gate missing_char project=%s char=%s",
+                        project_id, name,
+                    )
+        except Exception:
+            pass
+
     if skip_polish:
         return ChapterQualityGateResult(
             status="skipped",

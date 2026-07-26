@@ -368,23 +368,23 @@ class SceneOrchestrator:
         #   ALLOW_SCENE_PLANNER_FALLBACK=1
         # Planner timeout can be tuned via:
         #   SCENE_PLANNER_TIMEOUT_SECONDS=<float>
-        import os
+        from app.config import settings
         # Safety valve: never let chapter generation block on planner JSON.
         # If the planner is unstable (timeout/unparseable/missing fields), fall
         # back to deterministic scene briefs so we can still produce full prose
         # and then score/revise.
         # Default: enabled. Set ALLOW_SCENE_PLANNER_FALLBACK=0 to force strict.
-        allow_fallback = (os.getenv("ALLOW_SCENE_PLANNER_FALLBACK", "1") != "0")
+        allow_fallback = settings.ALLOW_SCENE_PLANNER_FALLBACK
         # Planner call is the main reliability bottleneck for reaching the
         # quality bar (it gates all contract/ledger constraints). In practice
         # 60s is too aggressive and causes empty output timeouts.
         # Default bumped to 600s because scene_planner calls frequently exceed
         # 180s on the current standard endpoint, which causes avoidable timeouts
         # and blocks chapter generation.
-        planner_timeout_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_SECONDS", "180"))
+        planner_timeout_s = settings.SCENE_PLANNER_TIMEOUT_SECONDS
         # Hard cap keeps scene_planner from blocking the whole generation with 0 emitted chars.
         # Operators may tune it, but default remains short enough to force deterministic fallback.
-        planner_timeout_cap_s = float(os.getenv("SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS", "240"))
+        planner_timeout_cap_s = settings.SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS
         planner_timeout_s = min(planner_timeout_s, planner_timeout_cap_s)
         # Re-use ContextPack's system prompt as planner background, then
         # inject the planner-specific user instruction.
@@ -614,6 +614,15 @@ class SceneOrchestrator:
             if user_instruction and user_instruction.strip()
             else ""
         )
+        # Fix1: inject character name roster directly into user content
+        # so it survives even if system prompt is truncated
+        name_roster_block = ""
+        if pack.character_cards:
+            names = [c.name for c in pack.character_cards]
+            name_roster_block = (
+                f"\n\n【角色名册(硬约束)】本场角色固定名称：{'、'.join(names)}\n"
+                "严禁使用上述以外的变体、别名或近似名指代这些角色。"
+            )
         contract_block = "\n\n" + WRITER_CONTRACT_PROMPT
         ledger_block = (
             "\n\n【连续性台账写作硬约束】\n"
@@ -623,7 +632,7 @@ class SceneOrchestrator:
             "- 不能为增强压迫感临时增加人手/道具/能力；需要新增时必须在正文出现入场路径和见证信息。\n"
             "- 场末只允许留下 transition_bridge 台账能解释的结果；支撑不足时降级为疑点或待验证线索。"
         )
-        user_content = ctx_block + contract_block + ledger_block + prior_block + instr_block + "\n\n请开始写本场景。"
+        user_content = ctx_block + name_roster_block + contract_block + ledger_block + prior_block + instr_block + "\n\n请开始写本场景。"
         async for chunk in stream_text_prompt(
             task_type="scene_writer",
             user_content=user_content,

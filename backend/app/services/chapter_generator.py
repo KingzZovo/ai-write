@@ -12,6 +12,7 @@ import logging
 from typing import AsyncIterator
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.context_pack import ContextPackBuilder
@@ -82,7 +83,25 @@ class ChapterGenerator:
             messages=messages,
             **llm_kwargs,
         )
-        return result.text
+        text = result.text
+
+        if text and text.strip():
+            if text.strip()[-1] not in "。！？」》…":
+                logger.warning(
+                    "chapter_generator truncation project=%s ch=%d ends_with=%r",
+                    project_id, chapter_idx, text[-50:],
+                )
+            try:
+                missing = await _check_character_names_in_text(db, str(project_id), text)
+                if missing:
+                    logger.warning(
+                        "chapter_generator missing_chars project=%s ch=%d names=%s",
+                        project_id, chapter_idx, missing,
+                    )
+            except Exception:
+                pass
+
+        return text
 
     async def generate_stream(
         self,
@@ -227,3 +246,14 @@ class ChapterGenerator:
         for s in pack.style_samples:
             hits.append({"collection": "style_samples", "payload": {"text": s}})
         return hits
+
+
+async def _check_character_names_in_text(
+    db: AsyncSession, project_id: str, text: str
+) -> list[str]:
+    from app.models.project import Character
+
+    stmt = select(Character.name).where(Character.project_id == project_id)
+    res = await db.execute(stmt)
+    names = [row[0] for row in res.all() if row[0]]
+    return [n for n in names if n not in text]

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_factory
@@ -82,6 +83,7 @@ class CharacterCard:
 
     def to_prompt(self) -> str:
         parts = [f"[{self.name}]"]
+        parts.append("**固定角色名，生成时严禁变更或使用其他名称**")
         if self.location:
             parts.append(f"位置:{self.location}")
         if self.power_level:
@@ -133,7 +135,7 @@ class TimeAnchor:
 
     def to_prompt(self) -> str:
         chain_str = " -> ".join(self.causal_chain) if self.causal_chain else ""
-        parts = [f"第{self.chapter_idx}章: {self.event}"]
+        parts = [f"[CH-{self.chapter_idx}] {self.event}"]
         if chain_str:
             parts.append(f"  因果链: {chain_str}")
         return "\n".join(parts)
@@ -179,9 +181,9 @@ class StrandTracker:
     def to_prompt(self) -> str:
         return (
             f"当前主导线: {self.current_dominant} | "
-            f"Quest最后出现: 第{self.last_quest_chapter}章 | "
-            f"Fire最后出现: 第{self.last_fire_chapter}章 | "
-            f"Constellation最后出现: 第{self.last_constellation_chapter}章"
+            f"Quest最后出现: [CH-{self.last_quest_chapter}] | "
+            f"Fire最后出现: [CH-{self.last_fire_chapter}] | "
+            f"Constellation最后出现: [CH-{self.last_constellation_chapter}]"
         )
 
 
@@ -269,7 +271,7 @@ class ContextPack:
         title = co.get("title") or ""
         cidx = co.get("chapter_idx")
         if title or cidx:
-            parts.append(f"《第{cidx}章 {title}》".strip())
+            parts.append(f"《[CH-{cidx}] {title}》".strip())
         if co.get("summary"):
             parts.append(f"梗概：{co['summary']}")
         ke = co.get("key_events") or []
@@ -368,7 +370,7 @@ class ContextPack:
         title = vo.get("title") or ""
         vidx = vo.get("volume_idx")
         if title or vidx:
-            parts.append(f"《第{vidx}卷 {title}》".strip())
+            parts.append(f"《[VOL-{vidx}] {title}》".strip())
         if vo.get("core_conflict"):
             parts.append(f"核心冲突：{vo['core_conflict']}")
         if vo.get("emotional_arc"):
@@ -440,6 +442,17 @@ class ContextPack:
 
         sections: list[str] = []
 
+        # ---- Layer 0: Non-truncatable character name roster ----
+        # Placed BEFORE budget-managed layers so it is never dropped.
+        if self.character_cards:
+            names = [c.name for c in self.character_cards]
+            roster = (
+                "【角色名册(不可截断·最高优先)】\n"
+                f"本章登场角色固定名称：{'、'.join(names)}\n"
+                "严禁在正文中使用上述名称以外的任何变体、别名或近似名来指代这些角色。"
+            )
+            sections.append(roster)
+
         # ---- Layer 1: Proximity ----
         l1_parts: list[str] = []
 
@@ -455,7 +468,7 @@ class ContextPack:
 
         if self.recent_summaries:
             summaries_text = "\n".join(
-                f"第{i}章前: {s}" for i, s in enumerate(self.recent_summaries, 1)
+                f"[前文-{i}] {s}" for i, s in enumerate(self.recent_summaries, 1)
             )
             l1_parts.append(f"【近五章摘要】\n{summaries_text}")
 
@@ -468,7 +481,7 @@ class ContextPack:
 
         if self.future_outlines:
             future_text = "\n".join(
-                f"后续第{i}章方向: {o}" for i, o in enumerate(self.future_outlines, 1)
+                f"[后续-{i}] {o}" for i, o in enumerate(self.future_outlines, 1)
             )
             l1_parts.append(f"【后续走向(参考)】\n{future_text}")
 
@@ -840,121 +853,96 @@ class ContextPackBuilder:
         vid = str(volume_id)
 
         try:
-            # Get last 5 chapter summaries
-            result = await db.execute(
-                select(Chapter.summary, Chapter.chapter_idx)
-                .where(
-                    Chapter.volume_id == vid,
-                    Chapter.chapter_idx < chapter_idx,
-                    Chapter.summary.isnot(None),
-                    Chapter.summary != "",
-                )
-                .order_by(Chapter.chapter_idx.desc())
-                .limit(5)
-            )
-            rows = result.all()
-            # Reverse to chronological order
-            pack.recent_summaries = [
-                f"[第{row.chapter_idx}章] {row.summary}"
-                for row in reversed(rows)
-            ]
-
-            # Get current chapter content
-            current_result = await db.execute(
+            # Single query: fetch all chapters we need from this volume
+            # (last 5 summaries + current + next 10) in one roundtrip.
+            chapters_result = await db.execute(
                 select(Chapter)
                 .where(
                     Chapter.volume_id == vid,
-                    Chapter.chapter_idx == chapter_idx,
+                    Chapter.chapter_idx >= chapter_idx - 5,
+                    Chapter.chapter_idx <= chapter_idx + 10,
                 )
+                .order_by(Chapter.chapter_idx.asc())
             )
-            current_chapter = current_result.scalar_one_or_none()
+            all_chapters = chapters_result.scalars().all()
+
+            current_chapter = None
+            prev_with_summary = []
+            future_chapters = []
+            for ch in all_chapters:
+                if ch.chapter_idx == chapter_idx:
+                    current_chapter = ch
+                elif ch.chapter_idx < chapter_idx:
+                    if ch.summary and ch.summary.strip():
+                        prev_with_summary.append(ch)
+                else:
+                    future_chapters.append(ch)
+
+            # Last 5 summaries in chronological order
+            pack.recent_summaries = [
+                f"[CH-{ch.chapter_idx}] {ch.summary}"
+                for ch in prev_with_summary[-5:]
+            ]
+
+            # Current chapter content
             if current_chapter:
                 pack.current_content = current_chapter.content_text or ""
                 pack.current_outline = current_chapter.outline_json or {}
 
-            # Get next 10 chapters outline direction
-            future_result = await db.execute(
-                select(Chapter.chapter_idx, Chapter.title, Chapter.outline_json)
-                .where(
-                    Chapter.volume_id == vid,
-                    Chapter.chapter_idx > chapter_idx,
-                )
-                .order_by(Chapter.chapter_idx.asc())
-                .limit(10)
-            )
-            for row in future_result.all():
+            # Next 10 chapters outline direction
+            for ch in future_chapters[:10]:
                 outline_summary = ""
-                if row.outline_json:
-                    # Extract key direction from outline
-                    oj = row.outline_json
+                if ch.outline_json:
+                    oj = ch.outline_json
                     if isinstance(oj, dict):
                         outline_summary = oj.get("summary", "") or oj.get(
                             "main_plot", ""
                         )
                     elif isinstance(oj, str):
                         outline_summary = oj
-                direction = f"第{row.chapter_idx}章《{row.title or ''}》: {outline_summary}"
+                direction = f"[CH-{ch.chapter_idx}]《{ch.title or ''}》: {outline_summary}"
                 pack.future_outlines.append(direction)
 
-            # v1.7.4 P0-1: load book + volume outline so chapter generation
-            # sees the global picture (was missing in v1.7.3 and earlier).
+            # v1.7.4 P0-1: load book + volume outline in one query.
             try:
-                book_outline_q = await db.execute(
-                    select(Outline.content_json)
-                    .where(Outline.project_id == pid, Outline.level == "book")
-                    .order_by(Outline.version.desc())
-                    .limit(1)
-                )
-                bo = book_outline_q.scalar_one_or_none()
-                if isinstance(bo, dict):
-                    raw = bo.get("raw_text") or bo.get("summary") or ""
-                    if isinstance(raw, str) and raw.strip():
-                        # keep head 1500 + tail 500 chars to give both setup and
-                        # endgame anchors without blowing budget.
-                        if len(raw) > 2200:
-                            pack.book_outline_excerpt = (
-                                raw[:1500].rstrip()
-                                + "\n\n…(中部省略)…\n\n"
-                                + raw[-500:].lstrip()
-                            )
-                        else:
-                            pack.book_outline_excerpt = raw
-            except Exception as e:
-                logger.warning("Failed to load book outline: %s", e)
-
-            try:
-                vol_outline_q = await db.execute(
-                    select(Outline.content_json)
+                outline_q = await db.execute(
+                    select(Outline.content_json, Outline.level, Outline.version)
                     .where(
                         Outline.project_id == pid,
-                        Outline.level == "volume",
+                        Outline.level.in_(("book", "volume")),
                     )
                     .order_by(Outline.version.desc())
                 )
-                for vo_row in vol_outline_q.scalars().all():
-                    if isinstance(vo_row, dict) and (
-                        vo_row.get("volume_idx") is None
-                        or str(vo_row.get("volume_id", vid)) == vid
-                    ):
-                        # match by volume_id when present, otherwise take first
-                        pack.volume_outline = vo_row
-                        break
-                if not pack.volume_outline:
-                    # fallback: take the most recent volume outline
-                    fallback = await db.execute(
-                        select(Outline.content_json)
-                        .where(
-                            Outline.project_id == pid,
-                            Outline.level == "volume",
-                        )
-                        .order_by(Outline.version.desc())
-                        .limit(1)
-                    )
-                    fb = fallback.scalar_one_or_none()
-                    if isinstance(fb, dict):
-                        pack.volume_outline = fb
+                outline_rows = outline_q.all()
+                book_outline_found = False
+                volume_fallback = None
+                for content_json, level, _ver in outline_rows:
+                    if level == "book" and not book_outline_found:
+                        book_outline_found = True
+                        if isinstance(content_json, dict):
+                            raw = content_json.get("raw_text") or content_json.get("summary") or ""
+                            if isinstance(raw, str) and raw.strip():
+                                if len(raw) > 2200:
+                                    pack.book_outline_excerpt = (
+                                        raw[:1500].rstrip()
+                                        + "\n\n…(中部省略)…\n\n"
+                                        + raw[-500:].lstrip()
+                                    )
+                                else:
+                                    pack.book_outline_excerpt = raw
+                    elif level == "volume":
+                        if isinstance(content_json, dict):
+                            if not pack.volume_outline and (
+                                content_json.get("volume_idx") is None
+                                or str(content_json.get("volume_id", vid)) == vid
+                            ):
+                                pack.volume_outline = content_json
+                            if volume_fallback is None:
+                                volume_fallback = content_json
+                if not pack.volume_outline and volume_fallback:
+                    pack.volume_outline = volume_fallback
             except Exception as e:
-                logger.warning("Failed to load volume outline: %s", e)
+                logger.warning("Failed to load outlines (project=%s, ch=%d): %s", pid, chapter_idx, e)
 
             # Also try to get summaries from previous volumes if we're at
             # the start of a volume
@@ -973,8 +961,10 @@ class ContextPackBuilder:
                 for vs in reversed(list(vol_summaries)):
                     pack.recent_summaries.insert(0, f"[前卷摘要] {vs}")
 
+        except SQLAlchemyError:
+            raise
         except Exception as e:
-            logger.warning("Failed to build proximity layer: %s", e)
+            logger.warning("Failed to build proximity layer (project=%s, ch=%d): %s", str(project_id), chapter_idx, e)
 
     # ------------------------------------------------------------------
     # Layer 2: Facts
@@ -1009,8 +999,10 @@ class ContextPackBuilder:
             )
             for row in rules_result.all():
                 pack.world_rules.append(f"[{row.category}] {row.rule_text}")
+        except SQLAlchemyError:
+            raise
         except Exception as e:
-            logger.warning("Failed to load world rules: %s", e)
+            logger.warning("Failed to load world rules (project=%s): %s", pid, e)
 
         # Character cards from PostgreSQL characters + Neo4j state
         try:
@@ -1077,8 +1069,10 @@ class ContextPackBuilder:
             await self._enrich_characters_from_neo4j(
                 pack, pid, chapter_idx
             )
+        except SQLAlchemyError:
+            raise
         except Exception as e:
-            logger.warning("Failed to load character cards: %s", e)
+            logger.warning("Failed to load character cards (project=%s, ch=%d): %s", pid, chapter_idx, e)
 
         # Foreshadow triplets
         try:
@@ -1095,7 +1089,7 @@ class ContextPackBuilder:
                 conditions = fs.resolve_conditions_json or []
                 blueprint = fs.resolution_blueprint_json or {}
                 triplet = CFPGTriplet(
-                    cause=f"第{fs.planted_chapter}章: {fs.description}",
+                    cause=f"[CH-{fs.planted_chapter}]: {fs.description}",
                     foreshadow=fs.description,
                     payoff_goal=blueprint.get("goal", "") or (
                         conditions[0] if conditions else "待定"
@@ -1126,9 +1120,9 @@ class ContextPackBuilder:
                 debt = compute_debt_score(fs_rows, int(debt_idx))
                 pack.foreshadow_debt_warning = render_debt_warning(debt)
             except Exception as e:
-                logger.warning("Failed to compute foreshadow debt: %s", e)
+                logger.warning("Failed to compute foreshadow debt (project=%s, ch=%d): %s", pid, chapter_idx, e)
         except Exception as e:
-            logger.warning("Failed to load foreshadow triplets: %s", e)
+            logger.warning("Failed to load foreshadow triplets (project=%s, ch=%d): %s", pid, chapter_idx, e)
 
         # Timeline anchors from chapter summaries with key events
         try:

@@ -356,7 +356,7 @@ def format_active_foreshadows_for_prompt(items: list[dict]) -> str:
         hint = it.get("hint") or ""
         hint_part = f"  提示：{hint}" if hint else ""
         lines.append(
-            f"  {i}. [{it.get('type','伏笔')}] (埋于第{it.get('planted_chapter')}章{age_text}) {it.get('description','')}"
+            f"  {i}. [{it.get('type','伏笔')}] (埋于 [CH-{it.get('planted_chapter')}]{age_text}) {it.get('description','')}"
         )
         if hint_part:
             lines.append(hint_part)

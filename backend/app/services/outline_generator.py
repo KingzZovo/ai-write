@@ -1442,16 +1442,31 @@ class OutlineGenerator:
             meta = self._fallback_volume_meta(book_outline, volume_idx, user_notes)
 
         # Normalize chapter_count to int; fall back gracefully.
+        # PR-OUTLINE-JSON-REPAIR (2026-07-04): json_repair can now recover a
+        # PARTIAL meta from a truncated stream (e.g. only volume_idx/title/
+        # core_conflict, no chapter_count). Such a meta lacks chapter_count but
+        # is NOT flagged _parse_error, so it previously fell through here, hit
+        # int(None), and aborted V2 with 0 chapters — worse than a clean
+        # fallback. Backfill the count (and any other missing meta fields) from
+        # _fallback_volume_meta while keeping the recovered on-genre fields.
         raw_cc = meta.get("chapter_count")
         try:
             chapter_count = int(raw_cc)
         except (TypeError, ValueError):
             logger.warning(
-                "Staged volume outline: invalid chapter_count=%r, skipping V2",
+                "Staged volume outline: missing/invalid chapter_count=%r; "
+                "backfilling meta from fallback",
                 raw_cc,
             )
-            meta.setdefault("chapter_summaries", [])
-            return meta
+            fallback = self._fallback_volume_meta(book_outline, volume_idx, user_notes)
+            for key, value in fallback.items():
+                if not meta.get(key):
+                    meta[key] = value
+            try:
+                chapter_count = int(meta.get("chapter_count"))
+            except (TypeError, ValueError):
+                meta.setdefault("chapter_summaries", [])
+                return meta
         meta["chapter_count"] = chapter_count
 
         if chapter_count <= 0:
@@ -1700,6 +1715,21 @@ class OutlineGenerator:
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError as exc:
+            # PR-OUTLINE-JSON-REPAIR (2026-07-04): the relay frequently returns
+            # truncated / unterminated JSON for a single volume batch (hit
+            # max_tokens or mid-stream cut). The hand-rolled regex repair above
+            # only fixes delimiter slips, not unclosed strings/brackets, so the
+            # whole volume was voided (_parse_error → 0 chapters materialized).
+            # Fall back to json_repair (already used by prompt_registry) which
+            # closes dangling structures, recovering the batch instead of
+            # discarding it. Empty/unrecoverable results still fail cleanly.
+            try:
+                from json_repair import loads as _repair_loads
+                repaired = _repair_loads(cleaned)
+                if repaired not in ("", None, [], {}):
+                    return repaired
+            except Exception:  # noqa: BLE001
+                pass
             preview = cleaned[:500].replace("\n", " ")
             logger.warning("Failed to parse outline JSON: %s; preview=%s", exc, preview)
             return {"raw_text": text, "_parse_error": True}
