@@ -39,5 +39,37 @@ class Settings(BaseSettings):
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production"
 
+    # --- CORS ---
+    CORS_ORIGINS: str = "http://localhost:3100,http://localhost:8080"
+
+    # --- Generation ---
+    SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS: float = 840.0
+    SYNC_SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS: float = 840.0
+    SYNC_SINGLE_SHOT_LLM_RETRY_ATTEMPTS: int = 1
+    SINGLE_SHOT_LLM_RETRY_ATTEMPTS: int = 1
+    SINGLE_SHOT_LLM_STREAM: bool = False
+    SINGLE_SHOT_LLM_BUDGET_ENDPOINTS: int = 2
+    SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS: float = 420.0
+    FORCE_DIRECT_CHAPTER: bool = False
+    SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS: float = 600.0
+    CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS: float = 420.0
+    CHAPTER_PIPELINE_ENABLED: bool = True
+    LOGIC_CRITIC_MAX_ROUNDS: int = 2
+    CHAPTER_MAX_REWRITE_ROUNDS: int = 2
+    QUALITY_GATE_PERSIST_ON_BLOCK: bool = True
+
+    # --- Scene Planner ---
+    ALLOW_SCENE_PLANNER_FALLBACK: bool = True
+    SCENE_PLANNER_TIMEOUT_SECONDS: float = 180.0
+    SCENE_PLANNER_TIMEOUT_HARD_CAP_SECONDS: float = 240.0
+
+    # --- Reference Ingestor ---
+    STYLE_REDACTION_ENABLED: bool = True
+    REFERENCE_INGEST_CONCURRENCY: int = 3
+    DECOMPILE_MAX_AUTO_RETRIES: int = 5
+    DECOMPILE_RETRY_INITIAL_DELAY: int = 300
+    DECOMPILE_RETRY_BACKOFF_FACTOR: float = 2.0
+    DECOMPILE_RETRY_WAVE_BATCH: int = 50
+
 
 settings = Settings()

@@ -25,6 +25,7 @@ from app.db.qdrant import close_qdrant, init_qdrant
 from app.db.redis import close_redis, init_redis
 from app.observability.logging import setup_logging
 from app.observability.sentry_init import init_sentry
+from app.config import settings as app_settings
 
 # Initialize structured JSON logging before any other side-effecting import.
 setup_logging()
@@ -224,14 +225,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.environ.get("CORS_ORIGIN", "http://localhost:3100"),
-        "http://localhost:8080",
-    ],
+    allow_origins=[o.strip() for o in app_settings.CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.add_middleware(AuthMiddleware)
 app.add_middleware(QuotaMiddleware)
 # RequestLoggingMiddleware is registered *last* via add_middleware so it ends

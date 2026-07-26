@@ -37,12 +37,11 @@ def _single_shot_llm_timeout_kwargs(fallback_timeout: float) -> dict[str, float 
     text in the database. The env toggle keeps the behavior reusable across
     chapters/projects without hard-coding a chapter-specific workaround.
     """
-    import os as _os
+    from app.config import settings as _settings
 
-    configured = float(_os.getenv("SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS", "840"))
-    retry_attempts = int(_os.getenv("SINGLE_SHOT_LLM_RETRY_ATTEMPTS", "1"))
-    stream_raw = str(_os.getenv("SINGLE_SHOT_LLM_STREAM", "0")).strip().lower()
-    use_stream = stream_raw in {"1", "true", "yes", "on"}
+    configured = _settings.SINGLE_SHOT_LLM_REQUEST_TIMEOUT_SECONDS
+    retry_attempts = _settings.SINGLE_SHOT_LLM_RETRY_ATTEMPTS
+    use_stream = _settings.SINGLE_SHOT_LLM_STREAM
     outer = max(float(fallback_timeout or 0), 60.0)
     leave_commit_margin = max(30.0, outer - 30.0)
 
@@ -54,9 +53,9 @@ def _single_shot_llm_timeout_kwargs(fallback_timeout: float) -> dict[str, float 
     # fallback still works for fast failures while avoiding two guaranteed long
     # timeouts. Streaming keeps the split budget because it can surface chunks.
     if use_stream:
-        assumed_endpoints = max(1, int(_os.getenv("SINGLE_SHOT_LLM_BUDGET_ENDPOINTS", "2")))
+        assumed_endpoints = max(1, _settings.SINGLE_SHOT_LLM_BUDGET_ENDPOINTS)
     else:
-        assumed_endpoints = max(1, int(_os.getenv("SINGLE_SHOT_LLM_BUDGET_ENDPOINTS", "1")))
+        assumed_endpoints = max(1, _settings.SINGLE_SHOT_LLM_BUDGET_ENDPOINTS)
     endpoint_budget = max(30.0, (outer - 50.0) / float(assumed_endpoints))
     request_timeout = max(30.0, min(configured, leave_commit_margin, endpoint_budget))
     return {"request_timeout": request_timeout, "retry_attempts": retry_attempts, "stream": use_stream}
@@ -699,7 +698,7 @@ async def _run_async_generation_impl(task_id: str):
                             pass
                 generated_chapter_user_instr = user_instr
                 import asyncio as _asyncio
-                import os as _os
+                from app.config import settings as _settings
                 # Scene-mode is preferred for quality, but operators must be able to
                 # bypass the unstable JSON scene_planner when it repeatedly causes
                 # running+0 chars. When force_direct_chapter/skip_scene_planner is set,
@@ -708,7 +707,7 @@ async def _run_async_generation_impl(task_id: str):
                 _force_direct = bool(
                     params.get("force_direct_chapter")
                     or params.get("skip_scene_planner")
-                    or _os.getenv("FORCE_DIRECT_CHAPTER", "0") == "1"
+                    or _settings.FORCE_DIRECT_CHAPTER
                 )
                 last_scene_err: Exception | None = None
                 # v1.12 L2: Hard timeout guard to prevent Celery tasks from
@@ -718,7 +717,7 @@ async def _run_async_generation_impl(task_id: str):
                 # The API may request a very long scene timeout, but a chapter task must not
                 # sit at running+0 chars while planner/writer is stuck. Clamp by default and
                 # fall back to single-shot prose if scene-mode cannot emit.
-                _scene_timeout_cap = float(_os.getenv("SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS", "600"))
+                _scene_timeout_cap = _settings.SCENE_MODE_TIMEOUT_HARD_CAP_SECONDS
                 _scene_timeout = min(_scene_timeout_requested, _scene_timeout_cap)
 
                 if _force_direct:
@@ -736,7 +735,7 @@ async def _run_async_generation_impl(task_id: str):
                     try:
                         fallback_timeout = float(
                             params.get("fallback_timeout_seconds")
-                            or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                            or _settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS
                         )
                         llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                         fallback_instr = (
@@ -921,7 +920,7 @@ async def _run_async_generation_impl(task_id: str):
                     try:
                         fallback_timeout = float(
                             params.get("fallback_timeout_seconds")
-                            or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                            or _settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS
                         )
                         llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                         fallback_instr = (
@@ -988,7 +987,7 @@ async def _run_async_generation_impl(task_id: str):
                 logger.warning("Async generation: scene-mode completed with empty text; running direct fallback task_id=%s", task_id)
                 fallback_timeout = float(
                     params.get("fallback_timeout_seconds")
-                    or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                    or _settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS
                 )
                 llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                 fallback_text = await _asyncio.wait_for(
@@ -1251,7 +1250,7 @@ async def _run_async_generation_impl(task_id: str):
                         try:
                             fallback_timeout = float(
                                 params.get("fallback_timeout_seconds")
-                                or _os.getenv("SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS", "420")
+                                or _settings.SINGLE_SHOT_FALLBACK_TIMEOUT_SECONDS
                             )
                             llm_timeout_kwargs = _single_shot_llm_timeout_kwargs(fallback_timeout)
                             force_revise_instr = (
@@ -1342,7 +1341,7 @@ async def _run_async_generation_impl(task_id: str):
 
                         quality_gate_timeout = float(
                             params.get("quality_gate_timeout_seconds")
-                            or _os.getenv("CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS", "420")
+                            or _settings.CHAPTER_QUALITY_GATE_TIMEOUT_SECONDS
                         )
                         quality_result = await _asyncio_qg.wait_for(
                             apply_chapter_quality_gate(

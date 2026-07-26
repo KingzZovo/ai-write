@@ -125,7 +125,7 @@ async def test_pipeline_disabled_delegates_to_quality_gate(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from types import SimpleNamespace
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "0")
+    monkeypatch.setattr(cp, "_pipeline_enabled", lambda: False)
 
     qg = SimpleNamespace(status="passed", final_text="QG终稿",
                          to_safe_metadata=lambda: {"status": "passed"})
@@ -165,8 +165,8 @@ async def test_clean_draft_skips_rewrite(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from app.services.logic_critic import LogicCriticReport
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
-    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "2")
+    monkeypatch.setattr(cp, "_pipeline_enabled", lambda: True)
+    monkeypatch.setattr(cp, "_max_logic_rounds", lambda: 2)
 
     async def clean_critic(**k):
         return LogicCriticReport(available=True, clean=True, issues=[])
@@ -199,8 +199,8 @@ async def test_high_issue_rewrites_then_verifies_clean(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from app.services.logic_critic import LogicCriticReport, LogicIssue
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
-    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "2")
+    monkeypatch.setattr(cp, "_pipeline_enabled", lambda: True)
+    monkeypatch.setattr(cp, "_max_logic_rounds", lambda: 2)
 
     issue = LogicIssue("spatial_direction", "high", "往下跑", "矛盾", "删", True)
     seq = [
@@ -234,8 +234,8 @@ async def test_plateau_stops_loop(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from app.services.logic_critic import LogicCriticReport, LogicIssue
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
-    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "3")
+    monkeypatch.setattr(cp, "_pipeline_enabled", lambda: True)
+    monkeypatch.setattr(cp, "_max_logic_rounds", lambda: 3)
 
     issue = LogicIssue("span_jump", "high", "跨度", "突变", "补衔接", True)
 
@@ -268,7 +268,7 @@ async def test_critic_unavailable_degrades(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from app.services.logic_critic import LogicCriticReport
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
+    monkeypatch.setattr(cp, "_pipeline_enabled", lambda: True)
 
     async def down_critic(**k):
         return LogicCriticReport(available=False, clean=False, issues=[])
@@ -296,8 +296,8 @@ async def test_max_rounds_cap(monkeypatch) -> None:
     import app.services.chapter_pipeline as cp
     from app.services.logic_critic import LogicCriticReport, LogicIssue
 
-    monkeypatch.setenv("CHAPTER_PIPELINE_ENABLED", "1")
-    monkeypatch.setenv("LOGIC_CRITIC_MAX_ROUNDS", "2")
+    monkeypatch.setattr(cp, "_pipeline_enabled", lambda: True)
+    monkeypatch.setattr(cp, "_max_logic_rounds", lambda: 2)
 
     reports = [
         LogicCriticReport(available=True, clean=False, issues=[

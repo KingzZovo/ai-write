@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
+from app.config import settings
 from datetime import datetime, timezone
 
 from qdrant_client import AsyncQdrantClient
@@ -50,14 +50,14 @@ from app.services.style_abstractor import abstract_style
 
 logger = logging.getLogger(__name__)
 
-_REDACTION_ENABLED = os.getenv("STYLE_REDACTION_ENABLED", "true").lower() in ("1", "true", "yes")
-_CONCURRENCY = int(os.getenv("REFERENCE_INGEST_CONCURRENCY", "3"))
+_REDACTION_ENABLED = settings.STYLE_REDACTION_ENABLED
+_CONCURRENCY = settings.REFERENCE_INGEST_CONCURRENCY
 # Maximum number of automatic retry waves scheduled by reprocess after a
 # partial run. The first retry runs ``DECOMPILE_RETRY_INITIAL_DELAY`` seconds
 # after the partial run completes; subsequent retries back off geometrically.
-_MAX_AUTO_RETRIES = int(os.getenv("DECOMPILE_MAX_AUTO_RETRIES", "5"))
-_RETRY_INITIAL_DELAY = int(os.getenv("DECOMPILE_RETRY_INITIAL_DELAY", "300"))
-_RETRY_BACKOFF_FACTOR = float(os.getenv("DECOMPILE_RETRY_BACKOFF_FACTOR", "2.0"))
+_MAX_AUTO_RETRIES = settings.DECOMPILE_MAX_AUTO_RETRIES
+_RETRY_INITIAL_DELAY = settings.DECOMPILE_RETRY_INITIAL_DELAY
+_RETRY_BACKOFF_FACTOR = settings.DECOMPILE_RETRY_BACKOFF_FACTOR
 # v1.14 — cap how many slices one retry wave processes. With 20k-slice
 # books a single wave would take ~28h to drain at semaphore=3, which
 # exceeds celery ``visibility_timeout=7200`` and causes the worker to
@@ -65,7 +65,7 @@ _RETRY_BACKOFF_FACTOR = float(os.getenv("DECOMPILE_RETRY_BACKOFF_FACTOR", "2.0")
 # under LLM credential cooldown, each branch can burn through multi-attempt
 # retries, so a 250+250 wave may still overrun the visibility window and be
 # redelivered. Operators can raise this once provider latency/cooldown clears.
-_RETRY_WAVE_BATCH = int(os.getenv("DECOMPILE_RETRY_WAVE_BATCH", "50"))
+_RETRY_WAVE_BATCH = settings.DECOMPILE_RETRY_WAVE_BATCH
 
 
 async def _qdrant_client() -> AsyncQdrantClient:
