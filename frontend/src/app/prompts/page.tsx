@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiFetch, getToken } from '@/lib/api'
 
 interface Endpoint {
@@ -38,7 +38,6 @@ interface PromptAsset {
   avg_score: number
   created_at: string
   updated_at: string
-  // v1.4.1 — per-task-type endpoint recommendation (chat vs embedding).
   recommendation?: {
     kind: 'chat' | 'embedding' | string
     tier: string
@@ -46,9 +45,22 @@ interface PromptAsset {
   } | null
 }
 
+interface MatrixRow {
+  task_type: string
+  mode: string
+  prompt_id: string
+  prompt_name: string
+  endpoint_id: string | null
+  endpoint_name: string | null
+  endpoint_tier: string | null
+  model_name: string | null
+  model_tier: string | null
+  effective_tier: string
+  overridden: boolean
+}
+
 const MODE_LABELS: Record<string, string> = { text: '文本', structured: '结构化(JSON)' }
 
-// v1.4 — LLM tier enum (matches backend).
 const TIER_OPTIONS = [
   { value: '', label: '— 继承端点 —' },
   { value: 'flagship', label: 'Flagship' },
@@ -57,6 +69,7 @@ const TIER_OPTIONS = [
   { value: 'distill', label: 'Distill' },
   { value: 'embedding', label: 'Embedding' },
 ]
+
 const TIER_BADGE_CLASS: Record<string, string> = {
   flagship: 'bg-purple-50 text-purple-700',
   standard: 'bg-blue-50 text-blue-700',
@@ -65,7 +78,6 @@ const TIER_BADGE_CLASS: Record<string, string> = {
   embedding: 'bg-emerald-50 text-emerald-700',
 }
 
-// v1.5.0 B2 — recommendation mismatch soft-guard payload (HTTP 409 detail).
 interface RecommendationMismatchPayload {
   code?: 'recommendation_mismatch' | string
   task_type?: string
@@ -81,13 +93,6 @@ interface RecommendationMismatchPayload {
   tier_mismatch?: boolean
 }
 
-/**
- * v1.5.0 B2 — raw fetch wrapper for prompt POST/PUT that surfaces 409 mismatch
- * payloads instead of swallowing them in a generic Error. Re-implements the
- * minimal subset of `apiFetch` we need (auth header + JSON parsing). The
- * standard `apiFetch` stringifies error.detail into a plain Error, which
- * loses the structured fields we need to render the confirm dialog.
- */
 async function savePromptWithGuard(
   path: string,
   method: 'POST' | 'PUT',
@@ -98,12 +103,7 @@ async function savePromptWithGuard(
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     const token = getToken()
     if (token) headers['Authorization'] = `Bearer ${token}`
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: JSON.stringify(body),
-    })
-    return res
+    return fetch(url, { method, headers, body: JSON.stringify(body) })
   }
 
   let res = await trySave(false)
@@ -120,25 +120,26 @@ async function savePromptWithGuard(
       const msg =
         `警告：当前绑定的端点与推荐不一致。\n\n` +
         `任务类型：${detail.task_type ?? '?'}\n` +
-        `推荐：${recDesc}\n` +
-        `当前：${curDesc}·${detail.endpoint_name ?? '?'}\n` +
+        `推荐：${recDesc}\n当前：${curDesc}·${detail.endpoint_name ?? '?'}\n` +
         (detail.recommendation_reason ? `原因：${detail.recommendation_reason}\n` : '') +
         `\n仍要保存吗？`
-      if (!window.confirm(msg)) {
-        return { ok: false, mismatch: detail }
-      }
+      if (!window.confirm(msg)) return { ok: false, mismatch: detail }
       res = await trySave(true)
     }
   }
-  if (res.status === 401) {
-    throw new Error('Unauthorized')
-  }
+  if (res.status === 401) throw new Error('Unauthorized')
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const msg = typeof err.detail === 'string' ? err.detail : 'API Error'
-    throw new Error(msg)
+    throw new Error(typeof err.detail === 'string' ? err.detail : 'API Error')
   }
   return { ok: true }
+}
+
+
+function TierBadge({ tier }: { tier: string | null | undefined }) {
+  if (!tier) return <span className="text-[10px] text-gray-400">—</span>
+  const cls = TIER_BADGE_CLASS[tier] ?? 'bg-gray-100 text-gray-700'
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cls}`}>{tier}</span>
 }
 
 export default function PromptsPage() {
@@ -147,8 +148,12 @@ export default function PromptsPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PromptAsset | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  // v1.4 — filter by endpoint (empty string = all).
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filterEndpointId, setFilterEndpointId] = useState<string>('')
+  const [view, setView] = useState<'list' | 'matrix'>('list')
+  const [matrixRows, setMatrixRows] = useState<MatrixRow[]>([])
+  const [matrixLoading, setMatrixLoading] = useState(false)
+  const [tierFilter, setTierFilter] = useState<string>('')
 
   const fetchPrompts = useCallback(async () => {
     try {
@@ -165,7 +170,18 @@ export default function PromptsPage() {
     } catch { /* */ }
   }, [])
 
+  const fetchMatrix = useCallback(async (tier: string) => {
+    setMatrixLoading(true)
+    try {
+      const qs = tier ? `?tier=${encodeURIComponent(tier)}` : ''
+      const data = await apiFetch<{ rows: MatrixRow[] }>(`/api/llm-routing/matrix${qs}`)
+      setMatrixRows(Array.isArray(data?.rows) ? data.rows : [])
+    } catch { setMatrixRows([]) }
+    finally { setMatrixLoading(false) }
+  }, [])
+
   useEffect(() => { fetchPrompts(); fetchEndpoints() }, [fetchPrompts, fetchEndpoints])
+  useEffect(() => { if (view === 'matrix') fetchMatrix(tierFilter) }, [view, tierFilter, fetchMatrix])
 
   const handleDelete = async (id: string) => {
     if (!confirm('确定删除此 Prompt？')) return
@@ -174,15 +190,10 @@ export default function PromptsPage() {
   }
 
   const patchField = async (id: string, patch: Partial<PromptAsset>) => {
-    await apiFetch(`/api/prompts/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(patch),
-    })
+    await apiFetch(`/api/prompts/${id}`, { method: 'PUT', body: JSON.stringify(patch) })
     fetchPrompts()
   }
 
-  // Group by category, sort each by order
-  // v1.4 — apply endpoint filter before grouping.
   const visiblePrompts = filterEndpointId
     ? prompts.filter(p => (p.endpoint_id || '') === filterEndpointId)
     : prompts
@@ -195,46 +206,75 @@ export default function PromptsPage() {
     arr.sort((a, b) => (a.order || 0) - (b.order || 0) || a.version - b.version)
   )
 
+  const matrixGrouped = useMemo(() => {
+    const order: string[] = []
+    const map = new Map<string, MatrixRow[]>()
+    for (const r of matrixRows) {
+      if (!map.has(r.task_type)) { order.push(r.task_type); map.set(r.task_type, []) }
+      map.get(r.task_type)!.push(r)
+    }
+    return order.map(t => ({ task_type: t, rows: map.get(t)! }))
+  }, [matrixRows])
+
   return (
     <div className="pt-14 px-4 md:px-8 max-w-5xl mx-auto pb-12">
-      <div className="flex items-end justify-between mb-8">
+      {/* Header */}
+      <div className="flex items-end justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Prompt 注册表</h1>
-          <p className="text-sm text-gray-500 mt-1">每个 Prompt 绑定独立端点 · 版本化 · 调用可追溯</p>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Prompt 管理</h1>
+          <p className="text-sm text-gray-500 mt-1">注册表 + 路由矩阵</p>
         </div>
         <button onClick={() => { setEditing(null); setShowCreate(true) }}
           className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-          + 新建 Prompt
+          + 新建
         </button>
       </div>
 
-      {/* v1.4 — endpoint filter bar */}
-      <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
-        <span>端点过滤：</span>
-        <select
-          data-testid="prompt-endpoint-filter"
-          value={filterEndpointId}
-          onChange={e => setFilterEndpointId(e.target.value)}
-          className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
-        >
-          <option value="">全部 ({prompts.length})</option>
-          {endpoints.map(ep => {
-            const count = prompts.filter(p => p.endpoint_id === ep.id).length
-            return (
-              <option key={ep.id} value={ep.id}>
-                {ep.name} · {ep.tier || 'standard'} ({count})
-              </option>
-            )
-          })}
-        </select>
-        {filterEndpointId && (
+      {/* View toggle + filters */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
-            onClick={() => setFilterEndpointId('')}
-            className="text-[11px] text-gray-400 hover:text-gray-600 underline"
-          >清除</button>
+            onClick={() => setView('list')}
+            className={`px-3 py-1.5 ${view === 'list' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+          >列表</button>
+          <button
+            onClick={() => setView('matrix')}
+            className={`px-3 py-1.5 ${view === 'matrix' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+          >路由矩阵</button>
+        </div>
+
+        {view === 'list' && (
+          <select
+            value={filterEndpointId}
+            onChange={e => setFilterEndpointId(e.target.value)}
+            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
+          >
+            <option value="">全部端点 ({prompts.length})</option>
+            {endpoints.map(ep => (
+              <option key={ep.id} value={ep.id}>
+                {ep.name} · {ep.tier || 'standard'} ({prompts.filter(p => p.endpoint_id === ep.id).length})
+              </option>
+            ))}
+          </select>
+        )}
+
+        {view === 'matrix' && (
+          <select
+            value={tierFilter}
+            onChange={e => setTierFilter(e.target.value)}
+            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
+          >
+            <option value="">全部等级</option>
+            <option value="flagship">旗舰</option>
+            <option value="standard">常规</option>
+            <option value="small">轻量</option>
+            <option value="distill">蒸馏</option>
+            <option value="embedding">向量嵌入</option>
+          </select>
         )}
       </div>
 
+      {/* Create/Edit form */}
       {(showCreate || editing) && (
         <PromptForm
           prompt={editing}
@@ -244,177 +284,176 @@ export default function PromptsPage() {
         />
       )}
 
-      {loading ? (
-        <p className="text-sm text-gray-400 text-center py-16">加载中...</p>
-      ) : prompts.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-16">暂无 Prompt</p>
-      ) : (
-        <div className="space-y-6">
-          {Object.entries(grouped).map(([category, assets]) => (
-            <section key={category}>
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">
-                {category}
-              </h2>
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                {assets.map(p => {
-                  const totalCalls = p.success_count + p.fail_count
-                  const successRate = totalCalls > 0 ? Math.round(p.success_count / totalCalls * 100) : 0
-                  const endpoint = endpoints.find(e => e.id === p.endpoint_id)
-                  return (
-                    <div
-                      key={p.id}
-                      className={`px-5 py-3 border-b border-gray-50 last:border-b-0 ${!p.is_active ? 'opacity-50' : ''}`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-gray-800">{p.name}</span>
-                          <code className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-500 rounded">{p.task_type}</code>
-                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">v{p.version}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{MODE_LABELS[p.mode] || p.mode}</span>
-                          {/* v1.4 — model_tier badge (inherits endpoint.tier when null) */}
-                          {(() => {
-                            const effTier = p.model_tier || endpoint?.tier || 'standard'
-                            const overridden = !!p.model_tier && !!endpoint && p.model_tier !== endpoint.tier
-                            return (
-                              <span
-                                data-testid="prompt-tier-badge"
-                                data-tier={effTier}
-                                data-overridden={overridden ? '1' : '0'}
-                                className={`text-[10px] px-1.5 py-0.5 rounded ${TIER_BADGE_CLASS[effTier] || 'bg-gray-100 text-gray-700'}`}
-                                title={p.model_tier ? `模型等级覆盖 = ${p.model_tier}` : `继承端点等级 = ${effTier}`}
-                              >
-                                {effTier}{overridden ? '*' : ''}
-                              </span>
-                            )
-                          })()}
-                          {/* v1.4.1 — per-task-type endpoint recommendation badge.
-                              Tells the operator whether this prompt should be
-                              bound to a thinking (chat) endpoint or an embedding
-                              endpoint, and if chat, at what tier. */}
-                          {p.recommendation && (() => {
-                            const rec = p.recommendation!
-                            const isEmbedding = rec.kind === 'embedding'
-                            const label = isEmbedding
-                              ? '建议 embedding'
-                              : `建议 思考·${rec.tier}`
-                            const cls = isEmbedding
-                              ? 'border border-emerald-300 text-emerald-700 bg-white'
-                              : rec.tier === 'flagship'
-                              ? 'border border-purple-300 text-purple-700 bg-white'
-                              : rec.tier === 'standard'
-                              ? 'border border-blue-300 text-blue-700 bg-white'
-                              : rec.tier === 'distill'
-                              ? 'border border-amber-300 text-amber-700 bg-white'
-                              : 'border border-gray-300 text-gray-600 bg-white'
-                            return (
-                              <span
-                                data-testid="prompt-recommendation-badge"
-                                data-recommendation-kind={rec.kind}
-                                data-recommendation-tier={rec.tier}
-                                className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}
-                                title={rec.reason}
-                              >
-                                {label}
-                              </span>
-                            )
-                          })()}
-                          {p.always_enabled === 1 && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">always-on</span>
-                          )}
-                          {p.is_active === 1 ? (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded-full">激活</span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded-full">历史</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-400">
-                          {totalCalls > 0 && <span>调用 {totalCalls} 次 · 成功率 {successRate}%</span>}
-                        </div>
-                      </div>
 
-                      {p.description && <p className="text-xs text-gray-500 mb-2">{p.description}</p>}
+      {/* LIST VIEW */}
+      {view === 'list' && (
+        loading ? (
+          <p className="text-sm text-gray-400 text-center py-16">加载中...</p>
+        ) : prompts.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-16">暂无 Prompt</p>
+        ) : (
+          <div className="space-y-6">
+            {Object.entries(grouped).map(([category, assets]) => (
+              <section key={category}>
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">
+                  {category}
+                </h2>
+                <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                  {assets.map(p => {
+                    const isExpanded = expandedId === p.id
+                    const endpoint = endpoints.find(e => e.id === p.endpoint_id)
+                    const effTier = p.model_tier || endpoint?.tier || 'standard'
+                    return (
+                      <div key={p.id} className={`${!p.is_active ? 'opacity-50' : ''}`}>
+                        {/* Collapsed row */}
+                        <div
+                          className="px-5 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50"
+                          onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                        >
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <span className="text-sm font-medium text-gray-800 truncate">{p.name}</span>
+                            <code className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-500 rounded">{p.task_type}</code>
+                            <TierBadge tier={effTier} />
+                            {endpoint && <span className="text-[10px] text-gray-400">{endpoint.name}</span>}
+                            {!p.is_active && <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded-full">历史</span>}
+                          </div>
+                          <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        </div>
 
-                      {/* Routing controls (v0.5) */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
-                        <div>
-                          <label className="block text-[10px] text-gray-400 mb-0.5">端点</label>
-                          <select
-                            value={p.endpoint_id || ''}
-                            onChange={e => patchField(p.id, { endpoint_id: e.target.value || null })}
-                            className="w-full px-2 py-1 text-xs border border-gray-200 rounded bg-white"
-                          >
-                            <option value="">-- 未分配 --</option>
-                            {endpoints.map(ep => (
-                              <option key={ep.id} value={ep.id}>{ep.name} ({ep.provider_type})</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-gray-400 mb-0.5">模型覆盖</label>
-                          <input
-                            type="text"
-                            defaultValue={p.model_name}
-                            placeholder={endpoint?.default_model || '使用端点默认'}
-                            onBlur={e => {
-                              if (e.target.value !== p.model_name) {
-                                patchField(p.id, { model_name: e.target.value })
-                              }
-                            }}
-                            className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-gray-400 mb-0.5">温度 {p.temperature?.toFixed(1)}</label>
-                          <input
-                            type="range" min="0" max="1" step="0.1"
-                            defaultValue={p.temperature}
-                            onMouseUp={e => {
-                              const v = parseFloat((e.target as HTMLInputElement).value)
-                              if (v !== p.temperature) patchField(p.id, { temperature: v })
-                            }}
-                            className="w-full"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-gray-400 mb-0.5">最大长度</label>
-                          <input
-                            type="number"
-                            defaultValue={p.max_tokens}
-                            min={1} max={131072}
-                            onBlur={e => {
-                              const v = parseInt(e.target.value) || 4096
-                              if (v !== p.max_tokens) patchField(p.id, { max_tokens: v })
-                            }}
-                            className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
-                          />
-                        </div>
-                      </div>
+                        {/* Expanded detail */}
+                        {isExpanded && (
+                          <div className="px-5 pb-4 pt-1 border-t border-gray-100 space-y-3">
+                            <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">{MODE_LABELS[p.mode] || p.mode}</span>
+                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">v{p.version}</span>
+                              {p.always_enabled === 1 && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">always-on</span>}
+                              {p.recommendation && (
+                                <span className="px-1.5 py-0.5 border border-purple-300 text-purple-700 rounded" title={p.recommendation.reason}>
+                                  建议 {p.recommendation.kind === 'embedding' ? 'embedding' : `思考·${p.recommendation.tier}`}
+                                </span>
+                              )}
+                              {(p.success_count + p.fail_count) > 0 && (
+                                <span className="text-gray-400">
+                                  调用 {p.success_count + p.fail_count} 次 · 成功率 {Math.round(p.success_count / (p.success_count + p.fail_count) * 100)}%
+                                </span>
+                              )}
+                            </div>
 
-                      <div className="bg-gray-50 rounded p-2 mb-2">
-                        <pre className="text-[11px] text-gray-600 whitespace-pre-wrap line-clamp-3 font-mono">{p.system_prompt}</pre>
-                      </div>
+                            {p.description && <p className="text-xs text-gray-500">{p.description}</p>}
 
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() => setEditing(p)}
-                          className="px-2.5 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                        >编辑</button>
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          className="px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100 ml-auto"
-                        >删除</button>
+                            {/* Routing controls */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              <div>
+                                <label className="block text-[10px] text-gray-400 mb-0.5">端点</label>
+                                <select
+                                  value={p.endpoint_id || ''}
+                                  onChange={e => patchField(p.id, { endpoint_id: e.target.value || null })}
+                                  className="w-full px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+                                >
+                                  <option value="">未分配</option>
+                                  {endpoints.map(ep => <option key={ep.id} value={ep.id}>{ep.name}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-gray-400 mb-0.5">模型覆盖</label>
+                                <input
+                                  type="text" defaultValue={p.model_name}
+                                  placeholder={endpoint?.default_model || '默认'}
+                                  onBlur={e => { if (e.target.value !== p.model_name) patchField(p.id, { model_name: e.target.value }) }}
+                                  className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-gray-400 mb-0.5">温度 {p.temperature?.toFixed(1)}</label>
+                                <input
+                                  type="range" min="0" max="1" step="0.1" defaultValue={p.temperature}
+                                  onMouseUp={e => { const v = parseFloat((e.target as HTMLInputElement).value); if (v !== p.temperature) patchField(p.id, { temperature: v }) }}
+                                  className="w-full"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-gray-400 mb-0.5">最大长度</label>
+                                <input
+                                  type="number" defaultValue={p.max_tokens} min={1} max={131072}
+                                  onBlur={e => { const v = parseInt(e.target.value) || 4096; if (v !== p.max_tokens) patchField(p.id, { max_tokens: v }) }}
+                                  className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
+                                />
+                              </div>
+                            </div>
+
+                            {/* System prompt preview */}
+                            <details className="group">
+                              <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">System Prompt</summary>
+                              <pre className="mt-1 text-[11px] text-gray-600 whitespace-pre-wrap font-mono bg-gray-50 rounded p-2 max-h-40 overflow-auto">{p.system_prompt}</pre>
+                            </details>
+
+                            <div className="flex gap-1.5 pt-1">
+                              <button onClick={() => setEditing(p)} className="px-2.5 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200">编辑</button>
+                              <button onClick={() => handleDelete(p.id)} className="px-2.5 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100 ml-auto">删除</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* MATRIX VIEW */}
+      {view === 'matrix' && (
+        matrixLoading ? (
+          <p className="text-sm text-gray-400 text-center py-16">加载中...</p>
+        ) : matrixRows.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-16">没有匹配的路由记录</p>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {matrixGrouped.map((group, gi) => (
+              <div key={group.task_type} className={gi > 0 ? 'border-t border-gray-200' : ''}>
+                <div className="bg-gray-50 px-4 py-2 text-sm font-medium text-gray-700">
+                  {group.task_type} <span className="text-xs text-gray-400">({group.rows.length})</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-gray-500 bg-white">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">模式</th>
+                      <th className="px-4 py-2 font-medium">Prompt</th>
+                      <th className="px-4 py-2 font-medium">端点</th>
+                      <th className="px-4 py-2 font-medium">模型</th>
+                      <th className="px-4 py-2 font-medium">生效等级</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.rows.map(r => (
+                      <tr key={`${r.task_type}:${r.mode}:${r.prompt_id}`} className="border-t border-gray-50">
+                        <td className="px-4 py-2 text-gray-700">{MODE_LABELS[r.mode] ?? r.mode}</td>
+                        <td className="px-4 py-2 text-gray-900 font-medium">{r.prompt_name}</td>
+                        <td className="px-4 py-2">
+                          {r.endpoint_name ? (
+                            <span className="text-gray-700">{r.endpoint_name} <TierBadge tier={r.endpoint_tier} /></span>
+                          ) : <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="px-4 py-2 text-gray-700">{r.model_name || <span className="text-gray-400">—</span>}</td>
+                        <td className="px-4 py-2">
+                          <TierBadge tier={r.effective_tier} />
+                          {r.overridden && <span className="ml-1 text-xs text-amber-600 font-semibold">*</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </section>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       )}
     </div>
   )
 }
+
 
 function PromptForm({
   prompt,
@@ -437,7 +476,6 @@ function PromptForm({
   const [category, setCategory] = useState(prompt?.category || 'Core')
   const [endpointId, setEndpointId] = useState<string>(prompt?.endpoint_id || '')
   const [modelName, setModelName] = useState(prompt?.model_name || '')
-  // v1.4 — model_tier override (empty string = inherit from endpoint).
   const [modelTier, setModelTier] = useState<string>(prompt?.model_tier || '')
   const [temperature, setTemperature] = useState(prompt?.temperature ?? 0.7)
   const [maxTokens, setMaxTokens] = useState(prompt?.max_tokens ?? 4096)
@@ -451,8 +489,7 @@ function PromptForm({
         const r = await savePromptWithGuard(`/api/prompts/${prompt.id}`, 'PUT', {
           name, description, system_prompt: systemPrompt, user_template: userTemplate,
           category, endpoint_id: endpointId || null, model_name: modelName,
-          model_tier: modelTier || null,
-          temperature, max_tokens: maxTokens,
+          model_tier: modelTier || null, temperature, max_tokens: maxTokens,
         })
         if (!r.ok) { setSaving(false); return }
       } else {
@@ -460,17 +497,14 @@ function PromptForm({
           task_type: taskType, name, description, mode,
           system_prompt: systemPrompt, user_template: userTemplate,
           category, endpoint_id: endpointId || null, model_name: modelName,
-          model_tier: modelTier || null,
-          temperature, max_tokens: maxTokens,
+          model_tier: modelTier || null, temperature, max_tokens: maxTokens,
         })
         if (!r.ok) { setSaving(false); return }
       }
       onSaved()
     } catch (e) {
       alert(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
+    } finally { setSaving(false) }
   }
 
   return (
@@ -483,134 +517,91 @@ function PromptForm({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">任务类型 *</label>
-          <input
-            value={taskType} onChange={e => setTaskType(e.target.value)} disabled={isEdit}
+          <input value={taskType} onChange={e => setTaskType(e.target.value)} disabled={isEdit}
             placeholder="如 outline_book, rewrite_emotion"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-gray-50"
-          />
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-gray-50" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">名称 *</label>
-          <input
-            value={name} onChange={e => setName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
+          <input value={name} onChange={e => setName(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">分类</label>
-          <input
-            value={category} onChange={e => setCategory(e.target.value)}
+          <input value={category} onChange={e => setCategory(e.target.value)}
             placeholder="核心 / 大纲 / 提取 / 编辑"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
         </div>
       </div>
 
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">描述</label>
-        <input
-          value={description} onChange={e => setDescription(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-        />
+        <input value={description} onChange={e => setDescription(e.target.value)}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="md:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">端点</label>
-          <select
-            value={endpointId} onChange={e => setEndpointId(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
-          >
+          <select value={endpointId} onChange={e => setEndpointId(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
             <option value="">-- 未分配 --</option>
-            {endpoints.map(ep => (
-              <option key={ep.id} value={ep.id}>{ep.name} ({ep.provider_type})</option>
-            ))}
+            {endpoints.map(ep => <option key={ep.id} value={ep.id}>{ep.name} ({ep.provider_type})</option>)}
           </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">模型覆盖</label>
-          <input
-            value={modelName} onChange={e => setModelName(e.target.value)}
+          <input value={modelName} onChange={e => setModelName(e.target.value)}
             placeholder="留空用默认"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">模式</label>
-          <select
-            value={mode} onChange={e => setMode(e.target.value)} disabled={isEdit}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-gray-50"
-          >
+          <select value={mode} onChange={e => setMode(e.target.value)} disabled={isEdit}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-gray-50">
             <option value="text">文本</option>
             <option value="structured">结构化 JSON</option>
           </select>
         </div>
       </div>
 
-      {/* v1.4 — model_tier override */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">模型等级覆盖</label>
-          <select
-            data-testid="prompt-model-tier-select"
-            value={modelTier}
-            onChange={e => setModelTier(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
-          >
-            {TIER_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
+          <label className="block text-xs font-medium text-gray-600 mb-1">模型等级</label>
+          <select value={modelTier} onChange={e => setModelTier(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white">
+            {TIER_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
-          <p className="mt-1 text-[11px] text-gray-500">
-            留空表示继承端点等级；显式指定后以此为准路由。
-          </p>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">温度: {temperature.toFixed(1)}</label>
-          <input
-            type="range" min="0" max="1" step="0.1" value={temperature}
-            onChange={e => setTemperature(parseFloat(e.target.value))}
-            className="w-full"
-          />
+          <input type="range" min="0" max="1" step="0.1" value={temperature}
+            onChange={e => setTemperature(parseFloat(e.target.value))} className="w-full" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">最大长度</label>
-          <input
-            type="number" value={maxTokens}
-            min={1} max={131072}
+          <input type="number" value={maxTokens} min={1} max={131072}
             onChange={e => setMaxTokens(parseInt(e.target.value) || 4096)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
         </div>
       </div>
 
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">System Prompt *</label>
-        <textarea
-          value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}
-          className="w-full h-40 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono resize-none"
-        />
+        <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}
+          className="w-full h-36 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono resize-none" />
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
-          User Template（可选，{'{{变量}}'}）
-        </label>
-        <textarea
-          value={userTemplate} onChange={e => setUserTemplate(e.target.value)}
-          className="w-full h-20 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono resize-none"
-        />
+        <label className="block text-xs font-medium text-gray-600 mb-1">User Template（可选）</label>
+        <textarea value={userTemplate} onChange={e => setUserTemplate(e.target.value)}
+          className="w-full h-20 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono resize-none" />
       </div>
 
       <div className="flex gap-3">
-        <button
-          onClick={handleSave}
+        <button onClick={handleSave}
           disabled={saving || !taskType.trim() || !systemPrompt.trim()}
-          className="px-5 py-2 text-sm bg-gray-900 text-white rounded-lg disabled:opacity-50"
-        >
+          className="px-5 py-2 text-sm bg-gray-900 text-white rounded-lg disabled:opacity-50">
           {saving ? '保存中...' : isEdit ? '更新' : '创建'}
         </button>
         {!isEdit && <p className="text-xs text-gray-400 self-center">创建会自动停用同任务类型的旧版本</p>}

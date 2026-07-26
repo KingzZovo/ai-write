@@ -44,7 +44,7 @@ const LOG_STATUS: Record<string, string> = {
 }
 export const logStatusLabel = (v: string | null | undefined) => label(LOG_STATUS, v)
 
-// task_type — shared by logs page + llm-routing matrix group headers.
+// task_type — shared by logs page + prompts matrix view.
 const TASK_TYPE: Record<string, string> = {
   generation: '正文生成',
   polishing: '润色',
