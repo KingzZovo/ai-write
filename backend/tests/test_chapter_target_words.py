@@ -46,9 +46,9 @@ def test_celery_chapter_branch_wired_to_resolver() -> None:
     import inspect
     import re
 
-    from app.tasks import knowledge_tasks
+    from app.tasks import generation_tasks
 
-    src = re.sub(r"\s+", "", inspect.getsource(knowledge_tasks))
+    src = re.sub(r"\s+", "", inspect.getsource(generation_tasks))
     assert (
         "generated_chapter_target_words="
         "_resolve_task_chapter_target_words(params,ch.target_word_count,project_settings)"

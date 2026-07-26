@@ -304,13 +304,13 @@ def test_all_generation_quality_gate_calls_pass_target_word_count() -> None:
     candidates = [
         (
             parent / "backend/app/api/generate.py",
-            parent / "backend/app/tasks/knowledge_tasks.py",
+            parent / "backend/app/tasks/generation_tasks.py",
         )
         for parent in (test_path, *test_path.parents)
     ] + [
         (
             parent / "app/api/generate.py",
-            parent / "app/tasks/knowledge_tasks.py",
+            parent / "app/tasks/generation_tasks.py",
         )
         for parent in (test_path, *test_path.parents)
     ]

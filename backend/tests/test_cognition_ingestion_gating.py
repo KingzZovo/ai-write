@@ -36,7 +36,7 @@ def _is_extract_call(node: ast.AST) -> bool:
 
 def test_celery_ingestion_wrapped_in_passed_guard():
     """knowledge_tasks: cognition ingestion is review-gated on `passed`."""
-    tree = _parse("tasks/knowledge_tasks.py")
+    tree = _parse("tasks/generation_tasks.py")
 
     guarded_ids: set[int] = set()
     for node in ast.walk(tree):
@@ -53,7 +53,7 @@ def test_celery_ingestion_wrapped_in_passed_guard():
                             guarded_ids.add(id(sub))
 
     all_calls = [n for n in ast.walk(tree) if _is_extract_call(n)]
-    assert all_calls, "expected an extract_and_update call in knowledge_tasks"
+    assert all_calls, "expected an extract_and_update call in generation_tasks"
     unguarded = [n for n in all_calls if id(n) not in guarded_ids]
     assert not unguarded, (
         "cognition extract_and_update call(s) not wrapped in an `if passed:` "

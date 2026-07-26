@@ -58,7 +58,10 @@ celery_app.conf.beat_schedule = {
 }
 
 # Explicitly import task modules so Celery registers them.
-import app.tasks.knowledge_tasks  # noqa: F401, E402
+import app.tasks.generation_tasks  # noqa: F401, E402  # split from knowledge_tasks (2026-07-26)
+import app.tasks.book_tasks  # noqa: F401, E402
+import app.tasks.analysis_tasks  # noqa: F401, E402
+import app.tasks.knowledge_tasks  # noqa: F401, E402  # compat facade (re-exports)
 import app.tasks.style_tasks  # noqa: F401, E402
 import app.tasks.backup_tasks  # noqa: F401, E402
 import app.tasks.entity_tasks  # noqa: F401, E402  # B2' (v1.5.0): entity extraction
