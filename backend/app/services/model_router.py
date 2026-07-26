@@ -338,12 +338,13 @@ class OpenAIProvider(BaseProvider):
     async def generate(self, messages, model="gpt-4o",
                        temperature=0.7, max_tokens=8192, **kw) -> GenerationResult:
         # v1.6.0 Y2: prompt_cache_key boosts hit-rate on long stable prefixes
+        # Only for native OpenAI API — compatible endpoints (xAI, etc.) reject unknown fields
         extra_body: dict = {}
         task_type = kw.get("task_type", "unknown")
         stream_mode = kw.pop("stream", True)
         request_timeout = kw.pop("request_timeout", None)
         retry_attempts = kw.pop("retry_attempts", None)
-        if _OPENAI_CACHE_ENABLED:
+        if _OPENAI_CACHE_ENABLED and not self.base_url:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
 
         # v1.14: wrap the streaming chat call with bounded retries for
@@ -380,12 +381,16 @@ class OpenAIProvider(BaseProvider):
                 return GenerationResult(text=text, usage=usage, model=model, provider=self.name)
 
             chunks: list[str] = []
+            stream_kw: dict = {}
+            if not self.base_url:
+                stream_kw["stream_options"] = {"include_usage": True}
             stream = await self.client.chat.completions.create(
                 model=model, messages=messages,
                 temperature=temperature, max_tokens=max_tokens,
-                stream=True, stream_options={"include_usage": True},
+                stream=True,
                 extra_body=extra_body or None,
-                timeout=request_timeout if request_timeout is not None else None)
+                timeout=request_timeout if request_timeout is not None else None,
+                **stream_kw)
             usage = TokenUsage()
             cached_tokens = 0
             async for chunk in stream:
@@ -419,10 +424,10 @@ class OpenAIProvider(BaseProvider):
 
     async def generate_stream(self, messages, model="gpt-4o",
                               temperature=0.7, max_tokens=8192, **kw):
-        # v1.6.0 Y2: prompt_cache_key on stream too
+        # v1.6.0 Y2: prompt_cache_key on stream too (native OpenAI only)
         extra_body = {}
         task_type = kw.get('task_type', 'unknown')
-        if _OPENAI_CACHE_ENABLED:
+        if _OPENAI_CACHE_ENABLED and not self.base_url:
             extra_body["prompt_cache_key"] = f"{task_type}:{model}"
         await _wait_openai_compat_turn(self.base_url, model, task_type)
         stream = await self.client.chat.completions.create(
