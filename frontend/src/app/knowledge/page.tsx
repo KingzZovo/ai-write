@@ -819,7 +819,7 @@ function CrawlTab() {
             {searching ? '搜索中...' : '搜索'}
           </button>
         </div>
-        <p className="text-[10px] text-gray-400">将自动搜索评分最高的可用书源，找到后点击"抓取"即可开始下载</p>
+        <p className="text-[10px] text-gray-400">{'将自动搜索评分最高的可用书源，找到后点击"抓取"即可开始下载'}</p>
 
         {searchMsg && <p className="text-xs text-gray-500">{searchMsg}</p>}
 

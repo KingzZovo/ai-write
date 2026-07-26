@@ -30,14 +30,17 @@ export async function initClientSentry(): Promise<SentryShimStatus> {
     return _status;
   }
 
-  let SentryModule: any = null;
+  interface SentryLike {
+    init: (options: Record<string, unknown>) => void;
+    captureException: (e: unknown) => void;
+  }
+  let SentryModule: SentryLike | null = null;
   try {
     // Dynamic import so the bundler does not hard-require @sentry/browser.
     // If the package is absent, the import throws and we silently skip.
     // v1.4.1: route the specifier through a variable so TypeScript does not
     // attempt to resolve the missing optional dep at build time.
     const sentrySpecifier = "@sentry/browser";
-    // @ts-ignore -- optional peer dep, resolved at runtime only.
     SentryModule = await import(/* webpackIgnore: true */ sentrySpecifier).catch(
       () => null,
     );
@@ -62,7 +65,7 @@ export async function initClientSentry(): Promise<SentryShimStatus> {
       ),
       // Strip query strings -- they can carry tokens. Sentry already
       // scrubs common keys, but we are conservative.
-      beforeSend(event: any) {
+      beforeSend(event: { request?: { url?: string; headers?: Record<string, string> } }) {
         try {
           if (event && event.request && typeof event.request.url === "string") {
             event.request.url = event.request.url.split("?")[0];

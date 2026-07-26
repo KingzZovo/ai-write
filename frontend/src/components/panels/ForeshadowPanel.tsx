@@ -9,7 +9,7 @@ interface Foreshadow {
   type: string
   description: string
   planted_chapter: number
-  resolve_conditions_json: any
+  resolve_conditions_json: unknown
   narrative_proximity: number | null
   status: string
   resolved_chapter: number | null

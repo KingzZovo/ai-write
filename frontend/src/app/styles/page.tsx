@@ -264,12 +264,19 @@ export default function StylesPage() {
 
 /* ─── Structures Panel ─────────────────────────────────────── */
 
+interface BookStructure {
+  book_id: string
+  book_title: string
+  arc_pattern?: string | null
+  structure_summary?: string | null
+}
+
 function StructuresPanel() {
-  const [structures, setStructures] = useState<any[]>([])
+  const [structures, setStructures] = useState<BookStructure[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch<any[]>('/api/styles/structures')
+    apiFetch<BookStructure[]>('/api/styles/structures')
       .then(setStructures)
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -279,13 +286,13 @@ function StructuresPanel() {
   if (structures.length === 0) return (
     <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
       <p className="text-sm text-gray-500">暂无架构数据</p>
-      <p className="text-xs text-gray-400 mt-1">在参考书库中点击"提取架构"或"按作者提取"</p>
+      <p className="text-xs text-gray-400 mt-1">{'在参考书库中点击"提取架构"或"按作者提取"'}</p>
     </div>
   )
 
   return (
     <div className="space-y-3">
-      {structures.map((s: any) => (
+      {structures.map((s) => (
         <div key={s.book_id} className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-medium text-sm text-gray-900">{s.book_title}</h3>

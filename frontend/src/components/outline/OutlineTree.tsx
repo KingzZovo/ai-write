@@ -81,6 +81,19 @@ export function OutlineTree({
     (a, b) => (a.volume_idx ?? a.volumeIdx) - (b.volume_idx ?? b.volumeIdx)
   )
 
+  // PR-CHAPTER-IDX-PREFIX: precompute baseGlobalIdx for each volume so
+  // chapters in the tree show 第N章 across the whole book.
+  const baseIdxMap = new Map<string, number>()
+  {
+    let running = 0
+    for (const v of sortedVolumes) {
+      baseIdxMap.set(v.id, running)
+      running += chapters.filter(
+        (ch) => (ch.volume_id ?? ch.volumeId) === v.id
+      ).length
+    }
+  }
+
   if (sortedVolumes.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500">
@@ -114,21 +127,6 @@ export function OutlineTree({
           </button>
         </div>
       )}
-      {(() => {
-        // PR-CHAPTER-IDX-PREFIX: precompute baseGlobalIdx for each volume
-        // so chapters in the tree show 第N章 across the whole book.
-        let _running = 0
-        const _baseIdxMap = new Map<string, number>()
-        for (const v of sortedVolumes) {
-          _baseIdxMap.set(v.id, _running)
-          const cnt = chapters.filter(
-            (ch) => (ch.volume_id ?? ch.volumeId) === v.id
-          ).length
-          _running += cnt
-        }
-        ;(globalThis as unknown as { __baseIdxMap?: Map<string, number> }).__baseIdxMap = _baseIdxMap
-        return null
-      })()}
       {sortedVolumes.map((volume) => {
         const volIdx = volume.volume_idx ?? volume.volumeIdx
         const volOutline = volumeOutlines?.[volIdx]
@@ -295,11 +293,9 @@ export function OutlineTree({
                             }`}
                           >
                             {(() => {
-                              const _bm = (globalThis as unknown as { __baseIdxMap?: Map<string, number> }).__baseIdxMap
-                              const _base = _bm?.get(volume.id) ?? 0
+                              const _base = baseIdxMap.get(volume.id) ?? 0
                               const _localIdx = chapter.chapter_idx ?? chapter.chapterIdx ?? 0
-                              const _global = _base + _localIdx
-                              return `第${_global}章 ${chapter.title}`
+                              return `第${_base + _localIdx}章 ${chapter.title}`
                             })()}
                           </span>
                         )}
