@@ -18,12 +18,7 @@ from dataclasses import dataclass
 
 from neo4j import AsyncDriver
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.http.exceptions import UnexpectedResponse
-from qdrant_client.models import (
-    Distance,
-    PointStruct,
-    VectorParams,
-)
+from qdrant_client.models import PointStruct
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,18 +29,23 @@ from app.models.project import (
     VolumeSummary,
     WorldRule,
 )
+from app.services import qdrant_store as qs
 from app.services.entity_timeline import EntityTimelineService
 from app.services.feature_extractor import generate_embedding
 from app.services.model_router import get_model_router
 
 logger = logging.getLogger(__name__)
 
-# Qdrant collection for chapter summary embeddings
-CHAPTER_SUMMARY_COLLECTION = "chapter_summaries"
+# Chapter-summary collection naming is owned by services/qdrant_store
+# (per-project shards with legacy-global read fallback).
 # Dimension of the configured embedding model. The live collections are 2048
 # (nvidia/llama-nemotron-embed-vl-1b-v2); the old 1536 (text-embedding-3-small)
 # value would create an incompatible collection on a fresh install.
 EMBEDDING_DIM = 2048
+
+# projects.settings_json key holding the rolling 全书至此梗概.
+BOOK_SYNOPSIS_KEY = "book_synopsis"
+BOOK_SYNOPSIS_MAX_CHARS = 800
 
 
 # ---------------------------------------------------------------------------
@@ -342,46 +342,42 @@ class HierarchicalMemory:
         query_text: str,
         top_k: int = 5,
     ) -> list[str]:
-        """Search Qdrant for chapter summaries related to query_text."""
+        """Search chapter-summary memory related to query_text.
+
+        Two-tier recall via qdrant_store.search_project_summaries: the
+        project's live shard (excluding compacted=true points, legacy-global
+        fallback pre-migration) merged with the compacted tier (slight score
+        penalty). The current volume is excluded — its summaries are already
+        fully injected above.
+        """
         if not self.qdrant or not query_text.strip():
             return []
 
         try:
-            # Ensure collection exists
-            await self._ensure_qdrant_collection()
-
             query_vector = await generate_embedding(query_text)
 
-            from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-            results = await self.qdrant.search(
-                collection_name=CHAPTER_SUMMARY_COLLECTION,
-                query_vector=query_vector,
-                query_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key="project_id",
-                            match=MatchValue(value=project_id),
-                        ),
-                    ],
-                    must_not=[
-                        FieldCondition(
-                            key="volume_id",
-                            match=MatchValue(value=current_volume_id),
-                        ),
-                    ],
-                ),
+            hits = await qs.search_project_summaries(
+                self.qdrant,
+                project_id,
+                query_vector,
                 limit=top_k,
                 score_threshold=0.5,
+                exclude_volume_id=current_volume_id,
             )
 
             summaries: list[str] = []
-            for hit in results:
-                payload = hit.payload or {}
+            for hit in hits:
+                payload = hit.get("payload") or {}
                 label = payload.get("label", "")
+                if not label and hit.get("tier") == "compacted":
+                    rng = payload.get("source_chapter_range") or []
+                    if isinstance(rng, list) and len(rng) == 2:
+                        label = f"[压缩记忆 CH-{rng[0]}~{rng[1]}]"
+                    else:
+                        label = "[压缩记忆]"
                 text = payload.get("summary", "")
                 if text:
-                    summaries.append(f"[相关度{hit.score:.2f}] {label}: {text}")
+                    summaries.append(f"[相关度{hit['score']:.2f}] {label}: {text}")
             return summaries
 
         except Exception as e:
@@ -591,28 +587,6 @@ class HierarchicalMemory:
     # Qdrant helpers
     # ==================================================================
 
-    async def _ensure_qdrant_collection(self) -> None:
-        """Create the chapter_summaries collection if it doesn't exist."""
-        if not self.qdrant:
-            return
-
-        try:
-            await self.qdrant.get_collection(CHAPTER_SUMMARY_COLLECTION)
-        except (UnexpectedResponse, Exception):
-            try:
-                await self.qdrant.create_collection(
-                    collection_name=CHAPTER_SUMMARY_COLLECTION,
-                    vectors_config=VectorParams(
-                        size=EMBEDDING_DIM,
-                        distance=Distance.COSINE,
-                    ),
-                )
-                logger.info(
-                    "Created Qdrant collection: %s", CHAPTER_SUMMARY_COLLECTION
-                )
-            except Exception as e:
-                logger.warning("Failed to create Qdrant collection: %s", e)
-
     async def _store_chapter_summary_embedding(
         self,
         project_id: str,
@@ -621,14 +595,15 @@ class HierarchicalMemory:
         chapter_title: str,
         summary: str,
     ) -> None:
-        """Store a chapter summary embedding in Qdrant."""
+        """Store a chapter summary embedding in the project's summary shard."""
         if not self.qdrant:
             return
 
         try:
-            await self._ensure_qdrant_collection()
-
             vector = await generate_embedding(summary)
+            collection = await qs.ensure_summary_shard(
+                self.qdrant, project_id, len(vector) if vector else EMBEDDING_DIM
+            )
 
             # Deterministic point ID based on volume + chapter
             import hashlib
@@ -645,7 +620,7 @@ class HierarchicalMemory:
                 label += f"《{chapter_title}》"
 
             await self.qdrant.upsert(
-                collection_name=CHAPTER_SUMMARY_COLLECTION,
+                collection_name=collection,
                 points=[
                     PointStruct(
                         id=point_id_int,
@@ -731,9 +706,107 @@ async def backfill_prev_volume_summary(volume_id: str) -> bool:
                 "Backfilled VolumeSummary for volume %s (project %s)",
                 prev_volume.id, volume.project_id,
             )
+            # Hierarchical rollup: a new VolumeSummary exists — refresh the
+            # rolling 全书至此梗概. Failure-tolerant (returns "" on error);
+            # the backfill above is already committed either way.
+            await regenerate_book_synopsis(str(volume.project_id), db)
             return True
     except Exception as e:
         logger.warning(
             "backfill_prev_volume_summary failed (volume_id=%s): %s", volume_id, e
         )
         return False
+
+
+# ---------------------------------------------------------------------------
+# Hierarchical rollup — rolling book synopsis (全书至此梗概)
+# ---------------------------------------------------------------------------
+
+_BOOK_SYNOPSIS_PROMPT = """\
+请将以下各卷梗概压缩成一段「全书至此梗概」（不超过 {max_chars} 个中文字）。
+要求：
+1. 按时间顺序覆盖全部卷的主线推进，重点保留仍影响后续剧情的事件与人物关系。
+2. 只写事实，不评价、不总结主题，不用“本书讲述了”这类套话。
+3. 直接输出梗概正文，不加标题或格式标记。
+
+各卷梗概：
+{volume_summaries}"""
+
+
+async def regenerate_book_synopsis(project_id: str, db: AsyncSession) -> str:
+    """Regenerate the rolling 全书至此梗概 from all VolumeSummary rows.
+
+    One LLM call (prompt-registry task_type="summary", same as the chapter
+    summarizer) over every volume summary, truncated to
+    ``BOOK_SYNOPSIS_MAX_CHARS``.
+
+    Storage: ``projects.settings_json["book_synopsis"]`` =
+    ``{"text", "source_volumes", "updated_at"}``. Chosen over an Outline
+    content_json namespace because Outline rows are versioned, level-keyed
+    and regenerated wholesale by outline_generator (which owns their
+    schema) — a synopsis stashed there could be silently dropped on outline
+    regeneration. settings_json already carries project-scoped derived
+    state (style_reference etc.) and ContextPack reads it in one Project
+    fetch. No new tables.
+
+    Never raises; returns the new synopsis text or "" on any failure.
+    """
+    try:
+        rows = (
+            await db.execute(
+                select(
+                    VolumeSummary.summary_text, Volume.volume_idx, Volume.title
+                )
+                .join(Volume, VolumeSummary.volume_id == Volume.id)
+                .where(Volume.project_id == project_id)
+                .order_by(Volume.volume_idx)
+            )
+        ).all()
+        parts = [
+            f"[VOL-{vol_idx}]《{vol_title or ''}》：{text}"
+            for text, vol_idx, vol_title in rows
+            if text and text.strip()
+        ]
+        if not parts:
+            return ""
+
+        from app.services.prompt_registry import run_text_prompt
+
+        result = await run_text_prompt(
+            task_type="summary",
+            user_content=_BOOK_SYNOPSIS_PROMPT.format(
+                max_chars=BOOK_SYNOPSIS_MAX_CHARS,
+                volume_summaries="\n\n".join(parts),
+            ),
+            db=db,
+            project_id=project_id,
+        )
+        text = (result.text or "").strip()
+        if not text:
+            return ""
+        if len(text) > BOOK_SYNOPSIS_MAX_CHARS:
+            text = text[:BOOK_SYNOPSIS_MAX_CHARS].rstrip() + "…"
+
+        project = await db.get(Project, str(project_id))
+        if project is None:
+            return ""
+        from datetime import datetime, timezone
+
+        settings_json = dict(project.settings_json or {})
+        settings_json[BOOK_SYNOPSIS_KEY] = {
+            "text": text,
+            "source_volumes": len(parts),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        project.settings_json = settings_json
+        await db.commit()
+        logger.info(
+            "Regenerated book synopsis for project %s (%d volumes, %d chars)",
+            project_id, len(parts), len(text),
+        )
+        return text
+    except Exception as e:
+        logger.warning(
+            "regenerate_book_synopsis failed (project_id=%s): %s", project_id, e
+        )
+        return ""

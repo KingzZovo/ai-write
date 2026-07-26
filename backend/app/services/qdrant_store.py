@@ -8,12 +8,34 @@ Manages collections and vector storage for:
 - style_profiles (v0.6): Structured style-profile JSON embeddings (no raw text)
 - beat_sheets (v0.6): Entity-redacted plot beat embeddings
 - style_samples_redacted (v0.6): Redacted raw excerpts for style-reference fallback
+
+Per-project sharding (500万字 scaling)
+--------------------------------------
+Chapter-summary memory is sharded one collection per project:
+
+  chapter_summaries__<project-uuid-hex>            (live tier)
+  chapter_summaries_compacted__<project-uuid-hex>  (compacted tier)
+
+The module-level helpers below are the SINGLE SOURCE OF TRUTH for the
+naming scheme and the read-fallback semantics; every writer
+(chapter_summarizer, rag_rebuild, memory.py) and reader (context_pack,
+memory.py, api/vector_store) must resolve collection names through them.
+Reads fall back to the legacy global ``chapter_summaries`` /
+``chapter_summaries_compacted`` collections (with a project_id payload
+filter) while a project's shard is missing or empty, so pre-migration
+projects keep working. ``migrate_project_vectors`` copies a project's
+points global → shard and is idempotent.
+
+Reference-book collections (plots / styles / style_profiles / beat_sheets /
+style_samples_redacted / style_samples_by_scene) deliberately stay GLOBAL:
+they are shared corpora keyed by ``book_id``, not per-project data.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import uuid as _uuid
 from typing import Any
 
 from qdrant_client import AsyncQdrantClient
@@ -29,6 +51,293 @@ from qdrant_client.models import (
 
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Per-project sharding for chapter-summary memory (single source of truth)
+# ---------------------------------------------------------------------------
+
+LEGACY_CHAPTER_SUMMARIES = "chapter_summaries"
+LEGACY_COMPACTED_SUMMARIES = "chapter_summaries_compacted"
+
+
+def project_shard_suffix(project_id: Any) -> str:
+    """Stable collection-name suffix for a project.
+
+    UUID project ids use their 32-char hex form (no dashes — Qdrant names
+    stay simple); anything else falls back to md5 of the string form so the
+    scheme never raises.
+    """
+    raw = str(project_id)
+    try:
+        return _uuid.UUID(raw).hex
+    except (ValueError, AttributeError, TypeError):
+        return hashlib.md5(raw.encode()).hexdigest()
+
+
+def chapter_summaries_collection(project_id: Any) -> str:
+    """Per-project live chapter-summary collection name."""
+    return f"{LEGACY_CHAPTER_SUMMARIES}__{project_shard_suffix(project_id)}"
+
+
+def compacted_summaries_collection(project_id: Any) -> str:
+    """Per-project compacted chapter-summary collection name."""
+    return f"{LEGACY_COMPACTED_SUMMARIES}__{project_shard_suffix(project_id)}"
+
+
+async def collection_point_count(client: Any, name: str) -> int | None:
+    """Point count of a collection, or None when it does not exist."""
+    try:
+        info = await client.get_collection(name)
+        return int(info.points_count or 0)
+    except Exception:  # noqa: BLE001 — missing collection / transport error
+        return None
+
+
+async def resolve_summary_read(
+    client: Any,
+    project_id: Any,
+    *,
+    compacted: bool = False,
+) -> tuple[str, bool]:
+    """Resolve which collection to READ chapter-summary memory from.
+
+    Returns ``(collection_name, needs_project_filter)``. The per-project
+    shard wins when it exists and is non-empty; otherwise the legacy global
+    collection is returned with ``needs_project_filter=True`` so callers add
+    the project_id payload filter (pre-migration backward compatibility).
+    """
+    sharded = (
+        compacted_summaries_collection(project_id)
+        if compacted
+        else chapter_summaries_collection(project_id)
+    )
+    count = await collection_point_count(client, sharded)
+    if count:
+        return sharded, False
+    legacy = LEGACY_COMPACTED_SUMMARIES if compacted else LEGACY_CHAPTER_SUMMARIES
+    return legacy, True
+
+
+async def _create_collection(client: Any, name: str, dim: int) -> None:
+    await client.create_collection(
+        collection_name=name,
+        vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+    )
+    logger.info("Created Qdrant collection: %s (dim=%d)", name, dim)
+
+
+async def ensure_summary_shard(
+    client: Any,
+    project_id: Any,
+    dim: int,
+    *,
+    compacted: bool = False,
+) -> str:
+    """Ensure the project's summary shard exists; return its name.
+
+    On FIRST creation the project's points are copied over from the legacy
+    global collection (self-healing migration), so a shard that starts
+    receiving new writes never hides the project's pre-shard history from
+    recall. Idempotent and failure-tolerant: a failed legacy copy leaves the
+    shard usable and a later ``migrate_project_vectors`` run repairs it.
+    """
+    name = (
+        compacted_summaries_collection(project_id)
+        if compacted
+        else chapter_summaries_collection(project_id)
+    )
+    try:
+        await client.get_collection(name)
+        return name
+    except Exception:  # noqa: BLE001 — shard missing, create it
+        pass
+    await _create_collection(client, name, dim)
+    legacy = LEGACY_COMPACTED_SUMMARIES if compacted else LEGACY_CHAPTER_SUMMARIES
+    try:
+        copied = await _copy_project_points(client, project_id, legacy, name)
+        if copied:
+            logger.info(
+                "Copied %d legacy points into %s on shard creation", copied, name
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Legacy copy into %s failed (run migrate later): %s", name, exc)
+    return name
+
+
+async def _copy_project_points(
+    client: Any,
+    project_id: Any,
+    source: str,
+    target: str,
+) -> int:
+    """Copy one project's points source → target (same ids ⇒ idempotent)."""
+    flt = Filter(
+        must=[
+            FieldCondition(
+                key="project_id", match=MatchValue(value=str(project_id))
+            )
+        ]
+    )
+    copied = 0
+    offset = None
+    while True:
+        points, offset = await client.scroll(
+            collection_name=source,
+            scroll_filter=flt,
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=True,
+        )
+        if not points:
+            break
+        structs = [
+            PointStruct(id=p.id, vector=p.vector, payload=p.payload or {})
+            for p in points
+            if p.vector is not None
+        ]
+        if structs:
+            await client.upsert(collection_name=target, points=structs)
+            copied += len(structs)
+        if offset is None:
+            break
+    return copied
+
+
+async def migrate_project_vectors(
+    project_id: Any,
+    client: Any = None,
+) -> dict[str, Any]:
+    """Copy a project's chapter-summary points global → per-project shards.
+
+    Idempotent: point ids are deterministic, so re-runs simply overwrite.
+    Legacy points are NOT deleted (reads prefer the shard once it is
+    non-empty); pruning the global collections is a later, separate step.
+
+    Invocation (orchestrator runbook):
+      - API:   POST /api/vector-store/projects/{project_id}/migrate-shard
+      - code:  ``await migrate_project_vectors(project_id)``
+    Safe to run while the backend is live.
+    """
+    owns = client is None
+    if client is None:
+        from qdrant_client import AsyncQdrantClient
+
+        from app.config import settings
+
+        client = AsyncQdrantClient(
+            host=getattr(settings, "QDRANT_HOST", "localhost"),
+            port=getattr(settings, "QDRANT_PORT", 6333),
+        )
+    try:
+        migrated: dict[str, int] = {}
+        for legacy, sharded in (
+            (LEGACY_CHAPTER_SUMMARIES, chapter_summaries_collection(project_id)),
+            (LEGACY_COMPACTED_SUMMARIES, compacted_summaries_collection(project_id)),
+        ):
+            try:
+                legacy_info = await client.get_collection(legacy)
+            except Exception:  # noqa: BLE001 — no legacy tier, nothing to copy
+                migrated[sharded] = 0
+                continue
+            try:
+                await client.get_collection(sharded)
+            except Exception:  # noqa: BLE001 — create shard with legacy's dim
+                vectors = legacy_info.config.params.vectors
+                size = getattr(vectors, "size", None)
+                if size is None and isinstance(vectors, dict):
+                    first = next(iter(vectors.values()), None)
+                    size = getattr(first, "size", None)
+                await _create_collection(client, sharded, int(size or 2048))
+            migrated[sharded] = await _copy_project_points(
+                client, project_id, legacy, sharded
+            )
+        return {"status": "ok", "project_id": str(project_id), "migrated": migrated}
+    finally:
+        if owns:
+            try:
+                await client.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def search_project_summaries(
+    client: Any,
+    project_id: Any,
+    embedding: list[float],
+    *,
+    limit: int = 5,
+    score_threshold: float = 0.4,
+    exclude_volume_id: Any = None,
+    compacted_penalty: float = 0.9,
+) -> list[dict]:
+    """Two-tier chapter-summary recall for one project (W10 fix).
+
+    Searches BOTH the live tier (excluding points already marked
+    ``compacted=true``) and the compacted tier, each resolved through
+    ``resolve_summary_read`` (shard preferred, legacy+filter fallback).
+    Compacted hits carry a slight score penalty (they are coarser rollups);
+    results merge by penalized score, capped at ``limit``.
+
+    Returns ``[{"score", "payload", "tier"}]``; never raises.
+    """
+    hits: list[dict] = []
+
+    async def _tier_search(compacted: bool) -> None:
+        try:
+            name, needs_filter = await resolve_summary_read(
+                client, project_id, compacted=compacted
+            )
+            must: list[Any] = []
+            must_not: list[Any] = []
+            if needs_filter:
+                must.append(
+                    FieldCondition(
+                        key="project_id", match=MatchValue(value=str(project_id))
+                    )
+                )
+            if not compacted:
+                must_not.append(
+                    FieldCondition(key="compacted", match=MatchValue(value=True))
+                )
+            if exclude_volume_id is not None:
+                must_not.append(
+                    FieldCondition(
+                        key="volume_id",
+                        match=MatchValue(value=str(exclude_volume_id)),
+                    )
+                )
+            qfilter = (
+                Filter(must=must or None, must_not=must_not or None)
+                if (must or must_not)
+                else None
+            )
+            results = await client.search(
+                collection_name=name,
+                query_vector=embedding,
+                query_filter=qfilter,
+                limit=limit,
+                score_threshold=score_threshold,
+            )
+            penalty = compacted_penalty if compacted else 1.0
+            for h in results:
+                hits.append(
+                    {
+                        "score": float(h.score) * penalty,
+                        "payload": h.payload or {},
+                        "tier": "compacted" if compacted else "live",
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001 — tier missing / transport error
+            logger.debug(
+                "summary tier search skipped (compacted=%s): %s", compacted, exc
+            )
+
+    await _tier_search(False)
+    await _tier_search(True)
+    hits.sort(key=lambda x: -x["score"])
+    return hits[:limit]
 
 
 class QdrantStore:

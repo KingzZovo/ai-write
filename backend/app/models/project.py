@@ -8,11 +8,13 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import Boolean, event, func, select
 from sqlalchemy.dialects.postgresql import UUID
@@ -93,6 +95,20 @@ class Volume(Base):
 
 class Chapter(Base):
     __tablename__ = "chapters"
+    __table_args__ = (
+        # a1001917: context_pack windows chapters by
+        # (volume_id, chapter_idx range); the volume_id FK had no index.
+        Index("ix_chapters_volume_chapter_idx", "volume_id", "chapter_idx"),
+        # a1001917: partial index for the recent-summaries query
+        # (summary present + global_idx ordering).
+        Index(
+            "ix_chapters_global_idx_summarized",
+            "global_idx",
+            postgresql_where=text(
+                "summary IS NOT NULL AND summary <> '' AND global_idx IS NOT NULL"
+            ),
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     volume_id = Column(
@@ -473,6 +489,46 @@ class CharacterAppearance(Base):
     )
 
 
+class ChapterStyleStat(Base):
+    """Per-chapter style-stat + appearance cache (incremental recompute, W14).
+
+    One row per non-empty chapter. ``stats_json`` is the output of
+    ``style_stat.compute_chapter_style_stats`` (tic counts, deduped sentences,
+    ending/opening shape facts); ``appearances_json`` is the alias-folded
+    ``character_roster.count_appearances`` mapping for that chapter's text.
+    ``source_updated_at`` mirrors ``chapters.updated_at`` at compute time so
+    the recompute task can detect stale rows without loading content_text.
+
+    The whole-book ``style_stats`` row and the ``character_appearances``
+    roster are aggregated from these rows, so an accepted chapter costs one
+    per-chapter recompute + a cheap aggregate instead of a full-book reload.
+    """
+
+    __tablename__ = "chapter_style_stats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    global_idx = Column(Integer, nullable=False, default=0)
+    stats_json = Column(JSON, default=dict)
+    appearances_json = Column(JSON, default=dict)
+    source_updated_at = Column(DateTime(timezone=True))
+    computed_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("chapter_id", name="uq_chapter_style_stats_chapter"),
+    )
+
+
 class StyleProfile(Base):
     """A writing style profile that can be bound to a book/chapter/generation."""
 
@@ -671,6 +727,11 @@ class ChapterVersion(Base):
     """A version node in the chapter version tree."""
 
     __tablename__ = "chapter_versions"
+    __table_args__ = (
+        # a1001917: chapter_id FK was un-indexed; serves version listing,
+        # chapter CASCADE deletes, and keep-last-K retention selection.
+        Index("ix_chapter_versions_chapter_created", "chapter_id", "created_at"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     chapter_id = Column(

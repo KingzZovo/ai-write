@@ -1,10 +1,19 @@
 """v0.7 — Memory compactor for chapter_summaries.
 
-- Triggered manually via API or scheduled via Celery beat.
+- Triggered manually via API, auto-fired after chapter saves when the
+  project's live point count exceeds MEMORY_COMPACT_THRESHOLD_POINTS
+  (see chapter_summarizer), or scheduled via Celery beat.
 - Takes the oldest 80% of summary points, groups them in batches of 5,
   calls task_type="compact" to produce a second-level summary, stores the
-  result into collection `chapter_summaries_compacted`, and marks the source
-  points compacted=true so they are excluded from future recall.
+  result into the project's compacted shard
+  (``chapter_summaries_compacted__<project-hex>``), and marks the source
+  points compacted=true so live recall excludes them. Recall then merges
+  both tiers (qdrant_store.search_project_summaries), so compaction
+  compresses memory without dropping it (W10-compound fix).
+
+Sharding: the live tier is read through qdrant_store.resolve_summary_read
+(per-project shard preferred, legacy global + project filter fallback);
+compacted output always goes to the project's shard.
 """
 
 from __future__ import annotations
@@ -17,25 +26,15 @@ from qdrant_client.http import models as qmodels
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services import qdrant_store as qs
 from app.services.feature_extractor import generate_embedding
 from app.services.prompt_registry import run_structured_prompt
 
 logger = logging.getLogger(__name__)
 
-COMPACTED_COLLECTION = "chapter_summaries_compacted"
 COMPACT_BATCH_SIZE = 5
 KEEP_RECENT_RATIO = 0.20
 MIN_TOTAL_POINTS = 100
-
-
-async def _ensure_compacted_collection(client: AsyncQdrantClient) -> None:
-    try:
-        await client.get_collection(COMPACTED_COLLECTION)
-    except Exception:
-        await client.create_collection(
-            collection_name=COMPACTED_COLLECTION,
-            vectors_config=qmodels.VectorParams(size=4096, distance=qmodels.Distance.COSINE),
-        )
 
 
 async def compact_project_memory(
@@ -53,19 +52,28 @@ async def compact_project_memory(
         port=getattr(settings, "QDRANT_PORT", 6333),
     )
     try:
-        await _ensure_compacted_collection(client)
+        # Resolve the live tier through the shard resolver (per-project
+        # collection preferred; legacy global + project filter fallback).
+        source_collection, needs_filter = await qs.resolve_summary_read(
+            client, project_id
+        )
+        must = (
+            [
+                qmodels.FieldCondition(
+                    key="project_id",
+                    match=qmodels.MatchValue(value=project_id),
+                )
+            ]
+            if needs_filter
+            else None
+        )
 
         # Collect project summaries that are not yet compacted
         try:
             scroll_res, _offset = await client.scroll(
-                collection_name="chapter_summaries",
+                collection_name=source_collection,
                 scroll_filter=qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(
-                            key="project_id",
-                            match=qmodels.MatchValue(value=project_id),
-                        )
-                    ],
+                    must=must,
                     must_not=[
                         qmodels.FieldCondition(
                             key="compacted",
@@ -77,7 +85,10 @@ async def compact_project_memory(
                 with_payload=True,
             )
         except Exception as exc:
-            logger.info("chapter_summaries scroll failed (collection may be empty): %s", exc)
+            logger.info(
+                "%s scroll failed (collection may be empty): %s",
+                source_collection, exc,
+            )
             return {"status": "skipped", "reason": "no_collection"}
 
         points = list(scroll_res)
@@ -93,6 +104,7 @@ async def compact_project_memory(
             return {"status": "skipped", "reason": "nothing_to_compact", "total": total}
 
         compacted = 0
+        compacted_collection: str | None = None
         for i in range(0, len(to_compact), COMPACT_BATCH_SIZE):
             batch = to_compact[i : i + COMPACT_BATCH_SIZE]
             texts = []
@@ -126,10 +138,17 @@ async def compact_project_memory(
             if not embedding:
                 continue
 
+            # Lazily ensure the project's compacted shard with the actual
+            # embedding dimension (dimension-agnostic; live model is 2048).
+            if compacted_collection is None:
+                compacted_collection = await qs.ensure_summary_shard(
+                    client, project_id, len(embedding), compacted=True
+                )
+
             # Upsert compacted point
             new_id = abs(hash(f"{project_id}:{i}:{summary_text[:64]}")) & 0x7FFFFFFFFFFFFFFF
             await client.upsert(
-                collection_name=COMPACTED_COLLECTION,
+                collection_name=compacted_collection,
                 points=[
                     qmodels.PointStruct(
                         id=new_id,
@@ -146,10 +165,10 @@ async def compact_project_memory(
                     )
                 ],
             )
-            # Mark sources compacted
+            # Mark sources compacted (in whichever collection they came from)
             try:
                 await client.set_payload(
-                    collection_name="chapter_summaries",
+                    collection_name=source_collection,
                     payload={"compacted": True},
                     points=[p.id for p in batch],
                 )

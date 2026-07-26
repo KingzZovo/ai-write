@@ -279,6 +279,127 @@ def compute_style_stats(
     }
 
 
+# --- per-chapter stats + aggregation (incremental recompute, W14) -----------
+# A chapter's contribution to every whole-book statistic is captured once in a
+# compact per-chapter dict (persisted in chapter_style_stats); the whole-book
+# stats are then aggregated from those dicts. Only the recent-window n-grams
+# still need raw text -- and only for the window (O(1) chapters), never the
+# whole book.
+
+
+def compute_chapter_style_stats(text: str) -> dict | None:
+    """One chapter's style facts, sufficient to aggregate whole-book stats.
+
+    Returns ``None`` for empty/whitespace-only text (the chapter is not
+    counted, matching ``compute_style_stats``'s filter). Keys:
+
+    - ``tics``: ``extract_tic_counts(text)``
+    - ``sentences``: per-chapter deduped sentences (len >= 10, stripped the
+      same way ``repeated_sentences`` does)
+    - ``last_sentence_len``: ``ending_shape`` semantics, ``None`` if the text
+      has no sentences after splitting
+    - ``opening_time``: whether the first 100 chars contain a time-of-day word
+    """
+    if not text or not text.strip():
+        return None
+    seen: set[str] = set()
+    sentences: list[str] = []
+    for raw in _SENTENCE_SPLIT_RE.split(text):
+        sent = raw.strip().strip('“”"\'』『「」 　')
+        if len(sent) < 10 or sent in seen:
+            continue
+        seen.add(sent)
+        sentences.append(sent)
+    ending_sents = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+    return {
+        "tics": extract_tic_counts(text),
+        "sentences": sentences,
+        "last_sentence_len": len(ending_sents[-1]) if ending_sents else None,
+        "opening_time": any(w in text[:100] for w in _OPENING_TIME_WORDS),
+    }
+
+
+def aggregate_style_stats(
+    per_chapter: list[tuple[int, dict]],
+    recent_texts: list[str],
+    character_names: set[str],
+) -> dict:
+    """Aggregate per-chapter rows into the ``compute_style_stats`` shape.
+
+    ``per_chapter`` is ``[(global_idx, compute_chapter_style_stats(text)), ...]``
+    for every non-empty chapter. ``recent_texts`` must be the content of the
+    most-recent ``recent_window`` non-empty chapters in ascending global-idx
+    order (n-grams are window-scoped, so only those texts are needed).
+
+    Given consistent inputs this returns exactly what
+    ``compute_style_stats(chapters, character_names)`` returns on the full
+    chapter list -- pinned by tests -- so callers can switch between the two
+    freely (full rebuild vs incremental aggregate).
+    """
+    rows = [(i, s) for (i, s) in per_chapter if s]
+    n_chapters = len(rows)
+    if n_chapters == 0:
+        return {"chapter_count": 0}
+
+    tic_totals: Counter[str] = Counter()
+    for _idx, s in rows:
+        for key, count in (s.get("tics") or {}).items():
+            tic_totals[key] += int(count or 0)
+    tics = {
+        key: {
+            "total": total,
+            "per_chapter": round(total / n_chapters, 3),
+        }
+        for key, total in tic_totals.items()
+    }
+
+    ngram_threshold = max(8, len(recent_texts) // 2)
+    phrases = top_ngram_phrases(
+        recent_texts, set(character_names), threshold=ngram_threshold
+    )
+
+    # Repeated sentences: per-chapter dedup already applied at compute time.
+    sentence_chapters: dict[str, set[int]] = {}
+    for idx, s in sorted(rows, key=lambda r: r[0]):
+        for sent in s.get("sentences") or []:
+            sentence_chapters.setdefault(sent, set()).add(idx)
+    hits = [
+        {"sentence": sent, "chapter_count": len(chs)}
+        for sent, chs in sentence_chapters.items()
+        if len(chs) >= 3
+    ]
+    hits.sort(key=lambda h: (-h["chapter_count"], -len(h["sentence"])))
+
+    last_lens = [
+        int(s["last_sentence_len"])
+        for _idx, s in rows
+        if s.get("last_sentence_len") is not None
+    ]
+    short_end = sum(1 for length in last_lens if length <= 15)
+    ending = {
+        "last_sentence_len_median": _median(last_lens),
+        "short_ending_rate": round(short_end / len(last_lens), 3) if last_lens else 0.0,
+        "chapters_counted": len(last_lens),
+    }
+
+    time_open = sum(1 for _idx, s in rows if s.get("opening_time"))
+    opening = {
+        "opening_time_rate": round(time_open / n_chapters, 3),
+        "chapters_counted": n_chapters,
+    }
+
+    return {
+        "chapter_count": n_chapters,
+        "recent_window": len(recent_texts),
+        "ngram_threshold": ngram_threshold,
+        "tics": tics,
+        "top_phrases": phrases,
+        "repeated_sentences": hits[:8],
+        "ending_shape": ending,
+        "opening": opening,
+    }
+
+
 # --- prompt rendering (with budget contracts) -------------------------------
 
 
@@ -379,8 +500,14 @@ def render_evaluator_stats_block(stats: dict, max_chars: int = 600) -> str:
 # --- dispatch helper (non-blocking, celery-optional) ------------------------
 
 
-def dispatch_style_recompute(project_id, caller: str) -> bool:
-    """Enqueue the whole-book style-stats recompute for a project.
+def dispatch_style_recompute(project_id, caller: str, *, full: bool = False) -> bool:
+    """Enqueue the style-stats recompute for a project.
+
+    The task is incremental: it only re-reads chapters whose content changed
+    since their per-chapter stats row was computed, then refreshes the cheap
+    aggregates. Pass ``full=True`` to force a per-chapter rebuild of every
+    chapter (manual repair / backfill for pre-existing projects); the rebuild
+    is idempotent, so repeated runs converge to the same stats and roster.
 
     Non-blocking by design: any failure (missing id, broker down, celery
     unconfigured in tests) is swallowed with a WARNING so the user-facing
@@ -401,7 +528,7 @@ def dispatch_style_recompute(project_id, caller: str) -> bool:
     try:
         celery_app.send_task(
             STYLE_STATS_TASK,
-            kwargs={"project_id": str(project_id), "caller": caller},
+            kwargs={"project_id": str(project_id), "caller": caller, "full": bool(full)},
         )
     except Exception as e:
         _log.warning(

@@ -12,6 +12,19 @@ _utcnow = lambda: datetime.now(timezone.utc)  # noqa: E731
 
 
 class LLMCallLog(Base):
+    """NOTE (a1001916): in Postgres this table is RANGE-partitioned by
+    ``created_at`` (monthly), and the DB primary key is the composite
+    ``(id, created_at)`` — partitioned unique constraints must include
+    the partition key. The mapper keeps a single-column PK (``id`` is a
+    uuid4, unique in practice) so ``db.get(LLMCallLog, id)`` and the
+    identity map keep working unchanged. Do not add code that relies on
+    a DB-level unique constraint on ``id`` alone.
+
+    Retention: monthly partitions older than
+    ``settings.LLM_LOG_RETENTION_MONTHS`` are dropped by
+    ``tasks.maintain_llm_log_partitions``.
+    """
+
     __tablename__ = "llm_call_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -52,4 +65,9 @@ class LLMCallLog(Base):
     fallback_reason = Column(String(200), nullable=True)
     attempt_index = Column(Integer, default=0, nullable=False)
 
-    created_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
+    # NOT NULL since a1001916 (partition key). index=True materialized as
+    # ix_llm_call_logs_created_at on the partitioned parent by the same
+    # migration (it had never been created on the old flat table).
+    created_at = Column(
+        DateTime(timezone=True), default=_utcnow, nullable=False, index=True
+    )

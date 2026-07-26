@@ -7,19 +7,18 @@ import json
 import logging
 
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import PointStruct
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import async_session_factory
 from app.models.project import Chapter, Volume
+from app.services import qdrant_store as qs
 from app.services.feature_extractor import generate_embedding
 from app.services.prompt_registry import run_structured_prompt
 
 logger = logging.getLogger(__name__)
-
-CHAPTER_SUMMARY_COLLECTION = "chapter_summaries"
 
 
 async def redis_set_progress(project_id: str, payload: dict) -> None:
@@ -71,16 +70,9 @@ async def rebuild_rag_for_project_async(
             port=getattr(settings, "QDRANT_PORT", 6333),
         )
 
-        try:
-            await qdrant.get_collection(CHAPTER_SUMMARY_COLLECTION)
-        except Exception:
-            try:
-                await qdrant.create_collection(
-                    collection_name=CHAPTER_SUMMARY_COLLECTION,
-                    vectors_config=VectorParams(size=2048, distance=Distance.COSINE),
-                )
-            except Exception:
-                pass
+        # Per-project shard, ensured lazily with the dimension of the first
+        # embedding actually produced (dimension-agnostic).
+        collection: str | None = None
 
         total = len(chapters)
         done = 0
@@ -101,10 +93,14 @@ async def rebuild_rag_for_project_async(
                 await db.flush()
 
                 vec = await generate_embedding(summary)
+                if collection is None:
+                    collection = await qs.ensure_summary_shard(
+                        qdrant, project_id, len(vec)
+                    )
                 key = f"{ch.volume_id}_{ch.chapter_idx}"
                 point_id = int(hashlib.md5(key.encode()).hexdigest()[:16], 16)
                 await qdrant.upsert(
-                    collection_name=CHAPTER_SUMMARY_COLLECTION,
+                    collection_name=collection,
                     points=[
                         PointStruct(
                             id=point_id,

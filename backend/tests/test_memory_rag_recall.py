@@ -58,7 +58,10 @@ class TestUpsertChapterSummaryEmbedding:
         assert ok is True
         client.upsert.assert_awaited_once()
         kwargs = client.upsert.await_args.kwargs
-        assert kwargs["collection_name"] == "chapter_summaries"
+        # Per-project shard (naming owned by services/qdrant_store).
+        from app.services.qdrant_store import chapter_summaries_collection
+
+        assert kwargs["collection_name"] == chapter_summaries_collection(project_id)
         point = kwargs["points"][0]
         # Deterministic id per (volume_id, chapter_idx), identical to
         # services/rag_rebuild.py so both writers overwrite the same point.
@@ -223,7 +226,13 @@ class TestSummarizeAndSaveDispatchesUpsert:
 
 class TestSearchQdrantSnippetsProjectFilter:
     @pytest.mark.asyncio
-    async def test_search_is_filtered_by_project_id(self, monkeypatch):
+    async def test_legacy_fallback_search_is_filtered_by_project_id(
+        self, monkeypatch
+    ):
+        """Pre-migration (no shard): both tiers hit the legacy collections
+        with a project_id filter, and the live tier excludes compacted
+        points. Detailed two-tier merge semantics are covered in
+        tests/test_vector_sharding.py."""
         from qdrant_client.models import FieldCondition, MatchValue
 
         from app.services.context_pack import ContextPack, ContextPackBuilder
@@ -234,7 +243,11 @@ class TestSearchQdrantSnippetsProjectFilter:
         )
         hit = MagicMock()
         hit.payload = {"summary": "相关历史章节摘要。"}
+        hit.score = 0.8
         client = _mock_qdrant_client_cls(monkeypatch)
+        # Shard resolution probes get_collection; make the shard look
+        # missing so reads fall back to the legacy global collections.
+        client.get_collection.side_effect = RuntimeError("no such collection")
         client.search.return_value = [hit]
 
         builder = ContextPackBuilder(db=MagicMock())
@@ -242,15 +255,28 @@ class TestSearchQdrantSnippetsProjectFilter:
         project_id = str(uuid.uuid4())
         await builder._search_qdrant_snippets(pack, ["主角", "旧信"], project_id)
 
-        client.search.assert_awaited_once()
-        kwargs = client.search.await_args.kwargs
-        assert kwargs["collection_name"] == "chapter_summaries"
-        qfilter = kwargs["query_filter"]
-        assert qfilter is not None
-        assert qfilter.must == [
-            FieldCondition(key="project_id", match=MatchValue(value=project_id))
+        # Two-tier recall: live + compacted.
+        assert client.search.await_count == 2
+        live_kwargs = client.search.await_args_list[0].kwargs
+        compacted_kwargs = client.search.await_args_list[1].kwargs
+        assert live_kwargs["collection_name"] == "chapter_summaries"
+        assert (
+            compacted_kwargs["collection_name"] == "chapter_summaries_compacted"
+        )
+        project_cond = FieldCondition(
+            key="project_id", match=MatchValue(value=project_id)
+        )
+        assert live_kwargs["query_filter"].must == [project_cond]
+        # Live tier excludes already-compacted points (W10 fix).
+        assert live_kwargs["query_filter"].must_not == [
+            FieldCondition(key="compacted", match=MatchValue(value=True))
         ]
-        assert pack.rag_snippets == ["相关历史章节摘要。"]
+        assert compacted_kwargs["query_filter"].must == [project_cond]
+        # Live hit verbatim; compacted hit labelled as 压缩记忆.
+        assert pack.rag_snippets == [
+            "相关历史章节摘要。",
+            "[压缩记忆] 相关历史章节摘要。",
+        ]
 
 
 # ---------------------------------------------------------------------------

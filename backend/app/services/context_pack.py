@@ -214,6 +214,11 @@ class ContextPack:
     # v1.7.4 P0-1: book/volume outline injection (was previously missing)
     book_outline_excerpt: str = ""
     volume_outline: dict = field(default_factory=dict)
+    # Hierarchical rollup: rolling 全书至此梗概 (≤800 chars, regenerated from
+    # VolumeSummary rows on volume transitions; stored in
+    # projects.settings_json["book_synopsis"]). Injected only for chapters
+    # beyond volume 1; empty ⇒ silently absent.
+    book_synopsis: str = ""
 
     # Layer 2: Facts (~33%)
     authoritative_fact_contract: str = ""
@@ -447,6 +452,22 @@ class ContextPack:
         - Layer 2 (Facts):     33%
         - Layer 3 (RAG):       20%
         - Instructions:         7%
+
+        Layer order (final, under keep-tail truncation — the HEAD of each
+        layer is dropped first, so within every layer coarse/old material
+        leads and the newest / highest-priority material sits tail-most):
+
+        - Layer 0 (never truncated): 角色名册 roster.
+        - L1: 全书大纲(节选) → 本卷大纲 → 全书至此梗概 (rolling book
+          synopsis, coarsest recap — expendable first) → 近五章摘要 →
+          本章已有内容 → 本章大纲 → 后续走向 → related-chapter recall →
+          compass anchor (most tail-ward, survives longest).
+        - L2: 权威事实契约 → 世界规则 → 写作规则 → 活跃角色状态 →
+          人物认知边界 → 伏笔追踪 → 时间线锚点 → 已知矛盾 →
+          线索平衡提醒 → 文风镜像.
+        - L3: 相关片段 (two-tier merged recall: live chapter summaries +
+          penalized compacted rollups, capped at 5; head-most, degrades
+          first) → 角色对话样本 → 风格参考.
         """
         if token_budget is None:
             try:
@@ -492,6 +513,12 @@ class ContextPack:
             vo_text = self._render_volume_outline_block()
             if vo_text:
                 l1_parts.append(f"【本卷大纲】\n{vo_text}")
+
+        # Hierarchical rollup: rolling book synopsis AHEAD of 近五章摘要 —
+        # coarse whole-book recap first, finer recent memory closer to the
+        # tail (keep-tail truncation drops the synopsis before the recents).
+        if self.book_synopsis:
+            l1_parts.append(f"【全书至此梗概】\n{self.book_synopsis}")
 
         if self.recent_summaries:
             summaries_text = "\n".join(
@@ -972,6 +999,44 @@ class ContextPackBuilder:
                     pack.volume_outline = volume_fallback
             except Exception as e:
                 logger.warning("Failed to load outlines (project=%s, ch=%d): %s", pid, chapter_idx, e)
+
+            # Hierarchical rollup: inject the rolling 全书至此梗概 for
+            # chapters beyond volume 1 (i.e. when an earlier volume exists).
+            # Degrades silently when absent (single-volume projects, or the
+            # synopsis has not been generated yet).
+            try:
+                cur_vol_idx = (
+                    await db.execute(
+                        select(Volume.volume_idx).where(Volume.id == vid)
+                    )
+                ).scalar_one_or_none()
+                if cur_vol_idx is not None:
+                    has_prev_volume = (
+                        await db.execute(
+                            select(Volume.id)
+                            .where(
+                                Volume.project_id == pid,
+                                Volume.volume_idx < int(cur_vol_idx),
+                            )
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none() is not None
+                    if has_prev_volume:
+                        project = await db.get(Project, pid)
+                        syn = (
+                            (project.settings_json or {}).get("book_synopsis")
+                            if project
+                            else None
+                        )
+                        text = (
+                            syn.get("text")
+                            if isinstance(syn, dict)
+                            else (syn if isinstance(syn, str) else "")
+                        )
+                        if isinstance(text, str) and text.strip():
+                            pack.book_synopsis = text.strip()[:800]
+            except Exception as e:
+                logger.debug("Book synopsis injection skipped: %s", e)
 
             # Also try to get summaries from previous volumes if we're at
             # the start of a volume
@@ -1662,10 +1727,15 @@ class ContextPackBuilder:
         entities: list[str],
         project_id: str,
     ) -> None:
-        """Search Qdrant for relevant content based on extracted entities.
+        """Search chapter-summary memory for snippets relevant to the outline.
 
-        Scoped to ``project_id`` via a payload filter — without it another
-        project's chapter summaries could be injected as facts.
+        Two-tier recall via qdrant_store.search_project_summaries (W10 fix):
+        the project's live shard (legacy-global + project filter fallback
+        pre-migration; compacted=true points excluded) merged with the
+        compacted-rollup tier under a slight score penalty, capped at 5.
+        Scoping to ``project_id`` is enforced by the shard itself or the
+        payload filter — without it another project's chapter summaries
+        could be injected as facts.
         """
         try:
             from app.services.feature_extractor import generate_embedding
@@ -1680,6 +1750,7 @@ class ContextPackBuilder:
 
             from qdrant_client import AsyncQdrantClient
             from app.config import settings
+            from app.services import qdrant_store as qs
 
             client = AsyncQdrantClient(
                 host=getattr(settings, "QDRANT_HOST", "localhost"),
@@ -1687,26 +1758,19 @@ class ContextPackBuilder:
             )
 
             try:
-                from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-                results = await client.search(
-                    collection_name="chapter_summaries",
-                    query_vector=embedding,
-                    query_filter=Filter(
-                        must=[
-                            FieldCondition(
-                                key="project_id",
-                                match=MatchValue(value=str(project_id)),
-                            ),
-                        ],
-                    ),
+                hits = await qs.search_project_summaries(
+                    client,
+                    str(project_id),
+                    embedding,
                     limit=5,
                     score_threshold=0.4,
                 )
-                for hit in results:
-                    payload = hit.payload or {}
+                for hit in hits:
+                    payload = hit.get("payload") or {}
                     summary = payload.get("summary", payload.get("text", ""))
                     if summary:
+                        if hit.get("tier") == "compacted":
+                            summary = f"[压缩记忆] {summary}"
                         pack.rag_snippets.append(summary)
                 # v0.6 — ContextPack v2: three-way recall from decompile collections
                 # Gated on CONTEXT_PACK_V2_ENABLED env flag. Safe no-op if disabled

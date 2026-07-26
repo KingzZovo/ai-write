@@ -55,6 +55,18 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.run_daily_backup",
         "schedule": 86400.0,  # every 24h; first run ~24h after worker start
     },
+    # v1.11 scaling groundwork (migration a1001916/a1001917): keep future
+    # llm_call_logs monthly partitions pre-created and apply retention.
+    # No-ops with a "skipped" result until the partition migration runs.
+    "llm-log-partition-maintenance-daily": {
+        "task": "tasks.maintain_llm_log_partitions",
+        "schedule": 86400.0,
+    },
+    # Keep-last-K chapter version pruning; default (K=0) keeps everything.
+    "chapter-version-retention-daily": {
+        "task": "tasks.enforce_chapter_version_retention",
+        "schedule": 86400.0,
+    },
 }
 
 # Explicitly import task modules so Celery registers them.
@@ -67,6 +79,7 @@ import app.tasks.backup_tasks  # noqa: F401, E402
 import app.tasks.entity_tasks  # noqa: F401, E402  # B2' (v1.5.0): entity extraction
 import app.tasks.evaluation_tasks  # noqa: F401, E402  # C2 Step D (v1.5.0): async chapter eval
 import app.tasks.cascade  # noqa: F401, E402  # C4-3 (v1.5.0): cascade auto-regenerate
+import app.tasks.retention_tasks  # noqa: F401, E402  # v1.11: partition upkeep + retention
 
 
 # ---------------------------------------------------------------------------

@@ -301,9 +301,16 @@ async def test_load_alias_map_defensive_shapes():
 
 
 @pytest.mark.asyncio
-async def test_update_roster_loads_alias_map_and_counts_canonical():
+async def test_rebuild_roster_counts_canonical_with_absolute_values():
+    """W14: per-chapter alias-folded counts rebuild the roster with ABSOLUTE
+    values (idempotent), not `appearance_count + c` increments."""
     from app.services import character_roster
 
+    per_chapter = [
+        (12, character_roster.count_appearances(
+            "炎帝一怒，炎帝出手。", {"萧炎"}, {"萧炎": ["炎帝"]}
+        )),
+    ]
     executed = []
 
     db = MagicMock()
@@ -314,20 +321,20 @@ async def test_update_roster_loads_alias_map_and_counts_canonical():
 
     db.execute = AsyncMock(side_effect=_exec)
 
-    with patch.object(
-        character_roster, "load_alias_map",
-        new=AsyncMock(return_value={"萧炎": ["炎帝"]}),
-    ) as mock_load:
-        await character_roster.update_roster_for_chapter(
-            db, "p1", 12, "炎帝一怒，炎帝出手。", {"萧炎"}
-        )
+    await character_roster.rebuild_roster(db, "p1", per_chapter)
 
-    mock_load.assert_awaited_once_with(db, "p1")
-    assert len(executed) == 1  # one upsert: the canonical character only
+    # One upsert (the canonical character only) + one stale-row delete.
+    assert len(executed) == 2
     from sqlalchemy.dialects import postgresql
     compiled = executed[0].compile(dialect=postgresql.dialect())
     assert compiled.params.get("character_name") == "萧炎"
     assert compiled.params.get("appearance_count") == 2
+    # The ON CONFLICT SET clause writes a literal, never the column + delta.
+    sql = str(compiled)
+    assert "appearance_count + " not in sql
+    assert "DELETE FROM character_appearances" in str(
+        executed[1].compile(dialect=postgresql.dialect())
+    )
 
 
 # ---------------------------------------------------------------------------

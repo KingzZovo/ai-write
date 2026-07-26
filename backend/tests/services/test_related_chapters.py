@@ -124,12 +124,14 @@ def test_context_pack_injects_related_recall():
 
 
 def test_roster_wired_into_recompute_task():
-    """C3: the C2 recompute task must populate the roster from its chapter pull
-    (one read serves both features). Source tripwire -- the original gap was an
-    unwired roster."""
+    """C3: the C2 recompute task must populate the roster from its per-chapter
+    stat rows (one pull serves both features). Source tripwire -- the original
+    gap was an unwired roster; since W14 the wiring is count_appearances (per
+    stale chapter) + rebuild_roster (idempotent aggregate)."""
     import inspect
 
     from app.tasks import style_tasks
 
     src = inspect.getsource(style_tasks)
-    assert "update_roster_for_chapter(" in src
+    assert "count_appearances(" in src
+    assert "rebuild_roster(" in src

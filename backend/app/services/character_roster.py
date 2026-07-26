@@ -8,9 +8,11 @@ first_seen / last_seen / appearance_count ledger (separate table, pure-PG, zero
 LLM) so generation can be reminded to re-read a character's last appearance
 before writing them again.
 
-Pure functions here are side-effect free; the DB upsert and the Celery wiring
-live in the recompute task (app.tasks.style_tasks) which already pulls every
-chapter's text once.
+Pure functions here are side-effect free; the Celery wiring lives in the
+incremental recompute task (app.tasks.style_tasks), which counts appearances
+per chapter (persisted in chapter_style_stats.appearances_json) and rebuilds
+the roster from those rows via ``rebuild_roster`` (idempotent absolute-value
+upsert, not increments).
 """
 
 from __future__ import annotations
@@ -102,60 +104,82 @@ async def load_alias_map(db, project_id) -> dict[str, list[str]]:
     return out
 
 
-async def update_roster_for_chapter(
-    db, project_id, global_idx: int, text: str, names: set[str],
-    alias_map: dict[str, list[str]] | None = None,
-) -> None:
-    """Upsert first_seen/last_seen/appearance_count for names seen in a chapter.
+def aggregate_appearances(
+    per_chapter: list[tuple[int, dict[str, int]]],
+) -> dict[str, dict[str, int]]:
+    """Fold per-chapter appearance counts into per-character roster totals.
 
-    Alias occurrences (characters.profile_json.aliases) count toward the
-    canonical character; ``alias_map`` is loaded from the characters table
-    when not supplied.
+    ``per_chapter`` is ``[(global_idx, {name: count_in_that_chapter}), ...]``
+    (one entry per chapter, alias folding already applied at count time by
+    ``count_appearances``). Returns ``{name: {"first_seen", "last_seen",
+    "count"}}``. Pure and derivable: running it again over the same rows
+    yields the same totals, which is what makes the roster rebuild idempotent.
     """
+    totals: dict[str, dict[str, int]] = {}
+    for idx, counts in per_chapter:
+        for name, c in (counts or {}).items():
+            c = int(c or 0)
+            if not name or c <= 0:
+                continue
+            cur = totals.get(name)
+            if cur is None:
+                totals[name] = {"first_seen": idx, "last_seen": idx, "count": c}
+            else:
+                cur["first_seen"] = min(cur["first_seen"], idx)
+                cur["last_seen"] = max(cur["last_seen"], idx)
+                cur["count"] += c
+    return totals
+
+
+async def rebuild_roster(
+    db, project_id, per_chapter: list[tuple[int, dict[str, int]]],
+    valid_names: set[str] | None = None,
+) -> None:
+    """Rebuild the character_appearances roster from per-chapter counts.
+
+    Replaces the old per-chapter ``appearance_count = appearance_count + c``
+    increment (non-idempotent: repeated recomputes inflated counts). Totals
+    are aggregated from the per-chapter rows and written as ABSOLUTE values;
+    roster rows for names no longer appearing (or no longer in
+    ``valid_names``, e.g. a deleted character) are removed. Running this any
+    number of times over the same rows converges to the same roster.
+    """
+    from sqlalchemy import delete
     from sqlalchemy.dialects.postgresql import insert
 
     from app.models.project import CharacterAppearance
 
-    if alias_map is None:
-        alias_map = await load_alias_map(db, project_id)
-
-    counts = count_appearances(text, names, alias_map)
-    for name, c in counts.items():
+    totals = aggregate_appearances(per_chapter)
+    if valid_names is not None:
+        totals = {n: agg for n, agg in totals.items() if n in valid_names}
+    for name, agg in totals.items():
         stmt = (
             insert(CharacterAppearance)
             .values(
                 project_id=str(project_id),
                 character_name=name,
-                first_seen_chapter=global_idx,
-                last_seen_chapter=global_idx,
-                appearance_count=c,
+                first_seen_chapter=agg["first_seen"],
+                last_seen_chapter=agg["last_seen"],
+                appearance_count=agg["count"],
             )
             .on_conflict_do_update(
                 index_elements=["project_id", "character_name"],
                 set_={
-                    "first_seen_chapter": _least(global_idx),
-                    "last_seen_chapter": _greatest(global_idx),
-                    "appearance_count": CharacterAppearance.appearance_count + c,
+                    "first_seen_chapter": agg["first_seen"],
+                    "last_seen_chapter": agg["last_seen"],
+                    "appearance_count": agg["count"],
                 },
             )
         )
         await db.execute(stmt)
-
-
-def _least(idx: int):
-    from sqlalchemy import func
-
-    from app.models.project import CharacterAppearance
-
-    return func.least(CharacterAppearance.first_seen_chapter, idx)
-
-
-def _greatest(idx: int):
-    from sqlalchemy import func
-
-    from app.models.project import CharacterAppearance
-
-    return func.greatest(CharacterAppearance.last_seen_chapter, idx)
+    stale = delete(CharacterAppearance).where(
+        CharacterAppearance.project_id == str(project_id)
+    )
+    if totals:
+        stale = stale.where(
+            CharacterAppearance.character_name.not_in(list(totals))
+        )
+    await db.execute(stale)
 
 
 def render_roster_block(

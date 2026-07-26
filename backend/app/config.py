@@ -78,6 +78,23 @@ class Settings(BaseSettings):
     # remaining relevant names are listed name-only in the roster.
     CONTEXT_PACK_MAX_CHARACTER_CARDS: int = 12
 
+    # --- Memory compaction (500万字 scaling) ---
+    # Auto-compaction fires (fire-and-forget, never blocks the chapter save)
+    # after a chapter-summary upsert when the project's live (non-compacted)
+    # chapter-summary point count exceeds this threshold.
+    MEMORY_COMPACT_THRESHOLD_POINTS: int = 200
+
+    # --- DB scaling / retention (v1.11 partitioning groundwork) ---
+    # Drop llm_call_logs monthly partitions older than this many months.
+    # <= 0 disables dropping (keep forever).
+    LLM_LOG_RETENTION_MONTHS: int = 6
+    # How many future monthly partitions tasks.maintain_llm_log_partitions
+    # keeps pre-created ahead of the current month.
+    LLM_LOG_PARTITION_PRECREATE_MONTHS: int = 3
+    # Keep only the newest K chapter_versions rows per chapter.
+    # 0 (default) = keep all history; the active version is never deleted.
+    CHAPTER_VERSION_KEEP_LAST: int = 0
+
     # --- Reference Ingestor ---
     STYLE_REDACTION_ENABLED: bool = True
     REFERENCE_INGEST_CONCURRENCY: int = 3

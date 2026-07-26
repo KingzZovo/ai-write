@@ -29,11 +29,16 @@ logger = logging.getLogger(__name__)
 _MAX_INPUT_CHARS = 6000
 _MIN_INPUT_CHARS = 200
 
-# Same collection the manual rebuild endpoint writes (services/rag_rebuild.py)
-# and context_pack L3 RAG reads. Points written here MUST stay interchangeable
-# with rag_rebuild's: same deterministic id per (volume_id, chapter_idx), same
-# payload keys.
-CHAPTER_SUMMARY_COLLECTION = "chapter_summaries"
+# Collection naming is owned by services/qdrant_store (per-project sharding:
+# chapter_summaries__<project-hex>, with legacy-global fallback on reads).
+# Points written here MUST stay interchangeable with rag_rebuild's: same
+# deterministic id per (volume_id, chapter_idx), same payload keys.
+
+# Auto-compaction guard: at most one in-flight compaction per project.
+_COMPACT_IN_FLIGHT: set[str] = set()
+# Strong references to detached compaction tasks (asyncio tasks are only
+# weakly referenced by the loop; without this a task could be GC'd mid-run).
+_COMPACT_TASKS: set = set()
 
 _USER_TEMPLATE = (
     "请用 80-160 个中文字概括下面这章内容。"
@@ -202,11 +207,19 @@ async def upsert_chapter_summary_embedding(
     chapter_title: str,
     summary: str,
 ) -> bool:
-    """Embed a chapter summary and upsert it into Qdrant chapter_summaries.
+    """Embed a chapter summary and upsert it into the project's summary shard.
 
-    Follows services/rag_rebuild.py's conventions exactly (deterministic point
-    id from md5(f"{volume_id}_{chapter_idx}"), same payload shape) so points
-    from this path and the manual rebuild endpoint overwrite each other cleanly.
+    Collection resolution goes through services/qdrant_store
+    (``chapter_summaries__<project-hex>``); on first shard creation the
+    project's legacy-global points are copied over so recall never loses
+    pre-shard history. Follows services/rag_rebuild.py's conventions exactly
+    (deterministic point id from md5(f"{volume_id}_{chapter_idx}"), same
+    payload shape) so points from this path and the manual rebuild endpoint
+    overwrite each other cleanly.
+
+    After a successful upsert, auto-compaction is fired (fire-and-forget)
+    when the project's live point count exceeds
+    ``settings.MEMORY_COMPACT_THRESHOLD_POINTS``.
 
     Never raises — an embedding/Qdrant failure logs a warning and returns
     False so the chapter save path is never broken.
@@ -217,9 +230,10 @@ async def upsert_chapter_summary_embedding(
         import hashlib
 
         from qdrant_client import AsyncQdrantClient
-        from qdrant_client.models import Distance, PointStruct, VectorParams
+        from qdrant_client.models import PointStruct
 
         from app.config import settings
+        from app.services import qdrant_store as qs
         from app.services.feature_extractor import generate_embedding
 
         vector = await generate_embedding(summary)
@@ -231,23 +245,16 @@ async def upsert_chapter_summary_embedding(
             port=getattr(settings, "QDRANT_PORT", 6333),
         )
         try:
-            try:
-                await client.get_collection(CHAPTER_SUMMARY_COLLECTION)
-            except Exception:
-                # Create with the dimension the configured embedding model
-                # actually returns (2048 for nvidia/llama-nemotron-embed-vl-1b-v2)
-                # instead of a hardcoded constant — the 4096/1536 constants in
-                # qdrant_store/rag_rebuild predate the current model.
-                await client.create_collection(
-                    collection_name=CHAPTER_SUMMARY_COLLECTION,
-                    vectors_config=VectorParams(
-                        size=len(vector), distance=Distance.COSINE
-                    ),
-                )
+            # Dimension-agnostic: shard is created with the dimension the
+            # configured embedding model actually returns (2048 for
+            # nvidia/llama-nemotron-embed-vl-1b-v2).
+            collection = await qs.ensure_summary_shard(
+                client, project_id, len(vector)
+            )
             key = f"{volume_id}_{chapter_idx}"
             point_id = int(hashlib.md5(key.encode()).hexdigest()[:16], 16)
             await client.upsert(
-                collection_name=CHAPTER_SUMMARY_COLLECTION,
+                collection_name=collection,
                 points=[
                     PointStruct(
                         id=point_id,
@@ -262,6 +269,13 @@ async def upsert_chapter_summary_embedding(
                     )
                 ],
             )
+            # Auto-compaction trigger — must never block or fail the save.
+            try:
+                await _maybe_trigger_auto_compaction(
+                    str(project_id), collection, client
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("auto-compaction trigger check failed: %s", e)
         finally:
             try:
                 await client.close()
@@ -274,3 +288,67 @@ async def upsert_chapter_summary_embedding(
             volume_id, chapter_idx, e,
         )
         return False
+
+
+async def _maybe_trigger_auto_compaction(
+    project_id: str,
+    collection: str,
+    client: Any,
+) -> None:
+    """Fire-and-forget compaction when the live point count crosses threshold.
+
+    Counts non-compacted points in the project's live collection; above
+    ``settings.MEMORY_COMPACT_THRESHOLD_POINTS`` (default 200) it schedules
+    ``compact_project_memory`` on the running loop with its own DB session.
+    At most one compaction runs per project at a time. The manual endpoint
+    (POST /api/projects/{id}/compact-memory) is unaffected.
+    """
+    from app.config import settings
+
+    threshold = int(getattr(settings, "MEMORY_COMPACT_THRESHOLD_POINTS", 200))
+    if threshold <= 0 or project_id in _COMPACT_IN_FLIGHT:
+        return
+    from qdrant_client import models as qmodels
+
+    count_res = await client.count(
+        collection_name=collection,
+        count_filter=qmodels.Filter(
+            must_not=[
+                qmodels.FieldCondition(
+                    key="compacted", match=qmodels.MatchValue(value=True)
+                )
+            ]
+        ),
+        exact=True,
+    )
+    live_points = int(getattr(count_res, "count", 0) or 0)
+    if live_points <= threshold:
+        return
+
+    import asyncio
+
+    _COMPACT_IN_FLIGHT.add(project_id)
+    logger.info(
+        "Auto-compaction triggered for project %s (%d live points > %d)",
+        project_id, live_points, threshold,
+    )
+    task = asyncio.get_running_loop().create_task(_run_auto_compaction(project_id))
+    _COMPACT_TASKS.add(task)
+    task.add_done_callback(_COMPACT_TASKS.discard)
+
+
+async def _run_auto_compaction(project_id: str) -> None:
+    """Detached compaction run; opens its own session, never raises."""
+    try:
+        from app.db.session import async_session_factory
+        from app.services.memory_compactor import compact_project_memory
+
+        async with async_session_factory() as db:
+            result = await compact_project_memory(
+                project_id=project_id, db=db, force=False
+            )
+            logger.info("Auto-compaction finished for %s: %s", project_id, result)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Auto-compaction failed (project %s): %s", project_id, e)
+    finally:
+        _COMPACT_IN_FLIGHT.discard(project_id)
