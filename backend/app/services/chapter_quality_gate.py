@@ -344,6 +344,11 @@ def _quality_penalty(report: ChineseProseMechanicsReport) -> int:
         + report.translationese_marker_count * 320
         + (report.micro_action_beat_count * 90 if report.micro_action_overload else 0)
         + report.repeated_rare_phrase_count * 150
+        # Defect-class immunity (docs/DEFECT_GOVERNANCE.md): era/register bleed
+        # and scene-seam duplication are WARN-level but must shrink across
+        # rewrite rounds, so they weigh into the penalty like micro_action.
+        + report.era_register_conflict_count * 320
+        + report.seam_duplication_count * 300
         + max(0, report.action_dialogue_beat_count - 14) * 120
         + report.short_sentence_runs_over_target * 80
         + max(0, report.short_sentence_run_max - 8) * 40
@@ -467,6 +472,11 @@ def _build_rewrite_user_content(
         "repeated_rare_phrase_count": initial_report.repeated_rare_phrase_count,
         "repeated_rare_phrases": dict(initial_report.repeated_rare_phrases),
         "translationese_marker_count": initial_report.translationese_marker_count,
+        "era_register_class": initial_report.era_register_class,
+        "era_register_conflict_count": initial_report.era_register_conflict_count,
+        "era_register_conflicts": dict(initial_report.era_register_conflicts),
+        "seam_duplication_count": initial_report.seam_duplication_count,
+        "seam_duplication_pairs": list(initial_report.seam_duplication_pairs),
         "interiority_monologue_rate": round(initial_report.interiority_monologue_rate, 3),
         "repeated_realization_run": initial_report.repeated_realization_run,
         "dialogue_paragraph_rate": round(initial_report.dialogue_paragraph_rate, 3),
@@ -502,7 +512,9 @@ def _build_rewrite_user_content(
         "- abstract_evasion：删除试错、借口留下来、价格难看、碰这种脸色等抽象逃避词，把行为理由写成钱、时间、电量、体力、路况和退路。\n\n"
         "- micro_action_budget：删减推眼镜、摸物件、关节作响、捏纸角这类小动作拍，每千字不超过 3 处，同一个具体动作全章只留 1 次；情绪改用一个准确的念头或对话内容的变化承载。\n"
         "- repeated_rare_phrase：同一个显眼短语（检测摘要 repeated_rare_phrases 中列出的）不得反复出现三次以上；重复处换写法或删除。\n"
-        "- translationese：删除介于两者之间、某种意义上、从某种程度、事实上开头这类英语骨架直译式表达，改成平实的中文陈述。\n\n"
+        "- translationese：删除介于两者之间、某种意义上、从某种程度、事实上开头这类英语骨架直译式表达，改成平实的中文陈述。\n"
+        "- era_register_consistency：时代语域一致性。计时/度量/器物词必须属于本书时代设定；把检测摘要 era_register_conflicts 中列出的越界词全部替换成本书时代的说法（现代/近未来用分钟、小时，不写两炷香、时辰、三更天；古风/仙侠反之，不写分钟、公里、手机）。\n"
+        "- seam_duplication：合并或删除复述句。相邻段落/场景接缝不得把同一拍再叙述一遍（检测摘要 seam_duplication_pairs 列出的句对）；只保留一处，另一处删除或改成推进新变化。\n\n"
         "- cross_project_prose_quality_contract：先按规则族修，不要只替换用户点名的一句话。同类伪文学压缩腔、语义搭配缺失、资源逻辑断裂和重复解释都要一起清理。\n"
         "- duplicate_explanation_control：同一压力链只解释一次。重复的退路说明、心理金句和困境标签要删除或改成下一步行动。\n\n"
         "- chapter_level_anti_padding：每段必须带新信息（动作/对话/发现/关系变化）；同一洞察全章只写一次，禁止换比喻反复重述；删除连续堆叠的心理剖白段，段落不得只复述上一段结论；对话与有信息的叙述/动作要平衡，不要用独白金句凑字数，也不要用整章短对白墙或一句一段凑字数。\n\n"
@@ -528,6 +540,34 @@ def _build_rewrite_user_content(
     )
 
 
+async def _resolve_project_genre_hint(db: AsyncSession, project_id: str | None) -> str | None:
+    """Best-effort project genre lookup for the era/register-bleed detector.
+
+    Combines Project.genre and Project.genre_profile_code into one hint string;
+    any failure (missing project, stub db in tests) yields None, which keeps the
+    era detector inactive (never guess the setting's era).
+    """
+    if not project_id:
+        return None
+    try:
+        from app.models.project import Project
+
+        project = await db.get(Project, project_id)
+        if project is None:
+            return None
+        hint = " ".join(
+            str(part)
+            for part in (
+                getattr(project, "genre", None),
+                getattr(project, "genre_profile_code", None),
+            )
+            if part
+        ).strip()
+        return hint or None
+    except Exception:
+        return None
+
+
 async def apply_chapter_quality_gate(
     *,
     text: str,
@@ -539,19 +579,25 @@ async def apply_chapter_quality_gate(
     max_tokens: int = _DEFAULT_MAX_TOKENS,
     target_word_count: int | None = None,
     min_target_word_ratio: float = _MIN_TARGET_WORD_RATIO,
+    genre_hint: str | None = None,
 ) -> ChapterQualityGateResult:
     """Inspect generated chapter prose and optionally rewrite it.
 
     The gate returns the best available candidate. It never raises for bad prose
     alone; callers decide whether to persist the returned text and emit warning
-    events.
+    events. ``genre_hint`` feeds the era/register-bleed detector; when omitted
+    it is resolved from the project row so existing call sites get genre-aware
+    reports without changes.
     """
     if max_rewrite_rounds is None:
         # Call-time read so config changes / monkeypatched settings win.
         max_rewrite_rounds = settings.CHAPTER_MAX_REWRITE_ROUNDS
 
+    if genre_hint is None:
+        genre_hint = await _resolve_project_genre_hint(db, project_id)
+
     original_text = text or ""
-    initial_report = analyze_chinese_prose_mechanics(original_text)
+    initial_report = analyze_chinese_prose_mechanics(original_text, genre_hint=genre_hint)
     min_target = _min_target_word_count(target_word_count, min_target_word_ratio)
 
     if project_id and original_text:
@@ -641,7 +687,7 @@ async def apply_chapter_quality_gate(
             max_tokens=max_tokens,
         )
         candidate_text = _normalize_text(result.text or "")
-        candidate_report = analyze_chinese_prose_mechanics(candidate_text)
+        candidate_report = analyze_chinese_prose_mechanics(candidate_text, genre_hint=genre_hint)
         accepted, reason = _candidate_is_acceptable(
             original_text=original_text,
             candidate_text=candidate_text,

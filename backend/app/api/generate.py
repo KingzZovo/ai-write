@@ -3,6 +3,7 @@
 import json
 import logging
 import asyncio
+from datetime import datetime, timezone
 from app.config import settings as _cfg
 from collections.abc import AsyncGenerator
 
@@ -90,6 +91,137 @@ def resolve_rollback_text(
     if persist_on_block and (current_text or "").strip():
         return current_text
     return baseline_text or ""
+
+
+def resolve_rollback_decision(
+    *,
+    baseline_text: str,
+    current_text: str,
+    persist_on_block: bool,
+    best_draft_text: str | None,
+    best_draft_score: float | None,
+    baseline_score: float | None,
+    keep_min_score: float,
+) -> tuple[str, bool, str | None]:
+    """Decide between restoring the baseline and keeping the run's best draft.
+
+    Returns ``(text_to_persist, kept_best_draft, keep_reason)``. ``keep_reason``
+    is non-None only when this policy kept the best draft; the caller then
+    persists it with status='draft' (it is sub-threshold by definition and must
+    never masquerade as completed).
+
+    Live incident (2026-07-26): an explicit regeneration improved
+    6.5->7.1->7.3->7.9 across auto-revise rounds, missed the 8.2 threshold,
+    and the rollback restored a baseline whose only evaluation row was a 0.00
+    parse-failure relic -- a scored-7.9 draft was silently replaced by an
+    unscored old text.
+
+    Decision table (best draft "eligible" = non-empty text + REAL evaluation
+    score >= keep_min_score; parse-failed evaluations never produce a score):
+
+      baseline    baseline_score    best draft           -> outcome
+      ---------   ---------------   -------------------  ----------------------
+      non-empty   None (unscored)   eligible             keep best (as draft)
+      non-empty   None              not eligible         roll back to baseline
+      non-empty   s_b               eligible, s_d > s_b  keep best (as draft)
+      non-empty   s_b               s_d <= s_b           roll back (equal ->
+                                                         conservative baseline)
+      non-empty   s_b               below floor          roll back to baseline
+      empty       --                --                   legacy
+                                                         resolve_rollback_text
+                                                         (persist_on_block
+                                                         contract unchanged)
+    """
+    baseline_nonempty = bool((baseline_text or "").strip())
+    best_eligible = (
+        best_draft_text is not None
+        and bool(best_draft_text.strip())
+        and best_draft_score is not None
+        and best_draft_score >= keep_min_score
+    )
+    if baseline_nonempty and best_eligible:
+        if baseline_score is None:
+            return best_draft_text, True, "baseline_unscored"
+        if best_draft_score > baseline_score:
+            return best_draft_text, True, "best_beats_baseline"
+    text = resolve_rollback_text(
+        baseline_text=baseline_text,
+        current_text=current_text,
+        persist_on_block=persist_on_block,
+    )
+    return text, bool((text or "").strip()) and not baseline_nonempty, None
+
+
+def _latest_valid_baseline_overall(
+    rows,
+    *,
+    baseline_updated_at,
+    run_started_at,
+) -> float | None:
+    """Newest evaluation ``overall`` attributable to the baseline's CURRENT text.
+
+    ``rows`` are ``(overall, created_at)`` tuples, newest first. A row counts
+    only when:
+
+    - ``overall > 0`` -- evaluator parse failures persist sentinel 0.0 rows
+      (the incident baseline's only row), which are not real verdicts; and
+    - ``baseline_updated_at <= created_at <= run_started_at`` -- evaluations
+      are written after the text they scored was saved, so a row older than
+      the baseline text's last save scored some EARLIER text, and a row newer
+      than run start scored one of THIS run's drafts.
+
+    This is the cheaply-determinable attribution: ``Chapter.updated_at`` also
+    bumps on non-content edits (status/summary), so a real baseline score can
+    occasionally be misclassified as stale. The cost is bounded -- we then
+    keep a floor-gated scored draft as 'draft', and the baseline text stays
+    recoverable via its chapter_versions row. Naive datetimes are treated as
+    UTC (sqlite test sessions store naive).
+    """
+    if baseline_updated_at is None or run_started_at is None:
+        return None
+
+    def _norm(dt):
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+    lo = _norm(baseline_updated_at)
+    hi = _norm(run_started_at)
+    for overall, created_at in rows:
+        if overall is None or created_at is None or overall <= 0:
+            continue
+        if lo <= _norm(created_at) <= hi:
+            return float(overall)
+    return None
+
+
+async def _load_valid_baseline_score(
+    chapter_id,
+    *,
+    baseline_updated_at,
+    run_started_at,
+) -> float | None:
+    """DB half of the baseline-score check (see _latest_valid_baseline_overall).
+
+    Best-effort: any failure returns None, i.e. the baseline is treated as
+    unscored -- ROLLBACK_KEEP_MIN_SCORE still guards what may replace it.
+    """
+    try:
+        from app.db.session import async_session_factory
+        from app.models.project import ChapterEvaluation
+        async with async_session_factory() as sdb:
+            rows = (await sdb.execute(
+                select(ChapterEvaluation.overall, ChapterEvaluation.created_at)
+                .where(ChapterEvaluation.chapter_id == chapter_id)
+                .order_by(ChapterEvaluation.created_at.desc())
+                .limit(50)
+            )).all()
+        return _latest_valid_baseline_overall(
+            rows,
+            baseline_updated_at=baseline_updated_at,
+            run_started_at=run_started_at,
+        )
+    except Exception:
+        logger.warning("Rollback baseline-score lookup failed", exc_info=True)
+        return None
 
 
 def _sync_single_shot_llm_kwargs() -> dict[str, float | int | bool]:
@@ -320,13 +452,21 @@ async def generate_chapter(
     next_summary_for_eval = ""
     current_text = ""
     target_words: int | None = None
+    # ROLLBACK-POLICY (2026-07-27): when the baseline chapter row was last
+    # written, so the rollback site can tell whether an old evaluation row
+    # scored THIS baseline text or some earlier one.
+    baseline_updated_at_before_run = None
 
+    chapter = None
     if req.chapter_id:
         chapter = await db.get(Chapter, req.chapter_id)
         if chapter:
             chapter_outline = chapter.outline_json or {}
             current_text = chapter.content_text or ""
             target_words = chapter.target_word_count
+            # getattr: fakes/legacy rows without updated_at -> None, which the
+            # attribution helper treats as "baseline unscored".
+            baseline_updated_at_before_run = getattr(chapter, "updated_at", None)
             prev_result = await db.execute(
                 select(Chapter).where(
                     Chapter.volume_id == chapter.volume_id,
@@ -382,6 +522,9 @@ async def generate_chapter(
         # Baseline snapshot so auto-revise failures do not leave a known-bad
         # draft as the active chapter.content_text.
         baseline_text_before_run = current_text
+        # ROLLBACK-POLICY: evaluation rows created after this instant belong
+        # to THIS run's drafts, not the baseline.
+        run_started_at = datetime.now(timezone.utc)
         try:
             yield f"data: {json.dumps({'status': 'generating', 'message': 'Starting...'})}\n\n"
 
@@ -405,6 +548,21 @@ async def generate_chapter(
                 effective_user_instruction = (
                     effective_user_instruction + "\n\n" + structure_prompt
                 )
+            # Defect-class immunity preflight (era/seam guidance + the
+            # per-project recurring-defect ledger). Same builder as the
+            # celery path; failure-tolerant so it can never block the SSE run.
+            if chapter is not None:
+                try:
+                    from app.tasks.generation_tasks import (
+                        _build_chinese_prose_preflight_prompt,
+                    )
+                    _preflight, _ = await _build_chinese_prose_preflight_prompt(chapter, db)
+                    if _preflight:
+                        effective_user_instruction = (
+                            effective_user_instruction + "\n\n" + _preflight
+                        ).strip()
+                except Exception as _pf_err:  # pragma: no cover - defensive
+                    logger.warning("SSE preflight skipped: %s", _pf_err)
 
             evaluation_context = "\n\n".join(
                 part
@@ -887,6 +1045,11 @@ async def generate_chapter(
                 accepted_final = False
                 aborted_with_blocking = False
                 c2_revised = False
+                # ROLLBACK-POLICY (2026-07-27): best REAL-scored draft of this
+                # run (text + overall). Parse-failed evaluations (sentinel
+                # overall=0) never populate these.
+                best_draft_text: str | None = None
+                best_draft_score: float | None = None
                 current_text = full_text
                 try:
                     # C2 deadlock fix: the outer baseline-path session (`db`)
@@ -982,6 +1145,20 @@ async def generate_chapter(
                                 "C2 auto-revise: failed to persist ChapterEvaluation row (round=%d): %s",
                                 round_idx, persist_err,
                             )
+
+                        # ROLLBACK-POLICY: remember the best draft with a REAL
+                        # score so the rollback below can weigh it against the
+                        # baseline instead of discarding it unseen.
+                        if (
+                            not getattr(eval_result, "parse_failed", False)
+                            and eval_result.overall > 0
+                            and (
+                                best_draft_score is None
+                                or eval_result.overall > best_draft_score
+                            )
+                        ):
+                            best_draft_text = current_text
+                            best_draft_score = float(eval_result.overall)
 
                         # 2) Threshold gate.
                         if not should_revise(eval_result, threshold=threshold):
@@ -1214,6 +1391,21 @@ async def generate_chapter(
                             except Exception:
                                 logger.warning("C2 auto-revise final eval persist failed", exc_info=True)
 
+                            # ROLLBACK-POLICY: the final revision is scored
+                            # here (never inside the round loop) -- track it
+                            # too, or the incident's 7.9 draft is invisible to
+                            # the rollback decision.
+                            if (
+                                not getattr(final_eval, "parse_failed", False)
+                                and final_eval.overall > 0
+                                and (
+                                    best_draft_score is None
+                                    or final_eval.overall > best_draft_score
+                                )
+                            ):
+                                best_draft_text = current_text
+                                best_draft_score = float(final_eval.overall)
+
                             # Only accept the final text when it meets the
                             # threshold and has no blocking contract violations.
                             if not should_revise(final_eval, threshold=threshold):
@@ -1409,10 +1601,29 @@ async def generate_chapter(
                 if (not accepted_final) and aborted_with_blocking:
                     try:
                         _rb_persist_on_block = _cfg.QUALITY_GATE_PERSIST_ON_BLOCK
-                        _rb_text = resolve_rollback_text(
+                        # ROLLBACK-POLICY (2026-07-27): only pay the baseline
+                        # score lookup when a floor-eligible scored best draft
+                        # exists AND a non-empty baseline could win over it.
+                        _rb_baseline_score = None
+                        if (
+                            (baseline_text_before_run or "").strip()
+                            and (best_draft_text or "").strip()
+                            and best_draft_score is not None
+                            and best_draft_score >= _cfg.ROLLBACK_KEEP_MIN_SCORE
+                        ):
+                            _rb_baseline_score = await _load_valid_baseline_score(
+                                req.chapter_id,
+                                baseline_updated_at=baseline_updated_at_before_run,
+                                run_started_at=run_started_at,
+                            )
+                        _rb_text, _rb_kept_best, _rb_keep_reason = resolve_rollback_decision(
                             baseline_text=baseline_text_before_run or "",
                             current_text=current_text or "",
                             persist_on_block=_rb_persist_on_block,
+                            best_draft_text=best_draft_text,
+                            best_draft_score=best_draft_score,
+                            baseline_score=_rb_baseline_score,
+                            keep_min_score=_cfg.ROLLBACK_KEEP_MIN_SCORE,
                         )
                         from app.db.session import async_session_factory
                         from app.models.project import Chapter as _ChapterRollback
@@ -1421,17 +1632,33 @@ async def generate_chapter(
                             if ch_rb is not None:
                                 ch_rb.content_text = _rb_text
                                 ch_rb.word_count = len(ch_rb.content_text or "")
-                                # A kept best-draft stays usable; a true wipe
-                                # (empty result) OR a mid-sentence truncated
-                                # draft downgrades to draft rather than passing
-                                # off a dangling chapter as completed.
-                                ch_rb.status = (
-                                    "completed"
-                                    if (_rb_text or "").strip() and not looks_truncated(_rb_text) and not looks_like_refusal(_rb_text)
-                                    else "draft"
-                                )
+                                if _rb_keep_reason is not None:
+                                    # Kept best draft is sub-threshold by
+                                    # definition: persist as draft, never
+                                    # masquerade as completed.
+                                    ch_rb.status = "draft"
+                                else:
+                                    # A kept best-draft stays usable; a true wipe
+                                    # (empty result) OR a mid-sentence truncated
+                                    # draft downgrades to draft rather than passing
+                                    # off a dangling chapter as completed.
+                                    ch_rb.status = (
+                                        "completed"
+                                        if (_rb_text or "").strip() and not looks_truncated(_rb_text) and not looks_like_refusal(_rb_text)
+                                        else "draft"
+                                    )
                                 await rb_db.commit()
-                                yield f"data: {json.dumps({'event': 'rollback_applied', 'reason': 'auto_revise_blocking_or_timeout', 'chapter_id': req.chapter_id, 'kept_best_draft': bool((_rb_text or '').strip()) and not (baseline_text_before_run or '').strip()})}\n\n"
+                                _rb_payload = {
+                                    "event": "rollback_applied",
+                                    "reason": "auto_revise_blocking_or_timeout",
+                                    "chapter_id": req.chapter_id,
+                                    "kept_best_draft": _rb_kept_best,
+                                }
+                                if _rb_keep_reason is not None:
+                                    _rb_payload["keep_reason"] = _rb_keep_reason
+                                    _rb_payload["best_draft_score"] = best_draft_score
+                                    _rb_payload["baseline_score"] = _rb_baseline_score
+                                yield f"data: {json.dumps(_rb_payload)}\n\n"
                     except Exception:
                         logger.warning("Auto-revise rollback failed", exc_info=True)
 

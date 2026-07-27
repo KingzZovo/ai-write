@@ -214,8 +214,10 @@ async def _build_chinese_prose_preflight_prompt(ch, db) -> tuple[str, dict]:
     """
     from sqlalchemy import desc, select
 
-    from app.models.project import ChapterEvaluation, EvaluateTask
+    from app.config import settings as _settings
+    from app.models.project import Chapter, ChapterEvaluation, EvaluateTask, Project
     from app.services.chinese_prose_mechanics_checker import (
+        aggregate_recurring_defects,
         analyze_chinese_prose_mechanics,
         build_generation_preflight_prompt,
     )
@@ -224,7 +226,24 @@ async def _build_chinese_prose_preflight_prompt(ch, db) -> tuple[str, dict]:
     if not previous_text:
         return "", {}
 
-    report = analyze_chinese_prose_mechanics(previous_text)
+    # Era/register bleed detector (docs/DEFECT_GOVERNANCE.md) is genre-gated:
+    # resolve the project's genre string best-effort; None keeps it inactive.
+    genre_hint: str | None = None
+    try:
+        project = await db.get(Project, ch.project_id)
+        if project is not None:
+            genre_hint = " ".join(
+                str(part)
+                for part in (
+                    getattr(project, "genre", None),
+                    getattr(project, "genre_profile_code", None),
+                )
+                if part
+            ).strip() or None
+    except Exception:
+        genre_hint = None
+
+    report = analyze_chinese_prose_mechanics(previous_text, genre_hint=genre_hint)
     issue_focus: list[str] = []
 
     def _extract_issue_focus(issues) -> list[str]:
@@ -299,13 +318,61 @@ async def _build_chinese_prose_preflight_prompt(ch, db) -> tuple[str, dict]:
             err,
         )
 
+    # Recurring-defect ledger (docs/DEFECT_GOVERNANCE.md): deterministic
+    # per-project immunization loop. Collect the latest scored evaluation of
+    # each of the project's last N evaluated chapters; tags recurring in >=2 of
+    # them become a 【本项目高发问题】 preflight block with their repair action.
+    recurring_issue_history: list[list[dict]] = []
+    try:
+        window = max(1, int(_settings.PREFLIGHT_RECURRING_DEFECT_CHAPTERS))
+        eval_rows = await db.execute(
+            select(ChapterEvaluation)
+            .join(Chapter, ChapterEvaluation.chapter_id == Chapter.id)
+            .where(Chapter.project_id == ch.project_id)
+            .where(ChapterEvaluation.overall > 0)
+            .order_by(desc(ChapterEvaluation.created_at))
+            .limit(window * 6)
+        )
+        latest_issues_by_chapter: dict[str, list[dict]] = {}
+        for row in eval_rows.scalars().all():
+            chapter_key = str(row.chapter_id)
+            if chapter_key in latest_issues_by_chapter:
+                continue
+            if len(latest_issues_by_chapter) >= window:
+                break
+            issues = row.issues_json if isinstance(row.issues_json, list) else []
+            latest_issues_by_chapter[chapter_key] = [x for x in issues if isinstance(x, dict)]
+        recurring_issue_history = list(latest_issues_by_chapter.values())
+    except Exception as err:  # pragma: no cover - ledger must be best effort.
+        logger.warning(
+            "chinese_prose_preflight recurring-defect ledger lookup failed chapter_id=%s err=%s",
+            getattr(ch, "id", None),
+            err,
+        )
+
+    recurring_min = max(1, int(_settings.PREFLIGHT_RECURRING_DEFECT_MIN_CHAPTERS))
+    recurring_defects = aggregate_recurring_defects(
+        recurring_issue_history, min_chapters=recurring_min
+    )
     safe_metrics = report.to_safe_dict()
-    return build_generation_preflight_prompt(report, issue_focus=issue_focus, version_label="v4.40"), {
-        "version": "v4.40_mundane_naturalness_age_logic_feedback",
+    return build_generation_preflight_prompt(
+        report,
+        issue_focus=issue_focus,
+        version_label="v4.41",
+        recurring_issue_history=recurring_issue_history,
+        recurring_min_chapters=recurring_min,
+    ), {
+        "version": "v4.41_defect_class_immunity_era_seam_ledger",
         "diagnostic_only": True,
         "hard_gate": False,
         "metrics": safe_metrics,
         "issue_focus": issue_focus[:12],
+        "genre_hint": genre_hint,
+        "era_register_class": report.era_register_class,
+        "recurring_defect_window_chapters": len(recurring_issue_history),
+        "recurring_defects": {
+            tag: int(info.get("chapters") or 0) for tag, info in recurring_defects.items()
+        },
         "generation_targets": {
             "short_sentence_run_max": 4,
             "short_sentence_runs_over_target_ratio": 0.25,
@@ -405,6 +472,8 @@ async def _build_chinese_prose_preflight_prompt(ch, db) -> tuple[str, dict]:
             "action_causality_count_max": 0,
             "motivation_gap_count_max": 0,
             "scene_plausibility_count_max": 0,
+            "era_register_conflict_count_max": 0,
+            "seam_duplication_count_max": 0,
             "no_action_chain_for_explanation": True,
             "diagnostic_only": True,
         },

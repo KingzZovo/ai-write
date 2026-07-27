@@ -356,6 +356,136 @@ TRANSLATIONESE_MARKER_PATTERNS = [
     r"事实上，",
 ]
 
+# --- Defect-class immunity (2026-07, docs/DEFECT_GOVERNANCE.md) ---
+# Class: era/register bleed. A bound style-reference book from another era can
+# bleed period vocabulary into a modern/near-future novel (live case: 「约莫
+# 两炷香工夫」 in a near-future chapter), or modern units into a 古风 novel.
+# Deterministic lexicon check gated on the project genre: active only when the
+# genre string clearly classifies as modern or period; unknown/ambiguous genre
+# keeps the detector OFF (never guess). WARN-level like micro_action: feeds
+# _quality_penalty + rewrite/preflight instructions, never blocks on its own.
+_MODERN_GENRE_KEYWORDS = (
+    "现代", "都市", "近未来", "未来", "科幻", "赛博", "星际", "末世", "末日",
+    "校园", "职场", "urban", "scifi", "sci-fi", "sci_fi", "cyberpunk", "modern",
+    "future",
+)
+_PERIOD_GENRE_KEYWORDS = (
+    "古风", "古代", "古言", "仙侠", "修仙", "修真", "武侠", "历史", "宫廷",
+    "xianxia", "wuxia", "historical", "history", "ancient",
+)
+# 古风计时/度量 terms flagged in a modern/near-future/scifi/urban setting.
+# Conservative: era-neutral survivals (一刻钟, 三更半夜) are deliberately absent.
+MODERN_SETTING_FLAGS = [
+    r"[一二三四五六七八九半两几0-9]*炷香",   # 一炷香/两炷香（工夫）
+    r"[一半两]盏茶",
+    r"半刻钟",
+    r"[一二三四五]更天",
+    r"时辰",
+    # 地支+时 (戌时/亥时…). Lookarounds keep 下午时分/中午时/晌午时/星辰时代 safe.
+    r"(?<![上下中傍晌星生凌])[子丑寅卯辰巳午未申酉戌亥]时(?![分候间钟段代])",
+    r"[一二三四五六七八九十百千两几0-9]+(?:丈|里地)",
+    r"丈余|丈许",
+]
+# Modern terms flagged in a 古风/仙侠/历史/武侠 setting.
+PERIOD_SETTING_FLAGS = [
+    r"分钟",
+    r"小时(?!候)",   # 小时候 is era-neutral
+    r"公里",
+    r"千米",
+    r"百分之[一二三四五六七八九十百0-9]+|百分比",
+    r"手机",
+    r"电话",
+]
+ERA_REGISTER_TOP_TERMS = 8
+
+
+def classify_genre_register(genre_hint: str | None) -> str:
+    """Map a project genre string / genre_profile_code to a register class.
+
+    Returns ``"modern"``, ``"period"``, or ``""`` when the genre is unknown or
+    matches both keyword families (ambiguous) — in which case the era detector
+    stays inactive rather than guessing.
+    """
+    hint = (genre_hint or "").strip().lower()
+    if not hint:
+        return ""
+    is_modern = any(keyword in hint for keyword in _MODERN_GENRE_KEYWORDS)
+    is_period = any(keyword in hint for keyword in _PERIOD_GENRE_KEYWORDS)
+    if is_modern == is_period:
+        return ""
+    return "modern" if is_modern else "period"
+
+
+def _era_register_conflicts(text: str, register_class: str) -> Counter[str]:
+    if register_class == "modern":
+        patterns = MODERN_SETTING_FLAGS
+    elif register_class == "period":
+        patterns = PERIOD_SETTING_FLAGS
+    else:
+        return Counter()
+    counts: Counter[str] = Counter()
+    for pattern in patterns:
+        for match in re.finditer(pattern, text or ""):
+            counts[match.group(0)] += 1
+    return counts
+
+
+# Class: scene-seam duplication. Adjacent scenes re-narrate the same beat (live
+# case: two consecutive paragraphs both restating 声音断了+电流声). Deterministic
+# near-duplicate narration-sentence detection: quoted speech is masked out first
+# (so a character deliberately echoing a line is never flagged), then sentences
+# whose compact narration is >= SEAM_DUP_MIN_SENT_CHARS are compared pairwise
+# within a ~SEAM_DUP_WINDOW_CHARS window on char-bigram Jaccard similarity.
+# WARN-level: penalty + rewrite instruction (合并或删除复述句), never blocks alone.
+SEAM_DUP_MIN_SENT_CHARS = 10
+SEAM_DUP_SIMILARITY = 0.6
+SEAM_DUP_WINDOW_CHARS = 800
+SEAM_DUP_TOP_PAIRS = 3
+_SEAM_SENT_END_RE = re.compile(r"[。！？!?；;\n]+")
+_SEAM_COMPACT_RE = re.compile(r"[\s□，、,．.：:…—-]+")
+
+
+def _char_bigrams(compact: str) -> set[str]:
+    return {compact[i : i + 2] for i in range(len(compact) - 1)}
+
+
+def _seam_duplication(text: str) -> tuple[int, list[str]]:
+    """Return (near_duplicate_pair_count, top_pairs_trimmed)."""
+    src = text or ""
+    if not src.strip():
+        return 0, []
+    # Mask quoted dialogue with a filler of equal length so offsets survive and
+    # quote content never participates in narration similarity.
+    masked = QUOTE_RE.sub(lambda m: "□" * len(m.group(0)), src)
+    entries: list[tuple[int, str, set[str]]] = []
+    cursor = 0
+    boundaries = [m.span() for m in _SEAM_SENT_END_RE.finditer(masked)]
+    boundaries.append((len(masked), len(masked)))
+    for b_start, b_end in boundaries:
+        segment = masked[cursor:b_start]
+        seg_start = cursor
+        cursor = b_end
+        compact = _SEAM_COMPACT_RE.sub("", segment)
+        if len(compact) < SEAM_DUP_MIN_SENT_CHARS:
+            continue
+        entries.append((seg_start, src[seg_start:b_start].strip(), _char_bigrams(compact)))
+    pair_count = 0
+    scored: list[tuple[float, str]] = []
+    for i, (start_i, raw_i, grams_i) in enumerate(entries):
+        for j in range(i + 1, len(entries)):
+            start_j, raw_j, grams_j = entries[j]
+            if start_j - start_i > SEAM_DUP_WINDOW_CHARS:
+                break
+            union = grams_i | grams_j
+            if not union:
+                continue
+            similarity = len(grams_i & grams_j) / len(union)
+            if similarity >= SEAM_DUP_SIMILARITY:
+                pair_count += 1
+                scored.append((similarity, f"{raw_i[:24]}…↔{raw_j[:24]}…"))
+    scored.sort(key=lambda kv: -kv[0])
+    return pair_count, [pair for _, pair in scored[:SEAM_DUP_TOP_PAIRS]]
+
 @dataclass
 class ChineseProseMechanicsReport:
     passed: bool = False
@@ -416,6 +546,11 @@ class ChineseProseMechanicsReport:
     repeated_rare_phrase_count: int = 0
     repeated_rare_phrases: dict[str, int] = field(default_factory=dict)
     translationese_marker_count: int = 0
+    era_register_class: str = ""
+    era_register_conflict_count: int = 0
+    era_register_conflicts: dict[str, int] = field(default_factory=dict)
+    seam_duplication_count: int = 0
+    seam_duplication_pairs: list[str] = field(default_factory=list)
     paragraph_risks: list[str] = field(default_factory=list)
 
     @property
@@ -483,6 +618,11 @@ class ChineseProseMechanicsReport:
             "repeated_rare_phrase_count": self.repeated_rare_phrase_count,
             "repeated_rare_phrases": dict(self.repeated_rare_phrases),
             "translationese_marker_count": self.translationese_marker_count,
+            "era_register_class": self.era_register_class,
+            "era_register_conflict_count": self.era_register_conflict_count,
+            "era_register_conflicts": dict(self.era_register_conflicts),
+            "seam_duplication_count": self.seam_duplication_count,
+            "seam_duplication_pairs": list(self.seam_duplication_pairs),
             "paragraph_risks": list(self.paragraph_risks),
         }
 
@@ -910,7 +1050,9 @@ def _repeated_rare_phrases(text: str) -> dict[str, int]:
     return dict(top)
 
 
-def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
+def analyze_chinese_prose_mechanics(
+    text: str, *, genre_hint: str | None = None
+) -> ChineseProseMechanicsReport:
     text = text or ""
     report = ChineseProseMechanicsReport()
     sents = _sentences(text)
@@ -985,6 +1127,17 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
     report.translationese_marker_count = _count_unique_regex_hits(
         text, TRANSLATIONESE_MARKER_PATTERNS
     )
+    # Era/register bleed + scene-seam duplication (docs/DEFECT_GOVERNANCE.md):
+    # WARN-level like micro_action — they feed _quality_penalty and rewrite/
+    # preflight instructions but never flip `passed` on their own. The era
+    # detector only activates when genre_hint classifies unambiguously.
+    report.era_register_class = classify_genre_register(genre_hint)
+    era_counts = _era_register_conflicts(text, report.era_register_class)
+    report.era_register_conflict_count = sum(era_counts.values())
+    report.era_register_conflicts = dict(
+        sorted(era_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:ERA_REGISTER_TOP_TERMS]
+    )
+    report.seam_duplication_count, report.seam_duplication_pairs = _seam_duplication(text)
     # Aggregate "normal modern Chinese" violation so the gate/UI catch the family
     # of problems instead of one-off phrases (cross_project_prose_quality_contract).
     # Count by unique merged span across the families so a phrase matching more than
@@ -1065,8 +1218,8 @@ def analyze_chinese_prose_mechanics(text: str) -> ChineseProseMechanicsReport:
     return report
 
 
-def analyze_to_safe_dict(text: str) -> dict[str, Any]:
-    return analyze_chinese_prose_mechanics(text).to_safe_dict()
+def analyze_to_safe_dict(text: str, *, genre_hint: str | None = None) -> dict[str, Any]:
+    return analyze_chinese_prose_mechanics(text, genre_hint=genre_hint).to_safe_dict()
 
 
 def dumps_report(report: ChineseProseMechanicsReport | dict[str, Any]) -> str:
@@ -1074,11 +1227,86 @@ def dumps_report(report: ChineseProseMechanicsReport | dict[str, Any]) -> str:
     return json.dumps(safe, ensure_ascii=False, indent=2)
 
 
+# --- Recurring-defect ledger (docs/DEFECT_GOVERNANCE.md) ---
+# The general immunization loop: the system learns per-project from its own
+# evaluation history without human intervention. Any evaluator violation-type
+# tag recurring in >= RECURRING_DEFECT_MIN_CHAPTERS of the last N evaluated
+# chapters is surfaced as a 【本项目高发问题】 block in the generation preflight,
+# carrying the tag's repair_action from QUALITY_GATE_RULES plus one concrete
+# recent example. Fully deterministic — no LLM involved.
+RECURRING_DEFECT_MIN_CHAPTERS = 2
+RECURRING_DEFECT_MAX_TAGS = 6
+RECURRING_DEFECT_EXAMPLE_MAX_CHARS = 80
+_RECURRING_DEFECT_FALLBACK_REPAIR = "先归因到规则族并补支撑/降级结果，不得只修单句。"
+
+
+def aggregate_recurring_defects(
+    issue_history: list[list[dict[str, Any]]] | None,
+    *,
+    min_chapters: int = RECURRING_DEFECT_MIN_CHAPTERS,
+) -> dict[str, dict[str, Any]]:
+    """Aggregate recent chapters' evaluator issues into a recurrence ledger.
+
+    ``issue_history`` holds one ``issues_json`` list per recent chapter (newest
+    first). Returns ``{tag: {"chapters": n, "repair_action": str, "example":
+    str}}`` for tags seen in at least ``min_chapters`` distinct chapters,
+    strongest recurrence first, capped at RECURRING_DEFECT_MAX_TAGS.
+    """
+    from app.services.narrative_quality_gates import QUALITY_GATE_RULES, issue_violation_type
+
+    chapters_per_tag: Counter[str] = Counter()
+    example_per_tag: dict[str, str] = {}
+    for chapter_issues in issue_history or []:
+        seen_in_chapter: set[str] = set()
+        for issue in chapter_issues or []:
+            if not isinstance(issue, dict):
+                continue
+            tag = issue_violation_type(issue)
+            if not tag:
+                continue
+            if tag not in seen_in_chapter:
+                seen_in_chapter.add(tag)
+                chapters_per_tag[tag] += 1
+            if tag not in example_per_tag:
+                desc = str(issue.get("description") or issue.get("suggestion") or "").strip()
+                if desc:
+                    example_per_tag[tag] = desc[:RECURRING_DEFECT_EXAMPLE_MAX_CHARS]
+    recurring = sorted(
+        ((tag, count) for tag, count in chapters_per_tag.items() if count >= max(1, min_chapters)),
+        key=lambda kv: (-kv[1], kv[0]),
+    )[:RECURRING_DEFECT_MAX_TAGS]
+    result: dict[str, dict[str, Any]] = {}
+    for tag, count in recurring:
+        rule = QUALITY_GATE_RULES.get(tag)
+        result[tag] = {
+            "chapters": count,
+            "repair_action": rule.repair_action if rule else _RECURRING_DEFECT_FALLBACK_REPAIR,
+            "example": example_per_tag.get(tag, ""),
+        }
+    return result
+
+
+def render_recurring_defect_block(recurring: dict[str, dict[str, Any]]) -> str:
+    if not recurring:
+        return ""
+    lines = ["\n【本项目高发问题（最近数章重复出现，写正文前必须优先规避）】"]
+    for tag, info in recurring.items():
+        example = str(info.get("example") or "")
+        example_part = f" 最近示例：{example}" if example else ""
+        lines.append(
+            f"- {tag}（最近评审中 {int(info.get('chapters') or 0)} 章复发）："
+            f"修复：{info.get('repair_action') or ''}{example_part}"
+        )
+    return "\n".join(lines)
+
+
 def build_generation_preflight_prompt(
     report: ChineseProseMechanicsReport | dict[str, Any] | None,
     *,
     issue_focus: list[str] | None = None,
     version_label: str = "v4.36",
+    recurring_issue_history: list[list[dict[str, Any]]] | None = None,
+    recurring_min_chapters: int = RECURRING_DEFECT_MIN_CHAPTERS,
 ) -> str:
     safe = report.to_safe_dict() if hasattr(report, "to_safe_dict") else (report or {})
     current_short_runs = int(safe.get("short_sentence_runs_over_target") or 0)
@@ -1124,6 +1352,12 @@ def build_generation_preflight_prompt(
     repeated_rare_phrase = int(safe.get("repeated_rare_phrase_count") or 0)
     repeated_rare_phrase_top = "、".join((safe.get("repeated_rare_phrases") or {}).keys())
     translationese = int(safe.get("translationese_marker_count") or 0)
+    era_register_conflict = int(safe.get("era_register_conflict_count") or 0)
+    era_register_terms = "、".join((safe.get("era_register_conflicts") or {}).keys())
+    seam_duplication = int(safe.get("seam_duplication_count") or 0)
+    recurring_block = render_recurring_defect_block(
+        aggregate_recurring_defects(recurring_issue_history, min_chapters=recurring_min_chapters)
+    )
     interiority_rate = float(safe.get("interiority_monologue_rate") or 0.0)
     repeated_realization = int(safe.get("repeated_realization_run") or 0)
     dialogue_rate = float(safe.get("dialogue_paragraph_rate") or 0.0)
@@ -1153,6 +1387,7 @@ def build_generation_preflight_prompt(
         f"duplicate_explanation_span={duplicate_explanation_span}, "
         f"micro_action_density_per_1000={micro_action_density:.2f}, "
         f"repeated_rare_phrase={repeated_rare_phrase}, translationese={translationese}, "
+        f"era_register_conflict={era_register_conflict}, seam_duplication={seam_duplication}, "
         f"interiority_rate={interiority_rate:.2f}, repeated_realization={repeated_realization}, "
         f"dialogue_rate={dialogue_rate:.2f}."
         f"\n关注项：{focus}."
@@ -1195,6 +1430,9 @@ def build_generation_preflight_prompt(
         "微动作预算必须执行：micro_action_density_per_1000 不得超过 3；推眼镜、摸物件、关节作响、捏纸角这类小动作拍受总量限制，同一个具体动作全章最多出现 1 次。情绪表达优先用一个准确的念头或对话内容的变化，身体反应是备选而非默认。"
         "repeated_rare_phrase_count 必须为 0；同一个显眼短语（如膝盖轻响、焊锡茧）全章不得反复出现三次以上，重复处换写法或删除。"
         + (f"上一章复发短语：{repeated_rare_phrase_top}。" if repeated_rare_phrase_top else "")
+        + "era_register_consistency 必须执行：era_register_conflict_count 必须为 0；计时/度量/器物/称谓词必须属于本书时代设定；风格参考只借“手法”（节奏、意象密度、对白张力），禁止把参考书的时代词汇搬进正文——现代/近未来/科幻不写两炷香、一盏茶、时辰、三更天、几丈几里地，古风/仙侠/历史不写分钟、小时、公里、百分比、手机。"
+        + (f"上一章时代语域越界词：{era_register_terms}。" if era_register_terms else "")
+        + "seam_duplication_count 必须为 0；场景接缝禁止复述：相邻段落/场景开头不得把上一段已写过的同一拍（同一声音中断、同一动作、同一发现）换个说法再叙述一遍；复述句必须合并或删除，接缝处只写新增变化。"
         + "translationese_marker_count 必须为 0；禁用介于两者之间、某种意义上、从某种程度、事实上开头这类英语骨架直译式表达，改用平实陈述。"
         "自然白话优先：不要把双音节词砍成单字硬凑极简，稳定不写成稳在、看清不写成读；不追求文言式紧缩的酷感。"
         "dialogue_topology_limit 必须执行：连续含引号段落不得超过四段，连续纯短对白不得超过两段，每个场景紧贴问答不得超过三组。"
@@ -1208,4 +1446,5 @@ def build_generation_preflight_prompt(
         "plain_contemporary_violation_count 必须为 0；普通现代场景必须使用完整自然的现代中文。"
         "duplicate_explanation_span_count 必须为 0；同一压力链、退路解释和心理判断只保留一次，重复时改成行动推进。"
         "chapter_level_anti_padding 必须执行；每段带新信息（动作/对话/发现/关系变化），同一洞察全章只写一次，禁止换比喻重述；repeated_realization_run 不得超过 3，不要连续堆叠心理剖白段；对话与有信息的叙述/动作平衡，既不用独白金句凑字数，也不要用整章短对白墙或一句一段凑字数。"
+        + recurring_block
     )

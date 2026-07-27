@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     LOGIC_CRITIC_MAX_ROUNDS: int = 2
     CHAPTER_MAX_REWRITE_ROUNDS: int = 2
     QUALITY_GATE_PERSIST_ON_BLOCK: bool = True
+    # ROLLBACK-POLICY (2026-07-27): the auto-revise rollback keeps the run's
+    # best REAL-scored draft (persisted as status=draft) instead of restoring
+    # the baseline when the baseline has no valid score for its current text
+    # or scored lower -- but only if the draft scored at least this floor.
+    ROLLBACK_KEEP_MIN_SCORE: float = 7.0
+    # --- Defect governance (docs/DEFECT_GOVERNANCE.md) ---
+    # Recurring-defect ledger: how many recent evaluated chapters feed the
+    # generation-preflight 【本项目高发问题】 block, and in how many of those
+    # chapters a violation tag must recur before it is surfaced.
+    PREFLIGHT_RECURRING_DEFECT_CHAPTERS: int = 5
+    PREFLIGHT_RECURRING_DEFECT_MIN_CHAPTERS: int = 2
 
     # --- LLM relay workarounds ---
     # Comma-separated model-name substrings whose relay channel drops the
