@@ -18,6 +18,39 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+
+def _runtime_rules_for(profile: "StyleProfile") -> list[dict]:
+    """Return the rules_json as configured, with a runtime fallback that
+    derives rules from ``config_json.dosage_profile`` when rules_json is
+    empty.
+
+    This guarantees that v8 dosage profiles (whose rules_json was historically
+    left empty) still inject useful style guidance into the LLM prompt, even
+    if the recompile-rules workflow has not yet been run on the DB row.
+    """
+    rules = list(profile.rules_json or [])
+    if rules:
+        return rules
+    cfg = getattr(profile, "config_json", None) or {}
+    dosage = cfg.get("dosage_profile") if isinstance(cfg, dict) else None
+    if not isinstance(dosage, dict) or not dosage:
+        return rules
+    try:
+        from app.services.dosage_to_rules import derive_rules_from_dosage
+        derived, _anti_ai = derive_rules_from_dosage(
+            dosage, profile_version=cfg.get("profile_version")
+        )
+        if derived:
+            logger.info(
+                "compile_style: using runtime-derived rules from dosage_profile (%d rules)",
+                len(derived),
+            )
+        return derived
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("compile_style dosage fallback failed: %s", e)
+        return rules
+
+
 def compile_style(profile: StyleProfile) -> str:
     """Compile a StyleProfile into a prompt instruction string.
 
@@ -29,7 +62,7 @@ def compile_style(profile: StyleProfile) -> str:
     sections.append(f"写作风格参考：{profile.name}")
 
     # Filter rules: only keep style/rhythm/dialogue rules, NOT structure/format
-    rules = profile.rules_json or []
+    rules = _runtime_rules_for(profile)
     structure_keywords = ["卷", "册", "章节", "篇章", "标题", "命名", "结构", "分卷", "正传", "前传", "开场方式", "仪式化"]
     style_rules = []
     for r in rules:
