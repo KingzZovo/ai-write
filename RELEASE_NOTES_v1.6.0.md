@@ -76,7 +76,7 @@ llm_cache_token_total{task_type, provider, model, kind="cache_create"|"cache_rea
 
 ### 问题
 
-部分上游 LLM 代理（如 `141.148.185.96:8317` 透传式代理）：
+部分上游 LLM 代理（如 `51.83.5.205:8317` 透传式代理）：
 
 - 不在 stream chunks 里返回 `usage.prompt_tokens_details.cached_tokens`；
 - 甚至 stream 结束后也不补一个带 usage 的最终 chunk（典型表现：`scene_writer` 的 `llm_call_logs.input_tokens=0`）。

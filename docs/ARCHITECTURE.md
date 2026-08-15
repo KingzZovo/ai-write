@@ -24,7 +24,7 @@
 | 前端 | Next.js (App Router) + TypeScript | — |
 | 反代 | nginx | alpine |
 | 观测 | Prometheus + Grafana | 2.54.1 / 11.2.0 |
-| LLM 上游 | OpenAI / Anthropic / OpenAI-Compat 代理 | `141.148.185.96:8317` |
+| LLM 上游 | OpenAI / Anthropic / OpenAI-Compat 代理 | `51.83.5.205:8317` |
 
 ## 2. 系统拓扑
 
@@ -37,7 +37,7 @@
 ║          ├─ redis     (6379:6379)                     ║
 ║          ├─ qdrant    (6333,6334)                     ║
 ║          ├─ neo4j     (7474, 7687)                    ║
-║          └─ LLM upstream  141.148.185.96:8317        ║
+║          └─ LLM upstream  51.83.5.205:8317        ║
 ║                                                       ║
 ║  celery-worker (与 backend 同镜像)                      ║
 ║    └─ 从 redis 拉任务，写 postgres + qdrant            ║

@@ -252,13 +252,13 @@ Error code: 503 - auth_not_found: no auth available (providers=codex, model=gpt-
 
 **诊断** (2026-05-08 19:14 交换现场验证)：
 - `prompt_assets.outline_chapter` 路由正确 → endpoint `大纲` (`ac6eb9cd-380d-475f-83e8-b144dbdefe74`) `gpt-5.4(high)`。
-- `大纲` 和 `本地 Qwen` 两个 endpoint **base_url 完全一样** = `http://141.148.185.96:8317/v1`，共用同一上游代理。
+- `大纲` 和 `本地 Qwen` 两个 endpoint **base_url 完全一样** = `http://51.83.5.205:8317/v1`，共用同一上游代理。
 - 代理在 codex provider 上缺凭据，gpt-5.x 系列全部炸：按 model 名路由到 codex provider → codex 没 token → 503。
 - 本 PR 代码路径都正确；这是部署/运维层问题。
 
 **证据**：
 ```
-2026-05-08T11:14:57.55Z  POST http://141.148.185.96:8317/v1/chat/completions "HTTP/1.1 503 Service Unavailable"
+2026-05-08T11:14:57.55Z  POST http://51.83.5.205:8317/v1/chat/completions "HTTP/1.1 503 Service Unavailable"
 2026-05-08T11:14:58.86Z  Unhandled exception on POST /api/projects/.../chapters/.../outline/expand
   exc_type: InternalServerError
   exc_msg : Error code: 503 - auth_not_found: no auth available (providers=codex, model=gpt-5.4(high))
@@ -266,7 +266,7 @@ Error code: 503 - auth_not_found: no auth available (providers=codex, model=gpt-
 3 次 retry 全 503，后端耗时 2.7s 快速失败，不是间歇性。
 
 **修复选项**（代码以外）：
-1. 修 `141.148.185.96:8317` 代理上 codex provider 的 auth（加上 OPENAI_API_KEY 或 codex 特定凭据）。首选。
+1. 修 `51.83.5.205:8317` 代理上 codex provider 的 auth（加上 OPENAI_API_KEY 或 codex 特定凭据）。首选。
 2. 换 endpoint 主机：在 Settings > 模型配置 里把 `大纲` / `本地 Qwen` 的 base_url 改成另一个可用的 OpenAI-compatible 代理。
 3. 增加 endpoint：接上 OpenAI / Anthropic 官方 API，在 `prompt_assets` 里把 `outline_book` / `outline_volume` / `outline_chapter` / `generation` 重新绑到新 endpoint。
 
@@ -290,7 +290,7 @@ curl -sS -X POST 'http://127.0.0.1:8000/api/projects/df6f523e-f903-4644-bcce-636
 
 ## 2026-05-08T16:00Z — codex auth 阻塞解除 ✅
 
-上游代理 `141.148.185.96:8317` 的 codex provider auth 已恢复（由用户运维处理）。验证：
+上游代理 `51.83.5.205:8317` 的 codex provider auth 已恢复（由用户运维处理）。验证：
 
 ```
 POST /api/projects/.../chapters/3ea75111-.../outline/expand
@@ -328,7 +328,7 @@ Batch pid: 2832166
 
 ### 根因
 codex 上游 auth.json 在 2026-05-09T12:24:29Z 二次失效（同 5/8 故障重现）。
-- 健康检查: `curl http://141.148.185.96:8317/v1/chat/completions` → HTTP 401 "Missing API key"
+- 健康检查: `curl http://51.83.5.205:8317/v1/chat/completions` → HTTP 401 "Missing API key"
 - backend log: `"Your authentication token has been invalidated. Please try signing in again."` 同 5/8 完全一致字面值
 
 ### 接手第一件事 (恢复 codex 后)

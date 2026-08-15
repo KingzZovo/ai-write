@@ -675,7 +675,7 @@ sum by (reason)(increase(scene_plan_fallback_total[1h]))
 
 ### 6.4 LLM 调用全部 `error`
 
-1. `curl -fsS http://141.148.185.96:8317/v1/models` 测上游是否还活。
+1. `curl -fsS http://51.83.5.205:8317/v1/models` 测上游是否还活。
 2. 看 `llm_call_logs` 最近几条的 `error_text`，401 = token 过期；502/timeout = 上游；validation = task_routing 打错了。
 3. v1.7.1 Z1 后，所有 task_type 都能在 `llm_call_total` 上看到；发现 “unknown” task_type 突增 → 某个入口忘了传。
 

@@ -586,7 +586,7 @@ Meta 层是最轻的一层，但它直接影响生成语气和风险提醒。当
 | LLM endpoint 1 | `openai_compatible` / `gpt-5.4(high)` | 大纲与高质量文本生成 | `llm_endpoints` 已启用 |
 | LLM endpoint 2 | `openai_compatible` / `gpt-5.2(high)` | 本地兼容生成与 fallback | `llm_endpoints` 已启用 |
 | Embedding endpoint | `nvidia/llama-nemotron-embed-vl-1b-v2` | 向量嵌入 | `llm_endpoints` 已启用 |
-| 兼容代理地址 | `141.148.185.96:8317` | OpenAI-compatible 上游网关 | AGENTS 运行约束中仍引用 |
+| 兼容代理地址 | `51.83.5.205:8317` | OpenAI-compatible 上游网关 | AGENTS 运行约束中仍引用 |
 | Prometheus | `127.0.0.1:9091` | 抓 `/metrics` | 已运行 |
 | Grafana | `127.0.0.1:3001` | 面板展示 | 已运行 |
 

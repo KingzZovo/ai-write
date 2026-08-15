@@ -113,7 +113,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 	```
 - Neo4j：`neo4j/changeme123` @ `bolt://neo4j:7687`。
 - 后端容器内跑 python 脚本必须 `docker exec -e PYTHONPATH=/app -w /app ai-write-backend-1 ...`，否则 `ModuleNotFoundError: No module named 'app'`。site-packages 不能与 `/app/app/` 并存同名包；发现 `/usr/local/lib/python3.11/site-packages/app/` 立即在 backend + celery 都 `pip uninstall ai-write-backend`。
-- LLM endpoint：`141.148.185.96:8317`。
+- LLM endpoint：`51.83.5.205:8317`。
 
 ---
 

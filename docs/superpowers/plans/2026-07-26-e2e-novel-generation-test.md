@@ -5,7 +5,7 @@
 ## 0. 前置状态
 
 - backend / celery-worker 已重启（2026-07-26），router 日志确认 `Model router loaded: 2 providers, 26 task routes`
-- relay (141.148.185.96:8317) 实测新增可用：`claude-opus-5` / `claude-sonnet-5` / `claude-fable-5`（600 字散文探针全部通过：finish=stop、无空文本、无截断；延迟 opus5≈33s / sonnet5≈20s / fable5≈24s）
+- relay (51.83.5.205:8317) 实测新增可用：`claude-opus-5` / `claude-sonnet-5` / `claude-fable-5`（600 字散文探针全部通过：finish=stop、无空文本、无截断；延迟 opus5≈33s / sonnet5≈20s / fable5≈24s）
 - 本次 E2E 用 **claude-sonnet-5** 做 flagship（量产主力候选，速度最快、成本最低、质量接近 opus）
 
 ## 1. 测试矩阵

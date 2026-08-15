@@ -276,7 +276,7 @@ InternalServerError: Error code: 503 -
 - pyflakes 在 audit 环境不可用，待后续在 backend 容器里跑。
 
 ### live-LLM verify 现状
-后台 retry中，BatchStatus.RUNNING。Codex provider 鉴权状态不在代码层可控，需用户在 `141.148.185.96:8317` 代理端重新登录 codex。两个在用 chat endpoint（大纲 / 本地 Qwen）都指向同一代理，所以换 endpoint 也不能绕开。
+后台 retry中，BatchStatus.RUNNING。Codex provider 鉴权状态不在代码层可控，需用户在 `51.83.5.205:8317` 代理端重新登录 codex。两个在用 chat endpoint（大纲 / 本地 Qwen）都指向同一代理，所以换 endpoint 也不能绕开。
 
 ### 后续优化候选（待用户拍板）
 1. 带孤儿 connection 警告（SQLAlchemy gc cleanup）表明未显式 close 会话，可考虑用 contextmanager 重构 service 层 db 使用。
@@ -344,7 +344,7 @@ services/:
 - 剩 13 个未合并 feat 分支，需用户逐一拍板
 
 ### live-LLM verify 现状
-脚本 bug 修复后重跑，进到 `progress: BatchStatus.RUNNING` 后挂在 codex 代理 auth_not_found。该问题仅能在代理端 `141.148.185.96:8317` 重新 codex 登录解决，代码层无可作为（两个 chat endpoint 共享同一 base_url）。
+脚本 bug 修复后重跑，进到 `progress: BatchStatus.RUNNING` 后挂在 codex 代理 auth_not_found。该问题仅能在代理端 `51.83.5.205:8317` 重新 codex 登录解决，代码层无可作为（两个 chat endpoint 共享同一 base_url）。
 
 ### 未作的优化（需用户拍板）
 1. 合并 30+ 未使用 import 到一个 chore commit。
