@@ -1,0 +1,23 @@
+{
+  "chapters": 1,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1791,
+      "target": 1200,
+      "ratio": 1.492
+    }
+  },
+  "findings": [
+    {
+      "check": "prop_missing",
+      "prop": "顶针",
+      "detail": "全篇未出现已设定的道具「顶针」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    }
+  ],
+  "violations": 2
+}

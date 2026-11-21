@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "model_calls": 0,
+  "results": [
+    {
+      "chapter_id": "92374d0b-3192-4cb9-a231-993eb9ea5e6a",
+      "author_edit": false,
+      "blocked": false,
+      "status": "needs_review"
+    },
+    {
+      "chapter_id": "7b364859-91af-4fb7-9bd6-cc774486be11",
+      "author_edit": true,
+      "blocked": true,
+      "status": "draft"
+    }
+  ]
+}

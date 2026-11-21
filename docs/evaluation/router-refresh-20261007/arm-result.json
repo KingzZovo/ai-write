@@ -1,0 +1,13 @@
+{
+  "architecture": "aarch64",
+  "python": "3.11.17",
+  "model_calls": 0,
+  "expired_reference_refreshed": true,
+  "unchanged_clients_reused": true,
+  "model": "gemini-3.1-pro",
+  "hashes": {
+    "/app/app/services/model_router.py": "a3c92a3654c9e0da2ad669c6388bb69c2df7d885facf5b60ee147febe6f8e769",
+    "/app/app/services/prompt_registry.py": "613b758c37322044470bbd09ef5f196b749e1a6f57778c6e7cb8285324df3832",
+    "/app/app/api/model_config.py": "ec67064c784f82f4ae528007d19a89b927f355a82986382270b7f801d7a4bcc2"
+  }
+}

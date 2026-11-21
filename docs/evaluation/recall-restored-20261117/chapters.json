@@ -1,0 +1,132 @@
+[
+  {
+    "index": 1,
+    "status": "resumed",
+    "chars": 1654
+  },
+  {
+    "index": 2,
+    "status": "resumed",
+    "chars": 1118
+  },
+  {
+    "index": 3,
+    "status": "resumed",
+    "chars": 1549
+  },
+  {
+    "index": 4,
+    "status": "resumed",
+    "chars": 1289
+  },
+  {
+    "index": 5,
+    "status": "resumed",
+    "chars": 1238
+  },
+  {
+    "index": 6,
+    "status": "resumed",
+    "chars": 1245
+  },
+  {
+    "index": 7,
+    "status": "resumed",
+    "chars": 1430
+  },
+  {
+    "index": 8,
+    "status": "resumed",
+    "chars": 720
+  },
+  {
+    "index": 9,
+    "status": "resumed",
+    "chars": 1656
+  },
+  {
+    "index": 10,
+    "status": "resumed",
+    "chars": 977
+  },
+  {
+    "index": 11,
+    "status": "resumed",
+    "chars": 942
+  },
+  {
+    "index": 12,
+    "status": "resumed",
+    "chars": 1289
+  },
+  {
+    "index": 13,
+    "status": "resumed",
+    "chars": 1203
+  },
+  {
+    "index": 14,
+    "status": "resumed",
+    "chars": 990
+  },
+  {
+    "index": 15,
+    "status": "resumed",
+    "chars": 1331
+  },
+  {
+    "index": 16,
+    "status": "resumed",
+    "chars": 1241
+  },
+  {
+    "index": 17,
+    "status": "resumed",
+    "chars": 979
+  },
+  {
+    "index": 18,
+    "chapter_id": "fbad0a02-810d-491e-bfd8-f606df1103bc",
+    "status": "ok",
+    "chars_raw": 1037,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1037
+    },
+    "chars": 1037,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口账目",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 19.5,
+    "summary_written": true,
+    "summary_chars": 204,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

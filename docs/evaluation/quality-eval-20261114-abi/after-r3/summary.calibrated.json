@@ -1,0 +1,208 @@
+{
+  "by_genre": {
+    "unknown": {
+      "cases": 12,
+      "chars": 14778,
+      "counts": {
+        "fact_violation": 24,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 13,
+        "pov_breach": 2,
+        "rule_recitation": 3
+      },
+      "hard_counts": {
+        "fact_violation": 14,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 13,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "东方幻想": {
+      "cases": 8,
+      "chars": 10023,
+      "counts": {
+        "fact_violation": 10,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 1,
+        "rule_recitation": 3
+      },
+      "hard_counts": {
+        "fact_violation": 2,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "悬疑": {
+      "cases": 8,
+      "chars": 11029,
+      "counts": {
+        "fact_violation": 13,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 8,
+        "pov_breach": 0,
+        "rule_recitation": 4
+      },
+      "hard_counts": {
+        "fact_violation": 2,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 8,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "现实生活": {
+      "cases": 8,
+      "chars": 11826,
+      "counts": {
+        "fact_violation": 18,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 1,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 11,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "by_variant": {
+    "chapter_single_shot": {
+      "cases": 12,
+      "chars": 17530,
+      "counts": {
+        "fact_violation": 23,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 9,
+        "pov_breach": 1,
+        "rule_recitation": 6
+      },
+      "hard_counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 9,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "scene_writer": {
+      "cases": 12,
+      "chars": 15348,
+      "counts": {
+        "fact_violation": 18,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 9,
+        "pov_breach": 1,
+        "rule_recitation": 1
+      },
+      "hard_counts": {
+        "fact_violation": 6,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 9,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "unknown": {
+      "cases": 12,
+      "chars": 14778,
+      "counts": {
+        "fact_violation": 24,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 13,
+        "pov_breach": 2,
+        "rule_recitation": 3
+      },
+      "hard_counts": {
+        "fact_violation": 14,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 13,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "calls": 36,
+  "cases": 6,
+  "chars": 47656,
+  "contract": {
+    "blueprint_version": "v4.14",
+    "narrative_contract_version": "world_logic_contract_v4_15_scene_planning",
+    "scene_writer_system_sha256": "806255474cc40ff3",
+    "writer_contract_sha256": "6cc3311ac6f3baf0"
+  },
+  "counts": {
+    "fact_violation": 65,
+    "instruction_leak": 0,
+    "metaphor_stack": 2,
+    "outcome_unfulfilled": 31,
+    "pov_breach": 4,
+    "rule_recitation": 10
+  },
+  "elapsed_seconds": 373.165,
+  "failed": 0,
+  "hard_counts": {
+    "fact_violation": 29,
+    "instruction_leak": 0,
+    "metaphor_stack": 0,
+    "outcome_unfulfilled": 31,
+    "pov_breach": 0,
+    "rule_recitation": 0
+  },
+  "returned": 36,
+  "tokens": {
+    "input": 21624,
+    "output": 11898
+  },
+  "unmet": {
+    "forbidden:both_saved": 1,
+    "must_keep:bell_destroyed": 2,
+    "must_keep:clear_out": 1,
+    "must_keep:deadline": 1,
+    "must_keep:father_gone": 4,
+    "must_keep:fourteen_rooms": 1,
+    "must_keep:master_away": 1,
+    "must_keep:no_neighbor_loan": 4,
+    "must_keep:rain": 1,
+    "must_keep:rule": 2,
+    "must_keep:sister_ignorant": 4,
+    "must_keep:tonight_seal": 1,
+    "must_keep:unsealed_letter": 1,
+    "must_keep:wet_shoe": 2,
+    "required_outcomes:acts": 2,
+    "required_outcomes:both_ashore": 1,
+    "required_outcomes:brother_boards": 1,
+    "required_outcomes:concrete_action": 2,
+    "required_outcomes:decision": 1,
+    "required_outcomes:handles_waiter": 1,
+    "required_outcomes:judgment_changes": 5,
+    "required_outcomes:makes_choice": 2,
+    "required_outcomes:next_morning": 1,
+    "required_outcomes:plan_made": 2,
+    "required_outcomes:reads_letter": 2,
+    "required_outcomes:recognizes_conflict": 4,
+    "required_outcomes:shortfall_declared": 2,
+    "required_outcomes:temporary_deal": 1
+  }
+}

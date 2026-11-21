@@ -1,0 +1,18 @@
+{
+  "image": "aiwrite-backend:router-refresh-candidate",
+  "build_stamp": "7f7fc07-router-refresh-r1",
+  "health": {
+    "status": "ok"
+  },
+  "workers": {
+    "active": {
+      "runtime-main@default": 0,
+      "runtime-control@default": 0
+    },
+    "reserved": {
+      "runtime-main@default": 0,
+      "runtime-control@default": 0
+    }
+  },
+  "production_changed": false
+}

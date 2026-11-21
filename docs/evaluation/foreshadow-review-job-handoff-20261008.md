@@ -1,0 +1,15 @@
+# 普通保存路径的兑现核查任务交接（2026-10-08）
+
+触发链审计确认：兑现建议的同步核查目前只有BatchGenerator调用HookManager.run_post_hooks；普通生成、编辑、版本恢复等持久化路径使用实体来源通知，但没有相应兑现审阅任务。本次为自动核查建立持久化交接基础，尚未完成任务执行。
+
+新增ForeshadowReviewJob、foreshadow_review_jobs和迁移a1001937（父a1001936），保存章节/作品ID、来源通知revision、来源摘要/receipt、任务状态、attempt_token、次数与错误字段。以章节ID+通知revision唯一，重复交接不重置已完成任务；同内容恢复但新保存revision生成新任务，避免仅按正文摘要去重而永久跳过恢复后的审阅。
+
+entity_outbox在同一事务中写实体任务、认知任务及兑现审阅任务，然后按原revision删除来源通知。任何交接失败不提交，通知可重放。不新增保存路径中的模型调用或外部消息发送。
+
+验证：`/root/.aiwrite-evaluation/run-tests.sh tests/test_foreshadow_review_jobs.py tests/test_foreshadow_review_store.py`，35 passed；Python编译及diff检查通过。SQLite实际验证去重保留completed、同正文新revision生成pending、事务失败回滚队列行，以及迁移upgrade/downgrade结构。适配器验证实际outbox函数在确认前调用队列插入、插入失败不删除通知/不commit。未运行依赖真实PG触发器与序列的完整outbox集成。
+
+按shadow-mind在本地完成正确性与完成范围复核（无可信只读子代理隔离）。核对任务唯一键、事务归属、revision条件确认、迁移结构和状态不被重置，无本次阻断问题。
+
+下一步必须完成：任务执行器、源版本与最新revision核验、attempt_token保护、失败恢复/公平调度、任务与建议同事务收尾，接通后避免批量同步钩子重复模型调用。并发保存时旧通知读取可能与新正文相遇，执行器需同时检查当前来源和最新通知/任务revision，不能仅凭队列行存在就调用模型。
+
+当前队列尚无消费者，不能宣称普通保存已自动完成兑现核查；自动来源通知仅覆盖completed正文，草稿手动核查入口也仍待补齐。迁移a1001937未执行、代码未部署；部署前需先完成执行/恢复链并按序应用迁移，否则旧库缺新表会阻止交接事务。图谱确认、真实联调与文学质量验收仍未完成。

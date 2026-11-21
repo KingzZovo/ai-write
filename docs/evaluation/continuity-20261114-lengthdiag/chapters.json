@@ -1,0 +1,182 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "e57c57fb-1be9-4abf-a644-b6084af78d1d",
+    "status": "ok",
+    "chars_raw": 759,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 759
+    },
+    "chars": 759,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口清账",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 14.5,
+    "summary_written": true,
+    "summary_chars": 95,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "a290d1c1-3229-4f4a-8d1b-1dbe52766150",
+    "status": "ok",
+    "chars_raw": 2155,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2155
+    },
+    "chars": 2155,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "信笺遗落",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 32.3,
+    "summary_written": true,
+    "summary_chars": 139,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "eea8fd74-c754-4370-a100-883465f345e7",
+    "status": "ok",
+    "chars_raw": 1117,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1117
+    },
+    "chars": 1117,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 16.9,
+    "summary_written": true,
+    "summary_chars": 98,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "267880ee-23d0-4537-8c37-56636b2831de",
+    "status": "ok",
+    "chars_raw": 1466,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1466
+    },
+    "chars": 1466,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "灯下补锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.0,
+    "summary_written": true,
+    "summary_chars": 149,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

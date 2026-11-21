@@ -1,0 +1,17 @@
+{
+  "plot_coherence": 0.0,
+  "character_consistency": 0.0,
+  "style_adherence": 0.0,
+  "narrative_pacing": 0.0,
+  "foreshadow_handling": 0.0,
+  "overall": 0.0,
+  "issues": [
+    {
+      "dimension": "system",
+      "location": 0,
+      "description": "Evaluation error: All tier-fallback attempts failed for task 'chapter_evaluation': InternalServerError:Error code: 503 - {'error': {'message': 'auth_unavailable: no auth available (providers=openai-compatible-英伟达, model=deepseek-ai/deepseek-v4-flash; last upstrea",
+      "suggestion": "Check model configuration and retry"
+    }
+  ],
+  "parse_failed": true
+}

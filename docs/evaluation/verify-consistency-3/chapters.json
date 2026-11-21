@@ -1,0 +1,137 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "fc202247-11c3-4a01-abde-c5bf73fd48f0",
+    "status": "ok",
+    "chars_raw": 2164,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2164
+    },
+    "chars": 2164,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 30.5,
+    "summary_written": true,
+    "summary_chars": 157,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "dfab0eca-9c11-4769-b213-83a32d77151e",
+    "status": "ok",
+    "chars_raw": 2134,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2134
+    },
+    "chars": 2134,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 121.3,
+    "summary_written": true,
+    "summary_chars": 216,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "fb5c3ffd-6e83-4fa7-848b-402e6d583bdd",
+    "status": "ok",
+    "chars_raw": 2104,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2104
+    },
+    "chars": 2104,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "铺里的七百块账单",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 267.3,
+    "summary_written": true,
+    "summary_chars": 203,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

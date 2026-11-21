@@ -1,0 +1,85 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "李巧云",
+      "陈麦"
+    ],
+    "forbidden": [
+      "不得由老师出面解决",
+      "丈夫不得回来",
+      "不得出现新收入或补助",
+      "不得由母亲单方面命令解决"
+    ],
+    "genre": "现实生活",
+    "id": "real_stall",
+    "label": "现实生活·夜市摊位",
+    "must_keep": [
+      "押金一千五",
+      "每月摊位费六百",
+      "下月起清退",
+      "陈麦读高二",
+      "丈夫两年前走了,不回来"
+    ],
+    "pov": "第三人称限知,全程跟随母亲李巧云",
+    "pov_character": "李巧云",
+    "required_outcomes": [
+      "李巧云说清退这件事",
+      "陈麦说出算过账的实际理由",
+      "谈成一个只到本学期的暂定安排",
+      "结尾交代明天一早的具体一件事"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "real_stall",
+  "chars": 1513,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 9.637,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "现实生活",
+  "input_tokens": 662,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 378,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 1940,
+        "name": "preflight_blueprint",
+        "sha256": "c4b22e4285ed617e",
+        "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+      },
+      {
+        "chars": 340,
+        "name": "scene_brief",
+        "sha256": "10ac4a8899a0ff87",
+        "source": "case.brief"
+      },
+      {
+        "chars": 345,
+        "name": "chapter_writer_system",
+        "sha256": "52440efa9bafa557",
+        "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "b250f9acbb25d7e7535df1b0d85db2802fd9d47c771411ab7259ddb10d25d11f",
+    "system_chars": 345,
+    "task_type": "generation",
+    "user_chars": 2282,
+    "variant": "chapter_single_shot"
+  },
+  "repeat": 1,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": null,
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "1bc1b40b73db177ccc74ee88ce538904a8102b3b98252a20d5594798a7ccbd4d",
+  "variant": "chapter_single_shot"
+}

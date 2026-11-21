@@ -1,0 +1,44 @@
+[
+  {
+    "case": "ferry_siblings",
+    "variant": "candidate",
+    "requested_model": "deepseek-v4-pro",
+    "commit": "5af277df6bb820339e7bd224663f2f5a062d22d5",
+    "user_sha256": "18c5eec1432fa80bf088582ba0ea6e7dc4752416a6e4b7e228b54aad5db12f31",
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 3200,
+    "upstream": "ds",
+    "planning_enabled": false,
+    "status": "error",
+    "error_type": "RuntimeError",
+    "elapsed_seconds": 25.763
+  },
+  {
+    "case": "flood_bell",
+    "variant": "candidate",
+    "requested_model": "deepseek-v4-pro",
+    "commit": "5af277df6bb820339e7bd224663f2f5a062d22d5",
+    "user_sha256": "4a74dabc699625280fbf075b7de5394b30112c680c76dcd2fae02b50b100d3c7",
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 3200,
+    "upstream": "ds",
+    "planning_enabled": false,
+    "status": "error",
+    "error_type": "RuntimeError",
+    "elapsed_seconds": 33.09
+  },
+  {
+    "case": "archive_receipt",
+    "variant": "candidate",
+    "requested_model": "deepseek-v4-pro",
+    "commit": "5af277df6bb820339e7bd224663f2f5a062d22d5",
+    "user_sha256": "3daade7c6f7d7e80be46185f1b9732d63026d79a3dfd3c2c573c161aa43f5fa1",
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 3200,
+    "upstream": "ds",
+    "planning_enabled": false,
+    "status": "error",
+    "error_type": "RuntimeError",
+    "elapsed_seconds": 31.38
+  }
+]

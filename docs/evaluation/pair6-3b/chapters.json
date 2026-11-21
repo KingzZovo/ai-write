@@ -1,0 +1,465 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "4965b33d-f7c6-45eb-8189-7c7c7ebc0c10",
+    "status": "ok",
+    "chars_raw": 1218,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1218
+    },
+    "chars": 1218,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口的月末安排",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 42.5,
+    "summary_written": true,
+    "summary_chars": 146,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "475a2732-f852-4d5e-8dce-c6029b50d74d",
+    "status": "ok",
+    "chars_raw": 1196,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1196
+    },
+    "chars": 1196,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "催租的期限",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "收进铁盒的顶针",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 35.3,
+    "summary_written": true,
+    "summary_chars": 155,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "45d174f9-c014-4681-b8e4-edbdb7526483",
+    "status": "ok",
+    "chars_raw": 1246,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1246
+    },
+    "chars": 1246,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "货款期限",
+          "target_words": 550
+        },
+        {
+          "idx": 2,
+          "title": "旧电饭锅",
+          "target_words": 570
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 39.6,
+    "summary_written": true,
+    "summary_chars": 156,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "14a6c61b-cc5d-40dd-9d3c-702be70c6324",
+    "status": "ok",
+    "chars_raw": 1143,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1143
+    },
+    "chars": 1143,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的夜活",
+          "target_words": 580
+        },
+        {
+          "idx": 2,
+          "title": "带给弟弟的袋子",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 39.0,
+    "summary_written": true,
+    "summary_chars": 147,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "71965771-0330-4565-b284-760c0c63ea50",
+    "status": "ok",
+    "chars_raw": 1176,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1176
+    },
+    "chars": 1176,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上碰面",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "核算余数",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 37.2,
+    "summary_written": true,
+    "summary_chars": 165,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "4bdfe728-628a-4984-a5bd-fff7377efab9",
+    "status": "ok",
+    "chars_raw": 1212,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1212
+    },
+    "chars": 1212,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "老陈的账本",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "中秋前的期限",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 34.5,
+    "summary_written": true,
+    "summary_chars": 152,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "76898114-e525-4952-a241-78460f54c8aa",
+    "status": "ok",
+    "chars_raw": 1019,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1019
+    },
+    "chars": 1019,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与校服",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "灯下赶活",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 45.7,
+    "summary_written": true,
+    "summary_chars": 114,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "e8f88901-b617-4038-8875-64aee7c364a1",
+    "status": "ok",
+    "chars_raw": 1197,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1197
+    },
+    "chars": 1197,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "清点铺租",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "搁笔信笺",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 41.9,
+    "summary_written": true,
+    "summary_chars": 145,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "6c7bd7d5-4d6b-4e24-9d96-6b0d5bb9baad",
+    "status": "ok",
+    "chars_raw": 1186,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1186
+    },
+    "chars": 1186,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "修理与筹款",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "划账与捎物",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 22.6,
+    "summary_written": true,
+    "summary_chars": 102,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition_offending": [
+      "我姐在县城那边……前阵子娘住院时垫的钱，她手里还欠着一千块没着落呢。"
+    ],
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "b62cf4f6-e352-4cb7-971c-98fc63426a0a",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  }
+]

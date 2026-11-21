@@ -1,0 +1,11 @@
+# 改写流关闭传播
+
+旧SSE、选段/风格服务及普通ModelRouter.generate_stream只async for转发，外层生成器在yield处关闭不保证立即关闭内层，可能延迟到垃圾回收。前端已有拒绝/卸载AbortController，但后端转发链缺少显式所有权。
+
+这些转发点现在用aclosing包裹下层迭代器。关闭SSE→关闭TextRewriter→关闭空文本检查器→关闭ModelRouter普通流→关闭供应商流。StyleAgent普通与档案流同样处理。ModelRouter带日志与无日志两个分支都修改；日志finally仍执行。未修改tier/by-route其他入口。
+
+62项离线测试通过，包括读取第一段后直接aclose的4个编辑入口，断言无需gc/sleep供应商finally已执行；带日志分支验证provider_closed→log_closed→committed顺序（日志会话为替身，不证明真实PG提交）。既有空白、错误消息、上下文、档案、路由刷新与流式硬化用例共同通过。首次SSE测试因断言未解JSON中文转义失败，已修正后全通过。
+
+按shadow-mind本地两轮复核（无可靠只读子代理隔离）：资源生命周期检查确认每个中间yield都有下层显式关闭；异常检查确认GeneratorExit/CancelledError不被普通Exception错误响应捕获，带日志收尾仍在finally。AST/diff通过。
+
+本次验证显式关闭机制，不证明真实浏览器断连一定及时送达后端，不保证远端模型立即停止计算或停止计费。实际ASGI/网络/供应商取消与其他路由关闭链仍待验收。未部署，未新增迁移，累计头a1001935。

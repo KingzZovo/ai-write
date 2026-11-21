@@ -1,0 +1,12 @@
+[
+  {
+    "mode": "assembled",
+    "status": "relay_error_rejected",
+    "exposed_chars": 0
+  },
+  {
+    "mode": "stream",
+    "status": "relay_error_rejected",
+    "exposed_chars": 0
+  }
+]

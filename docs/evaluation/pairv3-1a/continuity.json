@@ -1,0 +1,37 @@
+{
+  "chapters": 3,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1279,
+      "target": 1200,
+      "ratio": 1.066
+    },
+    "ch02.txt": {
+      "chars": 950,
+      "target": 1200,
+      "ratio": 0.792
+    },
+    "ch03.txt": {
+      "chars": 1047,
+      "target": 1200,
+      "ratio": 0.873
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 950,
+      "target": 1200,
+      "ratio": 0.792,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch02.txt",
+      "declared": "次日清晨",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    }
+  ],
+  "violations": 2
+}

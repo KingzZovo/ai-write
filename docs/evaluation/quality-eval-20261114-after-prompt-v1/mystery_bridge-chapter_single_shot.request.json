@@ -1,0 +1,85 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "陆沉",
+      "老周"
+    ],
+    "forbidden": [
+      "不得出现第三方救兵",
+      "不得揭示信是空的",
+      "老周不得是失散亲人"
+    ],
+    "genre": "悬疑",
+    "id": "mystery_bridge",
+    "label": "悬疑·断桥信使",
+    "must_keep": [
+      "左臂自肘下没有",
+      "过河价一百文",
+      "身上只有六十文",
+      "腰牌可抵八十文但明天要验",
+      "天亮前必须送到",
+      "信有火漆且不能湿"
+    ],
+    "pov": "第三人称限知,全程跟随信使陆沉",
+    "pov_character": "陆沉",
+    "required_outcomes": [
+      "陆沉说清送信的期限和条件",
+      "老周报出一百文且不赊",
+      "陆沉权衡交出腰牌的代价",
+      "陆沉实际交付或拒绝,并承担后果",
+      "结尾交代信到没到对岸"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "mystery_bridge",
+  "chars": 1319,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 17.438,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "悬疑",
+  "input_tokens": 663,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 329,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 1940,
+        "name": "preflight_blueprint",
+        "sha256": "c4b22e4285ed617e",
+        "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+      },
+      {
+        "chars": 344,
+        "name": "scene_brief",
+        "sha256": "506746399a3b9293",
+        "source": "case.brief"
+      },
+      {
+        "chars": 345,
+        "name": "chapter_writer_system",
+        "sha256": "52440efa9bafa557",
+        "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "6ef6da094e34b4547cef08fe30cc35a5c7b8007ef3ae2092f54ff9f0db9da993",
+    "system_chars": 345,
+    "task_type": "generation",
+    "user_chars": 2286,
+    "variant": "chapter_single_shot"
+  },
+  "repeat": 1,
+  "requested_model": "gemini-3.1-pro",
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "6fef63d4c65d592f2df73687006cd407fd1c4d40f77e5c7f7fa89a488190061f",
+  "variant": "chapter_single_shot"
+}

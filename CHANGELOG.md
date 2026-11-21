@@ -1,0 +1,556 @@
+# Changelog
+
+## [Unreleased] - 2026-10-06
+
+- 整书任务只处理所选作品和分卷，空项目不会误选其他作品的章节。
+- 模型未返回有效正文时保留原稿，并记录可重试的失败原因。
+- 多卷按卷序和章序推进；疑似截断或拒答的草稿标为待审核，不计入已完成进度，后续章节仍可继续。
+- 待审核任务支持重新生成待审章节，已完成章节保持原状态。
+
+## [1.10.0] - 2026-07-26
+
+四路审计（记忆子系统/生成流水线/前端/规划文档）后的机制级大修 + 功能补全（提交 231f06e / 563e096 / 2670d60 / df219fb，pytest 912 全绿，vitest 58 全绿）。核心发现：大量关键机制"已建成但未接线"。
+
+### 修复（静默失效机制接线）
+
+- **system 折叠 workaround 死代码**：`merge_system_into_user` 接入 `OpenAIProvider.generate/generate_stream` 两个必经点，`LLM_MERGE_SYSTEM_INTO_USER_MODELS=claude-` 真正生效。
+- **章节全局编号**（migration a1001915）：新增 `chapters.global_idx`（before_insert 监听器维护 + 存量回填）。根修实体抽取第 2 卷起全部提前返回（ExtractionMarker 撞键）、时间线锚点跨卷错序、角色位置串卷、hook 摘要 MultipleResultsFound；strand/quality/世界快照全部换轴。
+- **长篇记忆断链**：章节摘要生成时自动嵌入 Qdrant（此前 L3 RAG 永远为空）；检索加 project_id 过滤（跨项目污染）；卷摘要自动回填（`volume_summaries` 此前零写入方 = 跨卷失忆）；向量维度统一修正为实际 2048；`rag_query_rewrite` 消费端键名对齐 schema。
+- **伏笔链路**：lifecycle 落库状态 `pending`→`planted`（消费端只认 planted/ripening/ready）；`source` 列（migration a1001914）保护 PG-only 伏笔不被 materialize 删除同步抹掉。
+- **前端 revise 追加 bug**：`apiSSE` 按 `revise_round` 变化发 `revise_restart`，修订文本替换而非追加（此前自动保存可把好文本覆盖成多倍长坏文本）。
+- **celery 生成路径**：7 个持久化点全部接实体抽取；认知账本撤销 `passed` 门控（needs_review 入库即入账本，与 SSE 对齐）。
+
+### 修复（流水线健壮性）
+
+- 流式调用（scene_writer）首块前重试（400 限 2 次）+ Prometheus/用量账本全覆盖 + `include_usage` 运行时探测；场景双路失败时 ≥200 字部分保全为 draft（`partial_saved` 事件）；SSE 15 秒心跳防 nginx 600s 断连；`scene` 进度事件；异常路径补 `[DONE]`；scene-planner 预算钳制到可达上限；人性化处理确定性化；拒答检测扩充（前 200 字符 + 引号外）；重写轮数走 Settings。
+
+### 修复（实体图谱卫生）
+
+- RELATES_TO 改 MERGE 并真正设置约束属性（重复边根治，存量清理 35 条）；别名折叠（materialize 前全名单过 `profile_json.aliases`，出场统计并入正主）；世界规则近重复（同类目 >0.8 bigram Jaccard 或包含）改为更新而非累积。
+
+### 新功能
+
+- **编辑面**：章节摘要/排序（重算 global_idx）API 化；neo4j-settings 通道补齐关系 PUT/DELETE、世界规则 PUT/DELETE（PG 同步收敛）、角色 DELETE（级联清理）；角色页/设定面板从 410 死路切到该通道；伏笔面板编辑/标记回收/删除；关系行编辑/删除。
+- **工作区**：后台生成队列（异步 API + 5s 轮询 + 断线恢复 + 取消端点带持久标记）；本章摘要编辑条；新建章节/分卷、章节上移下移、分卷 20 上限移除；生成进度条（场景/评分/修订轮+计时）+ 取消按钮 + 截断/拒答警示；每章指令+目标字数；选段重写（RewriteMenu）接线；关系图/版本对比页入口。
+- **导出**：新增 `.txt` 端点（legado 友好）；项目卡 TXT/EPUB/PDF/DOCX 下载；「工具」导航（日志/向量库/写作引擎）；首页章节请求轻量化。
+- **模型分配**（prompt_assets）：claude-sonnet-5 写正文（generation 16384 tokens）、claude-opus-5 大纲/审查（判分温度 0.3）、gemini-3.5-flash 工具类。
+- **运维**：`OPENAI_COMPAT_MIN_INTERVAL_SECONDS` 8→2（号池恢复后）；`CONTEXT_PACK_TOKEN_BUDGET`/`CONTEXT_PACK_MAX_CHARACTER_CARDS` 可配置（角色卡按章相关性封顶 + character_states 覆盖冻结档案）。
+
+## [1.9.5] - 2026-07-04
+
+全流程测试驱动的稳定性修复（分支 `rescue/2026-05-17-baseline`，全程 TDD，707 pytest 全绿）+ 前端全面汉化。
+
+### 修复
+
+- **prose 残片塌缩**（`services/chapter_pipeline.apply_targeted_logic_rewrite`）：logic_critic 定向改写时，drafter 偶尔只返回被点名片段附近的一小段、丢弃整章其余正文（实测 124 句 → 15 句残片），残片随后被 `persist-on-block` 当终稿存库、标 `completed` = 静默数据丢失。加篇幅守门 `_MIN_REWRITE_LENGTH_RATIO=0.70`：候选掉到原文 70% 以下视为内容丢弃，返回 None 保留上一稿。测 `tests/services/test_chapter_pipeline.py`。
+- **分卷大纲跑偏题材**（`services/outline_generator._generate_volume_outline_staged`）：V1 meta JSON 解析失败（relay 返回截断/未闭合字符串）→ 退回空 `_fallback_volume_meta` → V2 batch prompt 只带空 meta、完全不含全书前提 → 模型套用与题材无关的通用武侠桥段（林凡/天玄宗）。新增 `_book_premise_digest()` 抽全书前提，注入每个 batch prompt 顶部作锚。测 `tests/test_volume_batch_premise_anchor.py`。
+- **auto-revise 回滚清空新章**（`api/generate.py` rollback 站点）：C2 revise loop 对新章存了多版有效正文（4775→5003 字、评分 ~8.0），耗尽 max_rounds 未过 8.2 阈值后回滚到 `baseline_text_before_run`——新章该值为空——把好正文清成 len=0/draft，直接抵消 `QUALITY_GATE_PERSIST_ON_BLOCK=1`。抽纯函数 `resolve_rollback_text(baseline, current, persist_on_block)`：baseline 空 + persist_on_block + current 非空时保留 current。测 `tests/test_auto_revise_rollback_preserves_draft.py`。
+- **level=chapter 大纲从不回写 `chapters.outline_json`**（`api/generate.py._persist_outline_now` + `services/outline_generator.merge_chapter_outline_enrichment`）：SSE 章节大纲生成端点只写 `outlines` 表，而正文/readiness 读的 `chapters.outline_json` 一直是分卷批次的薄骨架（4 字段）。新增纯函数 `merge_chapter_outline_enrichment(skeleton, generated)`（skeleton 的 chapter_idx 权威、生成字段有内容才覆盖、`_parse_error`/`raw_text` 忽略），在 chapter 分支按 volume_idx+chapter_idx 定位 Chapter 行回写。实测 4 字段 → 19–21 字段。测 `tests/test_chapter_outline_enrichment.py`。
+  - **注意**：前端 UI 实际走的是 `POST /api/projects/{id}/chapters/{cid}/outline/expand`（`services/chapter_outline_expander`，会话前已存在，用 chapter_id 自动解析卷、直接写 `chapter_json`）——那条路本就能丰富。本修复补的是另一条 SSE 生成路径 `/api/generate/outline {level:chapter}`（前端不走，但确实之前不回写）。该 SSE 路径的 readiness 要求显式传 `parent_outline_id`（多卷时 chapter_idx 单值有歧义），否则 blocked「缺少当前卷大纲」。
+- **章节半句截断被静默标 completed**（`services/chapter_quality_gate.looks_truncated` + `api/generate.py` 三处存库站点）：scene_writer 最后一场撞 max_tokens 或 relay 中途断流，整章仍过 50% 长度地板 → 标 `completed`、结尾是半句话（`generate_stream` 从不读 finish_reason）。新增纯函数 `looks_truncated(text)` 查末字符是否终止标点（`。！？…"』」）】》—`，剔尾部空行/代码围栏）；初存、revise re-save、rollback 三处存库站点截断则标 `status="draft"` + SSE `truncated` 事件。测 `tests/test_chapter_truncation_detection.py`（11 case）。
+- **图像拒绝话术污染正文**（`services/chapter_quality_gate.looks_like_refusal` + `api/generate.py` 四处存库站点）：relay 偶把 scene_writer 文本调用误路由到图像模型，返回拒绝语（如「您登录了吗？我可以搜索图片，但目前似乎无法为您创建任何图片」）被当场景拼进正文；因以「。」结尾骗过 `looks_truncated`。新增纯函数 `looks_like_refusal(text)`——匹配一组**多词拒绝话术**（`无法为您创建任何图片`/`尚未开通图片创建功能` 等，单词如「图片」故意排除以免误伤正常正文）；四处存库站点（初存、SSE 事件、revise re-save、rollback）与截断同等对待：命中则标 `status="draft"` + SSE `refusal` 事件，不静默完成。测 `tests/test_chapter_refusal_detection.py`（10 case）。
+- **relay 批次级 JSON 健壮性**（`services/outline_generator._parse_json` + `_generate_volume_outline_staged`）：分卷大纲逐批生成时，单批返回截断/未闭合 JSON（relay 断流留下未终止字符串或未闭合数组/对象），旧 `_parse_json` 只做手写正则修复 + `json.loads`——对未闭合结构仍失败——返回 `_parse_error`，单批失败即令整卷作废（0 章物化，大卷越易中招）。`_parse_json` 在 `json.loads` 失败后加 `json_repair` 兜底（镜像 `prompt_registry._try_parse_structured` 既有 L1 模式），闭合悬空结构、恢复该批已完成的条目。**连带修复**：json_repair 现在可能恢复**部分** meta（只含 volume_idx/title 而无 chapter_count），旧逻辑会撞 `int(None)` 中止 V2 → 0 章（比干净 fallback 更糟）；改为从 `_fallback_volume_meta` 回填缺失字段（保留已恢复的 on-genre 字段）。测 `tests/test_outline_json_repair.py`（7 case）。
+
+### 变更
+
+- **前端全面汉化**：内联硬编码英文迁移到 `src/lib/i18n/messages.ts`（zh/en catalog，145 键对齐）+ 新增 `src/lib/i18n/enumLabels.ts`（后端枚举值中文标签映射：状态/严重度/等级/actor/action）。覆盖编辑器（RewriteMenu/EditorView 的中英混排）、联动面板（CascadePanel/CascadeTasksPanel）、混排面板（Style/Foreshadow/Strand）、管理页（logs/changelog/llm-routing/settings/writing-engine/prompts/cascade-tasks）。`useT` 引用 5 → 15 文件，JSX 可见英文清零，`tsc --noEmit` 零输出，eslint 恰在基线 78。
+
+## [1.9.4] - 2026-06-26
+
+弧式增量创作循环（子项目 A）落地。详见 `docs/superpowers/specs/2026-06-26-incremental-arc-writing-loop-design.md` 与 `docs/HANDOFF_2026-06-26_incremental-arc-loop.md`。
+
+### 新功能
+
+- **弧式增量创作循环（子项目 A）**：实现用户的核心创作哲学——从一个点子出发，一弧（≈20 章一段连贯故事）一弧地写，**绝不预先规划几百几千章的大伏笔**。与旧的"全书 750 章大纲→批量生成"相反，旧流程降级保留。
+  - **零迁移设计**：弧物理复用 `Volume` 表（一弧 = 一卷，`volume_idx` = 弧序号），弧状态寄存 volume-level `Outline.content_json` 的 `_arc` 命名空间（`level`/`content_json` 均自由结构，无需建表/迁移）。旧项目无 `_arc` 标记 → `/api/arc/{pid}/current` 返回 `null`，前端回退旧 wizard，互不干扰。
+  - **状态机层** `services/arc_loop.py`（新）：`ArcState` 解析/序列化、`advance_arc_state` 纯状态机（active→awaiting_direction→active→completed，可无 LLM 单测）、`generate_arc_outline`（哲学约束 prompt：只规划本弧、禁止跨弧长线伏笔）、`build_arc_kickoff_questions`（补全设定问答）、`build_arc_completion_suggestions`（弧末给下一弧建议）、`build_next_chapter_brief`（组装下一章 brief：本弧标题+到目前故事线+作者下一步方向+本章 beat）。`target_chapters` 4–40 夹紧（默认 20）。
+  - **编排 API** `api/arc.py`（新，`/api/arc`）：`POST /{pid}/start`（建第一弧 Volume+Outline，大纲失败 502 回滚不建半截）、`GET /{pid}/current`、`POST /{pid}/chapter-written`（写章后推进状态）、`POST /{pid}/next-direction`（作者给下一章方向→active）、`GET /{pid}/chapter-brief`（组装下一章 brief）、`POST /{pid}/complete`（生成下一弧建议）、`POST /{pid}/next-arc`（建 volume_idx+1 新弧，要求当前弧 completed 否则 409）。
+  - **复用子项目 B**：章节正文仍走既有 `/api/generate/chapter`（内部 `run_chapter_pipeline` 三角色管线）；A 只负责弧编排 + 下一章 brief，不重复实现生成。
+  - **降级**：kickoff 问题/弧末建议生成失败 → 空列表（跳过，不阻断）；弧大纲失败 → 502 + 事务不建半截 Volume。task_type `arc_outline`/`arc_kickoff`/`arc_suggest` 未配 PromptAsset 时回退到 `outline_volume`/`critic`。
+
+### 测试与验证
+
+- pytest **685 passed**（666 基线 + 弧状态机/大纲/问答/brief 12 例 + 弧 API 7 例），零回归。零新增数据库迁移。
+- 部署：`docker compose up -d --build backend`。
+
+### 非目标（YAGNI）
+
+- 前端向导未改（API 完备，前端可后续按既有 wizard 模式接；本环境无法有效测前端）。
+- 未改子项目 B 的 `run_chapter_pipeline` 内部；未动旧 `outline_generator` 全量大纲路径（降级保留）。
+- 不做跨弧大伏笔管理（与本子项目哲学相悖）。
+
+## [1.9.3] - 2026-06-25
+
+Humanizer-zh 结构性去AI味接入 + 大纲生成恶性 bug 根治 + 多智能体章节质量管线（子项目 B）落地。详见 `docs/HANDOFF_2026-06-25_humanizer-and-outline-fix.md`。
+
+### 修复
+
+- **大纲生成回退到 prompt（恶性 bug，根治）**：`OutlineGenerator.__init__` 用同步 `get_model_router()`，在 SSE 异步事件循环里命中 `loop.is_running()` 分支不加载 DB 配置，只回退到 env provider；而本部署 env LLM key 全空 → router providers 为空 → `_get_route` 抛 `No model configured for 'outline_book'`，该错误被 SSE 当内容下发，前端渲染成"回退到 prompt 提示词"。修复：`generate_outline` 在实例化 `OutlineGenerator` 前 `await get_model_router_async()`，治愈共享单例（同一 `_router` 对象，sync getter 随后返回 DB-loaded 实例）。这是唯一用同步 router 的生成路径，其余生成端走 `run_text_prompt → get_model_router_async` 不受影响。`tests/test_outline_router_preload.py`（源码契约断言 + 单例治愈证明）。
+- **测试套件确定性**：`conftest.py` 在 import 前钉 `CHAPTER_MAX_REWRITE_ROUNDS=2`，消除全套跑 vs 单文件跑因 `.env` 加载顺序导致的两个 `chapter_quality_gate` 用例时挂时过（pre-existing 隔离 bug，非本轮代码引入）。
+
+### 新功能
+
+- **Humanizer-zh 结构性去AI味规则**（`services/prompts/humanizer_zh_rules.py`，源自 op7418/Humanizer-zh，基于 Wikipedia「Signs of AI writing」）：补现有两层去AI味（QMAI 词表 `anti_ai_rules_zh` 管网文腔 + `AntiAIChecker` 管密度统计）查不到的**句法骨架级** AI 指纹。7 条规则：否定式排比、句尾强行升华、虚假范围、系动词回避、过度限定（5 条可确定性正则检测）+ 同义词循环/同画面重述、三段式法则（2 条仅 prompt 引导）。`synonym_cycling` 段落级语义判重正对神裔 ch1「骨架画面二次重述」根因。
+  - **prompt 侧**：`render_humanizer_prompt_block()`（≤1400 字预算截断）追加进 `render_prose_quality_prompt()` 单一注入点，同时进生成与润色 prompt（blueprint 里精确出现 1 次）。
+  - **检测侧**：`scan_humanizer_structural()` 接入 `AntiAIChecker`，产 `humanizer_*` issue，仅 low/medium 不做硬门（诊断不阻断，避免过度返工）。
+  - 测试 `tests/services/test_humanizer_zh_rules.py`（17 例：检测命中/清洁文本零误报/预算/正交契约/端到端 wiring）。
+
+- **子项目 B：多智能体章节质量管线（已实现，12 个 TDD 任务全绿）**（spec `docs/superpowers/specs/2026-06-23-multi-agent-chapter-pipeline-design.md` + 计划 `docs/superpowers/plans/2026-06-23-multi-agent-chapter-pipeline.md`）：串行三角色 drafter→logic_critic→prose_polish，新增「逻辑与剧情核查」（`services/logic_critic.py`）专查神裔 ch1 三类章内缺陷（空间方向矛盾/画面重述/跨度突变 + 动作因果/道具状态），隔离上下文（仅本章正文+本章大纲+前章末尾 1500 字，不喂全书记忆）echo 终稿不污染主流程。编排器 `services/chapter_pipeline.py`：clean 快路径（0 改写）、定向改写只动 locatable quote、2 轮封顶 + plateau 终止、逐棒降级不丢整章。`apply_chapter_quality_gate` 零改动作第三棒。`generate.py` 调用点切到 `run_chapter_pipeline`，新增可选 `logic_critic_done` SSE 事件。`CHAPTER_PIPELINE_ENABLED=0` 一键回退、`LOGIC_CRITIC_MAX_ROUNDS` 调轮次、`logic_critic`/`drafter` task_type 带 fallback（→critic/rewrite）。限流约束下选串行而非并行扇出。
+
+### 测试与验证
+
+- pytest **666 passed**（642 基线 + outline router 2 + 子项目 B 的 logic_critic/chapter_pipeline 共 22 例；Humanizer 17 例含在内）。前端 `tsc --noEmit` 零输出（仅可选新增 `logic_critic_done` 事件，前端可选消费）。
+- 子项目 B 回退路径已验证（`CHAPTER_PIPELINE_ENABLED=0` 直通 `apply_chapter_quality_gate`，行为与今日一致）。
+- 大纲修复已部署 live 并端到端验证（outline 流恢复正常正文输出，不再回退 prompt）。多智能体管线已 `docker compose up -d --build backend` 部署。
+
+### 调研（未引入代码，仅记录可学点）
+
+- **worldwonderer/oh-story-claudecode**：文件系统即记忆、`guard-outline-before-prose` 钩子（无章节大纲禁止写正文，强制大纲先行）、7 agent 按模型分层——印证子项目 A（增量弧式循环）与 B（串行三角色）方向。
+- **dama-cyber/magic-distillation**：七步单任务 prompt 拆分、可量化原创性闸（5-gram 重叠<5%/最长公共子串<8字）、分级黑名单、逐段字数预算 ±5%。其"反 AI 检测"目标不采纳。
+
+## [1.9.2] - 2026-06-13
+
+遗留项修复 + ainovel-cli 借鉴四件套（12 commits）。调研 voocel/ainovel-cli（Go/TUI，473★）后引入 4 个我们没有等价物的机制；同时修掉 v1.9.1 记录的 3 个遗留项 + 真实生成冒烟发现的 2 个 bug。计划见 `.claude/plans/ai-https-github-com-mochocyang-qmai-groovy-garden.md`。
+
+### 遗留项修复（A）
+
+- **test_relationships_crud 重写**：v1.9 起 PG settings 写端点已故意 410（Neo4j 为唯一真源），旧测试按 PG 直写契约写已过时。改为断言写端点 410 + 只读端点 200，并清理 dev 库 44 个测试残留项目。全套自此 0 失败。
+- **伏笔债务全局章号**：`ContextPackBuilder` 内部用 `chapter_global_idx` 把卷内局部章号换算为书级全局号再算债务，修掉第 2 卷起 age 偏小/为负导致的漏报（调用方零改动，写读两侧同换算同域可比）。
+- **generation_runner 签名对齐**：`build(project_id, chapter_id=...)` 与现签名 `(project_id, volume_id, chapter_idx)` 不匹配的 TypeError 暗债，新增 `_resolve_chapter_coords` 反查修复。
+- **认知账本补全两个 evaluate 调用方**：`evaluation_tasks` 独立评估任务 + `versions` 手动评估端点现在也注入认知账本（反查 chapter→volume→project_id）。
+
+### 生成冒烟发现的修复（B）
+
+- **真实生成冒烟**（流程测试2，550 章/5 卷）验证 A 阶段修复，并抓到：评估 LLM 在 JSON 字符串里输出原始控制符 → `json.loads` strict=True 抛错 → overall=0 假评分 → 整章重写（烧 2/3 修订轮）。
+- **评估解析容错**：`strict=False` + 修复重试（剥围栏/截首尾大括号/剥裸控制符）；新增 `EvaluationResult.parse_failed`，解析失败时 `should_revise` 跳过修订（不在垃圾信号上动文），泛型 except 也置标志，cascade 触发点加闸。
+
+### 新功能（ainovel-cli 借鉴，均注明出处）
+
+- **C1 评审防过度返工校准**（`EVALUATOR_CALIBRATION_PROMPT` 六条 + `REVISE_CALIBRATION_PROMPT`）：「accept 是最常见结果」「审美 warning 不构成返工理由」「对话区分度测试」「平淡必须 quote 指出 1-2 处」。封顶规则与 8.2 阈值逻辑不变，只把审美噪音从分数里拿掉。
+- **C2 全书文风统计 stylestat**（表 `style_stats`，迁移 a1001911）：纯 Python 零 LLM 统计句式 tic 章均频率、最近 20 章 n-gram 高频短语（实体名做停用词）、跨章逐字重复句、章末同构、开篇时间词率。双向反馈：生成端注入「文风镜像（主动压低）」，评分端给统计数字由 LLM 裁定。补「单章评审窗口对全书级文风固化失明」盲区。
+- **C3 确定性相关章反查 + 配角名册**（表 `character_appearances`，迁移 a1001912）：从伏笔埋设章（全局号）+ 配角 last_seen 反查相关历史章强制回读（与向量检索互补，零嵌入）；配角 first_seen/last_seen/出场数台账，长期未出场角色提示回读对齐。状态变化路因 chapter_start 是卷内局部域 V1 跳过。
+- **C4 叙事方向锚 Compass + 完结判定**（表 `narrative_compass`，迁移 a1001913）：ending_direction（终局命题）+ open_threads（长线台账）+ estimated_scale（规模区间，禁单值）。规模纯代码派生（确定性优先持久化），终局/长线 LLM 抽取；新卷生成时更新（带 ±30% clamp）；完结六条清单（规模未达下限/活跃长线/未回收伏笔→阻断，终局是否回答→人工核对，日常稳态启发式告警）。API `/compass`、`/compass/refresh`、`/compass/completion-readiness`。生成时注入方向锚。
+
+### prompt 预算
+
+- `ContextPack.to_system_prompt` 默认 token_budget 8000→9500，覆盖三个新注入块（文风镜像 L2 尾 ≤800、相关章回读 L1 尾 ≤600、方向锚 L1 尾 ≤400），保护 L1/L2 头部世界规则不被截断（keep-tail 截断语义）。
+
+### 测试与验证
+
+- pytest **598 passed**（本轮新增 ~60 个测试，纯函数 + 注入 tripwire + 变异自查；评估解析/校准/stylestat/反查/Compass 各有覆盖）；唯一历史失败 test_relationships_crud 已在 A1 修复，全套 0 失败。
+- 迁移 a1001911→a1001913 已实跑到 head；部署冒烟 /api/health 200、启动无错误。
+- C 特性真实数据验证（流程测试2 550 章）：文风镜像正确识别 time_quantifier 1.76/章 + 北山殡仪馆/七号线等高频地名 + 68% 短句章末；配角名册 150 行；Compass 派生规模 637-862 章 + LLM 抽出终局命题，completion-readiness 正确阻断（550<637 下限 + 8 条活跃长线）。
+
+### Breaking / 注意
+
+- 新增 3 张表，需 `alembic upgrade head`（a1001913，幂等，本机已执行）。
+- 子代理派发本轮持续 429（服务过载），A1-A4/B/C 全部内联实现 + 自审 + 变异验证，无独立审查代理。
+- **已知遗留**：① stylestat n-gram 停用词只过滤含全名的 gram，昵称短形（"见月把"）会漏入高频短语，待加昵称 skiplist；② C3 状态变化反查路（chapter_start 卷内局部域）V1 未启用，待 CharacterState 加卷标识；③ Compass 自动初始化仅在 `/compass/refresh` 与卷重生时触发，book 大纲首次生成的深层异步/SSE 保存点未挂钩（避免深嵌套回归风险）；④ B1 另曝 scene_planner 结构化输出 6/6 失败走兜底、质量门 rewrite 与长度地板打架，属既有行为，待后续任务。
+
+## [1.9.1] - 2026-06-11
+
+质量加固 + QMAI 借鉴迭代（28 commits）：先把积压的进行中改动按语义拆分提交锁定，随后修复 8 个后端 + 6 个前端正确性 bug，并落地 4 项借鉴自 QMAI（MIT, github.com/Mochocyang/QMAI）的特性。计划与逐任务审查记录见 `docs/superpowers/plans/2026-06-10-quality-hardening-and-qmai-adoption.md`。
+
+### 锁定的进行中改动（提交拆分）
+
+- 章节目标字数迁移：默认 50000 → 4000，`resolve_chapter_target_word_count` 做 legacy 解析（迁移 a1001909）。
+- 大纲就绪门（outline readiness gate）、场景数上限 6→20、评分策略由"硬门槛阻断"翻转为"生成前内化 + 分数验收"。
+- 前端 readiness UI、结构化错误解析、工作台 tab 化。
+
+### 修复（后端）
+
+- **SSE 场景回退正文重复**：场景流中途失败回退单发生成时未清空已流出的半截文本，保存的章节 = 半截场景 + 完整全文。现已清空并向前端发 `fallback_restart` 事件（`api/generate.py`）。
+- **`retry_attempts` 形同虚设**：参数层层传入但 provider 不消费，重试硬编码 4 次（单发路径最坏 840s×4 ≈ 56 分钟挂死）。现已透传（`model_router.py`）。
+- **评分 45s 超时假评分**：评估调用超时硬编码 45s，长输入超时 → overall=0 全零评分误触发重写。现默认 120s，env `EVALUATION_REQUEST_TIMEOUT` 可调。
+- **评审提示丢失违规分类法**：`EVALUATOR_CONTRACT_PROMPT` import 了但没拼进系统提示，下游修订管道被静默削弱；`max_tokens=900` 易截断 JSON。现已拼回 + 提到 2400。
+- **Celery 路径遗留 50000 字数**：未走 legacy 解析导致老章节永远落入模板兜底（质量塌陷）。现与 API 路径一致。
+- 删除 `should_stop_random_retry` 三层死代码；场景列表截断改为硬顶 `MAX_SCENE_COUNT` 且保留结尾钩子场景；blueprint 散文力学规则单源化（消除两处重复定义 + 空壳小节 + 版本号漂移，规则零丢失、44 marker 零缺失）。
+
+### 修复（前端）
+
+- **SSE 失败 UI 永久卡"生成中"**：`apiSSE` 失败路径不回调。现保证终态回调恰好一次 + 新增 `onError`（5 个调用点全部接入）。
+- **SSE 流无法取消/卸载泄漏**：AbortController 被丢弃。现统一 ref 管理，切章/重新生成/卸载时 abort；处理 `fallback_restart` 事件清空半截文本。
+- **轮询泄漏**：多处 `setInterval` 无卸载清理、vector 页缺 failed 终态且瞬时错误即停。新增 `usePolling` hook 统一改造 5 处（另 5 处确认本就规范）。
+- `apiFetch` 调用方传 headers 会整体覆盖 Authorization 的潜伏地雷已修。
+
+### 新功能（QMAI 借鉴，均注明 MIT 出处）
+
+- **去AI味规则库**（`services/prompts/anti_ai_rules_zh.py`）：41 条分类黑名单 + 5 组"情绪→动作"改写对照 + 对白十原则 + 防过度矫正禁令，接入 `anti_ai_checker` 检测与生成/润色 prompt（每章 prompt 增量约 1.2k 字符）。
+- **定点修订（rewriteTarget）**：评审 issue 新增 `quote` 字段（10-40 字原文定位片段），修订轮优先对"问题段落±1 段"做定点改写拼回，替代整章重生成；不可定位/超预算/退化改写自动回退整章路径。env `TARGETED_REVISION_ENABLED`（默认开）。
+- **角色认知账本**（`character_cognitions` 表，迁移 a1001910）：每角色 knows/does_not_know + 读者已知三表。章节定稿后 LLM 抽取增量合并（每角色上限 30 条，挤旧保新），生成时注入【人物认知边界】节，评审新增 `cognition_violation` 违规类型（防"角色提前知道不该知道的事"穿帮）。needs_review 文本不摄取。
+- **伏笔债务分 + 黄金开篇**：`compute_debt_score`（planted 滞留 ≥5 章 -15、推进后停滞 ≥10 章 -5、未回收超 5 条每条 -2），伏笔列表 API 附 `debt`，score<60 时生成 prompt 注入"优先推进/回收、禁止新埋"；开卷前三章注入开篇硬约束（500 字内入事、禁铺垫、章末必留钩子）。
+
+### 测试与卫生
+
+- pytest **529 passed**（本轮新增 ~80 个测试，关键修复均经变异测试验证）；唯一失败 `test_relationships_crud` 为既有环境性失败（与本轮无关，待查）。
+- tsc 零错误；eslint 维持基线 78 problems 零新增。
+- `PROGRESS.md`（3.9MB 运行日志）与 `tmp/` 出库并 ignore；删除根目录一次性补偿脚本。
+
+### Breaking / 注意
+
+- 评审 issue schema 新增 `quote` 字段（向后兼容，缺省空）；显式传 `target_words=50000` 现按 legacy 解析为项目设置/4000（与 API 路径既有行为一致）。
+- 需执行迁移至 a1001910（`alembic upgrade head`，幂等，本机已执行）。
+- 已知遗留：context_pack 路径的 `chapter_idx` 为卷内局部值，第 2 卷起伏笔债务可能漏报（不误报）；独立评估任务与手动评估端点暂未传认知账本。
+
+## [1.7.3] - 2026-04-28
+
+v1.7.3 是 v1.7.x 线上 `stream_by_route` `NameError` 热修复，详见 `RELEASE_NOTES_v1.7.3.md`。
+
+### 修复
+
+- **P0 hotfix `ModelRouter.stream_by_route` `NameError`**：v1.7.1 Z1 重构时给 `generate_by_route` 加了 `task_type: str = "by_route"` 入参但漏加了对称的 `stream_by_route`，导致在 `_log_meta is None` 分支里 `meta.pop("task_type", task_type)` 引用了未定义名。任何不传 `_log_meta` 的流式调用一起手即抛 `NameError: name 'task_type' is not defined`。修复：给 `stream_by_route` 加 `task_type: str = "by_route_stream"` 入参。仅 2 行变动，有重收画面/告警需求的请检查 `llm_call_total{task_type="by_route_stream"}` 是否重现。
+
+### 文档
+
+- 新增 `docs/AUDIT_BASELINE_v1.7.2.md`：v1.7.2 润色调研基线资产 (ruff 72 / mypy 550@56 / pytest 252 passed @ overall 34% / pip-audit 4 / npm audit 4)，P0–P3 优先级清单 + roadmap。**本 hotfix 是该基线扫描 P0 项目中发现的第一个真 bug**。
+- `RELEASE_NOTES_v1.7.3.md`。
+
+### 测试
+
+- pytest **254 passed**（252 + 2 hotfix regression）。5.30 s，无 regression。
+- `ruff check backend/app/services/model_router.py --select F821` → all clean。
+- `/api/health=200` （`docker cp` → backend-1 + celery-worker-1 → `docker restart` 两者）。
+- frontend 未变动。
+
+### Breaking / 注意
+
+- API / Schema 零变动。
+- Prom 标签未变。之前任何不传 `_log_meta` 的流式 `stream_by_route` 调用都是报 NameError 后被上层 `try/except` 吃掉或直接起頋，所以 `llm_call_total{task_type="by_route_stream"}` 可能在此前是一直为 0，本补丁后会开始出样本。
+- L3（Notion 同步审计）仍延后。
+
+## [1.7.2] - 2026-04-28
+
+v1.7.2 是 v1.7.x 观测线的收尾点状补丁，详见 `RELEASE_NOTES_v1.7.2.md`。
+
+### 修复 / 增强
+
+- **Z3 ModelRouter `time_llm_call` 全路径覆盖**：在 `app/services/model_router.py` 的 `generate / generate_stream / generate_by_route / generate_with_tier_fallback` 4 个方法、合计 8 个 provider 调用点（每个方法的 `_log_meta is None` 直分支与 `as ctx:` 日志分支各一次）都加 `with time_llm_call(task_type, provider.__class__.__name__, model) as _mbox:` 包裹，`GenerationResult` 返回后填 `_mbox["input_tokens"]/["output_tokens"]`；`generate_with_tier_fallback` 的 wrap 在 `for ... attempts` 循环内，每次 attempt 独立观测一次，失败 attempt 自然记 `status="error"`。`prompt_registry.run_prompt` 的外层 wrap 同步移除避免双计。之后 `entity_timeline / chapter_evaluator / hook_manager / consistency_checker / ooc_checker / outline_generator / settings_extractor / cascade_regenerator / knowledge_tasks` 等调用路径上的所有 LLM 调用都会发 `llm_call_total{status=ok|error}` / `llm_call_duration_seconds` / `llm_token_total{direction=input|output}`。provider 标签从 `route.provider_key`（高基数 endpoint UUID）改为 `provider.__class__.__name__`（如 `OpenAICompatProxy`）。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **252 passed**（v1.7.1 248 + Z3 4）。
+- `/api/health=200`。
+- frontend 未变动，`tsc --noEmit` 仍干净。
+
+### Breaking / 注意
+
+- API / Schema 零变动。
+- **Prom 标签变动**：`llm_call_*{provider}` 从 `"openai_compat_proxy"` 这种字符串改为 `"OpenAICompatProxy"` 之类的类名。如果用于告警 / 面板，需调整匹配正则（如 `provider=~".*Proxy|.*Provider"`）。
+- L3（Notion 同步审计）仍延后。
+
+## [1.7.1] - 2026-04-28
+
+v1.7.1 是 v1.7.0 之后的轻量点状补征。详见 `RELEASE_NOTES_v1.7.1.md`。
+
+### 修复 / 增强
+
+- **Z1 task_type Prom 贯穿**：`app/services/model_router.py` 中 `generate_by_route` 加 `task_type: str = "by_route"` 默认参数；generate / generate_stream / generate_by_route / generate_with_tier_fallback 共 12 个 provider 调用点提升 `task_type=task_type` 作为独立 kwarg，充付下游 `_record_cache_tokens`，从根上消除 `LLM_CACHE_TOKEN_TOTAL{task_type="unknown"}` 退化。
+- **Z2 Cascade 面板内嵌到 /workspace + 详情 modal**：`DesktopWorkspace.tsx` 加载 `CascadeTasksPanel`，以 `<CollapsibleSection title="Cascade 任务">` 呈现在“版本历史”下方，门控 currentProject，并在选中章节时 scope 到该章节；`CascadeTasksPanel.tsx` 表格行可点击开详情 modal，modal 反查 `/api/projects/{pid}/cascade-tasks/{tid}` 拿最新 `issue_summary` / `error_message` / `started_at` / `completed_at` / `duration` / `parent_task_id` 等字段。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **248 passed**（v1.7.0 245 + Z1 3）。
+- frontend `tsc --noEmit` 干净。
+- worker 24 h “attached to a different loop” 警告 = 0。
+
+### Breaking / 注意
+
+- 无破坏性变更。Provider `generate(...)` 现多一个 `task_type=` kwarg、原本就接收 `**kwargs`，二进制兼容。
+- Z3（`time_llm_call` 覆盖补齐到 `ModelRouter.generate*` 路径）仍为 v1.8 候选。
+- L3（Notion 同步审计）按 King 指示推迟。
+
+## [1.7.0] - 2026-04-28
+
+v1.7.0 是 v1.5.x → v1.6.0 遗留项的 carry-forward 收尾，详见 `RELEASE_NOTES_v1.7.0.md`。
+
+### 新增 / 改进
+
+- **X2 `_run_async` 路径统一**：`app/tasks/knowledge_tasks.py` (8 call sites) + `app/tasks/style_tasks.py` (1 call site) 的本地 `_run_async()` 改为 thin delegator → `app/tasks/__init__.py:_run_async_safe`（`reset_engine` + `reset_model_router` 前置，`dispose_current_engine_async` finally）。行为零变更、hardening 限定。
+- **X3 Qdrant 孤立 slice cleanup**：新 `scripts/cleanup_orphan_qdrant_slices.py`（PG-as-truth、`--dry-run` 默认、`--apply` 批量 200）。一次性回收 `style_samples_redacted` 8280 条孤立点（12393→4113、与 PG=4115 对齐）；beat_sheets/style_profiles 都是 4115/4115 干净。
+- **X5 cascade_tasks UI**：新 `GET /api/projects/{pid}/cascade-tasks`（list + `chapter_id`/`status` 过滤 + `limit ∈ [1,500]`）+ `/summary`（status 直方图）+ `/{tid}` 详情；前端新 `CascadeTasksPanel.tsx` + 独立 `/cascade-tasks?project_id=...` 路由，活跃行存在时 15 s 轮询。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900`。
+
+### 测试
+
+- pytest **245 passed**（230 + 4 X2 + 5 X3 + 6 X5）。
+- frontend `tsc --noEmit` 干净。
+- worker 24 h "attached to a different loop" 警告 = 0。
+- 真数据 smoke：project `f14712d6` 上 `/cascade-tasks` 返回 v1.5.0 烟测那条 critical/done/outline 行，summary `{done: 1, total: 1}`。
+
+### Breaking / 注意
+
+- 无破坏性变更。
+- X5 endpoint 是 read-only；cascade 写入路径仍走 `app/tasks/cascade.py` planner。
+- `task_type="unknown"` Prom label 仍未补 → v1.8 候选。
+- L3（Notion 同步审计）按 King 指示推迟。
+
+## [1.6.0] - 2026-04-27
+
+v1.6.0 专注于 prompt cache plumbing + scene mode observability，详见 `RELEASE_NOTES_v1.6.0.md`。
+
+### 新增 / 改进
+
+- **Y1 Anthropic prompt cache**：`AnthropicProvider` 在 system 消息长度≥ `ANTHROPIC_CACHE_MIN_CHARS`（4096）时，自动为 system block 加 `cache_control:ephemeral`。env：`ANTHROPIC_PROMPT_CACHE_ENABLED` (默认 true)。
+- **Y2 OpenAI prompt cache key**：`OpenAIProvider` 向 `chat.completions.create` 的 `extra_body` 注入 `prompt_cache_key="{task_type}:{model}"`，最大化 prefix share。env：`OPENAI_PROMPT_CACHE_ENABLED` (默认 true)。
+- **Y3 Cache token Prom counter**：`llm_cache_token_total{task_type, provider, model, kind=cache_create|cache_read|cache_uncached}`。`_record_cache_tokens` best-effort。
+- **Y4 Baseline cache_uncached emit**：即使上游代理不返 `cached_tokens` 字段，只要 `_OPENAI_CACHE_ENABLED` 且 `prompt_tokens>0`，依然 inc `kind=cache_uncached`，保证运维 baseline 可见。`cache_read` 依然不伪造。
+- **X4 Scene mode observability**：新增 `scene_plan_fallback_total{reason}`、`scene_count_per_chapter` (Histogram, buckets 1..12)、`scene_revise_round_total{outcome}` 三类 Prom 指标，注入 `scene_orchestrator.py` + `api/generate.py` revise loop。
+- **X1 v1.5.0 acceptance close-out**：`docs/v1.5.0-acceptance-report.md` 补 Appendix B（chapter 5 端到端 SSE + PG truth）；`docs/v1.5.x-v1.6.0-roadmap.md` 补 Status 列。
+
+### Schema
+
+- 无新增迁移。`alembic head=a1001900` 与 v1.5.0 相同。
+
+### 测试
+
+- pytest 230 passed（v1.5.0 的 226 + Y1+Y2+Y3 的 4 + X4 的 3 − 重复 4 + Y4 baseline 1）。
+- chapter 6 smoke ✅（scene_count_per_chapter populated）；chapter 7 smoke ✅（`llm_cache_token_total{kind=cache_uncached}` populated）。
+
+### Breaking / 注意
+
+- 无破坏性变更。设 `ANTHROPIC_PROMPT_CACHE_ENABLED=false` 或 `OPENAI_PROMPT_CACHE_ENABLED=false` 可退回 v1.5.0 行为。
+- 上游代理不返 `prompt_tokens_details.cached_tokens` 时 `cache_read` 继续为 0（baseline 限制，代理升级后自动产生命中数据）。
+- `task_type="unknown"` label：scene_orchestrator 调用未传 kwarg，不影响 metric 正确性，归 v1.7。
+
+## [1.5.0] - 2026-04-27
+
+v1.5.0 在 v1.4 tier routing 上新增 **scene-staged writing + auto-revise loop + prompt cache (双层防死锁) + cascade auto-regenerate** 四大主线，详见 `RELEASE_NOTES_v1.5.0.md` 与 `docs/v1.5.0-acceptance-report.md`。
+
+### Schema (alembic)
+
+- `a1001500` — `outlines` partial UNIQUE on `(project_id) WHERE level='book'` + 修复 from_reference 误用
+- `a1001501` — `llm_call_logs` 加 `tier_used / fallback_reason / attempt_index`
+- `a1001600` — `prompt_assets` 种入 `scene_planner` (standard/4096) + `scene_writer` (flagship/8192)
+- `a1001601` — 为上述两个 prompt 回填 `endpoint_id`
+- `a1001700` — 新表 `evaluate_tasks`（异步 evaluator API 载体）
+- `a1001800` — 新表 `cascade_tasks` + UNIQUE `(source_chapter_id, target_entity_type, target_entity_id, severity)`
+- `a1001900` — `world_rules` 加 `metadata_json JSON NOT NULL DEFAULT '{}'`
+
+### 新增 / 改进
+
+- **C1 Scene-staged writing**：`POST /api/generate/chapter` 支持 `use_scene_mode=true` + `target_scenes`，`scene_planner` (standard) → `scene_writer` (flagship) 流水线落入 `app/services/scene_orchestrator.py`，22 个回归用例（`tests/test_c1_scene_orchestrator.py`）。
+- **C2 Auto-revise closed loop**：写完 → evaluator 评分 → < `revise_threshold`（默认 7.0）时把 issues 回灌 SceneOrchestrator 重写（默认 N=2 轮），每轮 `asyncio.timeout(900)`；24 个用例（`tests/test_c2_auto_revise.py`）。
+- **C3 Prompt cache deadlock 双层防线**：Layer 1 = revise 前 `await db.rollback()`；Layer 2 = `app/services/prompt_cache.py` (`get_snapshot` TTL=300s + `buffer_track_result` 30s 后台 flusher)，hot path **必须**走 prompt_cache（AGENTS.md 仓库级契约）。
+- **C4 Cascade auto-regenerate**：critical issue → `cascade_planner` → `cascade_tasks` → Celery `cascade.run_cascade_task` → 章/纲/角/世界规则四类 in-place handler（rev_key 跨轮幂等），56 个用例（`tests/test_c4_cascade.py`）+ `scripts/c4_e2e_smoke.py --rounds 2` double-round 烟测。
+- **B1′ evaluator/checker tier-aware fallback**：修复自上线以来 evaluator zero LLM call P0；`generate_with_tier_fallback` + `_pick_endpoints_by_tier` 安全网。
+- **B2′ Character/HAS_STATE 统一 writer**：`EntityTimelineService` 为唯一入口，新增 `entities.extract_chapter` celery task + Neo4j `ExtractionMarker` 幂等；49 个 GqlStatus warning 归零。
+- **B2 prompt save 软警卫**：`POST/PUT /api/prompts` 增 `confirm_mismatch` query 参数；mismatch 返 409 + 结构化 detail；前端 `savePromptWithGuard` 拦截弹 `window.confirm`。
+- **Bug K chapter SSE auto-save**：镜像 outline auto-save pattern 为 chapter SSE 补 `collected_text` + 独立 session UPDATE + `status:saved` 事件。
+- **D-pre 测试基础设施收尾**：`backend/pyproject.toml` 首次加 `[tool.pytest.ini_options]`：`asyncio_mode="strict"` + session-scoped loop/fixture，消灭 4× `Future attached to a different loop` flake；`tests/test_v10_observability.py` 修 `http_request_total`→`http_requests_total`；pytest 222 passed in 4.13s（3 轮稳定）。
+
+### Breaking / 注意
+
+- **Hot path contract**：`run_text_prompt` / `stream_text_prompt` / SceneOrchestrator / 任何 SSE 路径必须走 `prompt_cache.get_snapshot` + `prompt_cache.buffer_track_result`，不再走 `PromptRegistry.{get,resolve_route,resolve_tier,track_result}`（保留为 admin CRUD）。
+- **pytest-asyncio**：升级后强制 `asyncio_mode="strict"`；async test class 必须 class 级 `@pytest.mark.asyncio`。
+- **Cascade UNIQUE invariant**：handler 严禁修改 `cascade_planner` ordering 字段（`outline.is_confirmed` / `name` / `rule_text` / `category`），否则 `cascade_tasks` 跨轮 UNIQUE 会被击穿。
+
+### Carry-forward / 已知限制
+
+- 上游 LLM provider prompt cache（Anthropic `cache_control: ephemeral` / OpenAI `prompt_cache_key`）留 v1.6。
+- Bug H reprocess worker event-loop 复用警告 / Qdrant `style_samples_redacted` 3× 冗余点 / scene_mode 观测面板 / cascade_tasks UI → v1.6 候选。
+- 真 LLM scene_mode + auto-revise e2e 烟测可作为 v1.6 运营阶段补烟。
+
+
+本项目遵循语义化版本号（SemVer）。
+
+## [1.4.1] - 2026-04-24
+
+v1.4.1 是 v1.4 的**收尾补丁**，聚焦三处打磨，不触动 tier schema 与路由语义：
+
+### 新增 / 改进
+
+- **Chunk 17 — `/llm-routing/matrix` 字段对齐 + tier helper 单测**：
+  - `backend/app/services/model_router.py` 新增 `VALID_TIERS` / `is_valid_tier()` / `compute_effective_tier()` 三件套，作为 `prompt.model_tier ≫ endpoint.tier ≫ 'standard'` 的唯一真源。
+  - `backend/app/api/llm_routing.py` 重写为 DB 驱动：对每个 active `PromptAsset` 左联 `LLMEndpoint`，逐行计算 `effective_tier` 和 `overridden`，返回前端 `MatrixRow` 期望的完整字段（`task_type / mode / prompt_id / prompt_name / endpoint_id / endpoint_name / endpoint_tier / model_name / model_tier / effective_tier / overridden`）。非法 `?tier=` 继续回 200 + `error: "invalid tier"`。
+  - 新增 `backend/tests/services/test_model_router_tier.py`（18 个 pytest 全通）覆盖三级回落、非法 / 空值拒绝、embedding tier 透传。
+- **Chunk 18 — 端点测试可见性**：
+  - `backend/app/api/model_config.py::TestResult` 扩展为 `sent_text / request_summary / response_text / response_preview / embedding_dim / response_first_floats`。
+  - `test_endpoint` 发送**字面量 `"hi"`**（替代旧的 `"Say hi"`），捕获 anthropic content block 或 openai chat choices；embedding 端点返回 `embedding_dim` + 前 3 位浮点。
+  - `frontend/src/app/settings/page.tsx` 在每个端点卡下新增 `data-testid="endpoint-test-panel"`，同时展示 `请求 / 发送 / 响应` 或 `向量 dim=N head=[...]`；失败时显示红色错误体。用户不再只能看到 `XX ms`。
+- **Chunk 19 — NVIDIA embeddings 兼容**（`https://integrate.api.nvidia.com/v1/embeddings`）：
+  - `backend/app/services/model_router.py` 新增 `NvidiaEmbeddingProvider`，使用 `httpx.AsyncClient` 直接 POST，载荷固定为 `{input: [...], model, modality: ["text"], input_type, encoding_format: "float", truncate: "NONE"}`，响应兼容 OpenAI schema（`data[0].embedding`）。
+  - `VALID_PROVIDER_TYPES` 增加 `"nvidia"`；`test_endpoint` 增加 nvidia 分支（走 `NvidiaEmbeddingProvider.embed_one`，返回 dim + head floats）。
+  - 前端 `settings/page.tsx` 新增 `NVIDIA Embeddings` 供应商选项，`base_url` 占位符为 `https://integrate.api.nvidia.com/v1`，模型建议列表内置 `nvidia/llama-nemotron-embed-vl-1b-v2` 与 `nvidia/nv-embedqa-e5-v5`。
+- **Chunk 20 — CHANGELOG / RELEASE_NOTES_v1.4.1**：本段 + `RELEASE_NOTES_v1.4.1.md` 记录三处补丁；smoke `[38/40]` 覆盖静态 + runtime 断言。
+
+### Fixed
+
+- Endpoint test probe now surfaces empty / reasoning replies with `finish_reason`
+  and usage info (previously showed a blank response). Implemented by raising
+  `probe_max_tokens` to 256 and synthesizing a fallback message that lists
+  `finish_reason`, `usage`, and `reasoning_tokens` with a hint that the endpoint
+  is likely a reasoning model.
+
+### Changed
+
+- Default prompt `max_tokens` raised 4096 → 8192 across all four provider
+  signatures, `TaskRouteConfig` / `RouteSpec` fallbacks, and the
+  `PromptAsset.max_tokens` column default. Outline task types
+  (`outline_book` / `outline_volume` / `outline_chapter`) were further raised
+  to 16384 to support long-form generation. Alembic head is now `a1001401`
+  with existing prompt rows backfilled (outlines → 16384, others → 8192).
+- Book outline generation is now staged by default: stage A produces the
+  skeleton, then stages B (characters) and C (world) run in parallel and are
+  reassembled into the canonical 9-section document. Avoids the long-output
+  quality cliff on a single 10K+ char response. `stream=True, staged=False`
+  keeps the legacy single-call behavior.
+- Streaming book outline now emits structured per-stage SSE progress events
+  (`stage_start` / `stage_chunk` / `stage_end` / `error` / `done`) when the
+  client opts in with `staged_stream=1` (query param or request body). Stages
+  B and C interleave their chunks by arrival via `asyncio.Queue`, and the
+  final `done` event carries the reassembled full outline so auto-save stays
+  correct. The Workspace UI shows three progress dots (skeleton / characters
+  / world) that flip from gray to blue (running) to green (done) as each
+  stage completes.
+- Volume outline generation now splits meta from chapter summaries: stage V1
+  emits only the per-volume meta (integer `chapter_count`, no
+  `chapter_summaries`), then stage V2 loops `ceil(chapter_count / 10)` batches
+  of 10 chapters each, carrying the V1 meta plus the last 3 previous summaries
+  for continuity. `chapter_idx` is normalized to stay strictly contiguous.
+  Merged result keeps the legacy `{...meta, chapter_summaries}` shape.
+  Stabilizes long volumes (30+ chapters) where the single-call JSON used to
+  truncate or drop indices.
+
+### API / schema
+
+- `GET /api/llm-routing/matrix` 响应字段扩展（兼容老消费者：新字段纯加法）。
+- `POST /api/model-config/endpoints/{id}/test` 响应字段扩展（同上）。
+- `POST/PUT /api/model-config/endpoints` 的 `provider_type` 新增 `nvidia`。
+- 无数据库迁移（不改 alembic head，维持 `a1001400`）。
+
+### smoke 矩阵
+
+- `scripts/smoke_v1.sh` 新增 `[38/38]` / `[39/39]` / `[40/40]` 三段（chunk-17/18/19），静态子集绿；runtime 依赖部署一个 NVIDIA endpoint key 时覆盖 provider_type 创建路径。
+- `test_model_router_tier.py`：18 passed in 0.04s。
+
+### 兼容性
+
+- 不影响既有 v1.4 行为：`MatrixRow` 旧字段仍返回，旧 `TestResult.success/message/latency_ms` 语义不变，非 nvidia provider 走原路径。
+- 不打 git tag，chunk-17 / chunk-18+19 / chunk-20 三次提交构成补丁集。
+
+## [1.4.0] - 2026-04-24
+
+v1.4.0 **LLM tier routing**。引入“endpoint × prompt 两层 tier”模型，使每个 task 能按能力等级而非单一端点路由 LLM；同时在 env flag 控制下拆分了 critic / extractor 并推出 RAG query rewrite 钩子。所有变更默认 **向前兼容**，flag 关闭时行为与 v1.3 等价；**本版不打 git tag**，仅在 CHANGELOG / RELEASE_NOTES 层面记录。
+
+### 新增 / 改进
+
+- **Chunk 1/2 — 规范与实施计划**：`docs/V10_DESIGN.md` + `docs/V10_CHUNKS.md` 完整描述 tier 枚举（`flagship/standard/small/distill/embedding`）、路由优先级`prompt.model_tier ≫ endpoint.tier ≫ 'standard'` 以及分 chunk 的交付顺序。
+- **Chunk 3 — alembic `a1001400`**：给 `llm_endpoints` 新增 `tier TEXT`，给 `prompt_assets` 新增 `model_tier TEXT`，两列均为 nullable；`backend/app/models/prompt.py` / `llm_endpoint.py` ORM 同步补字段。升级交互：`docker compose exec backend alembic upgrade head`。
+- **Chunk 4 — API tier 读写**：`/api/model-config/*` 和 `/api/prompts/*` 读写 `tier` / `model_tier`。
+- **Chunk 5 — `prompt_registry` builtin**：内建 7 个 task_type 的默认 prompt + tier，并提供 `resolve_tier(prompt, endpoint)` 统一解析入口。
+- **Chunk 6 — `model_router` tier registry + `GET /api/llm-routing/matrix`**：响应 `{ rows: MatrixRow[], total, tier, error? }`，支持 `?tier=<enum>` 过滤；非法 tier 不走 5xx，而是返回 `error: "invalid tier"` 让 UI 可展示。
+- **Chunk 7 — critic 拆分**：`critic_service` 拆为 `critic_hard`（一致性 / 连续性 / OOC）+ `critic_soft`（节奏 / 读者拉力 / anti-AI）；`CRITIC_SPLIT_ENABLED=0` 回落到原单 critic。
+- **Chunk 8 — `consistency_llm_check`**：`critic_hard` 命中 consistency 命中时，`CRITIC_CONSISTENCY_LLM_ENABLED=1` 触发一次 LLM 复核并合并分数。
+- **Chunk 9 — `settings_extractor` 3-way split**：`characters` / `world_rules` / `relationships` 三路各自独立 tier，`SETTINGS_EXTRACTOR_SPLIT_ENABLED=0` 任一分类失败时回落到单 extractor。
+- **Chunk 10 — RAG query rewrite**：`context_pack` L3 前置一次 query rewrite，`RAG_QUERY_REWRITE_ENABLED=0` 时行为与 v1.3 完全一致。
+- **Chunk 11 — `scripts/smoke_v1.sh [22/22]`**：8 条新断言覆盖 `alembic current head = a1001400`、tier / model_tier 暴露、`prompt_registry` 7 个 builtin task_type、`/api/llm-routing/matrix` 的 ok / filter / invalid-tier 三条路径。
+- **Chunk 12 — settings ModelConfig tier 下拉 + tier 徽章**：`frontend/src/app/settings/page.tsx` 落实 `TIER_OPTIONS` + `TIER_BADGE_CLASS`。
+- **Chunk 13 — prompts `model_tier` 列 + tier 徽章 + endpoint 过滤**：`frontend/src/app/prompts/page.tsx` 补下拉列与 tier 徽章，顶部新增按端点过滤。
+- **Chunk 14 — `/llm-routing` 路由矩阵页**：`frontend/src/app/llm-routing/page.tsx` 按 `task_type × mode` 分组展示每个 prompt 的 endpoint(tier) / model / effective_tier，overridden 时在右侧标 `*`；顶部支持 tier 过滤，右侧计算总数 / 覆盖数 / 各 tier 计数；`Navbar.tsx` 在 `prompts` 与 `settings` 间插入 `llm-routing` 入口，`lib/i18n/messages.ts` zh/en 加 `nav.llmRouting`（“路由” / “Routing”）。
+- **Chunk 15 — `RELEASE_NOTES_v1.4.md` + README 版本 bullet**：记录 tier 枚举 / env flag / API / schema / smoke 矩阵，README 路线图新增 v1.4 指向 release notes。
+
+### Env flags
+
+- `CRITIC_SPLIT_ENABLED=1`（默认开）
+- `CRITIC_CONSISTENCY_LLM_ENABLED=0`（默认关）
+- `SETTINGS_EXTRACTOR_SPLIT_ENABLED=1`（默认开）
+- `RAG_QUERY_REWRITE_ENABLED=0`（默认关）
+
+### Schema / 迁移
+
+- alembic head 从 `a1001300` 推进到 `a1001400`。
+- 新增列：`llm_endpoints.tier TEXT`、`prompt_assets.model_tier TEXT`（均 nullable）。
+
+### API
+
+- 新增：`GET /api/llm-routing/matrix`（可选 `?tier=flagship|standard|small|distill|embedding`）。
+- 修改：`/api/model-config/*`、`/api/prompts/*` 读写 tier 相关字段。
+
+### smoke 矩阵
+
+- 完整 runtime：[22/22] 全通，含：
+  - `alembic current = a1001400`
+  - `/api/model-config` 含 `tier`
+  - `/api/prompts` 含 `model_tier`
+  - `prompt_registry` 7 builtin task_type
+  - `/api/llm-routing/matrix` ok / `?tier=standard` / `?tier=bogus` 三条路径
+- runtime 手扣验证（chunk-15）：本地空库状态下 `matrix` 返回 `total=0, error=None`，`?tier=standard` 回 `tier="standard", error=None`，`?tier=bogus` 回 `error="invalid tier"`。
+
+### 向前兼容性
+
+- 所有 env flag 关闭时，v1.4 行为与 v1.3 等价。
+- 旧端点 / 旧 prompt 的 `tier` / `model_tier` 允许 NULL，`resolve_tier` 默认落在 `'standard'`。
+- `/llm-routing` 为新增路由，旧页面不受影响。
+
+### 版本号
+
+- 本版 **不打 git tag**，`APP_VERSION` / `frontend/package.json.version` 暂保持 `1.2.0`；`CHANGELOG.md` / `RELEASE_NOTES_v1.4.md` 作为唯一版本发布记录。
+
+## [1.2.0] - 2026-04-23
+
+v1.2.0 B 系列可观测性 + CI 自动化。给 v1.0/1.1 的骨架+血肉补上神经系统：结构化日志 -> 指标 -> 错误追踪 -> 流水线。所有 v1.2 变更均为非破坏性，schema 未动，向前兼容。
+
+### 新增 / 改进
+
+- **Chunk 24 — 后端结构化 JSON 日志**：新增 `backend/app/observability/logging.py`（loguru JSON sink + stdlib `logging` 拦截 + `_SENSITIVE_KEYS` 脱敏 + Bearer token 正则脱敏），`backend/app/middlewares/request_logging.py`（`RequestLoggingMiddleware` 生成/回显 `X-Request-ID` 头并为每条请求发一行 JSON，包含 method/path/status/latency_ms/user_id/request_id），`main.py` 在启动时 `setup_logging()` 并注册中间件。smoke 新增 [12/12] 五条断言（静态 + 运行时 + 响应头）。
+- **Chunk 25 — Prometheus 指标**：扩展 `backend/app/observability/metrics.py`，HTTP counter 按 Prometheus 命名规范从 `http_request_total` 改名为 `http_requests_total`；新增 `CELERY_TASK_TOTAL` / `CELERY_TASK_DURATION` 两族 celery 指标 + `DB_POOL_SIZE` / `DB_POOL_CHECKED_OUT` / `DB_POOL_OVERFLOW` 三 Gauge；`backend/app/tasks/__init__.py` 接入 celery `task_prerun/postrun/failure/retry/revoked` 信号，为每个任务实例用 `time.monotonic()` 计时；`observability/grafana/dashboards/ai-write-overview.json` 指向新命名；`docker compose up -d prometheus grafana` 起 prometheus(9091)+grafana(3001)。smoke 新增 [13/13] 九条断言覆盖源码 + `/metrics` 响应 + 容器状态 + prom 实际 scrape。
+- **Chunk 26 — Sentry 接入（可选 DSN）**：`backend/app/observability/sentry_init.py` 补 `_scrub_event(event, hint)` 作为 `before_send` 和 `before_send_transaction`，复用 `logging.redact` 对 `event.request.headers/cookies/query_string/data` 与 `extra/contexts/tags` 脱敏；未设 `SENTRY_DSN` 时静默返回 `False`。前端新增 `frontend/src/sentry.client.config.ts` 浏览器端 shim：读 `NEXT_PUBLIC_SENTRY_DSN`，动态 `import('@sentry/browser')`（包未装则 no-op），`beforeSend` 剥离 URL query string 与敏感请求头，自挂 `window.error` / `unhandledrejection` 监听。smoke 新增 [14/14] 四条断言。
+- **Chunk 27 — GitHub Actions CI + smoke 静态子集 + 自签 JWT fixture**：`.github/workflows/ci.yml` 扩为 ruff + mypy（非阻塞基线）+ pytest + next build + compose-validate + 新的 `smoke-static` job（`SMOKE_STATIC_ONLY=1 bash scripts/smoke_v1.sh`）；`backend/tests/fixtures/self_sign_jwt.py` 暴露 `sign_smoke_jwt(subject, ttl_seconds, secret, algorithm)` + pytest `admin_jwt` fixture + `__main__` CLI，smoke 与 CI 共用同一签名路径。`scripts/smoke_v1.sh` 引入 `SMOKE_STATIC_ONLY=1` 网关，把所有 `docker compose exec` / `curl $BASE/api/*` / `/metrics` / prom 查询块改为 SKIP 而非 FAIL，CI 无需起服务容器即可 grep 所有源码级断言。smoke 新增 [15/15] 六条断言（workflow 存在 + pull_request 触发 + 工具链 + smoke 子集调用 + fixture 就位）。
+
+### 版本号
+
+- backend `APP_VERSION` 从 `1.1.0` 提升至 `1.2.0`。
+- `frontend/package.json` `version` 从 `1.1.0` 提升至 `1.2.0`。
+- 镜像按 `GIT_TAG=v1.2.0` 重建 `backend` 与 `celery-worker`。
+
+### smoke 矩阵
+
+- 完整 runtime（本地 docker compose stack）：44 passed / 0 failed。
+- `SMOKE_STATIC_ONLY=1`（CI 模式）：27 passed / 0 failed / 7 skipped。
+
+## [1.1.0] - 2026-04-23
+
+v1.1.0 A 系列骨架->血肉。在 v1.0 骨架之上填充真正可用的国际化、移动端体验、设计令牌一致性与可记忆的工作区布局。
+
+### 新增 / 改进
+
+- **Chunk 20 — 英文 i18n 真翻译 + 设置页语言切换器**：`lib/i18n/messages.ts` 从 stub 扩充到 39 个键位的中/英完整对照，覆盖 app / nav / locale / settings / workspace 五个命名空间；`settings/page.tsx` 与 `settings/layout.tsx` 全量改用 `useT`，并在设置页顶部提供 `LanguageSwitcher` 组件，切换后写入 `ai-write-locale` cookie 并同步 `<html lang>`。smoke 新增 [9/9] 断言语言开关、cookie 名与英文词条存在。
+- **Chunk 21 — 移动端核心页落地**：`ProjectListPage` 默认单列栅格、头部 `flex-wrap`、移动内边距 `px-3 md:px-6`；`MobileWorkspace` 新增大纲抽屉（`mobile-outline-drawer` / `mobile-outline-toggle`），在 list / editor / tools / create 之间切换；`Navbar` 在窄视口下显示汉堡菜单并开合抽屉。iPhone SE（380px）视口下无横向滚动。smoke 新增 [10/10]。
+- **Chunk 22 — 业务 UI 全面迁入设计令牌**：新建 `lib/graph-palette.ts` 统一关系图调色板（`SENTIMENT_*` / `NODE_*` / `GRAPH_*` / `NODE_COLOR_PALETTE`）；`relationship-graph/page.tsx`、`RelationshipGraph.tsx`、`EditorView.tsx`、`WritingGuidePanel.tsx` 中所有散落的 `#xxxxxx` 与 `rgba(...)` 字面量迁移到 `var(--text)` / `var(--color-info-500)` / `shadow-card` 等令牌或已导出的调色板常量。smoke 新增 [11/11]，通过 grep 保证白名单外无 hex/rgba 残留。
+- **Chunk 23 — 工作区布局 per-project 折叠记忆 + 快捷键 + 移动端自动折叠**：`WorkspaceLayout` 新增可选 `projectId` 属性，`localStorage` 键从平键升级为 `ai-write.workspace.{sidebar,panel}-collapsed:<projectId>`，不同项目记忆各自的侧栏/面板折叠状态，缺省时回落到平键以保持向前兼容；新增 `[` / `]` 键盘快捷键切换侧栏与面板（在输入框 / contentEditable 中自动让行）；`matchMedia('(max-width: 767px)')` 在窄视口自动折叠两侧，不会在视口变宽时自动展开以尊重用户意图。smoke [8/8] 扩充三条断言。
+
+### 版本号
+
+- backend `APP_VERSION` 从 `1.0.0` 提升至 `1.1.0`。
+- `frontend/package.json` `version` 从 `1.0.0` 提升至 `1.1.0`。
+- 镜像按 `GIT_TAG=v1.1.0` 重建 `backend` 与 `celery-worker`。
+
+## [1.0.0] - 2026-04-23
+
+v1.0.0 big-bang 首个正式版。聚焦于用户体验、可观测性与可导出性。
+
+### 新增 / 改进
+
+- **Chunk 12 — 使用配额 & 管理面板**：引入用户额度、402 拦截器与 `/api/admin/usage` 管理接口，管理员可查看每用户的消耗情况；附带 alembic 迁移 `a1001200`。
+- **Chunk 13 — 项目一键导出**：支持将项目导出为 EPUB / PDF / DOCX 三种格式，路径形如 `/api/export/projects/<id>.{epub,pdf,docx}`。
+- **Chunk 14 — Tailwind v4 设计令牌**：在 `globals.css` 中落地 `@theme` 变量（品牌色 `--color-brand-*`、圆角 `--radius-card`、阴影与排版），为全站视觉统一奠基。
+- **Chunk 15 — 国际化脚手架（中 / 英）**：新增 `lib/i18n/messages.ts` 与 `I18nProvider`，通过 `useT` / `useLocale` 切换语言，语言偏好写入 `ai-write-locale` cookie。
+- **Chunk 16 — 移动端响应式基建**：`layout.tsx` 导出 `viewport`，`globals.css` 提供 `safe-area-x/top/bottom` 工具类，Navbar 支持汉堡菜单，移动端首屏可用。
+- **Chunk 17 — 工作区侧栏可折叠**：`WorkspaceLayout` 左侧主侧栏与右侧面板均可折叠，通过 `usePersistedFlag` 将状态写入 `ai-write.workspace.sidebar-collapsed` 与 `ai-write.workspace.panel-collapsed`。
+- **Chunk 18 — 八项核心能力冒烟脚本**：新增 `scripts/smoke_v1.sh`，在 backend 容器内自签 JWT 后跑 10 项断言，覆盖版本、鉴权、额度、导出、设计令牌、i18n、移动端、侧栏等 v1.0 所有关键能力。
+
+### 版本号
+
+- backend `/api/version` 新增 `version` 字段，固定为 `1.0.0`（`APP_VERSION`）。
+- `frontend/package.json` `version` 从 `0.1.0` 提升至 `1.0.0`。

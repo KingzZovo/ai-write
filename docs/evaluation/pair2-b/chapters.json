@@ -1,0 +1,269 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "1d5c0a86-37be-4af4-b246-616927c2a129",
+    "status": "ok",
+    "chars_raw": 1145,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1145
+    },
+    "chars": 1145,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口岸边的盘算",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 28.3,
+    "summary_written": true,
+    "summary_chars": 186,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "07906702-c1c4-412c-bdde-e48efb9c4133",
+    "status": "ok",
+    "chars_raw": 1273,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1273
+    },
+    "chars": 1273,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "房东催租",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "备用顶针",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 55.6,
+    "summary_written": true,
+    "summary_chars": 111,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "4471c0d3-2452-4edf-9ac6-9e3dbfc19f42",
+    "status": "ok",
+    "chars_raw": 1187,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1187
+    },
+    "chars": 1187,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "交租后的余钱与老陈上门",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "接下旧电饭锅与清点现钱",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 25.4,
+    "summary_written": true,
+    "summary_chars": 138,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "47f47698-a84f-4207-b09e-a256bf3f91f9",
+    "status": "ok",
+    "chars_raw": 1155,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1155
+    },
+    "chars": 1155,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的夜活",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "缝纫铺里的布头与袋子",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.2,
+    "summary_written": true,
+    "summary_chars": 135,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "0c70c6cd-a608-44de-ac2a-c0d225af9391",
+    "status": "ok",
+    "chars_raw": 1255,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1255
+    },
+    "chars": 1255,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上的电器铺",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "留下的钱与拿回的布头",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.4,
+    "summary_written": true,
+    "summary_chars": 144,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "797a9845-740b-4953-a6dd-e79a7f7a784e",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  },
+  {
+    "index": 7,
+    "chapter_id": "746377b7-2082-4607-b406-7e72bc45395c",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  }
+]

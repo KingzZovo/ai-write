@@ -1,0 +1,137 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "6e228ae8-e1b4-46ff-8bb1-44a91b5cde34",
+    "status": "ok",
+    "chars_raw": 1096,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1096
+    },
+    "chars": 1096,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的牛皮纸信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 20.2,
+    "summary_written": true,
+    "summary_chars": 127,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "d037b503-6241-45aa-8589-f016bce34eca",
+    "status": "ok",
+    "chars_raw": 1173,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1173
+    },
+    "chars": 1173,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 25.6,
+    "summary_written": true,
+    "summary_chars": 112,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "821c54bf-593a-4bf2-a558-fa961692826c",
+    "status": "ok",
+    "chars_raw": 1076,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1076
+    },
+    "chars": 1076,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺的账目与旧电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 20.2,
+    "summary_written": true,
+    "summary_chars": 145,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

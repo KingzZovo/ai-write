@@ -1,0 +1,23 @@
+{
+  "done": true,
+  "seconds": 93.642,
+  "events": {
+    "generating": 1,
+    "scene": 2,
+    "chunk": 55,
+    "quality_check": 1,
+    "logic_critic_done": 1,
+    "saved": 1,
+    "evaluating": 1,
+    "scored": 1,
+    "revise_skipped": 1,
+    "chapter_acceptance": 1,
+    "completed": 1
+  },
+  "sql": {
+    "samples": 94,
+    "active_prompt_updates": 1,
+    "max_prompt_update_transaction_seconds": 0.178156,
+    "max_idle_transaction_seconds": 16.017
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "index": 3,
+  "chapter_id": "bcc93e94-27e1-4088-8848-4167fb9cb77f",
+  "status": "error",
+  "error_type": "RuntimeError",
+  "error_message": "scene_planner_failed: 输出不是合法 JSON",
+  "error_code": null,
+  "attempts": 1
+}

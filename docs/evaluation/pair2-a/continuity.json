@@ -1,0 +1,68 @@
+{
+  "chapters": 7,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1451,
+      "target": 1200,
+      "ratio": 1.209
+    },
+    "ch02.txt": {
+      "chars": 1229,
+      "target": 1200,
+      "ratio": 1.024
+    },
+    "ch03.txt": {
+      "chars": 1098,
+      "target": 1200,
+      "ratio": 0.915
+    },
+    "ch04.txt": {
+      "chars": 1207,
+      "target": 1200,
+      "ratio": 1.006
+    },
+    "ch05.txt": {
+      "chars": 1078,
+      "target": 1200,
+      "ratio": 0.898
+    },
+    "ch06.txt": {
+      "chars": 1040,
+      "target": 1200,
+      "ratio": 0.867
+    },
+    "ch08.txt": {
+      "chars": 1088,
+      "target": 1200,
+      "ratio": 0.907
+    }
+  },
+  "findings": [
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch03.txt",
+      "values": [
+        "一千",
+        "一百八十二"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "unknown_character",
+      "name": "大头",
+      "chapters": [
+        "ch01.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "张叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「张叔」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 3
+}

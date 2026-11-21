@@ -1,0 +1,18 @@
+{
+  "chapters": 1,
+  "word_counts": {
+    "ch02.txt": {
+      "chars": 1178,
+      "target": 1200,
+      "ratio": 0.982
+    }
+  },
+  "findings": [
+    {
+      "check": "prop_missing",
+      "prop": "信封",
+      "detail": "全篇未出现已设定的道具「信封」"
+    }
+  ],
+  "violations": 1
+}

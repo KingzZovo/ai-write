@@ -1,0 +1,150 @@
+{
+  "chapters": 20,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 2160,
+      "target": 2000,
+      "ratio": 1.08
+    },
+    "ch02.txt": {
+      "chars": 2227,
+      "target": 2000,
+      "ratio": 1.113
+    },
+    "ch03.txt": {
+      "chars": 2500,
+      "target": 2000,
+      "ratio": 1.25
+    },
+    "ch04.txt": {
+      "chars": 2417,
+      "target": 2000,
+      "ratio": 1.208
+    },
+    "ch05.txt": {
+      "chars": 2197,
+      "target": 2000,
+      "ratio": 1.099
+    },
+    "ch06.txt": {
+      "chars": 2375,
+      "target": 2000,
+      "ratio": 1.188
+    },
+    "ch07.txt": {
+      "chars": 2020,
+      "target": 2000,
+      "ratio": 1.01
+    },
+    "ch08.txt": {
+      "chars": 2700,
+      "target": 2000,
+      "ratio": 1.35
+    },
+    "ch09.txt": {
+      "chars": 2022,
+      "target": 2000,
+      "ratio": 1.011
+    },
+    "ch10.txt": {
+      "chars": 2168,
+      "target": 2000,
+      "ratio": 1.084
+    },
+    "ch11.txt": {
+      "chars": 2048,
+      "target": 2000,
+      "ratio": 1.024
+    },
+    "ch12.txt": {
+      "chars": 2249,
+      "target": 2000,
+      "ratio": 1.125
+    },
+    "ch13.txt": {
+      "chars": 2138,
+      "target": 2000,
+      "ratio": 1.069
+    },
+    "ch14.txt": {
+      "chars": 1981,
+      "target": 2000,
+      "ratio": 0.991
+    },
+    "ch15.txt": {
+      "chars": 2160,
+      "target": 2000,
+      "ratio": 1.08
+    },
+    "ch16.txt": {
+      "chars": 2573,
+      "target": 2000,
+      "ratio": 1.286
+    },
+    "ch17.txt": {
+      "chars": 2182,
+      "target": 2000,
+      "ratio": 1.091
+    },
+    "ch18.txt": {
+      "chars": 2094,
+      "target": 2000,
+      "ratio": 1.047
+    },
+    "ch19.txt": {
+      "chars": 2183,
+      "target": 2000,
+      "ratio": 1.091
+    },
+    "ch20.txt": {
+      "chars": 2071,
+      "target": 2000,
+      "ratio": 1.036
+    }
+  },
+  "findings": [
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch11.txt",
+      "declared": "同日午后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "unknown_character",
+      "name": "和姐姐",
+      "chapters": [
+        "ch01.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「和姐姐」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "水龙头",
+      "chapters": [
+        "ch03.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「水龙头」,需核对是否为有意新增"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "顶针",
+      "detail": "全篇未出现已设定的道具「顶针」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "三千",
+      "detail": "书级既定数字「三千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "两千",
+      "detail": "书级既定数字「两千」全篇未出现"
+    }
+  ],
+  "violations": 7
+}

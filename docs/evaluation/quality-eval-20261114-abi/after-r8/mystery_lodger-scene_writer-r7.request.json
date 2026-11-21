@@ -1,0 +1,98 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "苏姐",
+      "伙计阿六"
+    ],
+    "forbidden": [
+      "陈九不得当场现身解释",
+      "不得由官府立刻破案",
+      "苏姐不得有特殊身份或武功",
+      "不得把投宿者写成鬼"
+    ],
+    "genre": "悬疑",
+    "id": "mystery_lodger",
+    "label": "悬疑·客栈空房",
+    "must_keep": [
+      "屋里只有一只湿透的布鞋",
+      "信没封口",
+      "昨夜下了一夜雨",
+      "客栈十四间房",
+      "丈夫不在不许单独进房"
+    ],
+    "pov": "第三人称限知,全程跟随老板娘苏姐",
+    "pov_character": "苏姐",
+    "required_outcomes": [
+      "苏姐先处理阿六(支开或叮嘱)",
+      "苏姐决定进不进房并执行",
+      "苏姐读了信",
+      "信的内容改变了她的判断",
+      "她做出一个具体的处置行动"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "mystery_lodger",
+  "chars": 1230,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 8.501,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "悬疑",
+  "input_tokens": 551,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 307,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 351,
+        "name": "scene_brief",
+        "sha256": "eb4139eb51abfea7",
+        "source": "case.brief"
+      },
+      {
+        "chars": 78,
+        "name": "character_roster",
+        "sha256": "78f6f9db2385caa1",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 1139,
+        "name": "writer_contract",
+        "sha256": "7109b170f9908bf2",
+        "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 493,
+        "name": "scene_writer_system",
+        "sha256": "806255474cc40ff3",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "c2c486984e58ff0fb540c9436ef92890e77f2f536e77f7c9f8d3321b085f8b27",
+    "system_chars": 493,
+    "task_type": "scene_writer",
+    "user_chars": 1688,
+    "variant": "scene_writer"
+  },
+  "repeat": 7,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": null,
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "17e7fe88ccb5bd72ae4a3ca6f2a32caa85872b1eb768b7ef220f766c25e35418",
+  "variant": "scene_writer"
+}

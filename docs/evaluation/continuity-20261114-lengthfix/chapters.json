@@ -1,0 +1,212 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "2dbcbf01-7293-47b4-9e10-82c9d27c9b00",
+    "status": "ok",
+    "chars_raw": 696,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 696
+    },
+    "chars": 696,
+    "elapsed_seconds": 13.7,
+    "summary_written": true,
+    "summary_chars": 125,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "bd2ac0a1-5767-4a8c-9e86-7b06c9caca14",
+    "status": "ok",
+    "chars_raw": 981,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 981
+    },
+    "chars": 981,
+    "elapsed_seconds": 21.7,
+    "summary_written": true,
+    "summary_chars": 197,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "0b8b715a-868e-475d-befe-942c9cfb4585",
+    "status": "ok",
+    "chars_raw": 785,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 785
+    },
+    "chars": 785,
+    "elapsed_seconds": 19.0,
+    "summary_written": true,
+    "summary_chars": 136,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "f79d3e66-710c-476d-b1fd-ae43114705cb",
+    "status": "ok",
+    "chars_raw": 1061,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1061
+    },
+    "chars": 1061,
+    "elapsed_seconds": 20.9,
+    "summary_written": true,
+    "summary_chars": 129,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "9706c1da-046e-4551-a50f-cb5ae8c8e01c",
+    "status": "ok",
+    "chars_raw": 1198,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1198
+    },
+    "chars": 1198,
+    "elapsed_seconds": 30.2,
+    "summary_written": true,
+    "summary_chars": 105,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "378492e2-34d6-44bb-9171-9cb6a7671be6",
+    "status": "ok",
+    "chars_raw": 588,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 588
+    },
+    "chars": 588,
+    "elapsed_seconds": 18.5,
+    "summary_written": true,
+    "summary_chars": 151,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

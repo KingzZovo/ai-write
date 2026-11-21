@@ -1,0 +1,84 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "de0463b4-8dbc-4b74-8cc1-650092341e6f",
+    "status": "ok",
+    "chars_raw": 1791,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1791
+    },
+    "chars": 1791,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 81.5,
+    "summary_written": true,
+    "summary_chars": 119,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "7aadac50-271c-4cc7-b533-9866cf2a164e",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 3,
+    "chapter_id": "c0102602-ea76-46f2-a726-fbac0de322f9",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 4,
+    "chapter_id": "f27829f0-f45b-4b7f-ad4f-142a31aa62cc",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 5,
+    "chapter_id": "01436b0f-8494-439f-adf7-348830dad222",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  }
+]

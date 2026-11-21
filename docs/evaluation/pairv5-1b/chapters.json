@@ -1,0 +1,89 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "2aa62f64-6106-47fc-9e6c-bc19cc0a33b6",
+    "status": "ok",
+    "chars_raw": 1148,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1148
+    },
+    "chars": 1148,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口岸边的余音",
+          "target_words": 420
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 247.3,
+    "summary_written": true,
+    "summary_chars": 154,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "dcf7a98a-4aab-4f40-9a8b-11842c5c1ba2",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 3,
+    "chapter_id": "ae382655-0a29-4ecd-9d02-a67557e34647",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 4,
+    "chapter_id": "d1cfd418-8848-47f8-b8a0-450c7d9dcfea",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 5,
+    "chapter_id": "500943b6-7d36-4441-ba5b-3658ed8bbf03",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  }
+]

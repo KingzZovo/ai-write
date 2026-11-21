@@ -1,0 +1,18 @@
+{
+  "read_only": true,
+  "model_calls": 0,
+  "chat_endpoints": 2,
+  "task_routes": 40,
+  "prompt_snapshots": 41,
+  "cold_seconds": 0.605697,
+  "warm_100_seconds": 5.3e-05,
+  "refresh_seconds": [
+    0.008131,
+    0.008778,
+    0.01086,
+    0.007767,
+    0.007382
+  ],
+  "unchanged_clients_reused": true,
+  "config_unchanged": true
+}

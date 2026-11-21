@@ -1,0 +1,70 @@
+[
+  {
+    "case": "sample-a",
+    "chapter_chars": 953,
+    "response_received": true,
+    "categories": [
+      "time",
+      "state",
+      "objects",
+      "action",
+      "pov",
+      "completion"
+    ],
+    "findings": [
+      {
+        "category": "action",
+        "problem": "前文交代陈川穿的是“沾着泥点的布鞋”，结尾处行动描写却突然变成了“皮靴踩在水泥地上发出闷响”，鞋履材质前后矛盾。",
+        "evidence_checks": [
+          {
+            "source": "chapter",
+            "quote": "陈川拎起水桶朝车场走去，皮靴踩在水泥地上发出闷响；",
+            "exact_match": true
+          },
+          {
+            "source": "chapter",
+            "quote": "他穿一件洗得发白的蓝色夹克，右手拎着洗车用的水桶，沾着泥点的布鞋在水泥地上轻轻蹭了两下。",
+            "exact_match": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "case": "sample-b",
+    "chapter_chars": 2430,
+    "response_received": false,
+    "failure": "Gemini relay upstream failure returned as HTTP 200; standard-tier fallback HTTP 410 model end of life. No literary result."
+  },
+  {
+    "case": "sample-c",
+    "chapter_chars": 396,
+    "response_received": true,
+    "categories": [
+      "time",
+      "state",
+      "objects",
+      "action",
+      "pov",
+      "completion"
+    ],
+    "findings": [
+      {
+        "category": "action",
+        "problem": "陈川作为末班客车司机，其行动路径和物理位置在同一时间段内产生矛盾：他刚接过售票室值班柜的钥匙放进夹克口袋，随后沈青出门时却发现他已经上了末班客车并坐在驾驶座上，若无中途移动或交接细节支撑，司机在未去开车门或未说明的情况下直接坐在已启动的驾驶座上存在行动路径与物品交接的时空断层。",
+        "evidence_checks": [
+          {
+            "source": "chapter",
+            "quote": "沈青收好包出了售票室，走到大厅门口时，看见陈川已经上了末班客车，坐在驾驶座上。",
+            "exact_match": true
+          },
+          {
+            "source": "chapter",
+            "quote": "“行，钥匙留给我。”……沈青……拔下钥匙，从递票的小口递出去。陈川接过，放进夹克口袋。",
+            "exact_match": false
+          }
+        ]
+      }
+    ]
+  }
+]

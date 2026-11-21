@@ -1,0 +1,31 @@
+{
+  "plot_coherence": {
+    "score": 8,
+    "issues": [
+      {
+        "paragraph": 0,
+        "description": "正文在沈青离开值班室、锁门后直接描述末班车已启动并轰鸣，匹配结尾约好她离开准备明日陪父亲就诊，但忽略了本章到期事件——陈川需在站长早八点半回来前完成六本台账正式封存并盖戳",
+        "suggestion": "",
+        "violation_type": "chapter_completion_violation",
+        "severity": "medium",
+        "quote": ""
+      }
+    ]
+  },
+  "character_consistency": {
+    "score": 10,
+    "issues": []
+  },
+  "style_adherence": {
+    "score": 10,
+    "issues": []
+  },
+  "narrative_pacing": {
+    "score": 10,
+    "issues": []
+  },
+  "foreshadow_handling": {
+    "score": 10,
+    "issues": []
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "chapters": 3,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1331,
+      "target": 1200,
+      "ratio": 1.109
+    },
+    "ch02.txt": {
+      "chars": 1370,
+      "target": 1200,
+      "ratio": 1.142
+    },
+    "ch03.txt": {
+      "chars": 1689,
+      "target": 1200,
+      "ratio": 1.407
+    }
+  },
+  "findings": [
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch01.txt",
+      "declared": "当日傍晚",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    }
+  ],
+  "violations": 1
+}

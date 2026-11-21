@@ -1,0 +1,342 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "0ccb1208-1f18-495d-9a78-e3966234cd99",
+    "status": "ok",
+    "chars_raw": 1451,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1451
+    },
+    "chars": 1451,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 18.4,
+    "summary_written": true,
+    "summary_chars": 138,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "0186e3a4-c72e-4b21-baf6-04577bd92a4e",
+    "status": "ok",
+    "chars_raw": 1229,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1229
+    },
+    "chars": 1229,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 31.9,
+    "summary_written": true,
+    "summary_chars": 101,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "329db0d0-815a-4175-a1a8-7cb8443601c5",
+    "status": "ok",
+    "chars_raw": 1098,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1098
+    },
+    "chars": 1098,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第三章 修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.1,
+    "summary_written": true,
+    "summary_chars": 124,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "9a58500c-9b54-4eab-aa1d-c2150f67e6c1",
+    "status": "ok",
+    "chars_raw": 1207,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1207
+    },
+    "chars": 1207,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第四章 一碗没有加蛋的面",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.8,
+    "summary_written": false,
+    "summary_chars": 0,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "749936f7-74cd-4040-ab6a-a6a17da7ad8a",
+    "status": "ok",
+    "chars_raw": 1078,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1078
+    },
+    "chars": 1078,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第五章 袋子里的东西",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 50.7,
+    "summary_written": true,
+    "summary_chars": 142,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "1e398355-a97b-43d3-b47b-f93e8567562b",
+    "status": "ok",
+    "chars_raw": 1040,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1040
+    },
+    "chars": 1040,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第六章 老陈的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 117.8,
+    "summary_written": true,
+    "summary_chars": 115,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "e2b6d77b-bc8d-41ca-9979-e0d4e71a978c",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_retrieval_unavailable",
+    "error_code": null
+  },
+  {
+    "index": 8,
+    "chapter_id": "e5a94797-89a8-47b3-8558-332d19b2b38d",
+    "status": "ok",
+    "chars_raw": 1088,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1088
+    },
+    "chars": 1088,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "校服收支与未寄出的信",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 91.2,
+    "summary_written": true,
+    "summary_chars": 121,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "15327091-c2bb-4095-8a83-471eba03630e",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  },
+  {
+    "index": 10,
+    "chapter_id": "6393bc10-314a-4e97-87af-7fe54b72650e",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  }
+]

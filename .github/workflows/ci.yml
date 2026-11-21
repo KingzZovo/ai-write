@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**', 'feat/**', 'fix/**', 'rescue/**', 'release/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-offline:
+    name: Backend offline regressions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: ci
+      DATABASE_URL: postgresql+asyncpg://offline:offline@127.0.0.1/offline
+      SECRET_KEY: offline-regression-test-only-32characters
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Install locked dependencies
+        run: pip install -r requirements.lock pytest pytest-asyncio
+      - name: Run offline regressions (blocking)
+        run: python -m pytest --offline -q --maxfail=20 tests/
+
+  pipeline-safety:
+    name: Pipeline safety (PostgreSQL + Redis + workers)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: aiwrite_pipeline_test
+          POSTGRES_USER: aiwrite_test
+          POSTGRES_PASSWORD: aiwrite_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aiwrite_test -d aiwrite_pipeline_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PIPELINE_TEST_REDIS_URL: redis://127.0.0.1:16379/15
+      PIPELINE_TEST_DATABASE_URL: postgresql+asyncpg://aiwrite_test:aiwrite_test_only@127.0.0.1:5432/aiwrite_pipeline_test
+      DATABASE_URL: postgresql+asyncpg://aiwrite_test:aiwrite_test_only@127.0.0.1:5432/aiwrite_pipeline_test
+      PYTHONPATH: .
+      SECRET_KEY: pipeline-ci-test-only
+      PYTEST_ADDOPTS: -p tests.support.prompt_cache_state
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Install locked dependencies
+        run: pip install -r requirements.lock pytest pytest-asyncio
+      - name: Run safety regressions (blocking)
+        run: python -m pytest --noconftest -q tests/test_volume_contract_flow.py tests/test_volume_batch_integrity.py tests/test_outline_registry_routing.py tests/test_book_stage_completeness.py tests/test_prompt_cache_transactions.py tests/test_prompt_delivery.py tests/test_context_cross_volume.py tests/test_context_budget.py tests/test_outline_prompt_integrity.py tests/test_outline_expansion_registry.py tests/test_pipeline_processes.py tests/test_pipeline_safety.py tests/test_pipeline_control.py tests/test_pipeline_runtime.py tests/test_pipeline_api_runtime.py tests/test_standalone_writer.py tests/test_batch_cascade_guards.py tests/test_generation_task_gap_fixes.py tests/test_chapter_truncation_detection.py tests/test_chapter_refusal_detection.py
+
+  backend:
+    name: Backend (ruff + mypy + pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: aiwrite_pipeline_test
+          POSTGRES_USER: aiwrite_test
+          POSTGRES_PASSWORD: aiwrite_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aiwrite_test -d aiwrite_pipeline_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      neo4j:
+        image: neo4j:5.26-community
+        env:
+          NEO4J_AUTH: neo4j/aiwrite_test_only
+          NEO4J_server_memory_heap_initial__size: 256m
+          NEO4J_server_memory_heap_max__size: 512m
+          NEO4J_server_memory_pagecache_size: 128m
+        ports:
+          - 57687:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p aiwrite_test_only 'RETURN 1'"
+          --health-interval 5s --health-timeout 10s --health-retries 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.lock
+      - name: Install deps
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install ruff mypy pytest pytest-asyncio
+      - name: Ruff lint (non-blocking baseline)
+        run: ruff check app --output-format=github || true
+      - name: Mypy (non-blocking baseline)
+        # Baseline run: surfaces type errors in CI logs without failing the
+        # build while the backend codebase is brought up to strict typing.
+        # Flip to blocking in a follow-up chunk once the baseline is clean.
+        run: mypy app --ignore-missing-imports --follow-imports=silent --no-strict-optional || true
+      - name: Compile-check
+        run: python -m compileall -q app
+      - name: Prepare disposable database
+        env:
+          DATABASE_URL: postgresql+asyncpg://aiwrite_test:aiwrite_test_only@127.0.0.1:5432/aiwrite_pipeline_test
+          PYTHONPATH: .
+        run: python -m tests.support.prepare_database
+      - name: Full backend tests (blocking)
+        env:
+          DATABASE_URL: postgresql+asyncpg://aiwrite_test:aiwrite_test_only@127.0.0.1:5432/aiwrite_pipeline_test
+          PIPELINE_TEST_DATABASE_URL: postgresql+asyncpg://aiwrite_test:aiwrite_test_only@127.0.0.1:5432/aiwrite_pipeline_test
+          REDIS_URL: redis://127.0.0.1:16379/14
+          PIPELINE_TEST_REDIS_URL: redis://127.0.0.1:16379/15
+          ENTITY_TEST_NEO4J_URI: bolt://127.0.0.1:57687
+          NEO4J_URI: bolt://127.0.0.1:57687
+          NEO4J_PASSWORD: aiwrite_test_only
+          APP_ENV: ci
+          SECRET_KEY: isolated-full-suite-test-secret-32chars
+          PYTHONPATH: .
+        run: pytest -q --maxfail=20 tests/
+
+  frontend:
+    name: Frontend (tests + tsc + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+      - name: Frontend tests
+        run: npm run test:run
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Next build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_API_BASE: 'http://localhost:8000'
+        run: npx next build
+
+  compose-validate:
+    name: docker compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose
+        run: docker compose config --quiet
+
+  smoke-static:
+    name: Smoke (static, non-network subset)
+    # Runs the scripts/smoke_v1.sh assertions that do NOT require a running
+    # backend, docker compose stack, or network egress (SMOKE_STATIC_ONLY=1).
+    # Catches drift in design-token / i18n / observability source wiring on
+    # every PR without spinning the full stack.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run smoke_v1.sh (static-only subset)
+        shell: bash
+        env:
+          SMOKE_STATIC_ONLY: '1'
+        run: bash scripts/smoke_v1.sh

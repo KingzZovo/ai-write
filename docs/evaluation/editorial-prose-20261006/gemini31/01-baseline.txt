@@ -1,0 +1,1 @@
+⚠️ Upstream Gemini returned an empty response. If this Worker runs on Cloudflare/serverless, Google may be blocking the egress IP (works locally but empty in production); also verify GEMINI_BL is current. Run `wrangler tail` to see the upstream status.

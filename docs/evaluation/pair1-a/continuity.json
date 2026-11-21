@@ -1,0 +1,76 @@
+{
+  "chapters": 9,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1146,
+      "target": 1200,
+      "ratio": 0.955
+    },
+    "ch02.txt": {
+      "chars": 1292,
+      "target": 1200,
+      "ratio": 1.077
+    },
+    "ch03.txt": {
+      "chars": 1659,
+      "target": 1200,
+      "ratio": 1.383
+    },
+    "ch04.txt": {
+      "chars": 1536,
+      "target": 1200,
+      "ratio": 1.28
+    },
+    "ch06.txt": {
+      "chars": 1076,
+      "target": 1200,
+      "ratio": 0.897
+    },
+    "ch07.txt": {
+      "chars": 1120,
+      "target": 1200,
+      "ratio": 0.933
+    },
+    "ch08.txt": {
+      "chars": 1178,
+      "target": 1200,
+      "ratio": 0.982
+    },
+    "ch09.txt": {
+      "chars": 1273,
+      "target": 1200,
+      "ratio": 1.061
+    },
+    "ch10.txt": {
+      "chars": 1418,
+      "target": 1200,
+      "ratio": 1.182
+    }
+  },
+  "findings": [
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch08.txt",
+      "declared": "一周后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch08.txt",
+      "values": [
+        "一千",
+        "二十"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "unknown_character",
+      "name": "大头",
+      "chapters": [
+        "ch07.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大头」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 3
+}

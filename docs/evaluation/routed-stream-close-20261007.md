@@ -1,0 +1,9 @@
+# 注册路由与分层流关闭
+
+stream_by_route、stream_with_tier_fallback此前直接async for转发供应商输出，上层在yield处关闭时内层清理可能延后。两种路由各有带日志/无日志分支，本次四处均以aclosing持有供应商流。原有参数、回退策略及日志finally保持；关闭/取消不作为普通供应商故障触发下一模型。
+
+56项离线测试通过：新测试覆盖四个分支首段后aclose即时关闭、日志顺序provider→log→commit，以及等待首段时取消不启动备用模型；同时回归普通编辑关闭链、路由刷新、流式错误/指标、prompt交付与tier回退。日志会话/提交为替身，不证明真实PG审计落库。
+
+按shadow-mind本地双视角复核（无可靠只读子代理隔离）：资源检查确认四个入口在消费者关闭时都退出aclosing；回退检查确认GeneratorExit/CancelledError不进入except Exception，且正常中途错误仍遵守yielded_any后不回退。AST/diff检查通过。
+
+本次不保证真实网络断连及时传播，也不保证远端模型停止计费。上层编排服务其他转发点、实际ASGI与供应商取消行为仍待验证。未部署，未产生新的小说正文证据，无新迁移，累计头a1001935。

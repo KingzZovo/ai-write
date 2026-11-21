@@ -1,0 +1,41 @@
+{
+  "plot_coherence": 5.0,
+  "character_consistency": 8.0,
+  "style_adherence": 9.0,
+  "narrative_pacing": 7.0,
+  "foreshadow_handling": 8.0,
+  "overall": 7.4,
+  "issues": [
+    {
+      "dimension": "plot_coherence",
+      "location": 1,
+      "description": "[space_rule_violation] 阿青描述断桥阻力和危险但未展示解决办法，仅提出付金币",
+      "suggestion": "展示解决办法如金币作为交换",
+      "violation_type": "space_rule_violation",
+      "severity": "medium",
+      "quote": "断桥的裂口如一道巨大的伤口，深不见底，桥下是湍急的河流和嶙峋的岩石，任何试图徒步跨越的人都将面临死亡的威胁。",
+      "quote_verified": true
+    },
+    {
+      "dimension": "plot_coherence",
+      "location": 7,
+      "description": "[chapter_completion_violation] 密信未交付，章节结束于守卫伸手拿金币但未提及信",
+      "suggestion": "补足信的实际交付或守卫接受信的过程",
+      "violation_type": "chapter_completion_violation",
+      "severity": "high",
+      "quote": "这些金币是我全部的家当。如果您能帮我把这封信送过桥，我将不胜感激。断桥的阻力和危险太大了，我一手之力难以完成跨越。",
+      "quote_verified": true
+    },
+    {
+      "dimension": "plot_coherence",
+      "location": 8,
+      "description": "[result_strength_violation] 付金币未建立因果链，守卫未承诺送信",
+      "suggestion": "降级结果为局部胜利或补足支撑",
+      "violation_type": "result_strength_violation",
+      "severity": "high",
+      "quote": "最终，他叹了口气，伸手去拿金币。",
+      "quote_verified": true
+    }
+  ],
+  "parse_failed": false
+}

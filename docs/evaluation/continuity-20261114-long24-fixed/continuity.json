@@ -1,0 +1,297 @@
+{
+  "chapters": 24,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1200,
+      "target": 1200,
+      "ratio": 1.0
+    },
+    "ch02.txt": {
+      "chars": 796,
+      "target": 1200,
+      "ratio": 0.663
+    },
+    "ch03.txt": {
+      "chars": 938,
+      "target": 1200,
+      "ratio": 0.782
+    },
+    "ch04.txt": {
+      "chars": 1095,
+      "target": 1200,
+      "ratio": 0.912
+    },
+    "ch05.txt": {
+      "chars": 1847,
+      "target": 1200,
+      "ratio": 1.539
+    },
+    "ch06.txt": {
+      "chars": 730,
+      "target": 1200,
+      "ratio": 0.608
+    },
+    "ch07.txt": {
+      "chars": 715,
+      "target": 1200,
+      "ratio": 0.596
+    },
+    "ch08.txt": {
+      "chars": 835,
+      "target": 1200,
+      "ratio": 0.696
+    },
+    "ch09.txt": {
+      "chars": 1030,
+      "target": 1200,
+      "ratio": 0.858
+    },
+    "ch10.txt": {
+      "chars": 1217,
+      "target": 1200,
+      "ratio": 1.014
+    },
+    "ch11.txt": {
+      "chars": 1635,
+      "target": 1200,
+      "ratio": 1.363
+    },
+    "ch12.txt": {
+      "chars": 1303,
+      "target": 1200,
+      "ratio": 1.086
+    },
+    "ch13.txt": {
+      "chars": 1340,
+      "target": 1200,
+      "ratio": 1.117
+    },
+    "ch14.txt": {
+      "chars": 780,
+      "target": 1200,
+      "ratio": 0.65
+    },
+    "ch15.txt": {
+      "chars": 884,
+      "target": 1200,
+      "ratio": 0.737
+    },
+    "ch16.txt": {
+      "chars": 937,
+      "target": 1200,
+      "ratio": 0.781
+    },
+    "ch17.txt": {
+      "chars": 1199,
+      "target": 1200,
+      "ratio": 0.999
+    },
+    "ch18.txt": {
+      "chars": 1231,
+      "target": 1200,
+      "ratio": 1.026
+    },
+    "ch19.txt": {
+      "chars": 809,
+      "target": 1200,
+      "ratio": 0.674
+    },
+    "ch20.txt": {
+      "chars": 910,
+      "target": 1200,
+      "ratio": 0.758
+    },
+    "ch21.txt": {
+      "chars": 786,
+      "target": 1200,
+      "ratio": 0.655
+    },
+    "ch22.txt": {
+      "chars": 1263,
+      "target": 1200,
+      "ratio": 1.052
+    },
+    "ch23.txt": {
+      "chars": 949,
+      "target": 1200,
+      "ratio": 0.791
+    },
+    "ch24.txt": {
+      "chars": 892,
+      "target": 1200,
+      "ratio": 0.743
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 796,
+      "target": 1200,
+      "ratio": 0.663,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch02.txt",
+      "declared": "次日清晨",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch03.txt",
+      "chars": 938,
+      "target": 1200,
+      "ratio": 0.782,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch06.txt",
+      "chars": 730,
+      "target": 1200,
+      "ratio": 0.608,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch07.txt",
+      "chars": 715,
+      "target": 1200,
+      "ratio": 0.596,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch08.txt",
+      "chars": 835,
+      "target": 1200,
+      "ratio": 0.696,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch14.txt",
+      "chars": 780,
+      "target": 1200,
+      "ratio": 0.65,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch15.txt",
+      "chars": 884,
+      "target": 1200,
+      "ratio": 0.737,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch16.txt",
+      "chars": 937,
+      "target": 1200,
+      "ratio": 0.781,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch19.txt",
+      "chars": 809,
+      "target": 1200,
+      "ratio": 0.674,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch20.txt",
+      "chars": 910,
+      "target": 1200,
+      "ratio": 0.758,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch21.txt",
+      "chars": 786,
+      "target": 1200,
+      "ratio": 0.655,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch23.txt",
+      "chars": 949,
+      "target": 1200,
+      "ratio": 0.791,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch24.txt",
+      "chars": 892,
+      "target": 1200,
+      "ratio": 0.743,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "周丫头",
+      "chapters": [
+        "ch15.txt",
+        "ch16.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「周丫头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "张叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「张叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch12.txt",
+      "keyword": "复查",
+      "pinned_in": "ch11.txt",
+      "allowed": [
+        "一千二",
+        "1200"
+      ],
+      "found": [
+        1000.0
+      ],
+      "detail": "「复查」在 ch11.txt 已定为 一千二/1200,本章出现别的金额 1000"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch18.txt",
+      "keyword": "复查",
+      "pinned_in": "ch11.txt",
+      "allowed": [
+        "一千二",
+        "1200"
+      ],
+      "found": [
+        1000.0
+      ],
+      "detail": "「复查」在 ch11.txt 已定为 一千二/1200,本章出现别的金额 1000"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch18.txt",
+      "keyword": "铺租",
+      "pinned_in": "ch16.txt",
+      "allowed": [
+        "九百",
+        "900"
+      ],
+      "found": [
+        1000.0
+      ],
+      "detail": "「铺租」在 ch16.txt 已定为 九百/900,本章出现别的金额 1000"
+    }
+  ],
+  "violations": 19
+}

@@ -1,0 +1,8 @@
+{
+  "gateway": "isolated CPA 58317",
+  "visible": {
+    "deepseek-ai/deepseek-v4.1-flash": true,
+    "z-ai/glm-5.3-flash": true,
+    "moonshotai/kimi-k3": true
+  }
+}

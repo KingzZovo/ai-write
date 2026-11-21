@@ -1,0 +1,87 @@
+{
+  "attempts": [
+    "relay_error",
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "周芸",
+      "周航"
+    ],
+    "forbidden": [
+      "不得出现第三人替他们解决钱的问题",
+      "欠款不得被免除或清零",
+      "不得新增订单、固定工资或中奖",
+      "不得新增亲属"
+    ],
+    "genre": "现实生活",
+    "id": "real_ferry",
+    "label": "现实生活·渡口姐弟",
+    "must_keep": [
+      "原欠款为三千元",
+      "本次交付两千元",
+      "仍有一千元缺口",
+      "弟弟明天要交店面租金",
+      "周芸事前不知道弟弟明天交租",
+      "弟弟不愿姐姐向邻居借"
+    ],
+    "pov": "第三人称限知,全程跟随姐姐周芸",
+    "pov_character": "周芸",
+    "required_outcomes": [
+      "周航明确说出钱不够",
+      "两人谈清一项具体的后续安排(含时间或分期)",
+      "弟弟带着两千元上船离开",
+      "姐姐留在岸上"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "real_ferry",
+  "chars": 1688,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 17.16,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "现实生活",
+  "input_tokens": 643,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 422,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 1844,
+        "name": "preflight_blueprint",
+        "sha256": "9e16c163e3c9ec3d",
+        "source": "snapshot:HEAD"
+      },
+      {
+        "chars": 360,
+        "name": "scene_brief",
+        "sha256": "42d295e28c3d05d0",
+        "source": "case.brief"
+      },
+      {
+        "chars": 345,
+        "name": "chapter_writer_system",
+        "sha256": "52440efa9bafa557",
+        "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "e8b1e05b57b73738ea84bcf29c9d9f21f22431c902410f719816972854c0a46f",
+    "system_chars": 345,
+    "task_type": "generation",
+    "user_chars": 2206,
+    "variant": "chapter_single_shot"
+  },
+  "repeat": 1,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": "HEAD",
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "03760749ec09834827b4b6634f8b1de0f4d3f83bee2bc404c09984c44f628d1e",
+  "variant": "chapter_single_shot"
+}

@@ -1,0 +1,46 @@
+{
+  "run_dir": "../docs/evaluation/quality-eval-20261114-baseline",
+  "judges": {
+    "deepseek-chat": {
+      "documents": 6,
+      "judged_documents": 6,
+      "failed_documents": 0,
+      "items": 28,
+      "delivered": 28,
+      "delivered_verified": 28,
+      "unverified_delivered": 0,
+      "not_delivered": 0,
+      "locatable_grades": {
+        "normalized": 27,
+        "exact": 1
+      },
+      "delivered_rate": 1.0,
+      "verified_delivered_rate": 1.0
+    },
+    "claude-sonnet-4-6": {
+      "documents": 14,
+      "judged_documents": 5,
+      "failed_documents": 9,
+      "items": 23,
+      "delivered": 23,
+      "delivered_verified": 23,
+      "unverified_delivered": 0,
+      "not_delivered": 0,
+      "locatable_grades": {
+        "exact": 18,
+        "normalized": 5
+      },
+      "delivered_rate": 1.0,
+      "verified_delivered_rate": 1.0
+    }
+  },
+  "compared_items": 23,
+  "agreed": 23,
+  "disagreed": 0,
+  "agreement_rate": 1.0,
+  "only_a": [
+    "fantasy_herb-scene_writer"
+  ],
+  "only_b": [],
+  "disagreements": []
+}

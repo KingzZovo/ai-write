@@ -1,0 +1,22 @@
+{
+  "plot_coherence": {
+    "score": 10,
+    "issues": []
+  },
+  "character_consistency": {
+    "score": 10,
+    "issues": []
+  },
+  "style_adherence": {
+    "score": 10,
+    "issues": []
+  },
+  "narrative_pacing": {
+    "score": 10,
+    "issues": []
+  },
+  "foreshadow_handling": {
+    "score": 10,
+    "issues": []
+  }
+}

@@ -1,0 +1,258 @@
+{
+  "chapters": 24,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1654,
+      "target": 1200,
+      "ratio": 1.378
+    },
+    "ch02.txt": {
+      "chars": 1118,
+      "target": 1200,
+      "ratio": 0.932
+    },
+    "ch03.txt": {
+      "chars": 1549,
+      "target": 1200,
+      "ratio": 1.291
+    },
+    "ch04.txt": {
+      "chars": 1289,
+      "target": 1200,
+      "ratio": 1.074
+    },
+    "ch05.txt": {
+      "chars": 1238,
+      "target": 1200,
+      "ratio": 1.032
+    },
+    "ch06.txt": {
+      "chars": 1245,
+      "target": 1200,
+      "ratio": 1.038
+    },
+    "ch07.txt": {
+      "chars": 1430,
+      "target": 1200,
+      "ratio": 1.192
+    },
+    "ch08.txt": {
+      "chars": 720,
+      "target": 1200,
+      "ratio": 0.6
+    },
+    "ch09.txt": {
+      "chars": 1656,
+      "target": 1200,
+      "ratio": 1.38
+    },
+    "ch10.txt": {
+      "chars": 977,
+      "target": 1200,
+      "ratio": 0.814
+    },
+    "ch11.txt": {
+      "chars": 942,
+      "target": 1200,
+      "ratio": 0.785
+    },
+    "ch12.txt": {
+      "chars": 1289,
+      "target": 1200,
+      "ratio": 1.074
+    },
+    "ch13.txt": {
+      "chars": 1203,
+      "target": 1200,
+      "ratio": 1.002
+    },
+    "ch14.txt": {
+      "chars": 990,
+      "target": 1200,
+      "ratio": 0.825
+    },
+    "ch15.txt": {
+      "chars": 1331,
+      "target": 1200,
+      "ratio": 1.109
+    },
+    "ch16.txt": {
+      "chars": 1241,
+      "target": 1200,
+      "ratio": 1.034
+    },
+    "ch17.txt": {
+      "chars": 979,
+      "target": 1200,
+      "ratio": 0.816
+    },
+    "ch18.txt": {
+      "chars": 1037,
+      "target": 1200,
+      "ratio": 0.864
+    },
+    "ch19.txt": {
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76
+    },
+    "ch20.txt": {
+      "chars": 1038,
+      "target": 1200,
+      "ratio": 0.865
+    },
+    "ch21.txt": {
+      "chars": 1002,
+      "target": 1200,
+      "ratio": 0.835
+    },
+    "ch22.txt": {
+      "chars": 1281,
+      "target": 1200,
+      "ratio": 1.067
+    },
+    "ch23.txt": {
+      "chars": 739,
+      "target": 1200,
+      "ratio": 0.616
+    },
+    "ch24.txt": {
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76
+    }
+  },
+  "findings": [
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch07.txt",
+      "declared": "三天后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch08.txt",
+      "chars": 720,
+      "target": 1200,
+      "ratio": 0.6,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch08.txt",
+      "declared": "一周后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch10.txt",
+      "chars": 977,
+      "target": 1200,
+      "ratio": 0.814,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch11.txt",
+      "chars": 942,
+      "target": 1200,
+      "ratio": 0.785,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch14.txt",
+      "chars": 990,
+      "target": 1200,
+      "ratio": 0.825,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch17.txt",
+      "chars": 979,
+      "target": 1200,
+      "ratio": 0.816,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch19.txt",
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch21.txt",
+      "chars": 1002,
+      "target": 1200,
+      "ratio": 0.835,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch22.txt",
+      "declared": "次日早上",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch23.txt",
+      "chars": 739,
+      "target": 1200,
+      "ratio": 0.616,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch23.txt",
+      "declared": "一周后上午",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch24.txt",
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王叔",
+      "chapters": [
+        "ch03.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王婶",
+      "chapters": [
+        "ch07.txt",
+        "ch08.txt",
+        "ch19.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王婶」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "老王头",
+      "chapters": [
+        "ch03.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「老王头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "钱大叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「钱大叔」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 17
+}

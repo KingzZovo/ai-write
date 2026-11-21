@@ -1,0 +1,57 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1277,
+      "target": 1200,
+      "ratio": 1.064
+    },
+    "ch02.txt": {
+      "chars": 1134,
+      "target": 1200,
+      "ratio": 0.945
+    },
+    "ch03.txt": {
+      "chars": 1107,
+      "target": 1200,
+      "ratio": 0.922
+    },
+    "ch04.txt": {
+      "chars": 1021,
+      "target": 1200,
+      "ratio": 0.851
+    },
+    "ch05.txt": {
+      "chars": 1092,
+      "target": 1200,
+      "ratio": 0.91
+    },
+    "ch06.txt": {
+      "chars": 1707,
+      "target": 1200,
+      "ratio": 1.423
+    },
+    "ch07.txt": {
+      "chars": 1229,
+      "target": 1200,
+      "ratio": 1.024
+    },
+    "ch08.txt": {
+      "chars": 1078,
+      "target": 1200,
+      "ratio": 0.898
+    },
+    "ch09.txt": {
+      "chars": 1247,
+      "target": 1200,
+      "ratio": 1.039
+    },
+    "ch10.txt": {
+      "chars": 1291,
+      "target": 1200,
+      "ratio": 1.076
+    }
+  },
+  "findings": [],
+  "violations": 0
+}

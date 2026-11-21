@@ -1,0 +1,8 @@
+{
+  "gateway": "CPA",
+  "visible": {
+    "deepseek-ai/deepseek-v4.1-flash": false,
+    "z-ai/glm-5.3-flash": false,
+    "moonshotai/kimi-k3": false
+  }
+}

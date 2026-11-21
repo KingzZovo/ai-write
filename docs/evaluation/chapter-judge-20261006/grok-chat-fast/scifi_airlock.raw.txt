@@ -1,0 +1,73 @@
+{
+  "plot_coherence": {
+    "score": 8,
+    "issues": [
+      {
+        "paragraph": 7,
+        "description": "[time_rule_violation] 时间限制被跳过。原文声称‘必须在四分钟内强行打开内门’却直接‘终于内门微微打开’完成，无因果链或代价体现。",
+        "suggestion": "补足时间剩余或具体代价",
+        "violation_type": "time_rule_violation",
+        "severity": "high",
+        "quote": "终于，内门微微打开，他将伤员拖入内舱，关上外门。代价是护目镜碎裂，氧气调节器发出刺耳的警报，但任务完成了。"
+      },
+      {
+        "paragraph": 3,
+        "description": "[space_rule_violation] 伤员位置前后不一致。凯恩‘将伤员推入内闸室’，但随后描述‘伤员的身体开始抵抗’、‘凯恩的肩膀传来刺痛’、‘几乎跪下’，未明确两人初始状态或是否已进入气闸。",
+        "suggestion": "明确初始位置及转移路径",
+        "violation_type": "space_rule_violation",
+        "severity": "medium",
+        "quote": "凯恩将伤员推入内闸室，\"快进去！\"他喊道。外闸门开始关闭，咝咝的泄压声在狭窄的通道中回荡。伤员的身体开始抵抗，试图推开凯恩的手臂。"
+      },
+      {
+        "paragraph": 4,
+        "description": "[power_resource_violation] 权限/资源无制衡。凯恩使用工具‘撬动内门’完成打开，无解释代价、权限或反制，声称‘必须付出代价’却直接完成。",
+        "suggestion": "加入成本/限制/制衡机制",
+        "violation_type": "power_resource_violation",
+        "severity": "medium",
+        "quote": "凯恩回想起自己携带的应急手动开锁器，使用它会损坏他的护目镜和氧气调节器。他必须在四分钟内强行打开内门。凯恩咬紧牙关，牺牲了自己的护目镜，碎片在地板上散落。他用工具撬动内门"
+      }
+    ]
+  },
+  "character_consistency": {
+    "score": 7,
+    "issues": [
+      {
+        "paragraph": 0,
+        "description": "[character_consistency] 角色认知不一致。原文明确‘凯恩不知道内舱密码’，但后续无体现，行动逻辑未匹配。",
+        "suggestion": "体现密码缺失对行动的影响",
+        "violation_type": "character_consistency",
+        "severity": "medium",
+        "quote": "站长已死不能发实时指令，而凯恩不知道内舱密码"
+      },
+      {
+        "paragraph": 8,
+        "description": "[character_consistency] 情绪与行动不符。原文‘意识到自己活了下来，但付出了太高的代价’，却‘他擦了擦额头的汗水’，情感强度与后续行动反差。",
+        "suggestion": "强化心理压力或后续反应",
+        "violation_type": "character_consistency",
+        "severity": "low",
+        "quote": "他擦了擦额头的汗水，意识到自己活了下来，但付出了太高的代价"
+      }
+    ]
+  },
+  "style_adherence": {
+    "score": 7,
+    "issues": []
+  },
+  "narrative_pacing": {
+    "score": 6,
+    "issues": [
+      {
+        "paragraph": 2,
+        "description": "[style_adherence] 动作切片过频。‘外闸门开始关闭，咝咝的泄压声...凯恩的肌肉紧绷...护目镜上凝结着细小的水珠’等片段，呼吸失衡且缺乏感官承载。",
+        "suggestion": "合并或加冲突压力",
+        "violation_type": "expression_contract_violation",
+        "severity": "low",
+        "quote": "外闸门开始关闭，咝咝的泄压声在狭窄的通道中回荡。伤员的身体开始抵抗，试图推开凯恩的手臂。阻力传来，凯恩的肌肉紧绷，他感到肩膀传来刺痛"
+      }
+    ]
+  },
+  "foreshadow_handling": {
+    "score": 9,
+    "issues": []
+  }
+}

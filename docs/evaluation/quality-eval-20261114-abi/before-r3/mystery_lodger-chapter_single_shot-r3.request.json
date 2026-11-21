@@ -1,0 +1,86 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "苏姐",
+      "伙计阿六"
+    ],
+    "forbidden": [
+      "陈九不得当场现身解释",
+      "不得由官府立刻破案",
+      "苏姐不得有特殊身份或武功",
+      "不得把投宿者写成鬼"
+    ],
+    "genre": "悬疑",
+    "id": "mystery_lodger",
+    "label": "悬疑·客栈空房",
+    "must_keep": [
+      "屋里只有一只湿透的布鞋",
+      "信没封口",
+      "昨夜下了一夜雨",
+      "客栈十四间房",
+      "丈夫不在不许单独进房"
+    ],
+    "pov": "第三人称限知,全程跟随老板娘苏姐",
+    "pov_character": "苏姐",
+    "required_outcomes": [
+      "苏姐先处理阿六(支开或叮嘱)",
+      "苏姐决定进不进房并执行",
+      "苏姐读了信",
+      "信的内容改变了她的判断",
+      "她做出一个具体的处置行动"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "mystery_lodger",
+  "chars": 1263,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 8.235,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "悬疑",
+  "input_tokens": 641,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 315,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 1844,
+        "name": "preflight_blueprint",
+        "sha256": "9e16c163e3c9ec3d",
+        "source": "snapshot:HEAD"
+      },
+      {
+        "chars": 351,
+        "name": "scene_brief",
+        "sha256": "eb4139eb51abfea7",
+        "source": "case.brief"
+      },
+      {
+        "chars": 345,
+        "name": "chapter_writer_system",
+        "sha256": "52440efa9bafa557",
+        "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "118d7db65bb5a465d2c32c6cd5ef413d5a37c8e2c8233702ecca7e1a936419ae",
+    "system_chars": 345,
+    "task_type": "generation",
+    "user_chars": 2197,
+    "variant": "chapter_single_shot"
+  },
+  "repeat": 3,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": "HEAD",
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "380e70744745b363fc71df2ded2f2845304384517b85e2e5330a3da2e4415ad4",
+  "variant": "chapter_single_shot"
+}

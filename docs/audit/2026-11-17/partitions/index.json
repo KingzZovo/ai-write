@@ -1,0 +1,53 @@
+{
+  "total_files": 385,
+  "partitions": [
+    {
+      "id": "p1",
+      "files": 49,
+      "bytes": 595682,
+      "list": "docs/audit/2026-11-17/partitions/p1.txt"
+    },
+    {
+      "id": "p2",
+      "files": 48,
+      "bytes": 386569,
+      "list": "docs/audit/2026-11-17/partitions/p2.txt"
+    },
+    {
+      "id": "p3",
+      "files": 48,
+      "bytes": 316957,
+      "list": "docs/audit/2026-11-17/partitions/p3.txt"
+    },
+    {
+      "id": "p4",
+      "files": 48,
+      "bytes": 327204,
+      "list": "docs/audit/2026-11-17/partitions/p4.txt"
+    },
+    {
+      "id": "p5",
+      "files": 48,
+      "bytes": 358538,
+      "list": "docs/audit/2026-11-17/partitions/p5.txt"
+    },
+    {
+      "id": "p6",
+      "files": 48,
+      "bytes": 584086,
+      "list": "docs/audit/2026-11-17/partitions/p6.txt"
+    },
+    {
+      "id": "p7",
+      "files": 48,
+      "bytes": 720000,
+      "list": "docs/audit/2026-11-17/partitions/p7.txt"
+    },
+    {
+      "id": "p8",
+      "files": 48,
+      "bytes": 487949,
+      "list": "docs/audit/2026-11-17/partitions/p8.txt"
+    }
+  ]
+}

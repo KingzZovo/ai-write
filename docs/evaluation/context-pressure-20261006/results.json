@@ -1,0 +1,74 @@
+[
+  {
+    "case": "mystery_bridge",
+    "variant": "baseline",
+    "model": "grok-4.5",
+    "baseline_commit": "14bdc40",
+    "candidate_commit": "f4cdf82a91ec6f07349644ddddf77702c1479790",
+    "prompt_sha256": "6b9753f6f1cc3d6f2f7d36a26b865f6f8342e3ff6a7a895637db622ed3ef1696",
+    "input_tokens": 1333,
+    "output_tokens": 4035,
+    "elapsed_seconds": 88.718,
+    "output_chars": 825
+  },
+  {
+    "case": "mystery_bridge",
+    "variant": "candidate",
+    "model": "grok-4.5",
+    "baseline_commit": "14bdc40",
+    "candidate_commit": "f4cdf82a91ec6f07349644ddddf77702c1479790",
+    "prompt_sha256": "b944afb73de31cafb1066b6a071012f85447d102a6836e3cba21eb38e8664933",
+    "input_tokens": 924,
+    "output_tokens": 5390,
+    "elapsed_seconds": 120.886,
+    "output_chars": 690
+  },
+  {
+    "case": "fantasy_cost",
+    "variant": "baseline",
+    "model": "grok-4.5",
+    "baseline_commit": "14bdc40",
+    "candidate_commit": "f4cdf82a91ec6f07349644ddddf77702c1479790",
+    "prompt_sha256": "ebffed493ba205dc6cd077f5a97526a1d44e58ecea9b9f1adc30b074c04eac85",
+    "input_tokens": 1338,
+    "output_tokens": 1985,
+    "elapsed_seconds": 39.546,
+    "output_chars": 458
+  },
+  {
+    "case": "fantasy_cost",
+    "variant": "candidate",
+    "model": "grok-4.5",
+    "baseline_commit": "14bdc40",
+    "candidate_commit": "f4cdf82a91ec6f07349644ddddf77702c1479790",
+    "prompt_sha256": "bbbd641eb2fb3e2b1594fa09c91bdf2b0862aeeb8c4a5b6b93a224d23624757a",
+    "input_tokens": 938,
+    "output_tokens": 1998,
+    "elapsed_seconds": 47.561,
+    "output_chars": 637
+  },
+  {
+    "case": "scifi_airlock",
+    "variant": "baseline",
+    "model": "grok-4.5",
+    "baseline_commit": "14bdc40",
+    "candidate_commit": "f4cdf82a91ec6f07349644ddddf77702c1479790",
+    "prompt_sha256": "cf36736f043c6fc47150c7e984a506545178aecfdb41e67aa412cf50ccffc83b",
+    "input_tokens": 1331,
+    "output_tokens": 3780,
+    "elapsed_seconds": 85.115,
+    "output_chars": 673
+  },
+  {
+    "case": "scifi_airlock",
+    "variant": "candidate",
+    "model": "grok-4.5",
+    "baseline_commit": "14bdc40",
+    "candidate_commit": "f4cdf82a91ec6f07349644ddddf77702c1479790",
+    "prompt_sha256": "703bdcca8018b18175bdd36dce594a35e5a25a37d623ea3c516a691738f60d93",
+    "input_tokens": 927,
+    "output_tokens": 5296,
+    "elapsed_seconds": 131.521,
+    "output_chars": 636
+  }
+]

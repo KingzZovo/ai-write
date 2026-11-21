@@ -1,0 +1,99 @@
+{
+  "attempts": [
+    "relay_error",
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "阿棠",
+      "柳先生"
+    ],
+    "forbidden": [
+      "柳先生不得当天赶回",
+      "不得出现另一坛醋或第三人送醋",
+      "走地根不得自己留在原地不动",
+      "不得两全"
+    ],
+    "genre": "东方幻想",
+    "id": "fantasy_herb",
+    "label": "东方幻想·药铺陈醋",
+    "must_keep": [
+      "只剩半坛陈醋",
+      "必须今夜封坛",
+      "陈醋是三年陈",
+      "柳先生出门未归",
+      "今日是第二日"
+    ],
+    "pov": "第三人称限知,全程跟随学徒阿棠",
+    "pov_character": "阿棠",
+    "required_outcomes": [
+      "阿棠发现醋只剩半坛且两处都要用",
+      "阿棠意识到两处不能同时满足",
+      "阿棠做出明确选择并动手",
+      "写明后果:走地根的去向或产妇那边的情况",
+      "结尾交代次日清晨的具体处境"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "fantasy_herb",
+  "chars": 976,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 7.027,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "东方幻想",
+  "input_tokens": 533,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 244,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 344,
+        "name": "scene_brief",
+        "sha256": "7387a55871dc52cd",
+        "source": "case.brief"
+      },
+      {
+        "chars": 77,
+        "name": "character_roster",
+        "sha256": "4cf325f1ada4c2a3",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 1075,
+        "name": "writer_contract",
+        "sha256": "6cc3311ac6f3baf0",
+        "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 493,
+        "name": "scene_writer_system",
+        "sha256": "806255474cc40ff3",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "c453fe4f433f22ee34e7dfe6c9f0c5348e21aaeedde51b920c0b632d0b6f4831",
+    "system_chars": 493,
+    "task_type": "scene_writer",
+    "user_chars": 1616,
+    "variant": "scene_writer"
+  },
+  "repeat": 2,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": null,
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "e1fcc0e36367c76405bc68e10a67d3e0d03e465fbbd1649ad9dfd2819ebdc281",
+  "variant": "scene_writer"
+}

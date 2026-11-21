@@ -1,0 +1,8 @@
+{
+  "index": 2,
+  "chapter_id": "cec27f12-6a82-4a9e-acf4-e2c788c93669",
+  "status": "error",
+  "error_type": "ValueError",
+  "error_message": "provider_incomplete_response",
+  "error_code": null
+}

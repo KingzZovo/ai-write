@@ -1,0 +1,954 @@
+"""Style profile management API.
+
+CRUD for writing style profiles, style detection from text,
+test-writing with a selected style, and binding to books/chapters.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_db
+from app.models.project import StyleProfile
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/styles", tags=["styles"])
+
+
+# =========================================================================
+# Schemas
+# =========================================================================
+
+class StyleProfileCreate(BaseModel):
+    name: str
+    description: str = ""
+    rules_json: list[dict] = []
+    anti_ai_rules: list[dict] = []
+    tone_keywords: list[str] = []
+    sample_passages: list = []
+
+
+class StyleProfileUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    rules_json: list[dict] | None = None
+    anti_ai_rules: list[dict] | None = None
+    tone_keywords: list[str] | None = None
+    sample_passages: list | None = None
+    is_active: int | None = None
+
+
+class StyleProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    description: str
+    source_book: str | None
+    rules_json: list
+    anti_ai_rules: list
+    tone_keywords: list
+    sample_passages: list
+    bind_level: str
+    bind_target_id: UUID | None
+    is_active: int
+    config_json: dict
+    created_at: Any
+    updated_at: Any
+
+
+class BindRequest(BaseModel):
+    bind_level: str  # library / default_global / book / chapter; global is a legacy alias
+    bind_target_id: str | None = None
+
+
+class RebuildFromDossierRequest(BaseModel):
+    """Exactly one of book_id / author must be provided."""
+
+    book_id: str | None = None
+    author: str | None = None
+
+
+class RebuildFromDossierResponse(BaseModel):
+    profile_id: UUID
+    name: str
+    rule_count: int
+    anti_ai_count: int
+    created: bool  # False when an existing rebuilt profile was overwritten
+    bind_level: str
+
+
+class DetectRequest(BaseModel):
+    text: str
+    name: str = ""
+
+
+class TestWriteRequest(BaseModel):
+    prompt: str = "写一段200字的场景描写，一个人走在雨中的小巷里。"
+
+
+class TestWriteResponse(BaseModel):
+    text: str
+    style_name: str
+    # Which prompt mode ran: currently always "production_equivalent" — the
+    # style block is built exactly like the writer-injection path (dossier
+    # preference, compile without sample few-shot, 1200-char cap).
+    mode: str = "production_equivalent"
+    # Where the style text came from: "dossier" or "compiled".
+    style_source: str = ""
+    style_block_chars: int = 0
+
+
+# =========================================================================
+# Endpoints
+# =========================================================================
+
+@router.get("", response_model=list[StyleProfileResponse])
+async def list_styles(
+    db: AsyncSession = Depends(get_db),
+) -> list[StyleProfileResponse]:
+    """List all style profiles."""
+    result = await db.execute(
+        select(StyleProfile).order_by(StyleProfile.is_active.desc(), StyleProfile.updated_at.desc())
+    )
+    profiles = result.scalars().all()
+    return [StyleProfileResponse.model_validate(p) for p in profiles]
+
+
+@router.post("", response_model=StyleProfileResponse, status_code=201)
+async def create_style(
+    body: StyleProfileCreate,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Create a new style profile."""
+    profile = StyleProfile(
+        name=body.name,
+        description=body.description,
+        rules_json=body.rules_json,
+        anti_ai_rules=body.anti_ai_rules,
+        tone_keywords=body.tone_keywords,
+        sample_passages=body.sample_passages,
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+# 2026-11-17 审计:此前本路由注册在 ``GET /{style_id}``(原第 167 行)之后,
+# FastAPI 按注册顺序匹配,``GET /api/styles/authors`` 永远落进 path 参数分支
+# 并被 UUID 校验打成 422,作者聚合列表不可达。静态段必须排在参数段前。
+@router.get("/authors")
+async def list_authors_with_books(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List authors that have multiple books for aggregation."""
+    from app.models.project import ReferenceBook
+    result = await db.execute(select(ReferenceBook).order_by(ReferenceBook.author))
+    books = result.scalars().all()
+    authors: dict[str, list] = {}
+    for b in books:
+        if b.author:
+            authors.setdefault(b.author, []).append({"id": str(b.id), "title": b.title})
+    return [
+        {"author": a, "book_count": len(bs), "books": bs}
+        for a, bs in authors.items()
+    ]
+
+
+@router.get("/structures")
+async def list_book_structures(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List all books that have extracted plot structures."""
+    from app.models.project import ReferenceBook
+    result = await db.execute(select(ReferenceBook).order_by(ReferenceBook.created_at.desc()))
+    books = result.scalars().all()
+    structures = []
+    for b in books:
+        ps = (b.metadata_json or {}).get("plot_structure")
+        if ps and "error" not in ps:
+            structures.append({
+                "book_id": str(b.id),
+                "book_title": b.title,
+                "structure_summary": ps.get("structure_summary", ""),
+                "arc_pattern": ps.get("arc_pattern", ""),
+            })
+    return structures
+
+
+@router.get("/{style_id}", response_model=StyleProfileResponse)
+async def get_style(
+    style_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Get a style profile by ID."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.put("/{style_id}", response_model=StyleProfileResponse)
+async def update_style(
+    style_id: UUID,
+    body: StyleProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Update a style profile."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    update_data = body.model_dump(exclude_unset=True)
+    for field_name, value in update_data.items():
+        setattr(profile, field_name, value)
+
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.delete("/{style_id}", status_code=204)
+async def delete_style(
+    style_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a style profile."""
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+    await db.delete(profile)
+
+
+@router.post("/{style_id}/bind", response_model=StyleProfileResponse)
+async def bind_style(
+    style_id: UUID,
+    body: BindRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Select a library entry, explicit global default, or book/chapter binding."""
+    level = "default_global" if body.bind_level == "global" else body.bind_level
+    if level not in ("library", "default_global", "book", "chapter"):
+        raise HTTPException(status_code=400, detail="无效的写法绑定级别")
+    target_id = None
+    if level in ("book", "chapter"):
+        try:
+            target_id = UUID(body.bind_target_id or "")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="书籍或章节绑定需要有效的目标 ID")
+        from app.models.project import Project, ReferenceBook, Chapter
+        models = (Project, ReferenceBook) if level == "book" else (Chapter,)
+        found = False
+        for model in models:
+            if await db.get(model, target_id) is not None:
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail="绑定目标不存在")
+
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    profile.bind_level = level
+    profile.bind_target_id = target_id
+    config = dict(profile.config_json or {})
+    if level == "default_global":
+        config["default_selected_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        config.pop("default_selected_at", None)
+    profile.config_json = config
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/{style_id}/regenerate-anti-ai", response_model=StyleProfileResponse)
+async def regenerate_anti_ai(
+    style_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Regenerate ONLY the anti_ai_rules field of an existing profile.
+
+    Uses profile.sample_passages as the source text and runs the same
+    statistical + LLM pipeline as detect-from-book, then writes only
+    `anti_ai_rules` back. Other fields (rules_json, sample_passages,
+    tone_keywords, bind_level, bind_target_id) are preserved.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.style_detection import (
+        detect_style_features,
+        detect_style_with_llm,
+        features_to_rules,
+    )
+
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    samples = profile.sample_passages or []
+    if not samples:
+        raise HTTPException(
+            status_code=400,
+            detail="该写法没有 sample_passages，无法重生成 anti_ai_rules；请先用 detect-from-book 遇 充充重抽",
+        )
+
+    text_parts: list[str] = []
+    for s in samples:
+        if isinstance(s, str):
+            text_parts.append(s)
+        elif isinstance(s, dict):
+            text_parts.append(str(s.get("text") or s.get("content") or ""))
+    combined = "\n\n".join(t for t in text_parts if t)
+    if len(combined) < 200:
+        raise HTTPException(status_code=400, detail="sample_passages 总长度不足 200 字，无法分析")
+
+    features = detect_style_features(combined)
+    llm_analysis = await detect_style_with_llm(combined[:5000])
+    _, anti_ai = features_to_rules(features, llm_analysis)
+
+    profile.anti_ai_rules = anti_ai
+    flag_modified(profile, "anti_ai_rules")
+    await db.flush()
+    await db.refresh(profile)
+    logger.info(
+        "regenerate_anti_ai: profile=%s anti_count=%d llm_error=%s",
+        profile.id, len(anti_ai), llm_analysis.get("llm_error"),
+    )
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/detect-from-book/{book_id}", response_model=StyleProfileResponse, status_code=201)
+async def detect_from_book(
+    book_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Detect writing style from a reference book in the knowledge base."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.style_detection import detect_style_features, detect_style_with_llm, features_to_rules
+
+    book = await db.get(ReferenceBook, str(book_id))
+    if not book:
+        raise HTTPException(status_code=404, detail="参考书不存在")
+
+    # Get chunks from DB
+    result = await db.execute(
+        select(TextChunk)
+        .where(TextChunk.book_id == str(book_id))
+        .order_by(TextChunk.sequence_id)
+    )
+    chunks = list(result.scalars().all())
+    if not chunks:
+        raise HTTPException(status_code=400, detail="该书尚未处理完成，没有可分析的文本")
+
+    # Check vectorization completeness — must be done before extraction
+    try:
+        from qdrant_client import AsyncQdrantClient
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        from app.config import settings
+        qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+        count_result = await qc.count(
+            collection_name="styles",
+            count_filter=Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(book_id)))]),
+        )
+        await qc.close()
+        vectorized = count_result.count
+        total = len(chunks)
+        if vectorized < total * 0.9:  # At least 90% vectorized
+            raise HTTPException(
+                status_code=400,
+                detail=f"向量化未完成（{vectorized}/{total}），请先完成向量化再提取风格"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Vectorization check failed: %s", e)
+
+    # Multi-query Qdrant sampling: use different queries to get diverse representative chunks
+    sampled_texts: list[str] = []
+    try:
+        from qdrant_client import AsyncQdrantClient
+        from app.config import settings
+        from app.services.model_router import get_model_router_async
+
+        router = await get_model_router_async()
+        qc = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        book_filter = Filter(must=[FieldCondition(key="book_id", match=MatchValue(value=str(book_id)))])
+
+        # Multiple diverse queries to capture different aspects of style
+        queries = [
+            "精彩的动作场面和战斗描写",
+            "深刻的对话和角色互动",
+            "细腻的心理活动和内心独白",
+            "环境描写和氛围营造",
+            "幽默搞笑的轻松段落",
+        ]
+        seen_ids: set[str] = set()
+        for q in queries:
+            query_vec = await router.embed(q)
+            results = await qc.query_points(
+                collection_name="styles", query=query_vec,
+                query_filter=book_filter, limit=3,
+            )
+            if results.points:
+                for point in results.points:
+                    cid = point.payload.get("chunk_id", "")
+                    if cid not in seen_ids:
+                        seen_ids.add(cid)
+        await qc.close()
+
+        if seen_ids:
+            # Get the actual chunk content from DB by chunk_id
+            chunk_map = {str(c.id): c.content for c in chunks}
+            for cid in seen_ids:
+                if cid in chunk_map and len(sampled_texts) < 12:
+                    sampled_texts.append(chunk_map[cid])
+    except Exception as e:
+        logger.warning("Qdrant sampling failed, falling back to even spacing: %s", e)
+
+    # Fallback: even spacing across the book (skip first 10% which is often TOC/preface)
+    if len(sampled_texts) < 5:
+        n = len(chunks)
+        start = max(1, n // 10)  # Skip beginning (TOC/copyright)
+        step = max(1, (n - start) // 8)
+        sampled_texts = [chunks[i].content for i in range(start, n, step)][:8]
+
+    combined_text = "\n\n".join(sampled_texts[:8])
+
+    # Statistical analysis on sampled text
+    features = detect_style_features(combined_text)
+
+    # LLM deep analysis — send a representative sample (up to 5000 chars)
+    llm_analysis = await detect_style_with_llm(combined_text[:5000])
+
+    # Merge into rules
+    rules, anti_ai = features_to_rules(features, llm_analysis)
+
+    profile = StyleProfile(
+        name=f"{book.title} 风格",
+        description=f"从参考书《{book.title}》({book.total_words or 0}字) 自动提取的写作风格",
+        source_book=book.title,
+        rules_json=rules,
+        anti_ai_rules=anti_ai,
+        tone_keywords=(llm_analysis.get("style_labels", []) if isinstance(llm_analysis.get("style_labels"), list) else [])
+                      + features.get("style_labels", []),
+        sample_passages=[s[:500] for s in sampled_texts[:3]],
+        config_json={"detection_features": features, "llm_analysis": llm_analysis, "source_book_id": str(book_id)},
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/detect", response_model=StyleProfileResponse, status_code=201)
+async def detect_style(
+    body: DetectRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Detect writing style from text and create a new profile."""
+    if len(body.text) < 200:
+        raise HTTPException(status_code=400, detail="文本至少需要200字才能分析风格")
+
+    from app.services.style_detection import detect_style_features, features_to_rules
+
+    features = detect_style_features(body.text)
+    rules, anti_ai = features_to_rules(features)
+
+    profile = StyleProfile(
+        name=body.name or "自动检测的写法",
+        description=f"从 {len(body.text)} 字文本中自动提取的写作风格",
+        source_book="text_detection",
+        rules_json=rules,
+        anti_ai_rules=anti_ai,
+        tone_keywords=features.get("style_labels", []),
+        sample_passages=[body.text[:500]],
+        config_json={"detection_features": features},
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/{style_id}/test-write", response_model=TestWriteResponse)
+async def test_write(
+    style_id: UUID,
+    body: TestWriteRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TestWriteResponse:
+    """Generate a test passage using a selected style profile.
+
+    Production-equivalent: the style block is built exactly like the chapter
+    writer injection (dossier style_block preferred, compile_style without
+    sample_passages few-shot, same [风格要求] format and 1200-char cap), so
+    the test result reflects what generation actually receives.
+    """
+    profile = await db.get(StyleProfile, str(style_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="写法不存在")
+
+    from app.services.model_router import get_model_router
+    from app.services.style_runtime import (
+        build_style_injection_block,
+        production_style_text_for_profile,
+    )
+
+    style_text, style_source, _ref_book_id = await production_style_text_for_profile(db, profile)
+    style_block = build_style_injection_block(style_text)
+    router = get_model_router()
+
+    user_content = body.prompt
+    if style_block:
+        user_content = f"{body.prompt}\n\n{style_block}"
+
+    result = await router.generate(
+        task_type="generation",
+        messages=[
+            {"role": "system", "content": "你是一个小说作家。"},
+            {"role": "user", "content": user_content},
+        ],
+        max_tokens=1024,
+    )
+
+    return TestWriteResponse(
+        text=result.text,
+        style_name=profile.name,
+        mode="production_equivalent",
+        style_source=style_source,
+        style_block_chars=len(style_block),
+    )
+
+
+@router.post("/compile-preview")
+async def compile_preview(
+    body: StyleProfileCreate,
+) -> dict:
+    """Preview the compiled prompt for a set of rules (without saving)."""
+    from app.services.style_compiler import compile_style
+
+    # Create a temporary profile object for compilation
+    profile = StyleProfile(
+        name=body.name or "预览",
+        description=body.description,
+        rules_json=body.rules_json,
+        anti_ai_rules=body.anti_ai_rules,
+        tone_keywords=body.tone_keywords,
+        sample_passages=body.sample_passages,
+    )
+    compiled = compile_style(profile)
+    return {"compiled_prompt": compiled, "char_count": len(compiled)}
+
+
+# =========================================================================
+# Plot Structure (optional — separate from writing style)
+# =========================================================================
+
+
+@router.post("/extract-structure/{book_id}")
+async def extract_book_structure(
+    book_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Extract plot structure from a reference book. Separate from style (文笔)."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.plot_structure import extract_plot_structure
+
+    book = await db.get(ReferenceBook, str(book_id))
+    if not book:
+        raise HTTPException(status_code=404, detail="参考书不存在")
+
+    result = await db.execute(
+        select(TextChunk)
+        .where(TextChunk.book_id == str(book_id))
+        .order_by(TextChunk.sequence_id)
+    )
+    chunks = list(result.scalars().all())
+    if not chunks:
+        raise HTTPException(status_code=400, detail="该书没有可分析的文本")
+
+    # Sample from different parts of the book
+    n = len(chunks)
+    samples = [chunks[i].content for i in range(0, n, max(1, n // 6))][:6]
+    combined = "\n\n".join(samples)
+
+    structure = await extract_plot_structure(combined)
+
+    # Persist in book metadata. Copy + flag_modified so SQLAlchemy actually
+    # emits an UPDATE — reassigning the same dict is a silent no-op on JSON
+    # columns (mirrors reference_ingestor's persistence pattern).
+    from sqlalchemy.orm.attributes import flag_modified
+    metadata = dict(book.metadata_json or {})
+    metadata["plot_structure"] = structure
+    book.metadata_json = metadata
+    flag_modified(book, "metadata_json")
+    await db.flush()
+
+    return {"book_title": book.title, "structure": structure}
+
+
+# =========================================================================
+# Author-level aggregation (merge multiple books by same author)
+# =========================================================================
+
+
+@router.post("/detect-by-author/{author_name}", response_model=StyleProfileResponse, status_code=201)
+async def detect_style_by_author(
+    author_name: str,
+    db: AsyncSession = Depends(get_db),
+) -> StyleProfileResponse:
+    """Merge writing style from all books by the same author into one profile."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.style_detection import detect_style_features, detect_style_with_llm, features_to_rules
+    from urllib.parse import unquote
+
+    author = unquote(author_name)
+
+    # Get all books by this author
+    result = await db.execute(
+        select(ReferenceBook).where(ReferenceBook.author == author)
+    )
+    books = list(result.scalars().all())
+    if not books:
+        raise HTTPException(status_code=404, detail=f"未找到作者的书籍")
+
+    # Sample chunks from ALL books (diverse sampling)
+    all_samples: list[str] = []
+    book_titles = []
+    for book in books:
+        book_titles.append(book.title)
+        ch_result = await db.execute(
+            select(TextChunk)
+            .where(TextChunk.book_id == str(book.id))
+            .order_by(TextChunk.sequence_id)
+        )
+        chunks = list(ch_result.scalars().all())
+        if chunks:
+            n = len(chunks)
+            step = max(1, n // 4)
+            for i in range(n // 10, n, step):
+                if i < n:
+                    all_samples.append(chunks[i].content)
+
+    if len(all_samples) < 3:
+        raise HTTPException(status_code=400, detail="该作者的书籍文本不足，无法分析")
+
+    # Take diverse samples across all books
+    import random
+    random.shuffle(all_samples)
+    combined = "\n\n".join(all_samples[:12])
+
+    features = detect_style_features(combined)
+    llm_analysis = await detect_style_with_llm(combined[:5000])
+    rules, anti_ai = features_to_rules(features, llm_analysis)
+
+    profile = StyleProfile(
+        name=f"{author} 综合写法",
+        description=f"从{author}的{len(books)}本书（{'、'.join(t[:10] for t in book_titles)}）综合提取的写作风格",
+        source_book=f"author:{author}",
+        rules_json=rules,
+        anti_ai_rules=anti_ai,
+        tone_keywords=features.get("style_labels", []),
+        sample_passages=[s[:500] for s in all_samples[:3]],
+        config_json={
+            "detection_features": features,
+            "llm_analysis": llm_analysis,
+            "source_books": [str(b.id) for b in books],
+            "author": author,
+        },
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+    return StyleProfileResponse.model_validate(profile)
+
+
+@router.post("/extract-structure-by-author/{author_name}")
+async def extract_structure_by_author(
+    author_name: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Merge plot structure analysis from all books by the same author."""
+    from app.models.project import ReferenceBook, TextChunk
+    from app.services.plot_structure import extract_plot_structure
+    from urllib.parse import unquote
+
+    author = unquote(author_name)
+    result = await db.execute(
+        select(ReferenceBook).where(ReferenceBook.author == author)
+    )
+    books = list(result.scalars().all())
+    if not books:
+        raise HTTPException(status_code=404, detail=f"未找到作者的书籍")
+
+    all_samples: list[str] = []
+    for book in books:
+        ch_result = await db.execute(
+            select(TextChunk)
+            .where(TextChunk.book_id == str(book.id))
+            .order_by(TextChunk.sequence_id)
+        )
+        chunks = list(ch_result.scalars().all())
+        if chunks:
+            n = len(chunks)
+            step = max(1, n // 3)
+            for i in range(0, n, step):
+                if i < n:
+                    all_samples.append(chunks[i].content)
+
+    combined = "\n\n".join(all_samples[:8])
+    structure = await extract_plot_structure(combined)
+
+    # Store as author-level structure. Copy + flag_modified so the JSON
+    # column mutation actually emits an UPDATE (see extract_book_structure).
+    from sqlalchemy.orm.attributes import flag_modified
+    for book in books:
+        metadata = dict(book.metadata_json or {})
+        metadata["author_structure"] = structure
+        book.metadata_json = metadata
+        flag_modified(book, "metadata_json")
+    await db.flush()
+
+    return {
+        "author": author,
+        "book_count": len(books),
+        "structure": structure,
+    }
+
+
+# =========================================================================
+# Rebuild a style profile from a consolidated dossier (档案 → 画像)
+# =========================================================================
+
+# Facet -> (label, weight, category); category values match the frontend's
+# CATEGORY_LABELS set. Weights follow the compiler tiers (>=0.85 必须保持,
+# >=0.65 优先保持).
+_DOSSIER_RULE_FACETS: list[tuple[str, str, float, str]] = [
+    ("narrative_pov_rules", "视角", 0.85, "structure"),
+    ("syntax_rhythm", "句法节奏", 0.8, "rhythm"),
+    ("dialogue_style", "对话", 0.8, "dialogue"),
+    ("sensory_rhetoric", "感官修辞", 0.7, "style"),
+    ("emotional_curve", "情绪基调", 0.75, "style"),
+    ("low_freq_burst", "低频爆发段", 0.7, "style"),
+    ("opening_patterns", "章节开场", 0.7, "structure"),
+    ("hook_patterns", "章末钩子", 0.8, "structure"),
+]
+
+# 禁忌 entries often arrive as imperatives ("避免大段抒情"); strip the leading
+# verb so the compiled instruction ("避免使用「…」") doesn't double-negate.
+_FORBIDDEN_VERB_PREFIX = ("避免", "禁止", "禁用", "不要", "勿用", "少用", "忌")
+
+
+def _facet_text(value) -> str:
+    if isinstance(value, list):
+        return "；".join(str(x).strip() for x in value if str(x).strip())
+    return str(value or "").strip()
+
+
+def derive_rules_from_dossier_style(profile: dict) -> list[dict]:
+    """Structured rules_json entries from a dossier style profile.
+
+    Each facet yields one weighted rule; signature_moves yields up to two.
+    """
+    rules: list[dict] = []
+    for key, label, weight, category in _DOSSIER_RULE_FACETS:
+        text = _facet_text(profile.get(key))
+        if text:
+            rules.append({
+                "rule": f"{label}：{text[:160]}",
+                "weight": weight,
+                "category": category,
+            })
+    moves = profile.get("signature_moves") or []
+    if isinstance(moves, str):
+        moves = [moves]
+    for move in [str(m).strip() for m in moves if str(m).strip()][:2]:
+        rules.append({
+            "rule": f"标志性手法：{move[:160]}",
+            "weight": 0.75,
+            "category": "style",
+        })
+    return rules
+
+
+def derive_anti_ai_from_forbidden(profile: dict) -> list[dict]:
+    """anti_ai_rules entries from the dossier's 禁忌 list."""
+    forbidden = profile.get("forbidden") or []
+    if isinstance(forbidden, str):
+        forbidden = [forbidden]
+    anti_ai: list[dict] = []
+    for item in forbidden:
+        text = str(item).strip()
+        if not text:
+            continue
+        for prefix in _FORBIDDEN_VERB_PREFIX:
+            if text.startswith(prefix) and len(text) > len(prefix):
+                text = text[len(prefix):].strip()
+                break
+        anti_ai.append({"pattern": text[:120], "replacement": "", "autoRewrite": False})
+    return anti_ai
+
+
+def derive_tone_keywords_from_dossier(style_data: dict) -> list[str]:
+    """Tone keywords from the dossier's vocab preferences.
+
+    Book dossiers carry ``stats.vocab_tone``; author dossiers carry the
+    merged cross-book table under ``cross_book.merged_top.vocab_tone``.
+    """
+    entries = (style_data.get("stats") or {}).get("vocab_tone")
+    if not entries:
+        merged = (style_data.get("cross_book") or {}).get("merged_top") or {}
+        entries = merged.get("vocab_tone")
+    keywords: list[str] = []
+    for e in entries or []:
+        value = str(e.get("value") or "").strip() if isinstance(e, dict) else str(e).strip()
+        if value and value not in keywords:
+            keywords.append(value)
+        if len(keywords) >= 8:
+            break
+    return keywords
+
+
+def _usable_style_data(dossier) -> dict | None:
+    """The dossier's style_data when it holds a real profile, else None."""
+    if not isinstance(dossier, dict):
+        return None
+    style_data = dossier.get("style_data")
+    if not isinstance(style_data, dict) or "error" in style_data:
+        return None
+    if not isinstance(style_data.get("profile"), dict) or not style_data["profile"]:
+        return None
+    return style_data
+
+
+@router.post("/rebuild-from-dossier", response_model=RebuildFromDossierResponse)
+async def rebuild_profile_from_dossier(
+    body: RebuildFromDossierRequest,
+    db: AsyncSession = Depends(get_db),
+) -> RebuildFromDossierResponse:
+    """Build/update a StyleProfile from a consolidated dossier (档案 → 画像).
+
+    The profile is the user's manual override layer on top of the dossier:
+    structured rules per facet, anti-AI rules from the dossier 禁忌, tone
+    keywords from vocab preferences. Named `<书名/作者>·档案重建`; running it
+    again overwrites the same-named profile (idempotent).
+
+    Book profiles bind bind_level='book' + bind_target_id=book_id (the
+    reference-book binding style_runtime.derive_reference_book_id consumes).
+    Author profiles stay unbound at the 'library' level — the runtime
+    resolution chain has no author bind level; author dossiers reach
+    generation via settings style_reference.author_name, and the rebuilt
+    profile is selected explicitly (settings profile id) like any other.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.models.project import ReferenceBook
+
+    if bool(body.book_id) == bool(body.author):
+        raise HTTPException(
+            status_code=400, detail="必须且只能提供 book_id 或 author 之一"
+        )
+
+    bind_level = "library"
+    bind_target_id = None
+    source_book_id = None
+    if body.book_id:
+        book = await db.get(ReferenceBook, str(body.book_id))
+        if not book:
+            raise HTTPException(status_code=404, detail="参考书不存在")
+        style_data = _usable_style_data((book.metadata_json or {}).get("dossier"))
+        if style_data is None:
+            raise HTTPException(
+                status_code=404, detail="该书尚无可用的风格档案，请先聚合蒸馏"
+            )
+        base_name = (book.title or "").strip() or str(book.id)
+        source_book = book.title
+        source_ref = {"book_id": str(book.id)}
+        bind_level = "book"
+        bind_target_id = str(book.id)
+        source_book_id = book.id
+        description = f"由《{base_name}》书籍档案自动重建的风格画像"
+    else:
+        from app.models.author_dossier import AuthorDossier
+
+        author = (body.author or "").strip()
+        row = (
+            await db.execute(
+                select(AuthorDossier).where(AuthorDossier.author == author).limit(1)
+            )
+        ).scalar_one_or_none()
+        style_data = _usable_style_data(row.dossier_json) if row else None
+        if style_data is None:
+            raise HTTPException(
+                status_code=404, detail="该作者尚无可用的风格档案，请先按作者聚合"
+            )
+        base_name = author
+        source_book = f"author:{author}"
+        source_ref = {"author": author}
+        description = f"由作者「{author}」档案自动重建的风格画像"
+
+    profile_dict = style_data["profile"]
+    rules = derive_rules_from_dossier_style(profile_dict)
+    anti_ai = derive_anti_ai_from_forbidden(profile_dict)
+    keywords = derive_tone_keywords_from_dossier(style_data)
+    name = f"{base_name[:180]}·档案重建"
+
+    existing = (
+        await db.execute(
+            select(StyleProfile).where(StyleProfile.name == name).limit(1)
+        )
+    ).scalar_one_or_none()
+
+    config_marker = {"rebuilt_from_dossier": source_ref}
+    if existing is not None:
+        profile = existing
+        profile.description = description
+        profile.source_book = source_book
+        profile.source_book_id = source_book_id
+        profile.rules_json = rules
+        profile.anti_ai_rules = anti_ai
+        profile.tone_keywords = keywords
+        # Rebuilding content must preserve the author's existing binding.
+        config = dict(profile.config_json or {})
+        config.update(config_marker)
+        profile.config_json = config
+        for field in ("rules_json", "anti_ai_rules", "tone_keywords", "config_json"):
+            flag_modified(profile, field)
+    else:
+        profile = StyleProfile(
+            name=name,
+            description=description,
+            source_book=source_book,
+            source_book_id=source_book_id,
+            rules_json=rules,
+            anti_ai_rules=anti_ai,
+            tone_keywords=keywords,
+            bind_level=bind_level,
+            bind_target_id=bind_target_id,
+            config_json=config_marker,
+        )
+        db.add(profile)
+
+    await db.flush()
+    await db.refresh(profile)
+    logger.info(
+        "rebuild-from-dossier: profile=%s name=%s rules=%d anti=%d created=%s",
+        profile.id, name, len(rules), len(anti_ai), existing is None,
+    )
+    return RebuildFromDossierResponse(
+        profile_id=profile.id,
+        name=profile.name,
+        rule_count=len(rules),
+        anti_ai_count=len(anti_ai),
+        created=existing is None,
+        bind_level=profile.bind_level,
+    )

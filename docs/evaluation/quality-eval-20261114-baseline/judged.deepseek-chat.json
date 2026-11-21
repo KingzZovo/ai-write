@@ -1,0 +1,322 @@
+[
+  {
+    "stem": "fantasy_bell-scene_writer",
+    "case_id": "fantasy_bell",
+    "requested_model": "deepseek-chat",
+    "chars": 1313,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 18.367,
+    "output_tokens": 2216,
+    "verdicts": [
+      {
+        "id": "decision",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 17,
+        "verified": true,
+        "quote": "他没有犹豫,拇指扣住铜舌,猛地向外一扣。"
+      },
+      {
+        "id": "walks_to_pier",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 85,
+        "verified": true,
+        "quote": "林叶双腿一发力,沿着这凭空出现的清凌水路疾步冲向前去。脚下虽是水流,踩上去却如踏青石般坚实,只是两旁翻涌的巨浪带着令人窒息的压迫感呼啸而过。他几步冲到桥墩旁,水路刚好稳稳搭在许舟身侧。"
+      },
+      {
+        "id": "carries_back",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 19,
+        "verified": true,
+        "quote": "林叶不再回头,双脚在透明的水面上交替狂奔。"
+      },
+      {
+        "id": "both_ashore",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 51,
+        "verified": true,
+        "quote": "就在最后残存的水路即将彻底化为虚无的刹那,林叶带着背上的许舟猛地向前一扑,两人重重地摔打在近岸泥泞的草地上。"
+      },
+      {
+        "id": "loss_reaction",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 70,
+        "verified": true,
+        "quote": "许舟动了动干裂的嘴唇,看着地上的黑灰,低声道:“这回......真成穷光蛋了。”\n\n林叶没说话,脱下外衫胡乱擦了擦手上的灰迹,望着眼前翻滚的洪水,哑声应道:“人活着,总比死在河心强。”"
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "fantasy_herb-scene_writer",
+    "case_id": "fantasy_herb",
+    "requested_model": "deepseek-chat",
+    "chars": 1283,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 8.612,
+    "output_tokens": 889,
+    "verdicts": [
+      {
+        "id": "discovers_shortage",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 46,
+        "verified": true,
+        "quote": "可眼下,库房里唯一能压住那株活物、使其安分三日的三年陈醋只剩半坛,而隔壁巷子的产妇正悬在一根细丝上。"
+      },
+      {
+        "id": "recognizes_conflict",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 24,
+        "verified": true,
+        "quote": "两边都要用,可这半坛醋倒进哪个碗里,另一个就必然落空。"
+      },
+      {
+        "id": "makes_choice",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 29,
+        "verified": true,
+        "quote": "她不再迟疑,提着那半坛陈醋大步迈出库房,哗啦一声拉开药铺的门闩。"
+      },
+      {
+        "id": "consequence",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 55,
+        "verified": true,
+        "quote": "只见那只陶坛的泥封已经彻底被顶开,坛口空空如也,湿漉漉的土痕顺着墙根蜿蜒出一道触目惊心的印记,直通向后窗半开的缝隙外。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 93,
+        "verified": true,
+        "quote": "次日清晨,天色微明,细碎的晨光透过药铺的木格窗照进来。阿棠揉着酸涩的眼睛推开库房门,只见那只陶坛的泥封已经彻底被顶开,坛口空空如也,湿漉漉的土痕顺着墙根蜿蜒出一道触目惊心的印记,直通向后窗半开的缝隙外。"
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "mystery_bridge-scene_writer",
+    "case_id": "mystery_bridge",
+    "requested_model": "deepseek-chat",
+    "chars": 1372,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 9.353,
+    "output_tokens": 1093,
+    "verdicts": [
+      {
+        "id": "states_errand",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 42,
+        "verified": true,
+        "quote": "这封火漆信是十万火急的公文,雇主交代过,天亮前必须送到对岸柳树下的茶棚里,一炷香都耽误不得。"
+      },
+      {
+        "id": "price_named",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 20,
+        "verified": true,
+        "quote": "过河一百文,少一个子儿也不行。概不赊账,拿钱来。"
+      },
+      {
+        "id": "weighs",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 144,
+        "verified": true,
+        "quote": "冷汗混着冰凉的雨雾从陆沉的额头滑落。他的右手在衣衫内侧摸到了一块沉甸甸的铜质物件——那是他的脚夫腰牌。驿站的铁律森严,腰牌乃是差役的身份凭证,只要拿到当铺或熟人手里抵押,当个八十文绝对绰绰有余。可一想到明日清晨卯时正点的驿站大查验,差官要逐"
+      },
+      {
+        "id": "acts",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 54,
+        "verified": true,
+        "quote": "陆沉咬了咬牙,右手探入怀中,将那块带有体温的铜腰牌连同仅有的六十文铜钱一并掏了出来,重重地拍在木棚外湿漉漉的木桩上。"
+      },
+      {
+        "id": "letter_status",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 66,
+        "verified": true,
+        "quote": "片刻之后,小船终于触到了对岸的泥地。陆沉没有丝毫耽搁,跨步上岸,冰冷的夜风中,那株柳树下的茶棚已在黑暗中显出模糊的轮廓。而他的怀里,火漆信完好无损,"
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "mystery_lodger-scene_writer",
+    "case_id": "mystery_lodger",
+    "requested_model": "deepseek-chat",
+    "chars": 1521,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 11.246,
+    "output_tokens": 1448,
+    "verdicts": [
+      {
+        "id": "handles_waiter",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 63,
+        "verified": true,
+        "quote": "苏姐眉头微蹙,压下心头那丝隐隐的不安,对阿六沉声吩咐:“前堂还煮着茶,去把火看好,顺便把门前的水沟疏通一下,别让水漫进柜台里。这里不用你盯着了。”"
+      },
+      {
+        "id": "decides_entry",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 54,
+        "verified": true,
+        "quote": "她从怀里摸出一根薄铜片,顺着门缝轻轻一拨,将里面别着的木栓拨开。\n\n她推开房门,潮湿的水汽和一股淡淡的草木灰气味扑面而来。"
+      },
+      {
+        "id": "reads_letter",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 16,
+        "verified": true,
+        "quote": "苏姐的目光在“避祸”二字上停住。"
+      },
+      {
+        "id": "judgment_changes",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 64,
+        "verified": true,
+        "quote": "苏姐握着信纸的手微微发紧,心头原本因丈夫未归而积压的焦躁,瞬间被另一种冰冷的疑虑所替代。陈九根本不是什么做布匹生意的客商,他到底在躲什么?"
+      },
+      {
+        "id": "concrete_action",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 47,
+        "verified": true,
+        "quote": "苏姐将信笺仔细折好,重新塞回桌上的原位,连同那只湿鞋也保持着原本的摆设。她退出了房间,反手带上门,落了锁。"
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "real_ferry-scene_writer",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-chat",
+    "chars": 1752,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 26.917,
+    "output_tokens": 3313,
+    "verdicts": [
+      {
+        "id": "shortfall_declared",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 5,
+        "verified": true,
+        "quote": "“姐,两千不够。”"
+      },
+      {
+        "id": "plan_made",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 48,
+        "verified": true,
+        "quote": "“行吧,先拿这两千把眼前的窟窿堵上。剩下的那一千,你别急着去抵押什么,等我明天跟房东好说歹说再宽限两天才算。”"
+      },
+      {
+        "id": "brother_boards",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 112,
+        "verified": true,
+        "quote": "周航放下筷子,站起身来。他探手抽出压在粗瓷碗底的牛皮纸信封,厚厚的一沓钞票捏在手里沉甸甸的。他把信封仔细塞进内侧上衣口袋,拉上拉链,用手掌拍了拍。\n\n“船要开了,我得赶紧过去。”周航抓起放在长凳边的帆布包,斜挎在肩膀上,“姐,你店里的活儿别"
+      },
+      {
+        "id": "sister_stays",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 61,
+        "verified": true,
+        "quote": "周芸站在原地,双手插在围裙兜里,一直望着那艘亮着橘红色航行灯的渡船解开缆绳、缓缓退离岸边,消失在漆黑的江面上,才转过身迎着江风往回走。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-chat",
+    "chars": 1574,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 6.792,
+    "output_tokens": 803,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 29,
+        "verified": true,
+        "quote": "市场管理员下午来过一趟。不止烤面筋家,咱们这一排,下个月全得清退。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 48,
+        "verified": true,
+        "quote": "我在厂里干一年,就能挣四万。妈,我算过,你每天炸粉站到夜里两点,腰都直不起来,一个月到底能落几个钱?咱们别撑了。"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 37,
+        "verified": true,
+        "quote": "这学期还有两个月。期末考试,你给我去考。不管考第几名,高二的课你得上完。这是我的底线。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 59,
+        "verified": true,
+        "quote": "明天一早,李巧云得去市场管理处把退押金的单子签字按手印,而陈麦得赶在早自习打铃前走进教室,把桌上没做完的那套数学卷子再看一眼。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  }
+]

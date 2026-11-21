@@ -1,0 +1,98 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "林叶",
+      "许舟"
+    ],
+    "forbidden": [
+      "不得增添河底敌人或怪物",
+      "不得新增可用道具",
+      "不得飞行或隔空搬运",
+      "不得插入身世揭晓"
+    ],
+    "genre": "东方幻想",
+    "id": "fantasy_bell",
+    "label": "东方幻想·洪水铜铃",
+    "must_keep": [
+      "铜铃烧毁且不可恢复",
+      "许舟腿受伤不能游泳",
+      "水路只维持十次呼吸",
+      "水路只够一个人走",
+      "两人同行三年"
+    ],
+    "pov": "第三人称限知,全程跟随林叶",
+    "pov_character": "林叶",
+    "required_outcomes": [
+      "林叶做出用掉铜铃的具体决定",
+      "沿水路走到桥墩",
+      "把许舟背回近岸",
+      "两人安全上岸",
+      "结尾写出两人对失去铜铃的具体反应"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "fantasy_bell",
+  "chars": 2419,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 1.008,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "东方幻想",
+  "input_tokens": 1524,
+  "max_tokens": 4096,
+  "model_returned": "deepseek-v4-flash",
+  "output_tokens": 2007,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 388,
+        "name": "scene_brief",
+        "sha256": "4ea1309a6bb7ba30",
+        "source": "case.brief"
+      },
+      {
+        "chars": 76,
+        "name": "character_roster",
+        "sha256": "4608b29ddce5aaa9",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 1139,
+        "name": "writer_contract",
+        "sha256": "7109b170f9908bf2",
+        "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 571,
+        "name": "scene_writer_system",
+        "sha256": "23bc9ee90d1bf072",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "d65cbe85655e179cb45bb6333131701b4c3f0930baca02508520d056210e88a4",
+    "system_chars": 571,
+    "task_type": "scene_writer",
+    "user_chars": 1723,
+    "variant": "scene_writer"
+  },
+  "repeat": 3,
+  "requested_model": "deepseek-v4-flash",
+  "snapshot_rev": null,
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "58dc091eda4f9b39baa9199fea0b9ad3f6488a388afbf594e88b4f4c93f0502f",
+  "variant": "scene_writer"
+}

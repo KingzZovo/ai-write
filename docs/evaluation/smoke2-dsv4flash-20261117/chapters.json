@@ -1,0 +1,29 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "52d9cebd-c0c7-4fa5-95b2-eea3011d70ce",
+    "status": "error",
+    "error_type": "APIError",
+    "error_message": "upstream stream closed before any chunk carried finish_reason",
+    "error_code": "internal_server_error",
+    "attempts": 1
+  },
+  {
+    "index": 2,
+    "chapter_id": "a3d482ab-689e-4430-88c2-bd5c96ff89c9",
+    "status": "error",
+    "error_type": "APIError",
+    "error_message": "upstream stream closed before any chunk carried finish_reason",
+    "error_code": "internal_server_error",
+    "attempts": 1
+  },
+  {
+    "index": 3,
+    "chapter_id": "68055f3b-f562-432e-8836-f19aa4dfd3dd",
+    "status": "error",
+    "error_type": "APIError",
+    "error_message": "upstream stream closed before any chunk carried finish_reason",
+    "error_code": "internal_server_error",
+    "attempts": 1
+  }
+]

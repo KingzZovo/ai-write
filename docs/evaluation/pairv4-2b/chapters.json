@@ -1,0 +1,180 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "15c25aa4-e3f2-42fd-867f-82878ebc54c3",
+    "status": "ok",
+    "chars_raw": 1656,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1656
+    },
+    "chars": 1656,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的牛皮纸信封",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "岸上的余音与离去",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 123.9,
+    "summary_written": true,
+    "summary_chars": 137,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "ca5c6a9e-af0f-44cf-b2cf-e538ee3fc2ff",
+    "status": "ok",
+    "chars_raw": 1330,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1330
+    },
+    "chars": 1330,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "房东催租",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "铜顶针与备用抵押",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 47.2,
+    "summary_written": true,
+    "summary_chars": 225,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "05e282b6-70cd-4fa8-9451-0a21b44349a0",
+    "status": "ok",
+    "chars_raw": 1058,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1058
+    },
+    "chars": 1058,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺的七百元货款",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "修不好的电饭锅与手头残余",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 99.6,
+    "summary_written": true,
+    "summary_chars": 16,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知提取不是有效 JSON 数组",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "96360f05-d01f-4665-88e1-87f1a5651b2b",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 3
+  },
+  {
+    "index": 5,
+    "chapter_id": "4642ff75-2bed-4665-a0f7-d726a40d2431",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 3
+  },
+  {
+    "index": 6,
+    "chapter_id": "9031cd96-2e58-47e3-a127-953b0cc2a9af",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 3
+  }
+]

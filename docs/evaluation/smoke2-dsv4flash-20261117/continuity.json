@@ -1,0 +1,37 @@
+{
+  "chapters": 0,
+  "word_counts": {},
+  "findings": [
+    {
+      "check": "prop_missing",
+      "prop": "信封",
+      "detail": "全篇未出现已设定的道具「信封」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "顶针",
+      "detail": "全篇未出现已设定的道具「顶针」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "三千",
+      "detail": "书级既定数字「三千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "两千",
+      "detail": "书级既定数字「两千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "一千",
+      "detail": "书级既定数字「一千」全篇未出现"
+    }
+  ],
+  "violations": 6
+}

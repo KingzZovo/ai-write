@@ -1,0 +1,1171 @@
+"""ORM models for the AI writing platform."""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    Column,
+    BigInteger,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy import Boolean, event, func, select
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from app.db.session import Base
+from app.services.chapter_target_words import CHAPTER_DEFAULT_WORD_COUNT
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(500), nullable=False)
+    genre = Column(String(100))
+    premise = Column(Text)
+    settings_json = Column(JSON, default=dict)
+    # PR-FIX-PROJSET (2026-05-05): genre_profile_code already in DB but was missing from ORM model
+    genre_profile_code = Column(String(64), nullable=True)
+    target_word_count = Column(
+        Integer, nullable=False, server_default="3000000", default=3000000
+    )
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # relationships
+    volumes = relationship(
+        "Volume",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="Volume.volume_idx",
+    )
+    outlines = relationship(
+        "Outline", back_populates="project", cascade="all, delete-orphan"
+    )
+    characters = relationship(
+        "Character", back_populates="project", cascade="all, delete-orphan"
+    )
+    world_rules = relationship(
+        "WorldRule", back_populates="project", cascade="all, delete-orphan"
+    )
+
+    locations = relationship(
+        "Location", back_populates="project", cascade="all, delete-orphan"
+    )
+
+
+class Volume(Base):
+    __tablename__ = "volumes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title = Column(String(500), nullable=False)
+    volume_idx = Column(Integer, nullable=False)
+    summary = Column(Text)
+    target_word_count = Column(
+        Integer, nullable=False, server_default="200000", default=200000
+    )
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="volumes")
+    chapters = relationship(
+        "Chapter",
+        back_populates="volume",
+        cascade="all, delete-orphan",
+        order_by="Chapter.chapter_idx",
+    )
+
+
+class Chapter(Base):
+    __tablename__ = "chapters"
+    __table_args__ = (
+        # a1001917: context_pack windows chapters by
+        # (volume_id, chapter_idx range); the volume_id FK had no index.
+        Index("ix_chapters_volume_chapter_idx", "volume_id", "chapter_idx"),
+        # a1001917: partial index for the recent-summaries query
+        # (summary present + global_idx ordering).
+        Index(
+            "ix_chapters_global_idx_summarized",
+            "global_idx",
+            postgresql_where=text(
+                "summary IS NOT NULL AND summary <> '' AND global_idx IS NOT NULL"
+            ),
+        ),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    volume_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("volumes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title = Column(String(500), nullable=False)
+    chapter_idx = Column(Integer, nullable=False)
+    # Book-global 1-based chapter index. ``chapter_idx`` stays volume-local
+    # (user-visible numbering restarts each volume); ``global_idx`` is the
+    # canonical monotonic axis the memory subsystem queries on (extraction
+    # markers, character_states/character_locations.chapter_start, timeline
+    # anchors, strand tracker). The historical initialization below counts
+    # chapters in earlier volumes; readers use this persisted value and must
+    # reject unknown/ambiguous positions instead of recomputing the count.
+    # Structural application writes finalize the complete project's order via
+    # chapter_order.reindex_chapter_structure. The old insert listener remains
+    # a compatibility initializer for direct ORM callers, not a read fallback.
+    global_idx = Column(Integer, nullable=True, index=True)
+    outline_json = Column(JSON, default=dict)
+    content_text = Column(Text, default="")
+    # Maintained by the a1001949 database trigger, including direct SQL writes.
+    # NULL is unknown (e.g. an unmigrated fixture), never a trusted fingerprint.
+    content_hash = Column(String(64), nullable=True)
+    word_count = Column(Integer, default=0)
+    status = Column(String(20), default="draft")
+    summary = Column(Text)
+    # NULL means legacy/unverified; binds source title/body and summary output.
+    summary_source_hash = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    target_word_count = Column(
+        Integer,
+        nullable=False,
+        server_default=str(CHAPTER_DEFAULT_WORD_COUNT),
+        default=CHAPTER_DEFAULT_WORD_COUNT,
+    )
+
+    volume = relationship("Volume", back_populates="chapters")
+    versions = relationship(
+        "ChapterVersion",
+        back_populates="chapter",
+        cascade="all, delete-orphan",
+        order_by="ChapterVersion.created_at",
+    )
+    evaluations = relationship(
+        "ChapterEvaluation",
+        back_populates="chapter",
+        cascade="all, delete-orphan",
+        order_by="ChapterEvaluation.created_at",
+    )
+
+
+@event.listens_for(Chapter, "before_insert")
+def _set_chapter_global_idx(mapper, connection, target) -> None:
+    """Compatibility initializer before structural services finalize book order.
+
+    All chapter-creation sites (api/chapters.py, api/volumes.py) go through
+    an ORM ``session.add`` flush, so this listener keeps ``global_idx``
+    initialized for legacy direct ORM callers. Chapters of the same
+    volume don't count toward each other's base (strict ``volume_idx <``),
+    so callers must finalize the whole book with the structural write service.
+
+    On an initialization error the column is left NULL. Generation readers
+    reject unknown positions; they do not recompute a potentially different
+    count after deletion/reordering. Chapter creation still preserves the row.
+    """
+    if target.global_idx is not None:
+        return
+    if target.volume_id is None or target.chapter_idx is None:
+        return
+    try:
+        vol = Volume.__table__
+        ch = Chapter.__table__
+        project_id_sq = (
+            select(vol.c.project_id)
+            .where(vol.c.id == target.volume_id)
+            .scalar_subquery()
+        )
+        volume_idx_sq = (
+            select(vol.c.volume_idx)
+            .where(vol.c.id == target.volume_id)
+            .scalar_subquery()
+        )
+        base = connection.execute(
+            select(func.count(ch.c.id))
+            .select_from(ch.join(vol, ch.c.volume_id == vol.c.id))
+            .where(
+                vol.c.project_id == project_id_sq,
+                vol.c.volume_idx < volume_idx_sq,
+            )
+        ).scalar()
+        target.global_idx = int(base or 0) + int(target.chapter_idx)
+    except Exception:  # pragma: no cover - defensive, see docstring
+        target.global_idx = None
+
+
+class Outline(Base):
+    __tablename__ = "outlines"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    level = Column(String(20), nullable=False)
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("outlines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    content_json = Column(JSON, default=dict)
+    version = Column(Integer, default=1)
+    is_confirmed = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="outlines")
+    parent_outline = relationship(
+        "Outline", remote_side="Outline.id", backref="children"
+    )
+
+
+class Character(Base):
+    __tablename__ = "characters"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    profile_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="characters")
+
+
+class WorldRule(Base):
+    __tablename__ = "world_rules"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category = Column(String(100), nullable=False)
+    rule_text = Column(Text, nullable=False)
+    # JSON sidecar used by the C4 cascade pipeline to record idempotent
+    # cascade revisions (see app/tasks/cascade.py:_handle_world_rule_target).
+    metadata_json = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="world_rules")
+
+
+class Location(Base):
+    __tablename__ = "locations"
+    __table_args__ = (UniqueConstraint('project_id', 'name', name='uq_locations_project_name'),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project", back_populates="locations")
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint('project_id', 'name', name='uq_organizations_project_name'),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterLocation(Base):
+    __tablename__ = "character_locations"
+    __table_args__ = (UniqueConstraint('project_id', 'character_id', 'location_id', 'chapter_start', name='uq_character_locations_key'),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("locations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_chapter_id = Column(UUID(as_uuid=True), nullable=True)
+    source_hash = Column(String(64), nullable=True)
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterOrganization(Base):
+    __tablename__ = "character_organizations"
+    __table_args__ = (UniqueConstraint('project_id', 'character_id', 'organization_id', 'chapter_start', name='uq_character_organizations_key'),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organization_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterState(Base):
+    __tablename__ = "character_states"
+    __table_args__ = (UniqueConstraint('project_id', 'character_id', 'source_chapter_id',
+                                       'status_digest', name='uq_character_states_source'),)
+    # 每角色每章可以有多条状态观测(PG 与图谱各一条、或同章两处位置),所以唯一键
+    # 不能是"每章一行";改成按内容摘要去重:同源重放仍幂等,同章两条不同观测可共存;
+    # status_digest 为空的历史行不受约束。
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_chapter_id = Column(UUID(as_uuid=True), nullable=True)
+    source_hash = Column(String(64), nullable=True)
+    source_mode = Column(String(32), nullable=True)
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=True)
+    status_digest = Column(String(64), nullable=True)
+    status_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class CharacterCognition(Base):
+    """Per-character knowledge ledger (Task 17 / Q3, QMAI character-cognition).
+
+    One row per (project, character). ``knows`` / ``does_not_know`` are lists
+    of short fact strings. The pseudo character ``character_name='__reader__'``
+    stores reader-known facts (only ``knows`` is used) so the
+    reader-knows-but-character-doesn't gap — the basis of dramatic irony /
+    suspense — can be tracked and guarded during evaluation.
+    """
+
+    __tablename__ = "character_cognitions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    character_name = Column(String(128), nullable=False)
+    knows = Column(JSON, default=list)
+    does_not_know = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "character_name", name="uq_character_cognitions_key"
+        ),
+    )
+
+
+class StyleStat(Base):
+    """Whole-book style statistics (C2 / F1, ainovel stylestat).
+
+    One row per project. ``stats_json`` is the deterministic output of
+    ``style_stat.compute_style_stats`` (tic frequencies, recent n-gram tics,
+    cross-chapter repeated sentences, ending/opening shape). Recomputed in the
+    background after a chapter is finalized; consumed both at generation time
+    (a "dampen your own tics" mirror block) and at evaluation time (raw numbers
+    for the LLM to adjudicate).
+
+    Adapted from voocel/ainovel-cli stylestat (design idea; wording our own).
+    """
+
+    __tablename__ = "style_stats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stats_json = Column(JSON, default=dict)
+    chapter_count = Column(Integer, default=0)
+    computed_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_style_stats_project"),
+    )
+
+
+class NarrativeCompass(Base):
+    """Per-project direction anchor + completion gate (C4 / F3, ainovel compass).
+
+    One row per project. ``ending_direction`` is the thematic terminus (one
+    sentence). ``open_threads`` is the live long-line ledger
+    (``[{thread, since_chapter, status}]``). ``estimated_scale`` is a *range*
+    (never a single number) so mid-book adjustment stays possible. Updated when
+    a new volume is planned; consumed by generation (don't drift off the
+    ending) and by the completion-readiness checklist.
+
+    Adapted from voocel/ainovel-cli compass (design idea; wording our own).
+    """
+
+    __tablename__ = "narrative_compass"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ending_direction = Column(Text, default="")
+    open_threads = Column(JSON, default=list)
+    estimated_scale = Column(JSON, default=dict)
+    last_updated = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_narrative_compass_project"),
+    )
+
+
+class CharacterAppearance(Base):
+    """Secondary-cast roster (C3 / F4, ainovel).
+
+    One row per (project, character_name). Tracks first/last appearance chapter
+    (book-global idx) and total appearance count, populated by the deterministic
+    recompute task. Used to remind generation to re-read a long-absent
+    character's last appearance, and as the "character last seen" signal for
+    deterministic related-chapter recall.
+
+    Separate table (not the Neo4j-projected ``characters``) so the write path is
+    pure PG, zero LLM, and never collides with entity materialization.
+    """
+
+    __tablename__ = "character_appearances"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    character_name = Column(String(128), nullable=False)
+    first_seen_chapter = Column(Integer, default=0)
+    last_seen_chapter = Column(Integer, default=0)
+    appearance_count = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "character_name", name="uq_character_appearances_key"
+        ),
+    )
+
+
+class CharacterMemoryCard(Base):
+    """Tier-2 memory card: short verbatim excerpt anchoring a character.
+
+    One row per (project, character, chapter, card_type). Excerpts are cut
+    deterministically from the chapter's full text by entity extraction
+    (zero extra LLM calls): the sentence-bounded window around the
+    character's first name occurrence in their first-seen chapter
+    (``card_type='first_appearance'``) and around the occurrence nearest
+    the chapter midpoint (``card_type='key_moment'``). ``global_idx`` is
+    the book-global chapter index. Re-extraction upserts (overwrites) the
+    same row; retention keeps at most ``MEMORY_CARDS_PER_CHARACTER`` cards
+    per character (first_appearance always survives).
+    """
+
+    __tablename__ = "character_memory_cards"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    character_name = Column(String(128), nullable=False)
+    global_idx = Column(Integer, nullable=False)
+    source_chapter_id = Column(UUID(as_uuid=True), nullable=True)
+    source_hash = Column(String(64), nullable=True)
+    excerpt = Column(Text, nullable=False)
+    card_type = Column(String(32), nullable=False, default="key_moment")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_character_memory_cards_source", "project_id", "source_chapter_id"),
+        Index(
+            "ix_character_memory_cards_lookup",
+            "project_id",
+            "character_name",
+            "global_idx",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "character_name",
+            "global_idx",
+            "card_type",
+            name="uq_character_memory_cards_key",
+        ),
+    )
+
+
+class ChapterStyleStat(Base):
+    """Per-chapter style-stat + appearance cache (incremental recompute, W14).
+
+    One row per non-empty chapter. ``stats_json`` is the output of
+    ``style_stat.compute_chapter_style_stats`` (tic counts, deduped sentences,
+    ending/opening shape facts); ``appearances_json`` is the alias-folded
+    ``character_roster.count_appearances`` mapping for that chapter's text.
+    ``source_updated_at`` mirrors ``chapters.updated_at`` at compute time so
+    the recompute task can detect stale rows without loading content_text.
+
+    The whole-book ``style_stats`` row and the ``character_appearances``
+    roster are aggregated from these rows, so an accepted chapter costs one
+    per-chapter recompute + a cheap aggregate instead of a full-book reload.
+    """
+
+    __tablename__ = "chapter_style_stats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    global_idx = Column(Integer, nullable=False, default=0)
+    stats_json = Column(JSON, default=dict)
+    appearances_json = Column(JSON, default=dict)
+    source_updated_at = Column(DateTime(timezone=True))
+    computed_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("chapter_id", name="uq_chapter_style_stats_chapter"),
+    )
+
+
+class StyleProfile(Base):
+    """A writing style profile that can be bound to a book/chapter/generation."""
+
+    __tablename__ = "style_profiles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, default="")
+    source_book = Column(String(500))
+    # PR-BOOK-PROFILE-BIND: 1:1 binding to a reference book
+    source_book_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reference_books.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Core style rules
+    rules_json = Column(JSON, default=list)         # [{rule, weight, category}]
+    anti_ai_rules = Column(JSON, default=list)      # [{pattern, replacement, autoRewrite}]
+    tone_keywords = Column(JSON, default=list)      # Style keyword tags
+    sample_passages = Column(JSON, default=list)    # Few-shot example passages
+
+    # Binding: library / default_global / book / chapter (legacy global = library)
+    bind_level = Column(String(20), default="library")
+    bind_target_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Status
+    is_active = Column(Integer, default=1)
+    config_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class LLMEndpoint(Base):
+    """A configured LLM API endpoint (user-managed from frontend)."""
+
+    __tablename__ = "llm_endpoints"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)  # User-friendly name, e.g. "Claude API", "Local Qwen", "Jina Embedding"
+    provider_type = Column(String(50), nullable=False)  # anthropic, openai, openai_compatible
+    base_url = Column(String(1000), default="")  # Only for openai_compatible
+    api_key = Column(String(500), default="")  # Encrypted in production
+    api_key_2 = Column(String(500), default="", nullable=True)  # PR-NVIDIA-MULTIKEY: optional second key, used for round-robin concurrency
+    default_model = Column(String(200), nullable=False)  # e.g. "claude-sonnet-4-20250514", "gpt-4o", "text-embedding-3-small"
+    # v1.4 — tiering label for routing matrix
+    tier = Column(String(20), nullable=False, default="standard")
+    enabled = Column(Integer, default=1)
+    last_test_ok = Column(Integer, default=0)
+    last_test_latency = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class Foreshadow(Base):
+    __tablename__ = "foreshadows"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type = Column(String(20), nullable=False)
+    description = Column(Text, nullable=False)
+    planted_chapter = Column(Integer, nullable=False)
+    resolve_conditions_json = Column(JSON, default=list)
+    resolution_blueprint_json = Column(JSON, default=dict)
+    narrative_proximity = Column(Float, default=0.0)
+    status = Column(String(20), default="planted")
+    resolved_chapter = Column(Integer, nullable=True)
+    # Origin marker: 'neo4j' = materialized from Neo4j (subject to deletion
+    # sync in entity_tasks), 'lifecycle' = PG-owned outline plans or
+    # author-confirmed prose clues. NULL = legacy/unknown, never deletion-synced.
+    source = Column(String(20), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class ForeshadowSourceLink(Base):
+    """Immutable author links (and unlinks) to exact saved chapter prose."""
+    __tablename__ = 'foreshadow_source_links'
+    __table_args__ = (
+        UniqueConstraint('project_id', 'foreshadow_id', 'revision', name='uq_foreshadow_source_link_revision'),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False)
+    # Historical identities deliberately survive clue/chapter deletion.
+    foreshadow_id = Column(UUID(as_uuid=True), nullable=False)
+    revision = Column(BigInteger, nullable=False)
+    previous_id = Column(UUID(as_uuid=True), nullable=True)
+    command_sha256 = Column(String(64), nullable=False)
+    operation = Column(String(12), nullable=False)
+    record_snapshot = Column(JSON, nullable=False)
+    record_sha256 = Column(String(64), nullable=False)
+    chapter_id = Column(UUID(as_uuid=True), nullable=True)
+    source_snapshot = Column(JSON, nullable=True)
+    source_sha256 = Column(String(64), nullable=True)
+    evidence = Column(Text, nullable=True)
+    evidence_start = Column(Integer, nullable=True)
+    evidence_end = Column(Integer, nullable=True)
+    note = Column(Text, nullable=False, default='')
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowWriteReceipt(Base):
+    """Bound author requests and final decisions; retries never replay an old edit."""
+    __tablename__ = 'foreshadow_write_receipts'
+    __table_args__ = (Index('ix_foreshadow_writes_project', 'project_id', 'created_at'),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False)
+    # Retained after the clue is deleted; a receipt must not recreate its source.
+    foreshadow_id = Column(UUID(as_uuid=True), nullable=False)
+    command_sha256 = Column(String(64), nullable=False)
+    operation = Column(String(16), nullable=False)
+    source = Column(String(20), nullable=False)
+    outcome = Column(String(12), nullable=False)
+    reason = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowReview(Base):
+    """Evidence and decisions retained for the lifetime of their project."""
+    __tablename__ = "foreshadow_reviews"
+    __table_args__ = (
+        UniqueConstraint("chapter_id", "foreshadow_id", "snapshot_sha256", name="uq_foreshadow_review_snapshot"),
+        Index("ix_foreshadow_reviews_project_status", "project_id", "status", "created_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    # Source IDs remain as historical identities after source deletion.
+    # Creation and author acceptance validate and lock live scoped sources.
+    chapter_id = Column(UUID(as_uuid=True), nullable=False)
+    foreshadow_id = Column(UUID(as_uuid=True), nullable=False)
+    snapshot_sha256 = Column(String(64), nullable=False)
+    source_snapshot = Column(JSON, nullable=False)
+    evidence = Column(Text, nullable=False)
+    evidence_start = Column(Integer, nullable=False)
+    evidence_end = Column(Integer, nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="pending", server_default="pending")
+    handled_at = Column(DateTime(timezone=True), nullable=True)
+    handled_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowConfirmationJob(Base):
+    """One immutable author intent; graph receipts settle uncertain writes."""
+    __tablename__ = 'foreshadow_confirmation_jobs'
+    __table_args__ = (Index('ix_foreshadow_confirmations_due', 'status', 'updated_at'),)
+    id = Column(UUID(as_uuid=True), ForeignKey('foreshadow_reviews.id', ondelete='CASCADE'), primary_key=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False)
+    requested_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    requested_by = Column(Text, nullable=True)
+    status = Column(String(24), nullable=False, default='pending', server_default='pending')
+    attempts = Column(Integer, nullable=False, default=0, server_default='0')
+    attempt_token = Column(UUID(as_uuid=True), nullable=True)
+    result_json = Column(JSON, nullable=True)
+    last_error = Column(String(128), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowReviewJob(Base):
+    """Durable review work from a committed source-outbox revision."""
+    __tablename__ = "foreshadow_review_jobs"
+    __table_args__ = (
+        UniqueConstraint("chapter_id", "source_revision", name="uq_foreshadow_review_job_revision"),
+        Index("ix_foreshadow_review_jobs_due", "status", "updated_at"),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    chapter_id = Column(UUID(as_uuid=True), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
+    source_revision = Column(BigInteger, nullable=False)
+    source_hash = Column(String(64), nullable=False)
+    source_json = Column(JSON, nullable=False)
+    status = Column(String(24), nullable=False, default="pending", server_default="pending")
+    attempt_token = Column(UUID(as_uuid=True), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    last_error = Column(String(128), nullable=True)
+    # NULL identifies older jobs that reviewed payoffs only. Zero is a real
+    # successful full-prose discovery with no candidates, never a failure.
+    discovery_count = Column(Integer, nullable=True)
+    rescan_discovery = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # The successful scan may be shared by several ordinary review jobs.
+    discovery_run_id = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowDiscoveryRun(Base):
+    """Immutable full-prose discovery receipt, including a successful empty result."""
+    __tablename__ = 'foreshadow_discovery_runs'
+    __table_args__ = (
+        UniqueConstraint('chapter_id', 'source_sha256', 'scan_revision', name='uq_foreshadow_discovery_scan'),
+        Index('ix_foreshadow_discovery_runs_project', 'project_id', 'created_at'),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False)
+    # Historical identities survive chapter/volume deletion.
+    chapter_id = Column(UUID(as_uuid=True), nullable=False)
+    source_sha256 = Column(String(64), nullable=False)
+    source_snapshot = Column(JSON, nullable=False)
+    # Zero preserves the identity of legacy/first scans. Explicit rescans use
+    # their durable review job's source revision, never a modified source hash.
+    scan_revision = Column(BigInteger, nullable=False, default=0, server_default='0')
+    model_name = Column(String(200), nullable=True)
+    candidate_count = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowDiscovery(Base):
+    """Unconfirmed clue evidence; only an author decision can create a Foreshadow."""
+    __tablename__ = 'foreshadow_discoveries'
+    __table_args__ = (Index('ix_foreshadow_discoveries_run_status', 'run_id', 'status', 'created_at'),)
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    run_id = Column(UUID(as_uuid=True), ForeignKey('foreshadow_discovery_runs.id', ondelete='CASCADE'), nullable=False)
+    description = Column(Text, nullable=False)
+    type = Column(String(20), nullable=False)
+    evidence = Column(Text, nullable=False)
+    evidence_start = Column(Integer, nullable=False)
+    evidence_end = Column(Integer, nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default='pending', server_default='pending')
+    # No FK: acknowledged retries must not recreate a deleted author record.
+    foreshadow_id = Column(UUID(as_uuid=True), nullable=True)
+    handled_at = Column(DateTime(timezone=True), nullable=True)
+    handled_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ForeshadowDiscoveryRunItem(Base):
+    """A complete scan list can reuse candidates without copying author decisions."""
+    __tablename__ = 'foreshadow_discovery_run_items'
+    __table_args__ = (
+        UniqueConstraint('run_id', 'position', name='uq_foreshadow_discovery_item_position'),
+        Index('ix_foreshadow_discovery_items_candidate', 'candidate_id'),
+    )
+    run_id = Column(UUID(as_uuid=True), ForeignKey('foreshadow_discovery_runs.id', ondelete='CASCADE'), primary_key=True)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey('foreshadow_discoveries.id', ondelete='CASCADE'), primary_key=True)
+    position = Column(Integer, nullable=False)
+    # This scan's explanation is not part of an earlier author decision.
+    reason = Column(Text, nullable=False)
+
+
+class ForeshadowReviewRequest(Base):
+    """A fixed author request survives chapter/job deletion; project purge clears it."""
+    __tablename__ = 'foreshadow_review_requests'
+    __table_args__ = (Index('ix_foreshadow_review_requests_project', 'project_id'),)
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False)
+    chapter_id = Column(UUID(as_uuid=True), nullable=False)
+    request_sha256 = Column(String(64), nullable=False)
+    job_id = Column(UUID(as_uuid=True), nullable=False)
+    rescan_discovery = Column(Boolean, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class VolumeSummary(Base):
+    __tablename__ = "volume_summaries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    volume_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("volumes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    summary_text = Column(Text, nullable=False)
+    source_manifest = Column(JSON, nullable=True)
+    source_hash = Column(String(64), nullable=True)
+    character_snapshot_json = Column(JSON, default=dict)
+    plot_progress_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+# =============================================================================
+# Phase 2: Knowledge Base & Style Learning
+# =============================================================================
+
+
+class BookSource(Base):
+    """Legado-compatible book source rule definition with health tracking."""
+
+    __tablename__ = "book_sources"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    source_url = Column(String(1000), nullable=False)
+    source_type = Column(Integer, default=0)  # 0=text
+    source_group = Column(String(200))
+    source_json = Column(JSON, nullable=False)  # full legado BookSource JSON
+    enabled = Column(Integer, default=1)
+    last_test_at = Column(DateTime(timezone=True))
+    last_test_ok = Column(Integer, default=0)
+    # Health & scoring
+    score = Column(Float, default=5.0)  # 0-10, auto-adjusted
+    success_count = Column(Integer, default=0)  # successful fetches
+    fail_count = Column(Integer, default=0)  # failed fetches
+    consecutive_fails = Column(Integer, default=0)  # consecutive failures (auto-disable at 5)
+    avg_quality = Column(Float, default=0.0)  # average content quality
+    total_books_fetched = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class ReferenceBook(Base):
+    """A reference novel imported for style learning."""
+
+    __tablename__ = "reference_books"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(500), nullable=False)
+    author = Column(String(200))
+    source = Column(String(50), nullable=False)  # crawler, upload_txt, upload_epub, upload_html, api
+    source_detail = Column(String(1000))  # URL or filename
+    total_chapters = Column(Integer, default=0)
+    total_words = Column(Integer, default=0)
+    status = Column(String(20), default="pending")  # pending, crawling, cleaning, extracting, ready, error
+    error_message = Column(Text)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    chunks = relationship("TextChunk", back_populates="book", cascade="all, delete-orphan")
+
+
+class TextChunk(Base):
+    """A text block from a reference book after cleaning and slicing."""
+
+    __tablename__ = "text_chunks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    book_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reference_books.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_idx = Column(Integer, nullable=False)
+    block_idx = Column(Integer, nullable=False)
+    chapter_title = Column(String(500))
+    content = Column(Text, nullable=False)
+    char_count = Column(Integer, nullable=False)
+    sequence_id = Column(Integer, nullable=False)  # global sequential ID within book
+    plot_extracted = Column(Integer, default=0)
+    style_extracted = Column(Integer, default=0)
+    style_features_json = Column(JSON, nullable=True)
+    plot_features_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    book = relationship("ReferenceBook", back_populates="chunks")
+
+
+class CrawlTask(Base):
+    """A crawling task for fetching novel content."""
+
+    __tablename__ = "crawl_tasks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    book_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reference_books.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id = Column(UUID(as_uuid=True), ForeignKey("book_sources.id"), nullable=True)
+    book_url = Column(String(1000), nullable=False)
+    total_chapters = Column(Integer, default=0)
+    completed_chapters = Column(Integer, default=0)
+    status = Column(String(20), default="pending")  # pending, running, paused, completed, error
+    error_message = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+# =============================================================================
+# Phase 3: Quality Evaluation & Version Control
+# =============================================================================
+
+
+class ChapterVersion(Base):
+    """A version node in the chapter version tree."""
+
+    __tablename__ = "chapter_versions"
+    __table_args__ = (
+        # a1001917: chapter_id FK was un-indexed; serves version listing,
+        # chapter CASCADE deletes, and keep-last-K retention selection.
+        Index("ix_chapter_versions_chapter_created", "chapter_id", "created_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapter_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    branch_name = Column(String(100), default="main")
+    content_text = Column(Text, nullable=False)
+    content_diff = Column(Text, default="")
+    word_count = Column(Integer, default=0)
+    is_active = Column(Integer, default=0)
+    source = Column(String(50), default="user_edit")  # ai_generation, user_edit, merge, branch
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    chapter = relationship("Chapter", back_populates="versions")
+    parent_version = relationship(
+        "ChapterVersion",
+        remote_side="ChapterVersion.id",
+        backref="children",
+    )
+
+
+class ChapterEvaluation(Base):
+    """Quality evaluation result for a chapter."""
+
+    __tablename__ = "chapter_evaluations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    plot_coherence = Column(Float, default=0.0)
+    character_consistency = Column(Float, default=0.0)
+    style_adherence = Column(Float, default=0.0)
+    narrative_pacing = Column(Float, default=0.0)
+    foreshadow_handling = Column(Float, default=0.0)
+    overall = Column(Float, default=0.0)
+    issues_json = Column(JSON, default=list)
+    source_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    chapter = relationship("Chapter", back_populates="evaluations")
+
+
+class FilterWord(Base):
+    """Configurable filter words for Anti-AI detection and style control."""
+
+    __tablename__ = "filter_words"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word = Column(String(100), nullable=False, unique=True)
+    category = Column(String(50), nullable=False)  # ai_trace, cliche, banned, custom
+    severity = Column(String(20), default="medium")  # low, medium, high
+    replacement = Column(String(200), default="")  # suggested replacement
+    source = Column(String(20), default="builtin")  # builtin, user, ai_detected
+    enabled = Column(Integer, default=1)
+    hit_count = Column(Integer, default=0)  # how many times detected
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+class EvaluateTask(Base):
+    """v1.5.0 C2 Step D: async evaluation task tracker.
+
+    Decouples the 30-90s evaluator LLM call from the request thread.
+    POST /api/evaluate/start inserts a row in 'pending' status and
+    enqueues a Celery task; GET /api/evaluate/tasks/{id} returns the
+    current status + result_json so the UI can poll without blocking.
+    """
+
+    __tablename__ = "evaluate_tasks"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 'pending' -> 'running' -> 'completed' | 'failed'
+    status = Column(String(20), nullable=False, default="pending")
+    # 0 = baseline eval; >=1 = post auto-revise round eval (C2 telemetry).
+    round_idx = Column(Integer, nullable=False, default=0)
+    caller = Column(String(100), nullable=False, default="")
+    # EvaluationResult.to_dict() snapshot once completed.
+    result_json = Column(JSON, nullable=True)
+    error_text = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    # Recovery scan rotation is independent of actual worker progress.
+    recovery_checked_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index(
+            'ix_evaluate_tasks_recovery_rotation',
+            func.coalesce(recovery_checked_at, created_at), id,
+            postgresql_where=status.in_(['pending', 'running']),
+        ),
+    )
+
+
+class Relationship(Base):
+    __tablename__ = "relationships"
+    __table_args__ = (UniqueConstraint('project_id', 'source_id', 'target_id', 'rel_type', name='uq_relationships_rel_key'),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rel_type = Column(String(50), nullable=False)
+    label = Column(String(200), default="")
+    note = Column(Text, default="")
+    sentiment = Column(String(20), default="neutral")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    # v0.9: relationship evolution across volumes
+    since_volume_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("volumes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    until_volume_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("volumes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    evolution_json = Column(JSON, default=list)  # [{volume_id, label, sentiment, note}]
+
+
+class ChapterVariant(Base):
+    """BVSR candidate draft for a chapter (v1.0).
+
+    One row per N-draft run. ``is_winner`` flags the variant that critic picked.
+    ``selected_by_user`` means the author later manually overrode the winner.
+    """
+
+    __tablename__ = "chapter_variants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chapter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("generation_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    variant_idx = Column(Integer, nullable=False)
+    content_text = Column(Text, nullable=False)
+    word_count = Column(Integer, default=0)
+    score = Column(Float, nullable=True)
+    hard_count = Column(Integer, default=0)
+    soft_count = Column(Integer, default=0)
+    ai_trap_count = Column(Integer, default=0)
+    critic_report_json = Column(JSON, default=dict)
+    is_winner = Column(Boolean, default=False)
+    selected_by_user = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)

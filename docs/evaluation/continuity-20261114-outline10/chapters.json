@@ -1,0 +1,384 @@
+[
+  {
+    "index": 1,
+    "status": "resumed",
+    "chars": 3071
+  },
+  {
+    "index": 2,
+    "chapter_id": "fd00fa09-c44e-4342-aedb-9b88b70a011e",
+    "status": "ok",
+    "chars_raw": 954,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 954
+    },
+    "chars": 954,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "缝纫铺内的催租与盘算",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 12.9,
+    "summary_written": true,
+    "summary_chars": 182,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "978ec121-10dd-454a-b68b-2320d193ae86",
+    "status": "ok",
+    "chars_raw": 1032,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1032
+    },
+    "chars": 1032,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺的账款与抉择",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 19.3,
+    "summary_written": true,
+    "summary_chars": 130,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "5b1ca810-d628-45cb-9bab-d5b95c56eeda",
+    "status": "ok",
+    "chars_raw": 1241,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1241
+    },
+    "chars": 1241,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 16.7,
+    "summary_written": true,
+    "summary_chars": 104,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "65c0ffb0-33bc-4b0d-8fde-c85b70de5f70",
+    "status": "ok",
+    "chars_raw": 1836,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1836
+    },
+    "chars": 1836,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第五章 袋子里的东西",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 33.9,
+    "summary_written": true,
+    "summary_chars": 152,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "3a7cff93-4996-45df-9143-3e81e10a134e",
+    "status": "ok",
+    "chars_raw": 1082,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1082
+    },
+    "chars": 1082,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "老陈的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 20.1,
+    "summary_written": true,
+    "summary_chars": 128,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "748d67ec-b33a-46b8-9235-0c89fd12b1b8",
+    "status": "ok",
+    "chars_raw": 1036,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1036
+    },
+    "chars": 1036,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第七章 铁盒里的顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.8,
+    "summary_written": true,
+    "summary_chars": 139,
+    "entity_error": "ConstraintError: {neo4j_code: Neo.ClientError.Schema.ConstraintValidationFailed} {message: Relationship(91) already exists with type `AT_LOCATION` and properties `project_id` = '4e77682e-c924-4445-9d74-e91ed5023892', ",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "cedaca7e-9763-444a-8337-715bb145bf14",
+    "status": "ok",
+    "chars_raw": 1489,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1489
+    },
+    "chars": 1489,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "校服账款与信件",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 31.8,
+    "summary_written": true,
+    "summary_chars": 118,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "85f6103f-9fcf-4203-a5a2-fa92a3fe147c",
+    "status": "ok",
+    "chars_raw": 1184,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1184
+    },
+    "chars": 1184,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "中秋前的清算",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 16.5,
+    "summary_written": true,
+    "summary_chars": 115,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "025a539b-972d-4dc1-ba66-49055e99c21b",
+    "status": "ok",
+    "chars_raw": 1394,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1394
+    },
+    "chars": 1394,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "最后一班渡船",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 30.0,
+    "summary_written": true,
+    "summary_chars": 90,
+    "entity_error": "ConstraintError: {neo4j_code: Neo.ClientError.Schema.ConstraintValidationFailed} {message: Relationship(91) already exists with type `AT_LOCATION` and properties `project_id` = '4e77682e-c924-4445-9d74-e91ed5023892', ",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "plot_coherence": 0.0,
+  "character_consistency": 0.0,
+  "style_adherence": 0.0,
+  "narrative_pacing": 0.0,
+  "foreshadow_handling": 0.0,
+  "overall": 0.0,
+  "issues": [
+    {
+      "dimension": "system",
+      "location": 0,
+      "description": "Evaluation error: All tier-fallback attempts failed for task 'chapter_evaluation': APIStatusError:Error code: 410 - {'type': 'about:blank', 'title': 'Gone', 'status': 410, 'detail': \"The model 'deepseek-ai/deepseek-v4-flash' has reached its end of life on 20",
+      "suggestion": "Check model configuration and retry"
+    }
+  ],
+  "parse_failed": true
+}

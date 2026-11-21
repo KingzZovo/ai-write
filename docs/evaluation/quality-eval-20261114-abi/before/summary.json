@@ -1,0 +1,160 @@
+{
+  "by_genre": {
+    "东方幻想": {
+      "cases": 4,
+      "chars": 5382,
+      "counts": {
+        "fact_violation": 7,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 2,
+        "pov_breach": 1,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 3,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 2,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "悬疑": {
+      "cases": 4,
+      "chars": 4680,
+      "counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 0,
+        "rule_recitation": 2
+      },
+      "hard_counts": {
+        "fact_violation": 4,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "现实生活": {
+      "cases": 4,
+      "chars": 7286,
+      "counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 8,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "by_variant": {
+    "chapter_single_shot": {
+      "cases": 6,
+      "chars": 8589,
+      "counts": {
+        "fact_violation": 10,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 1
+      },
+      "hard_counts": {
+        "fact_violation": 6,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "scene_writer": {
+      "cases": 6,
+      "chars": 8759,
+      "counts": {
+        "fact_violation": 15,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 8,
+        "pov_breach": 1,
+        "rule_recitation": 1
+      },
+      "hard_counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 8,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "calls": 12,
+  "cases": 6,
+  "chars": 17348,
+  "contract": {
+    "blueprint_version": "v4.14",
+    "narrative_contract_version": "world_logic_contract_v4_15_scene_planning",
+    "scene_writer_system_sha256": "806255474cc40ff3",
+    "writer_contract_sha256": "6cc3311ac6f3baf0"
+  },
+  "counts": {
+    "fact_violation": 25,
+    "instruction_leak": 0,
+    "metaphor_stack": 1,
+    "outcome_unfulfilled": 13,
+    "pov_breach": 1,
+    "rule_recitation": 2
+  },
+  "elapsed_seconds": 135.717,
+  "failed": 0,
+  "hard_counts": {
+    "fact_violation": 15,
+    "instruction_leak": 0,
+    "metaphor_stack": 0,
+    "outcome_unfulfilled": 13,
+    "pov_breach": 0,
+    "rule_recitation": 0
+  },
+  "returned": 12,
+  "tokens": {
+    "input": 6647,
+    "output": 4334
+  },
+  "unmet": {
+    "must_keep:deadline": 1,
+    "must_keep:debt_total": 1,
+    "must_keep:father_gone": 1,
+    "must_keep:no_neighbor_loan": 1,
+    "must_keep:price": 1,
+    "must_keep:sister_ignorant": 2,
+    "must_keep:ten_breaths": 1,
+    "must_keep:tonight_seal": 1,
+    "must_keep:two_days": 1,
+    "must_keep:wet_shoe": 2,
+    "required_outcomes:brother_boards": 2,
+    "required_outcomes:concrete_action": 1,
+    "required_outcomes:handles_waiter": 1,
+    "required_outcomes:judgment_changes": 2,
+    "required_outcomes:next_morning": 1,
+    "required_outcomes:plan_made": 1,
+    "required_outcomes:price_named": 1,
+    "required_outcomes:reads_letter": 1,
+    "required_outcomes:shortfall_declared": 1,
+    "required_outcomes:sister_stays": 1
+  }
+}

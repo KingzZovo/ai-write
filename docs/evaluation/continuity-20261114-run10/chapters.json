@@ -1,0 +1,293 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "64753f08-fc8a-4f7b-a66b-f97ecfc09c07",
+    "status": "ok",
+    "chars": 900,
+    "guard": "ok",
+    "elapsed_seconds": 14.1,
+    "summary_written": true,
+    "summary_chars": 156,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "7b05d9a5-ae27-48de-bd9d-1ce5efb30c02",
+    "status": "ok",
+    "chars": 749,
+    "guard": "ok",
+    "elapsed_seconds": 24.8,
+    "summary_written": true,
+    "summary_chars": 107,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "9f7b1034-1d5e-40ae-a689-db1222763b4e",
+    "status": "ok",
+    "chars": 740,
+    "guard": "ok",
+    "elapsed_seconds": 49.3,
+    "summary_written": true,
+    "summary_chars": 110,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "5c1bf346-65c8-4b35-9278-71553abf7d5e",
+    "status": "ok",
+    "chars": 920,
+    "guard": "ok",
+    "elapsed_seconds": 21.2,
+    "summary_written": true,
+    "summary_chars": 128,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "1ec8da93-8753-4e1b-b5ea-e4a3ecd9e396",
+    "status": "ok",
+    "chars": 751,
+    "guard": "ok",
+    "elapsed_seconds": 14.1,
+    "summary_written": true,
+    "summary_chars": 105,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "fbee1933-5827-4556-a00b-bd5868b07ef7",
+    "status": "ok",
+    "chars": 574,
+    "guard": "ok",
+    "elapsed_seconds": 17.8,
+    "summary_written": true,
+    "summary_chars": 114,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "71788dfe-b085-4af9-b6c9-751320c69020",
+    "status": "ok",
+    "chars": 593,
+    "guard": "ok",
+    "elapsed_seconds": 20.6,
+    "summary_written": true,
+    "summary_chars": 118,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "4ceb9335-b755-4acc-a909-e17d66095cf7",
+    "status": "ok",
+    "chars": 598,
+    "guard": "ok",
+    "elapsed_seconds": 45.8,
+    "summary_written": true,
+    "summary_chars": 110,
+    "entity_error": "EntityExtractionError: location_changes[0].evidence无法在原文逐字定位",
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 2,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "de05335b-9f91-4f80-88ec-ac1f96ef8f03",
+    "status": "ok",
+    "chars": 745,
+    "guard": "ok",
+    "elapsed_seconds": 18.6,
+    "summary_written": true,
+    "summary_chars": 124,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "d2d3a8ce-95ba-4461-a64c-275d1abd1dc7",
+    "status": "ok",
+    "chars": 1598,
+    "guard": "ok",
+    "elapsed_seconds": 21.6,
+    "summary_written": true,
+    "summary_chars": 144,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

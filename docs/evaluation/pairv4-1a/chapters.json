@@ -1,0 +1,39 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "eb9f748a-a8eb-4ce5-a1ec-1313af535bd4",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 2,
+    "chapter_id": "42cc6b32-e925-4e33-a5ed-68c60302a27b",
+    "status": "truncated",
+    "chars_raw": 987,
+    "guard": "truncated",
+    "chars": 987,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 50.6
+  },
+  {
+    "index": 3,
+    "chapter_id": "bcc93e94-27e1-4088-8848-4167fb9cb77f",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  }
+]

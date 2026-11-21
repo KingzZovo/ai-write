@@ -1,0 +1,132 @@
+'use client'
+
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { apiFetch } from '@/lib/api'
+
+interface TokenStats {
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalTokens: number
+  cacheHits: number
+  cacheMisses: number
+  cacheHitRate: number
+}
+
+// PR-FIX-TOKEN-DASH-SHAPE: backend /api/stats/tokens returns nested snake_case
+// (token_usage.{total_input_tokens,...} + cache_stats.{hits,misses,hit_rate}).
+// We map it into the flat camelCase shape the rest of the component uses.
+interface TokenStatsRaw {
+  token_usage?: {
+    total_input_tokens?: number
+    total_output_tokens?: number
+    total_tokens?: number
+    total_calls?: number
+  }
+  cache_stats?: {
+    hits?: number
+    misses?: number
+    hit_rate?: number
+  }
+}
+
+export function TokenDashboard() {
+  const [stats, setStats] = useState<TokenStats | null>(null)
+  const [loading, setLoading] = useState(false)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const raw = await apiFetch<TokenStatsRaw>('/api/stats/tokens')
+      const tu = raw?.token_usage ?? {}
+      const cs = raw?.cache_stats ?? {}
+      setStats({
+        totalInputTokens: Number(tu.total_input_tokens ?? 0),
+        totalOutputTokens: Number(tu.total_output_tokens ?? 0),
+        totalTokens: Number(tu.total_tokens ?? 0),
+        cacheHits: Number(cs.hits ?? 0),
+        cacheMisses: Number(cs.misses ?? 0),
+        cacheHitRate: Number(cs.hit_rate ?? 0),
+      })
+    } catch {
+      // ignore - stats endpoint may not be available
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchStats()
+
+    intervalRef.current = setInterval(fetchStats, 30000)
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+    }
+  }, [fetchStats])
+
+  const formatNumber = (n: number): string => {
+    return (n || 0).toLocaleString()
+  }
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Token 用量</h3>
+
+      {loading && !stats ? (
+        <p className="text-xs text-gray-400">加载中...</p>
+      ) : stats ? (
+        <div className="space-y-2">
+          {/* Token counts */}
+          <div className="grid grid-cols-3 gap-1.5">
+            <div className="bg-gray-50 rounded p-1.5 text-center">
+              <div className="text-xs font-medium text-gray-800">
+                {formatNumber(stats.totalInputTokens)}
+              </div>
+              <div className="text-[10px] text-gray-400">输入</div>
+            </div>
+            <div className="bg-gray-50 rounded p-1.5 text-center">
+              <div className="text-xs font-medium text-gray-800">
+                {formatNumber(stats.totalOutputTokens)}
+              </div>
+              <div className="text-[10px] text-gray-400">输出</div>
+            </div>
+            <div className="bg-gray-50 rounded p-1.5 text-center">
+              <div className="text-xs font-medium text-gray-800">
+                {formatNumber(stats.totalTokens)}
+              </div>
+              <div className="text-[10px] text-gray-400">总计</div>
+            </div>
+          </div>
+
+          {/* Cache hit rate */}
+          <div>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[10px] text-gray-500">缓存命中率</span>
+              <span className="text-[10px] font-medium text-gray-700">
+                {(stats.cacheHitRate * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all"
+                style={{ width: `${Math.min(stats.cacheHitRate * 100, 100)}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-0.5">
+              <span className="text-[10px] text-gray-400">
+                命中: {formatNumber(stats.cacheHits)}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                未命中: {formatNumber(stats.cacheMisses)}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400">暂无 Token 数据。</p>
+      )}
+    </div>
+  )
+}

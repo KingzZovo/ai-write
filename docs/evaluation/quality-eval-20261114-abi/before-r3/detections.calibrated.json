@@ -1,0 +1,5482 @@
+{
+  "fantasy_bell-chapter_single_shot-r1": {
+    "case_id": "fantasy_bell",
+    "chars": 1492,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 1,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "pov_breach",
+        "detail": "镜头在限知视角之外切换(与此同时)",
+        "detector": "omniscient_camera_shift",
+        "offset": 609,
+        "quote": "与此同时，一道晶莹的水流凭空自林叶脚前凝结，如同一条笔直的透明石桥，横亘在狂暴的浊浪之上，直直延伸至河心桥墩的边缘。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(隔空)",
+        "detector": "mechanism_explained",
+        "offset": 438,
+        "quote": "不能飞，不能隔空抓人，更无法再次施术。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 28.0,
+      "chars": 1492,
+      "de_per_1000": 45.58,
+      "dialogue_ratio": 0.035,
+      "max_sentence_len": 62,
+      "min_sentence_len": 1,
+      "paragraphs": 19,
+      "sentences": 52,
+      "simile_per_1000": 4.69
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得增添河底敌人或怪物",
+          "detail": "ok",
+          "id": "monster",
+          "ok": true
+        },
+        {
+          "desc": "不得新增可用道具",
+          "detail": "ok",
+          "id": "new_prop",
+          "ok": true
+        },
+        {
+          "desc": "不得飞行或隔空搬运",
+          "detail": "ok",
+          "id": "flight",
+          "ok": true
+        },
+        {
+          "desc": "不得插入身世揭晓",
+          "detail": "ok",
+          "id": "origin_reveal",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "铜铃烧毁且不可恢复",
+          "detail": "ok",
+          "id": "bell_destroyed",
+          "ok": true
+        },
+        {
+          "desc": "许舟腿受伤不能游泳",
+          "detail": "ok",
+          "id": "leg_injured",
+          "ok": true
+        },
+        {
+          "desc": "水路只维持十次呼吸",
+          "detail": "ok",
+          "id": "ten_breaths",
+          "ok": true
+        },
+        {
+          "desc": "水路只够一个人走",
+          "detail": "ok",
+          "id": "one_person_wide",
+          "ok": true
+        },
+        {
+          "desc": "两人同行三年",
+          "detail": "ok",
+          "id": "three_years",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "林叶做出用掉铜铃的具体决定",
+          "detail": "ok",
+          "id": "decision",
+          "ok": true
+        },
+        {
+          "desc": "沿水路走到桥墩",
+          "detail": "ok",
+          "id": "walks_to_pier",
+          "ok": true
+        },
+        {
+          "desc": "把许舟背回近岸",
+          "detail": "ok",
+          "id": "carries_back",
+          "ok": true
+        },
+        {
+          "desc": "两人安全上岸",
+          "detail": "ok",
+          "id": "both_ashore",
+          "ok": true
+        },
+        {
+          "desc": "结尾写出两人对失去铜铃的具体反应",
+          "detail": "ok",
+          "id": "loss_reaction",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_bell-chapter_single_shot-r2": {
+    "case_id": "fantasy_bell",
+    "chars": 944,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 21.62,
+      "chars": 944,
+      "de_per_1000": 42.37,
+      "dialogue_ratio": 0.02,
+      "max_sentence_len": 48,
+      "min_sentence_len": 6,
+      "paragraphs": 19,
+      "sentences": 42,
+      "simile_per_1000": 2.12
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得增添河底敌人或怪物",
+          "detail": "ok",
+          "id": "monster",
+          "ok": true
+        },
+        {
+          "desc": "不得新增可用道具",
+          "detail": "ok",
+          "id": "new_prop",
+          "ok": true
+        },
+        {
+          "desc": "不得飞行或隔空搬运",
+          "detail": "ok",
+          "id": "flight",
+          "ok": true
+        },
+        {
+          "desc": "不得插入身世揭晓",
+          "detail": "ok",
+          "id": "origin_reveal",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "铜铃烧毁且不可恢复",
+          "detail": "ok",
+          "id": "bell_destroyed",
+          "ok": true
+        },
+        {
+          "desc": "许舟腿受伤不能游泳",
+          "detail": "ok",
+          "id": "leg_injured",
+          "ok": true
+        },
+        {
+          "desc": "水路只维持十次呼吸",
+          "detail": "ok",
+          "id": "ten_breaths",
+          "ok": true
+        },
+        {
+          "desc": "水路只够一个人走",
+          "detail": "ok",
+          "id": "one_person_wide",
+          "ok": true
+        },
+        {
+          "desc": "两人同行三年",
+          "detail": "ok",
+          "id": "three_years",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "林叶做出用掉铜铃的具体决定",
+          "detail": "ok",
+          "id": "decision",
+          "ok": true
+        },
+        {
+          "desc": "沿水路走到桥墩",
+          "detail": "ok",
+          "id": "walks_to_pier",
+          "ok": true
+        },
+        {
+          "desc": "把许舟背回近岸",
+          "detail": "ok",
+          "id": "carries_back",
+          "ok": true
+        },
+        {
+          "desc": "两人安全上岸",
+          "detail": "ok",
+          "id": "both_ashore",
+          "ok": true
+        },
+        {
+          "desc": "结尾写出两人对失去铜铃的具体反应",
+          "detail": "ok",
+          "id": "loss_reaction",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_bell-chapter_single_shot-r3": {
+    "case_id": "fantasy_bell",
+    "chars": 1369,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(水路只够一个人走):未出现任一项:只够一个人、只容一个人、一个人宽、仅容一人、仅容、一人宽、尺许、窄得",
+        "detector": "must_keep:one_person_wide",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(水路只维持十次呼吸):未出现任一项:十次呼吸、十口气、十息",
+        "detector": "must_keep:ten_breaths",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 1,
+      "ai_phrases": {
+        "眼中闪过一丝": 1
+      },
+      "avg_sentence_len": 31.74,
+      "chars": 1369,
+      "de_per_1000": 47.48,
+      "dialogue_ratio": 0.045,
+      "max_sentence_len": 74,
+      "min_sentence_len": 1,
+      "paragraphs": 19,
+      "sentences": 42,
+      "simile_per_1000": 2.92
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得增添河底敌人或怪物",
+          "detail": "ok",
+          "id": "monster",
+          "ok": true
+        },
+        {
+          "desc": "不得新增可用道具",
+          "detail": "ok",
+          "id": "new_prop",
+          "ok": true
+        },
+        {
+          "desc": "不得飞行或隔空搬运",
+          "detail": "ok",
+          "id": "flight",
+          "ok": true
+        },
+        {
+          "desc": "不得插入身世揭晓",
+          "detail": "ok",
+          "id": "origin_reveal",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "铜铃烧毁且不可恢复",
+          "detail": "ok",
+          "id": "bell_destroyed",
+          "ok": true
+        },
+        {
+          "desc": "许舟腿受伤不能游泳",
+          "detail": "ok",
+          "id": "leg_injured",
+          "ok": true
+        },
+        {
+          "desc": "水路只维持十次呼吸",
+          "detail": "未出现任一项:十次呼吸、十口气、十息",
+          "id": "ten_breaths",
+          "ok": false
+        },
+        {
+          "desc": "水路只够一个人走",
+          "detail": "未出现任一项:只够一个人、只容一个人、一个人宽、仅容一人、仅容、一人宽、尺许、窄得",
+          "id": "one_person_wide",
+          "ok": false
+        },
+        {
+          "desc": "两人同行三年",
+          "detail": "ok",
+          "id": "three_years",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "林叶做出用掉铜铃的具体决定",
+          "detail": "ok",
+          "id": "decision",
+          "ok": true
+        },
+        {
+          "desc": "沿水路走到桥墩",
+          "detail": "ok",
+          "id": "walks_to_pier",
+          "ok": true
+        },
+        {
+          "desc": "把许舟背回近岸",
+          "detail": "ok",
+          "id": "carries_back",
+          "ok": true
+        },
+        {
+          "desc": "两人安全上岸",
+          "detail": "ok",
+          "id": "both_ashore",
+          "ok": true
+        },
+        {
+          "desc": "结尾写出两人对失去铜铃的具体反应",
+          "detail": "ok",
+          "id": "loss_reaction",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_bell-scene_writer-r1": {
+    "case_id": "fantasy_bell",
+    "chars": 1153,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(水路只够一个人走):未出现任一项:只够一个人、只容一个人、一个人宽、仅容一人、仅容、一人宽、尺许、窄得",
+        "detector": "must_keep:one_person_wide",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 27.15,
+      "chars": 1153,
+      "de_per_1000": 46.83,
+      "dialogue_ratio": 0.06,
+      "max_sentence_len": 73,
+      "min_sentence_len": 1,
+      "paragraphs": 21,
+      "sentences": 41,
+      "simile_per_1000": 4.34
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得增添河底敌人或怪物",
+          "detail": "ok",
+          "id": "monster",
+          "ok": true
+        },
+        {
+          "desc": "不得新增可用道具",
+          "detail": "ok",
+          "id": "new_prop",
+          "ok": true
+        },
+        {
+          "desc": "不得飞行或隔空搬运",
+          "detail": "ok",
+          "id": "flight",
+          "ok": true
+        },
+        {
+          "desc": "不得插入身世揭晓",
+          "detail": "ok",
+          "id": "origin_reveal",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "铜铃烧毁且不可恢复",
+          "detail": "ok",
+          "id": "bell_destroyed",
+          "ok": true
+        },
+        {
+          "desc": "许舟腿受伤不能游泳",
+          "detail": "ok",
+          "id": "leg_injured",
+          "ok": true
+        },
+        {
+          "desc": "水路只维持十次呼吸",
+          "detail": "ok",
+          "id": "ten_breaths",
+          "ok": true
+        },
+        {
+          "desc": "水路只够一个人走",
+          "detail": "未出现任一项:只够一个人、只容一个人、一个人宽、仅容一人、仅容、一人宽、尺许、窄得",
+          "id": "one_person_wide",
+          "ok": false
+        },
+        {
+          "desc": "两人同行三年",
+          "detail": "ok",
+          "id": "three_years",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "林叶做出用掉铜铃的具体决定",
+          "detail": "ok",
+          "id": "decision",
+          "ok": true
+        },
+        {
+          "desc": "沿水路走到桥墩",
+          "detail": "ok",
+          "id": "walks_to_pier",
+          "ok": true
+        },
+        {
+          "desc": "把许舟背回近岸",
+          "detail": "ok",
+          "id": "carries_back",
+          "ok": true
+        },
+        {
+          "desc": "两人安全上岸",
+          "detail": "ok",
+          "id": "both_ashore",
+          "ok": true
+        },
+        {
+          "desc": "结尾写出两人对失去铜铃的具体反应",
+          "detail": "ok",
+          "id": "loss_reaction",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_bell-scene_writer-r2": {
+    "case_id": "fantasy_bell",
+    "chars": 784,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 33.3,
+      "chars": 784,
+      "de_per_1000": 49.74,
+      "dialogue_ratio": 0.034,
+      "max_sentence_len": 76,
+      "min_sentence_len": 5,
+      "paragraphs": 10,
+      "sentences": 23,
+      "simile_per_1000": 3.83
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得增添河底敌人或怪物",
+          "detail": "ok",
+          "id": "monster",
+          "ok": true
+        },
+        {
+          "desc": "不得新增可用道具",
+          "detail": "ok",
+          "id": "new_prop",
+          "ok": true
+        },
+        {
+          "desc": "不得飞行或隔空搬运",
+          "detail": "ok",
+          "id": "flight",
+          "ok": true
+        },
+        {
+          "desc": "不得插入身世揭晓",
+          "detail": "ok",
+          "id": "origin_reveal",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "铜铃烧毁且不可恢复",
+          "detail": "ok",
+          "id": "bell_destroyed",
+          "ok": true
+        },
+        {
+          "desc": "许舟腿受伤不能游泳",
+          "detail": "ok",
+          "id": "leg_injured",
+          "ok": true
+        },
+        {
+          "desc": "水路只维持十次呼吸",
+          "detail": "ok",
+          "id": "ten_breaths",
+          "ok": true
+        },
+        {
+          "desc": "水路只够一个人走",
+          "detail": "ok",
+          "id": "one_person_wide",
+          "ok": true
+        },
+        {
+          "desc": "两人同行三年",
+          "detail": "ok",
+          "id": "three_years",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "林叶做出用掉铜铃的具体决定",
+          "detail": "ok",
+          "id": "decision",
+          "ok": true
+        },
+        {
+          "desc": "沿水路走到桥墩",
+          "detail": "ok",
+          "id": "walks_to_pier",
+          "ok": true
+        },
+        {
+          "desc": "把许舟背回近岸",
+          "detail": "ok",
+          "id": "carries_back",
+          "ok": true
+        },
+        {
+          "desc": "两人安全上岸",
+          "detail": "ok",
+          "id": "both_ashore",
+          "ok": true
+        },
+        {
+          "desc": "结尾写出两人对失去铜铃的具体反应",
+          "detail": "ok",
+          "id": "loss_reaction",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_bell-scene_writer-r3": {
+    "case_id": "fantasy_bell",
+    "chars": 1144,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(铜铃烧毁且不可恢复):未出现任一项:烧毁、烧成、化灰、不能再响、只剩",
+        "detector": "must_keep:bell_destroyed",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(两人安全上岸):未出现任一项:上岸、岸边、上了岸",
+        "detector": "outcome:both_ashore",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 29.95,
+      "chars": 1144,
+      "de_per_1000": 50.7,
+      "dialogue_ratio": 0.016,
+      "max_sentence_len": 66,
+      "min_sentence_len": 5,
+      "paragraphs": 19,
+      "sentences": 37,
+      "simile_per_1000": 2.62
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得增添河底敌人或怪物",
+          "detail": "ok",
+          "id": "monster",
+          "ok": true
+        },
+        {
+          "desc": "不得新增可用道具",
+          "detail": "ok",
+          "id": "new_prop",
+          "ok": true
+        },
+        {
+          "desc": "不得飞行或隔空搬运",
+          "detail": "ok",
+          "id": "flight",
+          "ok": true
+        },
+        {
+          "desc": "不得插入身世揭晓",
+          "detail": "ok",
+          "id": "origin_reveal",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "铜铃烧毁且不可恢复",
+          "detail": "未出现任一项:烧毁、烧成、化灰、不能再响、只剩",
+          "id": "bell_destroyed",
+          "ok": false
+        },
+        {
+          "desc": "许舟腿受伤不能游泳",
+          "detail": "ok",
+          "id": "leg_injured",
+          "ok": true
+        },
+        {
+          "desc": "水路只维持十次呼吸",
+          "detail": "ok",
+          "id": "ten_breaths",
+          "ok": true
+        },
+        {
+          "desc": "水路只够一个人走",
+          "detail": "ok",
+          "id": "one_person_wide",
+          "ok": true
+        },
+        {
+          "desc": "两人同行三年",
+          "detail": "ok",
+          "id": "three_years",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "林叶做出用掉铜铃的具体决定",
+          "detail": "ok",
+          "id": "decision",
+          "ok": true
+        },
+        {
+          "desc": "沿水路走到桥墩",
+          "detail": "ok",
+          "id": "walks_to_pier",
+          "ok": true
+        },
+        {
+          "desc": "把许舟背回近岸",
+          "detail": "ok",
+          "id": "carries_back",
+          "ok": true
+        },
+        {
+          "desc": "两人安全上岸",
+          "detail": "未出现任一项:上岸、岸边、上了岸",
+          "id": "both_ashore",
+          "ok": false
+        },
+        {
+          "desc": "结尾写出两人对失去铜铃的具体反应",
+          "detail": "ok",
+          "id": "loss_reaction",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_herb-chapter_single_shot-r1": {
+    "case_id": "fantasy_herb",
+    "chars": 1646,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 2
+    },
+    "findings": [
+      {
+        "category": "rule_recitation",
+        "detail": "用定义句式把设定讲一遍:走地根、封坛、根须",
+        "detector": "mechanism_exposition",
+        "offset": 369,
+        "quote": "柳先生临走前特意嘱咐过，这株走地根须根活泛，若不在今夜封坛，明日天亮就会顺着地缝钻走，不知去向。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(走地根)",
+        "detector": "mechanism_explained",
+        "offset": 911,
+        "quote": "阿棠把剩下的醋倒进粗陶坛里，又拿起旁边的陶罐，舀了半罐清水兑进去——她知道这法子瞒不过柳先生，也未必能彻底稳住走地根，但至少坛底有了水汽，根须一时半会儿钻不透陶壁。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 35.04,
+      "chars": 1646,
+      "de_per_1000": 28.55,
+      "dialogue_ratio": 0.072,
+      "max_sentence_len": 89,
+      "min_sentence_len": 1,
+      "paragraphs": 18,
+      "sentences": 46,
+      "simile_per_1000": 1.22
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "柳先生不得当天赶回",
+          "detail": "ok",
+          "id": "master_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现另一坛醋或第三人送醋",
+          "detail": "ok",
+          "id": "third_jar",
+          "ok": true
+        },
+        {
+          "desc": "走地根不得自己留在原地不动",
+          "detail": "ok",
+          "id": "herb_stays",
+          "ok": true
+        },
+        {
+          "desc": "不得两全",
+          "detail": "ok",
+          "id": "both_saved",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "只剩半坛陈醋",
+          "detail": "ok",
+          "id": "half_jar",
+          "ok": true
+        },
+        {
+          "desc": "必须今夜封坛",
+          "detail": "ok",
+          "id": "tonight_seal",
+          "ok": true
+        },
+        {
+          "desc": "陈醋是三年陈",
+          "detail": "ok",
+          "id": "three_years_vin",
+          "ok": true
+        },
+        {
+          "desc": "柳先生出门未归",
+          "detail": "ok",
+          "id": "master_away",
+          "ok": true
+        },
+        {
+          "desc": "今日是第二日",
+          "detail": "ok",
+          "id": "two_days",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "阿棠发现醋只剩半坛且两处都要用",
+          "detail": "ok",
+          "id": "discovers_shortage",
+          "ok": true
+        },
+        {
+          "desc": "阿棠意识到两处不能同时满足",
+          "detail": "ok",
+          "id": "recognizes_conflict",
+          "ok": true
+        },
+        {
+          "desc": "阿棠做出明确选择并动手",
+          "detail": "ok",
+          "id": "makes_choice",
+          "ok": true
+        },
+        {
+          "desc": "写明后果:走地根的去向或产妇那边的情况",
+          "detail": "ok",
+          "id": "consequence",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代次日清晨的具体处境",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_herb-chapter_single_shot-r2": {
+    "case_id": "fantasy_herb",
+    "chars": 1304,
+    "counts": {
+      "fact_violation": 5,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '一坛',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 150,
+        "quote": "可偏偏封坛得用整整一坛醋，眼下库房里算来算去，陶缸见底，只剩下半坛。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 203,
+        "quote": "隔了两条巷子的张家汉子跌跌撞撞地跨进门槛，脸色煞白，一把抓住了柜台边缘：“阿棠姑娘！我媳妇从昨夜疼到这会儿，产婆说血一直止不住，急需你家的陈醋吊着命。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 474,
+        "quote": "张家汉子见她迟疑，扑通一声作势要跪：“人都要没了，算我求你！”",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 802,
+        "quote": "张家汉子千恩万谢地捧着药碗，跌撞着冲出了药铺。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 1176,
+        "quote": "张家汉子红着眼圈站在门外，手里端着个空药碗，一见阿棠便哽咽着躬身道：“多亏了你那半碗醋，总算把血止住了，大难不死，母子平安……昨个儿借你的醋，日后一定双倍还上。",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠做出明确选择并动手):未出现任一项:她选了、决定、拎起、拎着、提着、提起、端起、拿着、搬",
+        "detector": "outcome:makes_choice",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 32.56,
+      "chars": 1304,
+      "de_per_1000": 25.31,
+      "dialogue_ratio": 0.153,
+      "max_sentence_len": 80,
+      "min_sentence_len": 1,
+      "paragraphs": 18,
+      "sentences": 39,
+      "simile_per_1000": 0.0
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "柳先生不得当天赶回",
+          "detail": "ok",
+          "id": "master_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现另一坛醋或第三人送醋",
+          "detail": "ok",
+          "id": "third_jar",
+          "ok": true
+        },
+        {
+          "desc": "走地根不得自己留在原地不动",
+          "detail": "ok",
+          "id": "herb_stays",
+          "ok": true
+        },
+        {
+          "desc": "不得两全",
+          "detail": "ok",
+          "id": "both_saved",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "只剩半坛陈醋",
+          "detail": "ok",
+          "id": "half_jar",
+          "ok": true
+        },
+        {
+          "desc": "必须今夜封坛",
+          "detail": "ok",
+          "id": "tonight_seal",
+          "ok": true
+        },
+        {
+          "desc": "陈醋是三年陈",
+          "detail": "ok",
+          "id": "three_years_vin",
+          "ok": true
+        },
+        {
+          "desc": "柳先生出门未归",
+          "detail": "ok",
+          "id": "master_away",
+          "ok": true
+        },
+        {
+          "desc": "今日是第二日",
+          "detail": "ok",
+          "id": "two_days",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "阿棠发现醋只剩半坛且两处都要用",
+          "detail": "ok",
+          "id": "discovers_shortage",
+          "ok": true
+        },
+        {
+          "desc": "阿棠意识到两处不能同时满足",
+          "detail": "ok",
+          "id": "recognizes_conflict",
+          "ok": true
+        },
+        {
+          "desc": "阿棠做出明确选择并动手",
+          "detail": "未出现任一项:她选了、决定、拎起、拎着、提着、提起、端起、拿着、搬",
+          "id": "makes_choice",
+          "ok": false
+        },
+        {
+          "desc": "写明后果:走地根的去向或产妇那边的情况",
+          "detail": "ok",
+          "id": "consequence",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代次日清晨的具体处境",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_herb-chapter_single_shot-r3": {
+    "case_id": "fantasy_herb",
+    "chars": 1567,
+    "counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 393,
+        "quote": "可偏偏就在傍晚，隔着两条巷子的张家汉子第三次拍响了药铺的门板。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 1015,
+        "quote": "张家汉子双手颤抖着接过碗，连声道谢都没来得及说全，便揣着怀里的瓷碗跌跌撞撞地冲进夜色中。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「张家汉子」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 1410,
+        "quote": "张家汉子手里端着空了的药碗，满脸喜色地快步走来，隔着门槛朝阿棠深深作了个揖：“阿棠姑娘！多亏了你那半碗陈醋！稳婆说血总算止住了，母子平安，大恩大德张家没齿难忘！”",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠意识到两处不能同时满足):未出现任一项:只能、不够、得挑、二选一、留一边",
+        "detector": "outcome:recognizes_conflict",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "结尾未落到要求的状态:第二天、次日、天亮",
+        "detector": "ending_anchor_missing",
+        "offset": 1176,
+        "quote": "步声。张家汉子手里端着空了的药碗，满脸喜色地快步走来，隔着门槛朝阿棠深深作了个揖：“阿棠姑娘！多亏了你那半碗陈醋！稳婆说血总算止住了，母子平安，大恩大德张家没齿难忘！”\n\n阿棠看着空荡荡的库房罐子，又看了看汉子千恩万谢的脸。她没有说话，只是握紧了手里冰凉的铜钥匙。柳先生明日便要回来了，这走地根丢了的罪责，她是逃不掉了。",
+        "severity": "hard"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(走地根)",
+        "detector": "mechanism_explained",
+        "offset": 317,
+        "quote": "柳先生临走前千叮万嘱，库房里的走地根必须在今夜用三年陈醋浇满坛口封严，否则明日一早准得连根须带泥土钻进地缝里不知去向。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 33.24,
+      "chars": 1567,
+      "de_per_1000": 43.4,
+      "dialogue_ratio": 0.108,
+      "max_sentence_len": 106,
+      "min_sentence_len": 6,
+      "paragraphs": 20,
+      "sentences": 46,
+      "simile_per_1000": 4.47
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "柳先生不得当天赶回",
+          "detail": "ok",
+          "id": "master_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现另一坛醋或第三人送醋",
+          "detail": "ok",
+          "id": "third_jar",
+          "ok": true
+        },
+        {
+          "desc": "走地根不得自己留在原地不动",
+          "detail": "ok",
+          "id": "herb_stays",
+          "ok": true
+        },
+        {
+          "desc": "不得两全",
+          "detail": "ok",
+          "id": "both_saved",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "只剩半坛陈醋",
+          "detail": "ok",
+          "id": "half_jar",
+          "ok": true
+        },
+        {
+          "desc": "必须今夜封坛",
+          "detail": "ok",
+          "id": "tonight_seal",
+          "ok": true
+        },
+        {
+          "desc": "陈醋是三年陈",
+          "detail": "ok",
+          "id": "three_years_vin",
+          "ok": true
+        },
+        {
+          "desc": "柳先生出门未归",
+          "detail": "ok",
+          "id": "master_away",
+          "ok": true
+        },
+        {
+          "desc": "今日是第二日",
+          "detail": "ok",
+          "id": "two_days",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "阿棠发现醋只剩半坛且两处都要用",
+          "detail": "ok",
+          "id": "discovers_shortage",
+          "ok": true
+        },
+        {
+          "desc": "阿棠意识到两处不能同时满足",
+          "detail": "未出现任一项:只能、不够、得挑、二选一、留一边",
+          "id": "recognizes_conflict",
+          "ok": false
+        },
+        {
+          "desc": "阿棠做出明确选择并动手",
+          "detail": "ok",
+          "id": "makes_choice",
+          "ok": true
+        },
+        {
+          "desc": "写明后果:走地根的去向或产妇那边的情况",
+          "detail": "ok",
+          "id": "consequence",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代次日清晨的具体处境",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_herb-scene_writer-r1": {
+    "case_id": "fantasy_herb",
+    "chars": 1045,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "正文把「我娘」写成主角亲属,但作者文字未设定该关系(mother)",
+        "detector": "invented_relation",
+        "offset": 231,
+        "quote": "隔壁巷子里那户人家的长子，昨夜已经来过两次，此刻又气喘吁吁地跨进门槛，一眼看见阿棠，声音带着哭腔：“小阿棠，行行好吧！我娘的血还是止不住，大夫说就差这半碗醋做药引子，再耽误就真过不去今晚了！”",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(写明后果:走地根的去向或产妇那边的情况):未出现任一项:走了、空了、保住、血止、坛口",
+        "detector": "outcome:consequence",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠做出明确选择并动手):未出现任一项:她选了、决定、拎起、拎着、提着、提起、端起、拿着、搬",
+        "detector": "outcome:makes_choice",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠意识到两处不能同时满足):未出现任一项:只能、不够、得挑、二选一、留一边",
+        "detector": "outcome:recognizes_conflict",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 35.21,
+      "chars": 1045,
+      "de_per_1000": 43.06,
+      "dialogue_ratio": 0.106,
+      "max_sentence_len": 112,
+      "min_sentence_len": 5,
+      "paragraphs": 13,
+      "sentences": 29,
+      "simile_per_1000": 0.96
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "柳先生不得当天赶回",
+          "detail": "ok",
+          "id": "master_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现另一坛醋或第三人送醋",
+          "detail": "ok",
+          "id": "third_jar",
+          "ok": true
+        },
+        {
+          "desc": "走地根不得自己留在原地不动",
+          "detail": "ok",
+          "id": "herb_stays",
+          "ok": true
+        },
+        {
+          "desc": "不得两全",
+          "detail": "ok",
+          "id": "both_saved",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "只剩半坛陈醋",
+          "detail": "ok",
+          "id": "half_jar",
+          "ok": true
+        },
+        {
+          "desc": "必须今夜封坛",
+          "detail": "ok",
+          "id": "tonight_seal",
+          "ok": true
+        },
+        {
+          "desc": "陈醋是三年陈",
+          "detail": "ok",
+          "id": "three_years_vin",
+          "ok": true
+        },
+        {
+          "desc": "柳先生出门未归",
+          "detail": "ok",
+          "id": "master_away",
+          "ok": true
+        },
+        {
+          "desc": "今日是第二日",
+          "detail": "ok",
+          "id": "two_days",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "阿棠发现醋只剩半坛且两处都要用",
+          "detail": "ok",
+          "id": "discovers_shortage",
+          "ok": true
+        },
+        {
+          "desc": "阿棠意识到两处不能同时满足",
+          "detail": "未出现任一项:只能、不够、得挑、二选一、留一边",
+          "id": "recognizes_conflict",
+          "ok": false
+        },
+        {
+          "desc": "阿棠做出明确选择并动手",
+          "detail": "未出现任一项:她选了、决定、拎起、拎着、提着、提起、端起、拿着、搬",
+          "id": "makes_choice",
+          "ok": false
+        },
+        {
+          "desc": "写明后果:走地根的去向或产妇那边的情况",
+          "detail": "未出现任一项:走了、空了、保住、血止、坛口",
+          "id": "consequence",
+          "ok": false
+        },
+        {
+          "desc": "结尾交代次日清晨的具体处境",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "fantasy_herb-scene_writer-r2": {
+    "case_id": "fantasy_herb",
+    "chars": 1095,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 1,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「小叔」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 484,
+        "quote": "门外传来一阵急促的脚步声，产妇家的小叔子又奔了来，一把扣住半开的柜门，声音带着哭腔：“阿棠姑娘，求求你行行好！我嫂子已经晕过去一回了，稳婆说再没醋吊着气，这一尸两命就保不住了！药铺里的大恩大德，我们全家做牛做马报答！”",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(结尾交代次日清晨的具体处境):未出现任一项:第二天、次日、天亮",
+        "detector": "outcome:next_morning",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠意识到两处不能同时满足):未出现任一项:只能、不够、得挑、二选一、留一边",
+        "detector": "outcome:recognizes_conflict",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "结尾未落到要求的状态:第二天、次日、天亮",
+        "detector": "ending_anchor_missing",
+        "offset": 822,
+        "quote": "下。\n\n清晨的薄雾笼罩着城南的青石板巷，微凉的晨光透过药铺半开的门板洒进来。阿棠坐在柜台后，一夜未眠的眼睛带着淡淡的青黑。库房的木门不知何时被顶开了一条缝，原本放着走地根的木架上空空如也，只有一地散落的干枯须渣，顺着门缝一直延伸到后院的墙角，早已不见了踪影。远处巷子里隐约传去了婴儿微弱的啼哭声，夹杂着邻里长长的舒气声。",
+        "severity": "hard"
+      },
+      {
+        "category": "pov_breach",
+        "detail": "限知视角为阿棠,此处直接进入柳先生的内心/感知(明白)",
+        "detector": "interior_of_non_pov",
+        "offset": 156,
+        "quote": "柳先生临走前交代得明白，这东西最通灵性，若是赶在今夜子时前不用陈醋封住坛口，明日一早定会顺着地缝钻出去，再难寻踪影。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(三年陈醋)",
+        "detector": "mechanism_explained",
+        "offset": 240,
+        "quote": "这已经是今日第二次上门，那汉子急得满头大汗，隔着柜台直作揖，说产妇难产血崩，稳婆看过了，止血非得要这味三年陈醋不可，眼下还差半碗。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 32.45,
+      "chars": 1095,
+      "de_per_1000": 34.7,
+      "dialogue_ratio": 0.107,
+      "max_sentence_len": 109,
+      "min_sentence_len": 1,
+      "paragraphs": 13,
+      "sentences": 33,
+      "simile_per_1000": 1.83
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "柳先生不得当天赶回",
+          "detail": "ok",
+          "id": "master_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现另一坛醋或第三人送醋",
+          "detail": "ok",
+          "id": "third_jar",
+          "ok": true
+        },
+        {
+          "desc": "走地根不得自己留在原地不动",
+          "detail": "ok",
+          "id": "herb_stays",
+          "ok": true
+        },
+        {
+          "desc": "不得两全",
+          "detail": "ok",
+          "id": "both_saved",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "只剩半坛陈醋",
+          "detail": "ok",
+          "id": "half_jar",
+          "ok": true
+        },
+        {
+          "desc": "必须今夜封坛",
+          "detail": "ok",
+          "id": "tonight_seal",
+          "ok": true
+        },
+        {
+          "desc": "陈醋是三年陈",
+          "detail": "ok",
+          "id": "three_years_vin",
+          "ok": true
+        },
+        {
+          "desc": "柳先生出门未归",
+          "detail": "ok",
+          "id": "master_away",
+          "ok": true
+        },
+        {
+          "desc": "今日是第二日",
+          "detail": "ok",
+          "id": "two_days",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "阿棠发现醋只剩半坛且两处都要用",
+          "detail": "ok",
+          "id": "discovers_shortage",
+          "ok": true
+        },
+        {
+          "desc": "阿棠意识到两处不能同时满足",
+          "detail": "未出现任一项:只能、不够、得挑、二选一、留一边",
+          "id": "recognizes_conflict",
+          "ok": false
+        },
+        {
+          "desc": "阿棠做出明确选择并动手",
+          "detail": "ok",
+          "id": "makes_choice",
+          "ok": true
+        },
+        {
+          "desc": "写明后果:走地根的去向或产妇那边的情况",
+          "detail": "ok",
+          "id": "consequence",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代次日清晨的具体处境",
+          "detail": "未出现任一项:第二天、次日、天亮",
+          "id": "next_morning",
+          "ok": false
+        }
+      ]
+    }
+  },
+  "fantasy_herb-scene_writer-r3": {
+    "case_id": "fantasy_herb",
+    "chars": 795,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠做出明确选择并动手):未出现任一项:她选了、决定、拎起、拎着、提着、提起、端起、拿着、搬",
+        "detector": "outcome:makes_choice",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(阿棠意识到两处不能同时满足):未出现任一项:只能、不够、得挑、二选一、留一边",
+        "detector": "outcome:recognizes_conflict",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "用定义句式把设定讲一遍:封坛、三年陈醋",
+        "detector": "mechanism_exposition",
+        "offset": 107,
+        "quote": "按照柳先生临走前的吩咐，这株灵草今夜若不封坛，明日清晨便会顺着地缝溜得无影无踪，而唯一的封坛规矩，是用三年陈醋浇满坛口。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 33.96,
+      "chars": 795,
+      "de_per_1000": 40.25,
+      "dialogue_ratio": 0.038,
+      "max_sentence_len": 60,
+      "min_sentence_len": 11,
+      "paragraphs": 8,
+      "sentences": 23,
+      "simile_per_1000": 1.26
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "柳先生不得当天赶回",
+          "detail": "ok",
+          "id": "master_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现另一坛醋或第三人送醋",
+          "detail": "ok",
+          "id": "third_jar",
+          "ok": true
+        },
+        {
+          "desc": "走地根不得自己留在原地不动",
+          "detail": "ok",
+          "id": "herb_stays",
+          "ok": true
+        },
+        {
+          "desc": "不得两全",
+          "detail": "ok",
+          "id": "both_saved",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "只剩半坛陈醋",
+          "detail": "ok",
+          "id": "half_jar",
+          "ok": true
+        },
+        {
+          "desc": "必须今夜封坛",
+          "detail": "ok",
+          "id": "tonight_seal",
+          "ok": true
+        },
+        {
+          "desc": "陈醋是三年陈",
+          "detail": "ok",
+          "id": "three_years_vin",
+          "ok": true
+        },
+        {
+          "desc": "柳先生出门未归",
+          "detail": "ok",
+          "id": "master_away",
+          "ok": true
+        },
+        {
+          "desc": "今日是第二日",
+          "detail": "ok",
+          "id": "two_days",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "阿棠发现醋只剩半坛且两处都要用",
+          "detail": "ok",
+          "id": "discovers_shortage",
+          "ok": true
+        },
+        {
+          "desc": "阿棠意识到两处不能同时满足",
+          "detail": "未出现任一项:只能、不够、得挑、二选一、留一边",
+          "id": "recognizes_conflict",
+          "ok": false
+        },
+        {
+          "desc": "阿棠做出明确选择并动手",
+          "detail": "未出现任一项:她选了、决定、拎起、拎着、提着、提起、端起、拿着、搬",
+          "id": "makes_choice",
+          "ok": false
+        },
+        {
+          "desc": "写明后果:走地根的去向或产妇那边的情况",
+          "detail": "ok",
+          "id": "consequence",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代次日清晨的具体处境",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_bridge-chapter_single_shot-r1": {
+    "case_id": "mystery_bridge",
+    "chars": 1205,
+    "counts": {
+      "fact_violation": 4,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「周叔」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 353,
+        "quote": "陆沉往前迈了半步，脚底的沙砾发出沙沙的轻响：“周叔，我是驿站的脚夫陆沉。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 564,
+        "quote": "离老周要的数目还差整整四十文。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「周叔」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 819,
+        "quote": "“周叔，六十文现钱，再加上这块驿站的腰牌，顶一百二十文，够了吧？”陆沉的声音低沉而沙哑，“牌子压在您这儿，天亮前我一定拿铜钱来赎。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '一百二十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 840,
+        "quote": "“周叔，六十文现钱，再加上这块驿站的腰牌，顶一百二十文，够了吧？”陆沉的声音低沉而沙哑，“牌子压在您这儿，天亮前我一定拿铜钱来赎。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(一炷香)",
+        "detector": "mechanism_explained",
+        "offset": 148,
+        "quote": "那封信被油布裹得严丝合缝，贴着温热的胸口，雇主临行前的叮嘱还在耳畔——信不能湿，离手不能超过一炷香，天亮前必须送到对岸柳树下的茶棚。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 25.5,
+      "chars": 1205,
+      "de_per_1000": 43.98,
+      "dialogue_ratio": 0.176,
+      "max_sentence_len": 66,
+      "min_sentence_len": 1,
+      "paragraphs": 17,
+      "sentences": 46,
+      "simile_per_1000": 2.49
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三方救兵",
+          "detail": "ok",
+          "id": "rescue_party",
+          "ok": true
+        },
+        {
+          "desc": "不得揭示信是空的",
+          "detail": "ok",
+          "id": "empty_letter",
+          "ok": true
+        },
+        {
+          "desc": "老周不得是失散亲人",
+          "detail": "ok",
+          "id": "lost_brother",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "左臂自肘下没有",
+          "detail": "ok",
+          "id": "left_arm",
+          "ok": true
+        },
+        {
+          "desc": "过河价一百文",
+          "detail": "ok",
+          "id": "price",
+          "ok": true
+        },
+        {
+          "desc": "身上只有六十文",
+          "detail": "ok",
+          "id": "cash",
+          "ok": true
+        },
+        {
+          "desc": "腰牌可抵八十文但明天要验",
+          "detail": "ok",
+          "id": "badge",
+          "ok": true
+        },
+        {
+          "desc": "天亮前必须送到",
+          "detail": "ok",
+          "id": "deadline",
+          "ok": true
+        },
+        {
+          "desc": "信有火漆且不能湿",
+          "detail": "ok",
+          "id": "sealed",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "陆沉说清送信的期限和条件",
+          "detail": "ok",
+          "id": "states_errand",
+          "ok": true
+        },
+        {
+          "desc": "老周报出一百文且不赊",
+          "detail": "ok",
+          "id": "price_named",
+          "ok": true
+        },
+        {
+          "desc": "陆沉权衡交出腰牌的代价",
+          "detail": "ok",
+          "id": "weighs",
+          "ok": true
+        },
+        {
+          "desc": "陆沉实际交付或拒绝,并承担后果",
+          "detail": "ok",
+          "id": "acts",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代信到没到对岸",
+          "detail": "ok",
+          "id": "letter_status",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_bridge-chapter_single_shot-r2": {
+    "case_id": "mystery_bridge",
+    "chars": 1580,
+    "counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 617,
+        "quote": "离老周要的一百文，还差四十文。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 655,
+        "quote": "”陆沉将六十文铜钱往前递了递，“剩下的四十文，我把驿站的脚夫腰牌压你这儿。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 1020,
+        "quote": "这样，我身上这件羊皮袄，虽然穿了几年，但皮子还是好的，当四十文总够了吧？”",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(一炷香)",
+        "detector": "mechanism_explained",
+        "offset": 156,
+        "quote": "雇主交代的规矩极严：信绝不能沾水，绝不能离手超过一炷香，且必须在天亮前送到对岸柳树下的茶棚。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 26.03,
+      "chars": 1580,
+      "de_per_1000": 43.67,
+      "dialogue_ratio": 0.194,
+      "max_sentence_len": 64,
+      "min_sentence_len": 1,
+      "paragraphs": 23,
+      "sentences": 59,
+      "simile_per_1000": 1.27
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三方救兵",
+          "detail": "ok",
+          "id": "rescue_party",
+          "ok": true
+        },
+        {
+          "desc": "不得揭示信是空的",
+          "detail": "ok",
+          "id": "empty_letter",
+          "ok": true
+        },
+        {
+          "desc": "老周不得是失散亲人",
+          "detail": "ok",
+          "id": "lost_brother",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "左臂自肘下没有",
+          "detail": "ok",
+          "id": "left_arm",
+          "ok": true
+        },
+        {
+          "desc": "过河价一百文",
+          "detail": "ok",
+          "id": "price",
+          "ok": true
+        },
+        {
+          "desc": "身上只有六十文",
+          "detail": "ok",
+          "id": "cash",
+          "ok": true
+        },
+        {
+          "desc": "腰牌可抵八十文但明天要验",
+          "detail": "ok",
+          "id": "badge",
+          "ok": true
+        },
+        {
+          "desc": "天亮前必须送到",
+          "detail": "ok",
+          "id": "deadline",
+          "ok": true
+        },
+        {
+          "desc": "信有火漆且不能湿",
+          "detail": "ok",
+          "id": "sealed",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "陆沉说清送信的期限和条件",
+          "detail": "ok",
+          "id": "states_errand",
+          "ok": true
+        },
+        {
+          "desc": "老周报出一百文且不赊",
+          "detail": "ok",
+          "id": "price_named",
+          "ok": true
+        },
+        {
+          "desc": "陆沉权衡交出腰牌的代价",
+          "detail": "ok",
+          "id": "weighs",
+          "ok": true
+        },
+        {
+          "desc": "陆沉实际交付或拒绝,并承担后果",
+          "detail": "ok",
+          "id": "acts",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代信到没到对岸",
+          "detail": "ok",
+          "id": "letter_status",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_bridge-chapter_single_shot-r3": {
+    "case_id": "mystery_bridge",
+    "chars": 967,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 429,
+        "quote": "”陆沉将手从怀里抽出来，把六十枚带着体温的铜钱拍在船舷上，铜钱相碰发出清脆的响声，“剩下的四十文，用我的驿站腰牌抵押。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 25.54,
+      "chars": 967,
+      "de_per_1000": 44.47,
+      "dialogue_ratio": 0.186,
+      "max_sentence_len": 94,
+      "min_sentence_len": 1,
+      "paragraphs": 12,
+      "sentences": 37,
+      "simile_per_1000": 1.03
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三方救兵",
+          "detail": "ok",
+          "id": "rescue_party",
+          "ok": true
+        },
+        {
+          "desc": "不得揭示信是空的",
+          "detail": "ok",
+          "id": "empty_letter",
+          "ok": true
+        },
+        {
+          "desc": "老周不得是失散亲人",
+          "detail": "ok",
+          "id": "lost_brother",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "左臂自肘下没有",
+          "detail": "ok",
+          "id": "left_arm",
+          "ok": true
+        },
+        {
+          "desc": "过河价一百文",
+          "detail": "ok",
+          "id": "price",
+          "ok": true
+        },
+        {
+          "desc": "身上只有六十文",
+          "detail": "ok",
+          "id": "cash",
+          "ok": true
+        },
+        {
+          "desc": "腰牌可抵八十文但明天要验",
+          "detail": "ok",
+          "id": "badge",
+          "ok": true
+        },
+        {
+          "desc": "天亮前必须送到",
+          "detail": "ok",
+          "id": "deadline",
+          "ok": true
+        },
+        {
+          "desc": "信有火漆且不能湿",
+          "detail": "ok",
+          "id": "sealed",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "陆沉说清送信的期限和条件",
+          "detail": "ok",
+          "id": "states_errand",
+          "ok": true
+        },
+        {
+          "desc": "老周报出一百文且不赊",
+          "detail": "ok",
+          "id": "price_named",
+          "ok": true
+        },
+        {
+          "desc": "陆沉权衡交出腰牌的代价",
+          "detail": "ok",
+          "id": "weighs",
+          "ok": true
+        },
+        {
+          "desc": "陆沉实际交付或拒绝,并承担后果",
+          "detail": "ok",
+          "id": "acts",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代信到没到对岸",
+          "detail": "ok",
+          "id": "letter_status",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_bridge-scene_writer-r1": {
+    "case_id": "mystery_bridge",
+    "chars": 862,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '一文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 181,
+        "quote": "少一文，船链子都不带解的。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 616,
+        "quote": "”陆沉将六十文钱和腰牌一同向前递了递，语气没有丝毫退让，“天亮前我一定拿着剩下的四十文来赎。",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(陆沉实际交付或拒绝,并承担后果):未出现任一项:递过去、押上、解下、转身、数了",
+        "detector": "outcome:acts",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 22.76,
+      "chars": 862,
+      "de_per_1000": 41.76,
+      "dialogue_ratio": 0.267,
+      "max_sentence_len": 64,
+      "min_sentence_len": 1,
+      "paragraphs": 11,
+      "sentences": 37,
+      "simile_per_1000": 0.0
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三方救兵",
+          "detail": "ok",
+          "id": "rescue_party",
+          "ok": true
+        },
+        {
+          "desc": "不得揭示信是空的",
+          "detail": "ok",
+          "id": "empty_letter",
+          "ok": true
+        },
+        {
+          "desc": "老周不得是失散亲人",
+          "detail": "ok",
+          "id": "lost_brother",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "左臂自肘下没有",
+          "detail": "ok",
+          "id": "left_arm",
+          "ok": true
+        },
+        {
+          "desc": "过河价一百文",
+          "detail": "ok",
+          "id": "price",
+          "ok": true
+        },
+        {
+          "desc": "身上只有六十文",
+          "detail": "ok",
+          "id": "cash",
+          "ok": true
+        },
+        {
+          "desc": "腰牌可抵八十文但明天要验",
+          "detail": "ok",
+          "id": "badge",
+          "ok": true
+        },
+        {
+          "desc": "天亮前必须送到",
+          "detail": "ok",
+          "id": "deadline",
+          "ok": true
+        },
+        {
+          "desc": "信有火漆且不能湿",
+          "detail": "ok",
+          "id": "sealed",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "陆沉说清送信的期限和条件",
+          "detail": "ok",
+          "id": "states_errand",
+          "ok": true
+        },
+        {
+          "desc": "老周报出一百文且不赊",
+          "detail": "ok",
+          "id": "price_named",
+          "ok": true
+        },
+        {
+          "desc": "陆沉权衡交出腰牌的代价",
+          "detail": "ok",
+          "id": "weighs",
+          "ok": true
+        },
+        {
+          "desc": "陆沉实际交付或拒绝,并承担后果",
+          "detail": "未出现任一项:递过去、押上、解下、转身、数了",
+          "id": "acts",
+          "ok": false
+        },
+        {
+          "desc": "结尾交代信到没到对岸",
+          "detail": "ok",
+          "id": "letter_status",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_bridge-scene_writer-r2": {
+    "case_id": "mystery_bridge",
+    "chars": 1949,
+    "counts": {
+      "fact_violation": 5,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 1
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「老伯」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 483,
+        "quote": "“老伯，我是南城驿站的脚夫。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '一文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 641,
+        "quote": "再说了，规矩就是规矩，过河一百文，少一文也不开锁。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「老伯」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 762,
+        "quote": "“老伯，我身上只有六十文。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 807,
+        "quote": "”陆沉将铜钱往前递了递，声音有些发紧，“您看能不能通融通融？剩下的四十文，我明日一早带足了双倍送来。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 1421,
+        "quote": "“六十文现钱，再加上这块驿站的铜腰牌，足够抵一百文了吧？”陆沉盯着老周，一字一句地说道，“腰牌先押在你这儿，明日午时前，我拿四十文赎回来。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(一炷香)",
+        "detector": "mechanism_explained",
+        "offset": 207,
+        "quote": "离天亮还有几个时辰，雇主临行前的交代犹在耳畔：这封信绝不能沾水，也不能离手超过一炷香，必须赶在更鼓敲响前送到对岸柳树下的茶棚。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 1,
+      "ai_phrases": {
+        "眼中闪过一丝": 1
+      },
+      "avg_sentence_len": 26.32,
+      "chars": 1949,
+      "de_per_1000": 38.99,
+      "dialogue_ratio": 0.197,
+      "max_sentence_len": 77,
+      "min_sentence_len": 1,
+      "paragraphs": 28,
+      "sentences": 72,
+      "simile_per_1000": 3.08
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三方救兵",
+          "detail": "ok",
+          "id": "rescue_party",
+          "ok": true
+        },
+        {
+          "desc": "不得揭示信是空的",
+          "detail": "ok",
+          "id": "empty_letter",
+          "ok": true
+        },
+        {
+          "desc": "老周不得是失散亲人",
+          "detail": "ok",
+          "id": "lost_brother",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "左臂自肘下没有",
+          "detail": "ok",
+          "id": "left_arm",
+          "ok": true
+        },
+        {
+          "desc": "过河价一百文",
+          "detail": "ok",
+          "id": "price",
+          "ok": true
+        },
+        {
+          "desc": "身上只有六十文",
+          "detail": "ok",
+          "id": "cash",
+          "ok": true
+        },
+        {
+          "desc": "腰牌可抵八十文但明天要验",
+          "detail": "ok",
+          "id": "badge",
+          "ok": true
+        },
+        {
+          "desc": "天亮前必须送到",
+          "detail": "ok",
+          "id": "deadline",
+          "ok": true
+        },
+        {
+          "desc": "信有火漆且不能湿",
+          "detail": "ok",
+          "id": "sealed",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "陆沉说清送信的期限和条件",
+          "detail": "ok",
+          "id": "states_errand",
+          "ok": true
+        },
+        {
+          "desc": "老周报出一百文且不赊",
+          "detail": "ok",
+          "id": "price_named",
+          "ok": true
+        },
+        {
+          "desc": "陆沉权衡交出腰牌的代价",
+          "detail": "ok",
+          "id": "weighs",
+          "ok": true
+        },
+        {
+          "desc": "陆沉实际交付或拒绝,并承担后果",
+          "detail": "ok",
+          "id": "acts",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代信到没到对岸",
+          "detail": "ok",
+          "id": "letter_status",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_bridge-scene_writer-r3": {
+    "case_id": "mystery_bridge",
+    "chars": 1503,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 3
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「老伯」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 250,
+        "quote": "“老伯，”陆沉跨前半步，尽量让声音在水涛声中听得真切，“我是东关驿站的脚夫。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '四十文',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 491,
+        "quote": "”陆沉眉头拧成个疙瘩，将右手的铜钱袋子解开往掌心倒了倒，铜板相撞发出沉闷的哗啦声，“您看能不能通融一下，余下的四十文，我明日一早带信回来时补上？”",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(陆沉实际交付或拒绝,并承担后果):未出现任一项:递过去、押上、解下、转身、数了",
+        "detector": "outcome:acts",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(一炷香)",
+        "detector": "mechanism_explained",
+        "offset": 156,
+        "quote": "信件不能沾水，离手不能超过一炷香，雇主砸在桌上的银两和严辞犹在耳畔——天亮前必须送到。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(铁索)",
+        "detector": "mechanism_explained",
+        "offset": 630,
+        "quote": "湍急的河水裹挟着断木在黑夜里咆哮，单凭他一只正常的右手，腰间别着信件，左臂又空空如荡、仅靠布条扎着残端，要是摸着铁索过河，莫说能不能稳住身形，只要一阵江风刮来，人连同怀里的火漆信一起掉进黑水里，连个泡都泛不起来。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "用定义句式把设定讲一遍:腰牌、火漆",
+        "detector": "mechanism_exposition",
+        "offset": 896,
+        "quote": "可是，如果为了保住腰牌而在这里跟老周耗着，误了天亮前送到火漆信的死限，那罪过可就不是挨鞭子那么简单了——驿站的规矩，误了公文轻则砸饭碗，重则以通敌或贻误军情论处。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 30.02,
+      "chars": 1503,
+      "de_per_1000": 36.59,
+      "dialogue_ratio": 0.193,
+      "max_sentence_len": 106,
+      "min_sentence_len": 1,
+      "paragraphs": 17,
+      "sentences": 49,
+      "simile_per_1000": 0.67
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三方救兵",
+          "detail": "ok",
+          "id": "rescue_party",
+          "ok": true
+        },
+        {
+          "desc": "不得揭示信是空的",
+          "detail": "ok",
+          "id": "empty_letter",
+          "ok": true
+        },
+        {
+          "desc": "老周不得是失散亲人",
+          "detail": "ok",
+          "id": "lost_brother",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "左臂自肘下没有",
+          "detail": "ok",
+          "id": "left_arm",
+          "ok": true
+        },
+        {
+          "desc": "过河价一百文",
+          "detail": "ok",
+          "id": "price",
+          "ok": true
+        },
+        {
+          "desc": "身上只有六十文",
+          "detail": "ok",
+          "id": "cash",
+          "ok": true
+        },
+        {
+          "desc": "腰牌可抵八十文但明天要验",
+          "detail": "ok",
+          "id": "badge",
+          "ok": true
+        },
+        {
+          "desc": "天亮前必须送到",
+          "detail": "ok",
+          "id": "deadline",
+          "ok": true
+        },
+        {
+          "desc": "信有火漆且不能湿",
+          "detail": "ok",
+          "id": "sealed",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "陆沉说清送信的期限和条件",
+          "detail": "ok",
+          "id": "states_errand",
+          "ok": true
+        },
+        {
+          "desc": "老周报出一百文且不赊",
+          "detail": "ok",
+          "id": "price_named",
+          "ok": true
+        },
+        {
+          "desc": "陆沉权衡交出腰牌的代价",
+          "detail": "ok",
+          "id": "weighs",
+          "ok": true
+        },
+        {
+          "desc": "陆沉实际交付或拒绝,并承担后果",
+          "detail": "未出现任一项:递过去、押上、解下、转身、数了",
+          "id": "acts",
+          "ok": false
+        },
+        {
+          "desc": "结尾交代信到没到对岸",
+          "detail": "ok",
+          "id": "letter_status",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_lodger-chapter_single_shot-r1": {
+    "case_id": "mystery_lodger",
+    "chars": 1399,
+    "counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(丈夫不在不许单独进房):未与任一项共现:进房、钥匙、丈夫",
+        "detector": "must_keep:rule",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(信没封口):未出现任一项:没封口、没有封、敞着口、未封",
+        "detector": "must_keep:unsealed_letter",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(屋里只有一只湿透的布鞋):未出现任一项:一只鞋、单只、一只湿",
+        "detector": "must_keep:wet_shoe",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(信的内容改变了她的判断):未出现任一项:原来、她以为、不像、改了口、想的不是",
+        "detector": "outcome:judgment_changes",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 27.73,
+      "chars": 1399,
+      "de_per_1000": 32.17,
+      "dialogue_ratio": 0.294,
+      "max_sentence_len": 71,
+      "min_sentence_len": 1,
+      "paragraphs": 21,
+      "sentences": 49,
+      "simile_per_1000": 2.14
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "陈九不得当场现身解释",
+          "detail": "ok",
+          "id": "guest_appears",
+          "ok": true
+        },
+        {
+          "desc": "不得由官府立刻破案",
+          "detail": "ok",
+          "id": "instant_solved",
+          "ok": true
+        },
+        {
+          "desc": "苏姐不得有特殊身份或武功",
+          "detail": "ok",
+          "id": "special_identity",
+          "ok": true
+        },
+        {
+          "desc": "不得把投宿者写成鬼",
+          "detail": "ok",
+          "id": "ghost",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "屋里只有一只湿透的布鞋",
+          "detail": "未出现任一项:一只鞋、单只、一只湿",
+          "id": "wet_shoe",
+          "ok": false
+        },
+        {
+          "desc": "信没封口",
+          "detail": "未出现任一项:没封口、没有封、敞着口、未封",
+          "id": "unsealed_letter",
+          "ok": false
+        },
+        {
+          "desc": "昨夜下了一夜雨",
+          "detail": "ok",
+          "id": "rain",
+          "ok": true
+        },
+        {
+          "desc": "客栈十四间房",
+          "detail": "ok",
+          "id": "fourteen_rooms",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不在不许单独进房",
+          "detail": "未与任一项共现:进房、钥匙、丈夫",
+          "id": "rule",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "苏姐先处理阿六(支开或叮嘱)",
+          "detail": "ok",
+          "id": "handles_waiter",
+          "ok": true
+        },
+        {
+          "desc": "苏姐决定进不进房并执行",
+          "detail": "ok",
+          "id": "decides_entry",
+          "ok": true
+        },
+        {
+          "desc": "苏姐读了信",
+          "detail": "ok",
+          "id": "reads_letter",
+          "ok": true
+        },
+        {
+          "desc": "信的内容改变了她的判断",
+          "detail": "未出现任一项:原来、她以为、不像、改了口、想的不是",
+          "id": "judgment_changes",
+          "ok": false
+        },
+        {
+          "desc": "她做出一个具体的处置行动",
+          "detail": "ok",
+          "id": "concrete_action",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_lodger-chapter_single_shot-r2": {
+    "case_id": "mystery_lodger",
+    "chars": 1544,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 2
+    },
+    "findings": [
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(她做出一个具体的处置行动):未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+        "detector": "outcome:concrete_action",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(信的内容改变了她的判断):未出现任一项:原来、她以为、不像、改了口、想的不是",
+        "detector": "outcome:judgment_changes",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "结尾未落到要求的状态:明天、明日、今晚",
+        "detector": "ending_anchor_missing",
+        "offset": 1158,
+        "quote": "门出去了，房费已经压在桌上。别的多一个字也不许讲。”\n\n阿六连连点头。\n\n回到柜台后，苏姐重新坐下。外面的雨虽然停了，阴云却压得更低，远处的鼓楼刚敲过午后的第一通钟。她看着桌上那本尚未翻开的住客簿，心里已经做好了决定：待官差走后，她必须把那只湿鞋和屋里的痕迹彻底清理干净，等当家的回来，这封信一个字也不能漏地交到他手上。",
+        "severity": "hard"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "用定义句式把设定讲一遍:住客簿、官差",
+        "detector": "mechanism_exposition",
+        "offset": 381,
+        "quote": "可离午后官差来查住客簿的时辰，只剩下不到两柱香了。",
+        "severity": "soft"
+      },
+      {
+        "category": "rule_recitation",
+        "detail": "把条件与上限当成一句规则讲出来(官差)",
+        "detector": "mechanism_explained",
+        "offset": 1467,
+        "quote": "她看着桌上那本尚未翻开的住客簿，心里已经做好了决定：待官差走后，她必须把那只湿鞋和屋里的痕迹彻底清理干净，等当家的回来，这封信一个字也不能漏地交到他手上。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 31.29,
+      "chars": 1544,
+      "de_per_1000": 41.45,
+      "dialogue_ratio": 0.157,
+      "max_sentence_len": 114,
+      "min_sentence_len": 1,
+      "paragraphs": 22,
+      "sentences": 48,
+      "simile_per_1000": 0.65
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "陈九不得当场现身解释",
+          "detail": "ok",
+          "id": "guest_appears",
+          "ok": true
+        },
+        {
+          "desc": "不得由官府立刻破案",
+          "detail": "ok",
+          "id": "instant_solved",
+          "ok": true
+        },
+        {
+          "desc": "苏姐不得有特殊身份或武功",
+          "detail": "ok",
+          "id": "special_identity",
+          "ok": true
+        },
+        {
+          "desc": "不得把投宿者写成鬼",
+          "detail": "ok",
+          "id": "ghost",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "屋里只有一只湿透的布鞋",
+          "detail": "ok",
+          "id": "wet_shoe",
+          "ok": true
+        },
+        {
+          "desc": "信没封口",
+          "detail": "ok",
+          "id": "unsealed_letter",
+          "ok": true
+        },
+        {
+          "desc": "昨夜下了一夜雨",
+          "detail": "ok",
+          "id": "rain",
+          "ok": true
+        },
+        {
+          "desc": "客栈十四间房",
+          "detail": "ok",
+          "id": "fourteen_rooms",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不在不许单独进房",
+          "detail": "ok",
+          "id": "rule",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "苏姐先处理阿六(支开或叮嘱)",
+          "detail": "ok",
+          "id": "handles_waiter",
+          "ok": true
+        },
+        {
+          "desc": "苏姐决定进不进房并执行",
+          "detail": "ok",
+          "id": "decides_entry",
+          "ok": true
+        },
+        {
+          "desc": "苏姐读了信",
+          "detail": "ok",
+          "id": "reads_letter",
+          "ok": true
+        },
+        {
+          "desc": "信的内容改变了她的判断",
+          "detail": "未出现任一项:原来、她以为、不像、改了口、想的不是",
+          "id": "judgment_changes",
+          "ok": false
+        },
+        {
+          "desc": "她做出一个具体的处置行动",
+          "detail": "未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+          "id": "concrete_action",
+          "ok": false
+        }
+      ]
+    }
+  },
+  "mystery_lodger-chapter_single_shot-r3": {
+    "case_id": "mystery_lodger",
+    "chars": 1263,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(屋里只有一只湿透的布鞋):未出现任一项:一只鞋、单只、一只湿",
+        "detector": "must_keep:wet_shoe",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(她做出一个具体的处置行动):未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+        "detector": "outcome:concrete_action",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(信的内容改变了她的判断):未出现任一项:原来、她以为、不像、改了口、想的不是",
+        "detector": "outcome:judgment_changes",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 23.96,
+      "chars": 1263,
+      "de_per_1000": 34.84,
+      "dialogue_ratio": 0.227,
+      "max_sentence_len": 65,
+      "min_sentence_len": 1,
+      "paragraphs": 22,
+      "sentences": 51,
+      "simile_per_1000": 0.79
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "陈九不得当场现身解释",
+          "detail": "ok",
+          "id": "guest_appears",
+          "ok": true
+        },
+        {
+          "desc": "不得由官府立刻破案",
+          "detail": "ok",
+          "id": "instant_solved",
+          "ok": true
+        },
+        {
+          "desc": "苏姐不得有特殊身份或武功",
+          "detail": "ok",
+          "id": "special_identity",
+          "ok": true
+        },
+        {
+          "desc": "不得把投宿者写成鬼",
+          "detail": "ok",
+          "id": "ghost",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "屋里只有一只湿透的布鞋",
+          "detail": "未出现任一项:一只鞋、单只、一只湿",
+          "id": "wet_shoe",
+          "ok": false
+        },
+        {
+          "desc": "信没封口",
+          "detail": "ok",
+          "id": "unsealed_letter",
+          "ok": true
+        },
+        {
+          "desc": "昨夜下了一夜雨",
+          "detail": "ok",
+          "id": "rain",
+          "ok": true
+        },
+        {
+          "desc": "客栈十四间房",
+          "detail": "ok",
+          "id": "fourteen_rooms",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不在不许单独进房",
+          "detail": "ok",
+          "id": "rule",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "苏姐先处理阿六(支开或叮嘱)",
+          "detail": "ok",
+          "id": "handles_waiter",
+          "ok": true
+        },
+        {
+          "desc": "苏姐决定进不进房并执行",
+          "detail": "ok",
+          "id": "decides_entry",
+          "ok": true
+        },
+        {
+          "desc": "苏姐读了信",
+          "detail": "ok",
+          "id": "reads_letter",
+          "ok": true
+        },
+        {
+          "desc": "信的内容改变了她的判断",
+          "detail": "未出现任一项:原来、她以为、不像、改了口、想的不是",
+          "id": "judgment_changes",
+          "ok": false
+        },
+        {
+          "desc": "她做出一个具体的处置行动",
+          "detail": "未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+          "id": "concrete_action",
+          "ok": false
+        }
+      ]
+    }
+  },
+  "mystery_lodger-scene_writer-r1": {
+    "case_id": "mystery_lodger",
+    "chars": 1274,
+    "counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(客栈十四间房):未出现任一项:十四间",
+        "detector": "must_keep:fourteen_rooms",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(昨夜下了一夜雨):未与任一项共现:雨",
+        "detector": "must_keep:rain",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(屋里只有一只湿透的布鞋):未出现任一项:一只鞋、单只、一只湿",
+        "detector": "must_keep:wet_shoe",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(她做出一个具体的处置行动):未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+        "detector": "outcome:concrete_action",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(信的内容改变了她的判断):未出现任一项:原来、她以为、不像、改了口、想的不是",
+        "detector": "outcome:judgment_changes",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(苏姐读了信):未与任一项共现:看、读、抽、展、翻",
+        "detector": "outcome:reads_letter",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 3,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 31.95,
+      "chars": 1274,
+      "de_per_1000": 36.11,
+      "dialogue_ratio": 0.188,
+      "max_sentence_len": 78,
+      "min_sentence_len": 1,
+      "paragraphs": 15,
+      "sentences": 39,
+      "simile_per_1000": 3.14
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "陈九不得当场现身解释",
+          "detail": "ok",
+          "id": "guest_appears",
+          "ok": true
+        },
+        {
+          "desc": "不得由官府立刻破案",
+          "detail": "ok",
+          "id": "instant_solved",
+          "ok": true
+        },
+        {
+          "desc": "苏姐不得有特殊身份或武功",
+          "detail": "ok",
+          "id": "special_identity",
+          "ok": true
+        },
+        {
+          "desc": "不得把投宿者写成鬼",
+          "detail": "ok",
+          "id": "ghost",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "屋里只有一只湿透的布鞋",
+          "detail": "未出现任一项:一只鞋、单只、一只湿",
+          "id": "wet_shoe",
+          "ok": false
+        },
+        {
+          "desc": "信没封口",
+          "detail": "ok",
+          "id": "unsealed_letter",
+          "ok": true
+        },
+        {
+          "desc": "昨夜下了一夜雨",
+          "detail": "未与任一项共现:雨",
+          "id": "rain",
+          "ok": false
+        },
+        {
+          "desc": "客栈十四间房",
+          "detail": "未出现任一项:十四间",
+          "id": "fourteen_rooms",
+          "ok": false
+        },
+        {
+          "desc": "丈夫不在不许单独进房",
+          "detail": "ok",
+          "id": "rule",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "苏姐先处理阿六(支开或叮嘱)",
+          "detail": "ok",
+          "id": "handles_waiter",
+          "ok": true
+        },
+        {
+          "desc": "苏姐决定进不进房并执行",
+          "detail": "ok",
+          "id": "decides_entry",
+          "ok": true
+        },
+        {
+          "desc": "苏姐读了信",
+          "detail": "未与任一项共现:看、读、抽、展、翻",
+          "id": "reads_letter",
+          "ok": false
+        },
+        {
+          "desc": "信的内容改变了她的判断",
+          "detail": "未出现任一项:原来、她以为、不像、改了口、想的不是",
+          "id": "judgment_changes",
+          "ok": false
+        },
+        {
+          "desc": "她做出一个具体的处置行动",
+          "detail": "未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+          "id": "concrete_action",
+          "ok": false
+        }
+      ]
+    }
+  },
+  "mystery_lodger-scene_writer-r2": {
+    "case_id": "mystery_lodger",
+    "chars": 1241,
+    "counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 1,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(昨夜下了一夜雨):未与任一项共现:雨",
+        "detector": "must_keep:rain",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(丈夫不在不许单独进房):未与任一项共现:进房、钥匙、丈夫",
+        "detector": "must_keep:rule",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(屋里只有一只湿透的布鞋):未出现任一项:一只鞋、单只、一只湿",
+        "detector": "must_keep:wet_shoe",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "metaphor_stack",
+        "detail": "同一段出现 3 处比喻标记(阈值 3)",
+        "detector": "paragraph_simile_density",
+        "offset": 433,
+        "quote": "屋里很整洁，床铺叠得整整齐齐，仿佛根本没人睡过。窗前那张方桌上，正摆着阿六先前说的那只布鞋。鞋底沾着干透的黄泥，鞋帮却湿漉漉的，像是在泥水里浸过许久。鞋旁侧放着一张白麻纸信笺，没有封口，墨迹新鲜，隐约透出几行端正的簪花小楷。",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(信的内容改变了她的判断):未出现任一项:原来、她以为、不像、改了口、想的不是",
+        "detector": "outcome:judgment_changes",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 30.23,
+      "chars": 1241,
+      "de_per_1000": 33.04,
+      "dialogue_ratio": 0.269,
+      "max_sentence_len": 84,
+      "min_sentence_len": 1,
+      "paragraphs": 17,
+      "sentences": 40,
+      "simile_per_1000": 4.03
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "陈九不得当场现身解释",
+          "detail": "ok",
+          "id": "guest_appears",
+          "ok": true
+        },
+        {
+          "desc": "不得由官府立刻破案",
+          "detail": "ok",
+          "id": "instant_solved",
+          "ok": true
+        },
+        {
+          "desc": "苏姐不得有特殊身份或武功",
+          "detail": "ok",
+          "id": "special_identity",
+          "ok": true
+        },
+        {
+          "desc": "不得把投宿者写成鬼",
+          "detail": "ok",
+          "id": "ghost",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "屋里只有一只湿透的布鞋",
+          "detail": "未出现任一项:一只鞋、单只、一只湿",
+          "id": "wet_shoe",
+          "ok": false
+        },
+        {
+          "desc": "信没封口",
+          "detail": "ok",
+          "id": "unsealed_letter",
+          "ok": true
+        },
+        {
+          "desc": "昨夜下了一夜雨",
+          "detail": "未与任一项共现:雨",
+          "id": "rain",
+          "ok": false
+        },
+        {
+          "desc": "客栈十四间房",
+          "detail": "ok",
+          "id": "fourteen_rooms",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不在不许单独进房",
+          "detail": "未与任一项共现:进房、钥匙、丈夫",
+          "id": "rule",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "苏姐先处理阿六(支开或叮嘱)",
+          "detail": "ok",
+          "id": "handles_waiter",
+          "ok": true
+        },
+        {
+          "desc": "苏姐决定进不进房并执行",
+          "detail": "ok",
+          "id": "decides_entry",
+          "ok": true
+        },
+        {
+          "desc": "苏姐读了信",
+          "detail": "ok",
+          "id": "reads_letter",
+          "ok": true
+        },
+        {
+          "desc": "信的内容改变了她的判断",
+          "detail": "未出现任一项:原来、她以为、不像、改了口、想的不是",
+          "id": "judgment_changes",
+          "ok": false
+        },
+        {
+          "desc": "她做出一个具体的处置行动",
+          "detail": "ok",
+          "id": "concrete_action",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "mystery_lodger-scene_writer-r3": {
+    "case_id": "mystery_lodger",
+    "chars": 1370,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(客栈十四间房):未出现任一项:十四间",
+        "detector": "must_keep:fourteen_rooms",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(屋里只有一只湿透的布鞋):未出现任一项:一只鞋、单只、一只湿",
+        "detector": "must_keep:wet_shoe",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(她做出一个具体的处置行动):未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+        "detector": "outcome:concrete_action",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(信的内容改变了她的判断):未出现任一项:原来、她以为、不像、改了口、想的不是",
+        "detector": "outcome:judgment_changes",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 2,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 26.08,
+      "chars": 1370,
+      "de_per_1000": 29.93,
+      "dialogue_ratio": 0.307,
+      "max_sentence_len": 75,
+      "min_sentence_len": 1,
+      "paragraphs": 21,
+      "sentences": 51,
+      "simile_per_1000": 2.19
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "陈九不得当场现身解释",
+          "detail": "ok",
+          "id": "guest_appears",
+          "ok": true
+        },
+        {
+          "desc": "不得由官府立刻破案",
+          "detail": "ok",
+          "id": "instant_solved",
+          "ok": true
+        },
+        {
+          "desc": "苏姐不得有特殊身份或武功",
+          "detail": "ok",
+          "id": "special_identity",
+          "ok": true
+        },
+        {
+          "desc": "不得把投宿者写成鬼",
+          "detail": "ok",
+          "id": "ghost",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "屋里只有一只湿透的布鞋",
+          "detail": "未出现任一项:一只鞋、单只、一只湿",
+          "id": "wet_shoe",
+          "ok": false
+        },
+        {
+          "desc": "信没封口",
+          "detail": "ok",
+          "id": "unsealed_letter",
+          "ok": true
+        },
+        {
+          "desc": "昨夜下了一夜雨",
+          "detail": "ok",
+          "id": "rain",
+          "ok": true
+        },
+        {
+          "desc": "客栈十四间房",
+          "detail": "未出现任一项:十四间",
+          "id": "fourteen_rooms",
+          "ok": false
+        },
+        {
+          "desc": "丈夫不在不许单独进房",
+          "detail": "ok",
+          "id": "rule",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "苏姐先处理阿六(支开或叮嘱)",
+          "detail": "ok",
+          "id": "handles_waiter",
+          "ok": true
+        },
+        {
+          "desc": "苏姐决定进不进房并执行",
+          "detail": "ok",
+          "id": "decides_entry",
+          "ok": true
+        },
+        {
+          "desc": "苏姐读了信",
+          "detail": "ok",
+          "id": "reads_letter",
+          "ok": true
+        },
+        {
+          "desc": "信的内容改变了她的判断",
+          "detail": "未出现任一项:原来、她以为、不像、改了口、想的不是",
+          "id": "judgment_changes",
+          "ok": false
+        },
+        {
+          "desc": "她做出一个具体的处置行动",
+          "detail": "未出现任一项:报官、扣下、收起来、塞回、留着、烧",
+          "id": "concrete_action",
+          "ok": false
+        }
+      ]
+    }
+  },
+  "real_ferry-chapter_single_shot-r1": {
+    "case_id": "real_ferry",
+    "chars": 1575,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(原欠款为三千元):缺少必要内容:三千",
+        "detector": "must_keep:debt_total",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(周芸事前不知道弟弟明天交租):未出现任一项:不知道、这才知道、没听说",
+        "detector": "must_keep:sister_ignorant",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(两人谈清一项具体的后续安排(含时间或分期)):未出现任一项:下周五、分期、下个月、月底、先还、再还、凑齐、过两周、两周、宽限、过几天",
+        "detector": "outcome:plan_made",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 26.47,
+      "chars": 1575,
+      "de_per_1000": 41.27,
+      "dialogue_ratio": 0.215,
+      "max_sentence_len": 70,
+      "min_sentence_len": 1,
+      "paragraphs": 21,
+      "sentences": 58,
+      "simile_per_1000": 0.63
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三人替他们解决钱的问题",
+          "detail": "ok",
+          "id": "new_benefactor",
+          "ok": true
+        },
+        {
+          "desc": "欠款不得被免除或清零",
+          "detail": "ok",
+          "id": "debt_forgiven",
+          "ok": true
+        },
+        {
+          "desc": "不得新增订单、固定工资或中奖",
+          "detail": "ok",
+          "id": "new_income",
+          "ok": true
+        },
+        {
+          "desc": "不得新增亲属",
+          "detail": "ok",
+          "id": "new_relative",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "原欠款为三千元",
+          "detail": "缺少必要内容:三千",
+          "id": "debt_total",
+          "ok": false
+        },
+        {
+          "desc": "本次交付两千元",
+          "detail": "ok",
+          "id": "paid_now",
+          "ok": true
+        },
+        {
+          "desc": "仍有一千元缺口",
+          "detail": "ok",
+          "id": "gap",
+          "ok": true
+        },
+        {
+          "desc": "弟弟明天要交店面租金",
+          "detail": "ok",
+          "id": "rent_tomorrow",
+          "ok": true
+        },
+        {
+          "desc": "周芸事前不知道弟弟明天交租",
+          "detail": "未出现任一项:不知道、这才知道、没听说",
+          "id": "sister_ignorant",
+          "ok": false
+        },
+        {
+          "desc": "弟弟不愿姐姐向邻居借",
+          "detail": "ok",
+          "id": "no_neighbor_loan",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "周航明确说出钱不够",
+          "detail": "ok",
+          "id": "shortfall_declared",
+          "ok": true
+        },
+        {
+          "desc": "两人谈清一项具体的后续安排(含时间或分期)",
+          "detail": "未出现任一项:下周五、分期、下个月、月底、先还、再还、凑齐、过两周、两周、宽限、过几天",
+          "id": "plan_made",
+          "ok": false
+        },
+        {
+          "desc": "弟弟带着两千元上船离开",
+          "detail": "ok",
+          "id": "brother_boards",
+          "ok": true
+        },
+        {
+          "desc": "姐姐留在岸上",
+          "detail": "ok",
+          "id": "sister_stays",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_ferry-chapter_single_shot-r2": {
+    "case_id": "real_ferry",
+    "chars": 1599,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(原欠款为三千元):缺少必要内容:三千",
+        "detector": "must_keep:debt_total",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(周芸事前不知道弟弟明天交租):未出现任一项:不知道、这才知道、没听说",
+        "detector": "must_keep:sister_ignorant",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(周航明确说出钱不够):未出现任一项:不够、差一千、少了、凑不上",
+        "detector": "outcome:shortfall_declared",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 23.53,
+      "chars": 1599,
+      "de_per_1000": 35.02,
+      "dialogue_ratio": 0.269,
+      "max_sentence_len": 60,
+      "min_sentence_len": 1,
+      "paragraphs": 24,
+      "sentences": 66,
+      "simile_per_1000": 0.63
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三人替他们解决钱的问题",
+          "detail": "ok",
+          "id": "new_benefactor",
+          "ok": true
+        },
+        {
+          "desc": "欠款不得被免除或清零",
+          "detail": "ok",
+          "id": "debt_forgiven",
+          "ok": true
+        },
+        {
+          "desc": "不得新增订单、固定工资或中奖",
+          "detail": "ok",
+          "id": "new_income",
+          "ok": true
+        },
+        {
+          "desc": "不得新增亲属",
+          "detail": "ok",
+          "id": "new_relative",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "原欠款为三千元",
+          "detail": "缺少必要内容:三千",
+          "id": "debt_total",
+          "ok": false
+        },
+        {
+          "desc": "本次交付两千元",
+          "detail": "ok",
+          "id": "paid_now",
+          "ok": true
+        },
+        {
+          "desc": "仍有一千元缺口",
+          "detail": "ok",
+          "id": "gap",
+          "ok": true
+        },
+        {
+          "desc": "弟弟明天要交店面租金",
+          "detail": "ok",
+          "id": "rent_tomorrow",
+          "ok": true
+        },
+        {
+          "desc": "周芸事前不知道弟弟明天交租",
+          "detail": "未出现任一项:不知道、这才知道、没听说",
+          "id": "sister_ignorant",
+          "ok": false
+        },
+        {
+          "desc": "弟弟不愿姐姐向邻居借",
+          "detail": "ok",
+          "id": "no_neighbor_loan",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "周航明确说出钱不够",
+          "detail": "未出现任一项:不够、差一千、少了、凑不上",
+          "id": "shortfall_declared",
+          "ok": false
+        },
+        {
+          "desc": "两人谈清一项具体的后续安排(含时间或分期)",
+          "detail": "ok",
+          "id": "plan_made",
+          "ok": true
+        },
+        {
+          "desc": "弟弟带着两千元上船离开",
+          "detail": "ok",
+          "id": "brother_boards",
+          "ok": true
+        },
+        {
+          "desc": "姐姐留在岸上",
+          "detail": "ok",
+          "id": "sister_stays",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_ferry-chapter_single_shot-r3": {
+    "case_id": "real_ferry",
+    "chars": 1382,
+    "counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(弟弟不愿姐姐向邻居借):未出现任一项:邻居",
+        "detector": "must_keep:no_neighbor_loan",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 24.51,
+      "chars": 1382,
+      "de_per_1000": 32.56,
+      "dialogue_ratio": 0.212,
+      "max_sentence_len": 48,
+      "min_sentence_len": 1,
+      "paragraphs": 18,
+      "sentences": 55,
+      "simile_per_1000": 1.45
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三人替他们解决钱的问题",
+          "detail": "ok",
+          "id": "new_benefactor",
+          "ok": true
+        },
+        {
+          "desc": "欠款不得被免除或清零",
+          "detail": "ok",
+          "id": "debt_forgiven",
+          "ok": true
+        },
+        {
+          "desc": "不得新增订单、固定工资或中奖",
+          "detail": "ok",
+          "id": "new_income",
+          "ok": true
+        },
+        {
+          "desc": "不得新增亲属",
+          "detail": "ok",
+          "id": "new_relative",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "原欠款为三千元",
+          "detail": "ok",
+          "id": "debt_total",
+          "ok": true
+        },
+        {
+          "desc": "本次交付两千元",
+          "detail": "ok",
+          "id": "paid_now",
+          "ok": true
+        },
+        {
+          "desc": "仍有一千元缺口",
+          "detail": "ok",
+          "id": "gap",
+          "ok": true
+        },
+        {
+          "desc": "弟弟明天要交店面租金",
+          "detail": "ok",
+          "id": "rent_tomorrow",
+          "ok": true
+        },
+        {
+          "desc": "周芸事前不知道弟弟明天交租",
+          "detail": "ok",
+          "id": "sister_ignorant",
+          "ok": true
+        },
+        {
+          "desc": "弟弟不愿姐姐向邻居借",
+          "detail": "未出现任一项:邻居",
+          "id": "no_neighbor_loan",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "周航明确说出钱不够",
+          "detail": "ok",
+          "id": "shortfall_declared",
+          "ok": true
+        },
+        {
+          "desc": "两人谈清一项具体的后续安排(含时间或分期)",
+          "detail": "ok",
+          "id": "plan_made",
+          "ok": true
+        },
+        {
+          "desc": "弟弟带着两千元上船离开",
+          "detail": "ok",
+          "id": "brother_boards",
+          "ok": true
+        },
+        {
+          "desc": "姐姐留在岸上",
+          "detail": "ok",
+          "id": "sister_stays",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_ferry-scene_writer-r1": {
+    "case_id": "real_ferry",
+    "chars": 1646,
+    "counts": {
+      "fact_violation": 5,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(弟弟不愿姐姐向邻居借):未出现任一项:邻居",
+        "detector": "must_keep:no_neighbor_loan",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '百元',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 408,
+        "quote": "两叠捆得整齐的百元钞票，上面一叠厚，下面一千，一共是两千。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「王婶」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 797,
+        "quote": "她不知道弟弟明天就要交房租，要是早知道，哪怕去找隔壁卖杂货的王婶拆借，也不会只拿来两千块。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「王婶」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 876,
+        "quote": "”周航像是看穿了她的心思，抬眼看着她，“王婶儿子今年要说媳妇，到处撒喜钱呢，你找她张口，保不齐全街的人都知道你过得紧巴巴的。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「老陈头」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 1046,
+        "quote": "“我那儿还能腾出几百，找修车铺的老陈头先挪个五百，再加上这两千，明天交租的数勉强能凑够，就是手头得彻底空了。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 29.27,
+      "chars": 1646,
+      "de_per_1000": 37.67,
+      "dialogue_ratio": 0.272,
+      "max_sentence_len": 64,
+      "min_sentence_len": 1,
+      "paragraphs": 19,
+      "sentences": 55,
+      "simile_per_1000": 1.82
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三人替他们解决钱的问题",
+          "detail": "ok",
+          "id": "new_benefactor",
+          "ok": true
+        },
+        {
+          "desc": "欠款不得被免除或清零",
+          "detail": "ok",
+          "id": "debt_forgiven",
+          "ok": true
+        },
+        {
+          "desc": "不得新增订单、固定工资或中奖",
+          "detail": "ok",
+          "id": "new_income",
+          "ok": true
+        },
+        {
+          "desc": "不得新增亲属",
+          "detail": "ok",
+          "id": "new_relative",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "原欠款为三千元",
+          "detail": "ok",
+          "id": "debt_total",
+          "ok": true
+        },
+        {
+          "desc": "本次交付两千元",
+          "detail": "ok",
+          "id": "paid_now",
+          "ok": true
+        },
+        {
+          "desc": "仍有一千元缺口",
+          "detail": "ok",
+          "id": "gap",
+          "ok": true
+        },
+        {
+          "desc": "弟弟明天要交店面租金",
+          "detail": "ok",
+          "id": "rent_tomorrow",
+          "ok": true
+        },
+        {
+          "desc": "周芸事前不知道弟弟明天交租",
+          "detail": "ok",
+          "id": "sister_ignorant",
+          "ok": true
+        },
+        {
+          "desc": "弟弟不愿姐姐向邻居借",
+          "detail": "未出现任一项:邻居",
+          "id": "no_neighbor_loan",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "周航明确说出钱不够",
+          "detail": "ok",
+          "id": "shortfall_declared",
+          "ok": true
+        },
+        {
+          "desc": "两人谈清一项具体的后续安排(含时间或分期)",
+          "detail": "ok",
+          "id": "plan_made",
+          "ok": true
+        },
+        {
+          "desc": "弟弟带着两千元上船离开",
+          "detail": "ok",
+          "id": "brother_boards",
+          "ok": true
+        },
+        {
+          "desc": "姐姐留在岸上",
+          "detail": "ok",
+          "id": "sister_stays",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_ferry-scene_writer-r2": {
+    "case_id": "real_ferry",
+    "chars": 1725,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「王叔」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 763,
+        "quote": "”周航打断了她的话，语气平平的，没有抱怨的意思，“隔壁修单车的王叔上回跟我说你想跟人合伙接点零活，我都听见了。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「老刘头」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 1080,
+        "quote": "“老刘头那个人抠门得很，压旧电视哪能当出多少钱去。",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(两人谈清一项具体的后续安排(含时间或分期)):未出现任一项:下周五、分期、下个月、月底、先还、再还、凑齐、过两周、两周、宽限、过几天",
+        "detector": "outcome:plan_made",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 28.53,
+      "chars": 1725,
+      "de_per_1000": 35.94,
+      "dialogue_ratio": 0.369,
+      "max_sentence_len": 66,
+      "min_sentence_len": 1,
+      "paragraphs": 22,
+      "sentences": 59,
+      "simile_per_1000": 1.16
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三人替他们解决钱的问题",
+          "detail": "ok",
+          "id": "new_benefactor",
+          "ok": true
+        },
+        {
+          "desc": "欠款不得被免除或清零",
+          "detail": "ok",
+          "id": "debt_forgiven",
+          "ok": true
+        },
+        {
+          "desc": "不得新增订单、固定工资或中奖",
+          "detail": "ok",
+          "id": "new_income",
+          "ok": true
+        },
+        {
+          "desc": "不得新增亲属",
+          "detail": "ok",
+          "id": "new_relative",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "原欠款为三千元",
+          "detail": "ok",
+          "id": "debt_total",
+          "ok": true
+        },
+        {
+          "desc": "本次交付两千元",
+          "detail": "ok",
+          "id": "paid_now",
+          "ok": true
+        },
+        {
+          "desc": "仍有一千元缺口",
+          "detail": "ok",
+          "id": "gap",
+          "ok": true
+        },
+        {
+          "desc": "弟弟明天要交店面租金",
+          "detail": "ok",
+          "id": "rent_tomorrow",
+          "ok": true
+        },
+        {
+          "desc": "周芸事前不知道弟弟明天交租",
+          "detail": "ok",
+          "id": "sister_ignorant",
+          "ok": true
+        },
+        {
+          "desc": "弟弟不愿姐姐向邻居借",
+          "detail": "ok",
+          "id": "no_neighbor_loan",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "周航明确说出钱不够",
+          "detail": "ok",
+          "id": "shortfall_declared",
+          "ok": true
+        },
+        {
+          "desc": "两人谈清一项具体的后续安排(含时间或分期)",
+          "detail": "未出现任一项:下周五、分期、下个月、月底、先还、再还、凑齐、过两周、两周、宽限、过几天",
+          "id": "plan_made",
+          "ok": false
+        },
+        {
+          "desc": "弟弟带着两千元上船离开",
+          "detail": "ok",
+          "id": "brother_boards",
+          "ok": true
+        },
+        {
+          "desc": "姐姐留在岸上",
+          "detail": "ok",
+          "id": "sister_stays",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_ferry-scene_writer-r3": {
+    "case_id": "real_ferry",
+    "chars": 1903,
+    "counts": {
+      "fact_violation": 4,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(弟弟不愿姐姐向邻居借):未出现任一项:邻居",
+        "detector": "must_keep:no_neighbor_loan",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(周芸事前不知道弟弟明天交租):未出现任一项:不知道、这才知道、没听说",
+        "detector": "must_keep:sister_ignorant",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「王婶」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 1045,
+        "quote": "“跟你说了有什么用？让你去隔壁卖杂货的王婶家开口，还是去跟修鞋的借？”周航打断了她的话，语气里没有责怪，只有一种被现实压住的沉闷，“你那铺子房租也快到期了吧？你上次还说连水电费都拖了半个月。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现样本未给定的数量 '百元',需核对是否改动既定数字",
+        "detector": "unexpected_quantity",
+        "offset": 1586,
+        "quote": "”周航伸手把那个牛皮纸信封推回了周芸面前，又从里面抽出一张百元钞票拍在桌上当面钱，“钱你拿着。",
+        "severity": "soft"
+      },
+      {
+        "category": "outcome_unfulfilled",
+        "detail": "本场要求未兑现(弟弟带着两千元上船离开):未出现任一项:上船、跳上船、登船",
+        "detector": "outcome:brother_boards",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 1,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 29.6,
+      "chars": 1903,
+      "de_per_1000": 38.36,
+      "dialogue_ratio": 0.322,
+      "max_sentence_len": 95,
+      "min_sentence_len": 1,
+      "paragraphs": 20,
+      "sentences": 63,
+      "simile_per_1000": 2.1
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得出现第三人替他们解决钱的问题",
+          "detail": "ok",
+          "id": "new_benefactor",
+          "ok": true
+        },
+        {
+          "desc": "欠款不得被免除或清零",
+          "detail": "ok",
+          "id": "debt_forgiven",
+          "ok": true
+        },
+        {
+          "desc": "不得新增订单、固定工资或中奖",
+          "detail": "ok",
+          "id": "new_income",
+          "ok": true
+        },
+        {
+          "desc": "不得新增亲属",
+          "detail": "ok",
+          "id": "new_relative",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "原欠款为三千元",
+          "detail": "ok",
+          "id": "debt_total",
+          "ok": true
+        },
+        {
+          "desc": "本次交付两千元",
+          "detail": "ok",
+          "id": "paid_now",
+          "ok": true
+        },
+        {
+          "desc": "仍有一千元缺口",
+          "detail": "ok",
+          "id": "gap",
+          "ok": true
+        },
+        {
+          "desc": "弟弟明天要交店面租金",
+          "detail": "ok",
+          "id": "rent_tomorrow",
+          "ok": true
+        },
+        {
+          "desc": "周芸事前不知道弟弟明天交租",
+          "detail": "未出现任一项:不知道、这才知道、没听说",
+          "id": "sister_ignorant",
+          "ok": false
+        },
+        {
+          "desc": "弟弟不愿姐姐向邻居借",
+          "detail": "未出现任一项:邻居",
+          "id": "no_neighbor_loan",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "周航明确说出钱不够",
+          "detail": "ok",
+          "id": "shortfall_declared",
+          "ok": true
+        },
+        {
+          "desc": "两人谈清一项具体的后续安排(含时间或分期)",
+          "detail": "ok",
+          "id": "plan_made",
+          "ok": true
+        },
+        {
+          "desc": "弟弟带着两千元上船离开",
+          "detail": "未出现任一项:上船、跳上船、登船",
+          "id": "brother_boards",
+          "ok": false
+        },
+        {
+          "desc": "姐姐留在岸上",
+          "detail": "ok",
+          "id": "sister_stays",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_stall-chapter_single_shot-r1": {
+    "case_id": "real_stall",
+    "chars": 1401,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 1,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(丈夫两年前走了,不回来):未出现任一项:两年",
+        "detector": "must_keep:father_gone",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「王姨」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 308,
+        "quote": "“隔壁卖煎饼的王姨说的。",
+        "severity": "soft"
+      },
+      {
+        "category": "pov_breach",
+        "detail": "限知视角为李巧云,此处直接进入陈麦的内心/感知(默默)",
+        "detector": "interior_of_non_pov",
+        "offset": 1361,
+        "quote": "李巧云收回目光，心里盘算着明天一早得去市场办公室再确认一遍退钱的规矩；陈麦则默默端起水杯，抿了一口温水，把明天去找班主任请假说明情况的念头压在了心底。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 1,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 24.75,
+      "chars": 1401,
+      "de_per_1000": 32.12,
+      "dialogue_ratio": 0.423,
+      "max_sentence_len": 75,
+      "min_sentence_len": 1,
+      "paragraphs": 21,
+      "sentences": 55,
+      "simile_per_1000": 2.86
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得由老师出面解决",
+          "detail": "ok",
+          "id": "teacher_rescue",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不得回来",
+          "detail": "ok",
+          "id": "father_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现新收入或补助",
+          "detail": "ok",
+          "id": "windfall",
+          "ok": true
+        },
+        {
+          "desc": "不得由母亲单方面命令解决",
+          "detail": "ok",
+          "id": "forced_decision",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "押金一千五",
+          "detail": "ok",
+          "id": "deposit",
+          "ok": true
+        },
+        {
+          "desc": "每月摊位费六百",
+          "detail": "ok",
+          "id": "stall_fee",
+          "ok": true
+        },
+        {
+          "desc": "下月起清退",
+          "detail": "ok",
+          "id": "clear_out",
+          "ok": true
+        },
+        {
+          "desc": "陈麦读高二",
+          "detail": "ok",
+          "id": "grade",
+          "ok": true
+        },
+        {
+          "desc": "丈夫两年前走了,不回来",
+          "detail": "未出现任一项:两年",
+          "id": "father_gone",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "李巧云说清退这件事",
+          "detail": "ok",
+          "id": "clearance_told",
+          "ok": true
+        },
+        {
+          "desc": "陈麦说出算过账的实际理由",
+          "detail": "ok",
+          "id": "daughter_reason",
+          "ok": true
+        },
+        {
+          "desc": "谈成一个只到本学期的暂定安排",
+          "detail": "ok",
+          "id": "temporary_deal",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代明天一早的具体一件事",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_stall-chapter_single_shot-r2": {
+    "case_id": "real_stall",
+    "chars": 1774,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 24.31,
+      "chars": 1774,
+      "de_per_1000": 27.62,
+      "dialogue_ratio": 0.423,
+      "max_sentence_len": 95,
+      "min_sentence_len": 1,
+      "paragraphs": 25,
+      "sentences": 71,
+      "simile_per_1000": 1.69
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得由老师出面解决",
+          "detail": "ok",
+          "id": "teacher_rescue",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不得回来",
+          "detail": "ok",
+          "id": "father_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现新收入或补助",
+          "detail": "ok",
+          "id": "windfall",
+          "ok": true
+        },
+        {
+          "desc": "不得由母亲单方面命令解决",
+          "detail": "ok",
+          "id": "forced_decision",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "押金一千五",
+          "detail": "ok",
+          "id": "deposit",
+          "ok": true
+        },
+        {
+          "desc": "每月摊位费六百",
+          "detail": "ok",
+          "id": "stall_fee",
+          "ok": true
+        },
+        {
+          "desc": "下月起清退",
+          "detail": "ok",
+          "id": "clear_out",
+          "ok": true
+        },
+        {
+          "desc": "陈麦读高二",
+          "detail": "ok",
+          "id": "grade",
+          "ok": true
+        },
+        {
+          "desc": "丈夫两年前走了,不回来",
+          "detail": "ok",
+          "id": "father_gone",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "李巧云说清退这件事",
+          "detail": "ok",
+          "id": "clearance_told",
+          "ok": true
+        },
+        {
+          "desc": "陈麦说出算过账的实际理由",
+          "detail": "ok",
+          "id": "daughter_reason",
+          "ok": true
+        },
+        {
+          "desc": "谈成一个只到本学期的暂定安排",
+          "detail": "ok",
+          "id": "temporary_deal",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代明天一早的具体一件事",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_stall-chapter_single_shot-r3": {
+    "case_id": "real_stall",
+    "chars": 982,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 1,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(丈夫两年前走了,不回来):未出现任一项:两年",
+        "detector": "must_keep:father_gone",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "正文把「她爹」写成主角亲属,但作者文字未设定该关系(father)",
+        "detector": "invented_relation",
+        "offset": 496,
+        "quote": "她看着女儿脸上还没完全褪去的稚气，那双眼睛却有着跟她爹当年一模一样的固执和死心眼。",
+        "severity": "hard"
+      },
+      {
+        "category": "pov_breach",
+        "detail": "限知视角为李巧云,此处直接进入陈麦的内心/感知(默默)",
+        "detector": "interior_of_non_pov",
+        "offset": 78,
+        "quote": "陈麦默默用筷子挑起一箸，放进嘴里。",
+        "severity": "soft"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 23.95,
+      "chars": 982,
+      "de_per_1000": 28.51,
+      "dialogue_ratio": 0.436,
+      "max_sentence_len": 62,
+      "min_sentence_len": 1,
+      "paragraphs": 13,
+      "sentences": 40,
+      "simile_per_1000": 3.05
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得由老师出面解决",
+          "detail": "ok",
+          "id": "teacher_rescue",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不得回来",
+          "detail": "ok",
+          "id": "father_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现新收入或补助",
+          "detail": "ok",
+          "id": "windfall",
+          "ok": true
+        },
+        {
+          "desc": "不得由母亲单方面命令解决",
+          "detail": "ok",
+          "id": "forced_decision",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "押金一千五",
+          "detail": "ok",
+          "id": "deposit",
+          "ok": true
+        },
+        {
+          "desc": "每月摊位费六百",
+          "detail": "ok",
+          "id": "stall_fee",
+          "ok": true
+        },
+        {
+          "desc": "下月起清退",
+          "detail": "ok",
+          "id": "clear_out",
+          "ok": true
+        },
+        {
+          "desc": "陈麦读高二",
+          "detail": "ok",
+          "id": "grade",
+          "ok": true
+        },
+        {
+          "desc": "丈夫两年前走了,不回来",
+          "detail": "未出现任一项:两年",
+          "id": "father_gone",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "李巧云说清退这件事",
+          "detail": "ok",
+          "id": "clearance_told",
+          "ok": true
+        },
+        {
+          "desc": "陈麦说出算过账的实际理由",
+          "detail": "ok",
+          "id": "daughter_reason",
+          "ok": true
+        },
+        {
+          "desc": "谈成一个只到本学期的暂定安排",
+          "detail": "ok",
+          "id": "temporary_deal",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代明天一早的具体一件事",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_stall-scene_writer-r1": {
+    "case_id": "real_stall",
+    "chars": 2039,
+    "counts": {
+      "fact_violation": 4,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(丈夫两年前走了,不回来):未与任一项共现:走、没回来、不在",
+        "detector": "must_keep:father_gone",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "出现作者文字未设定的具名人物「王姨」,需核对是否为新补的人物",
+        "detector": "unauthorized_new_character",
+        "offset": 688,
+        "quote": "”陈麦抬起头，目光直直地迎着母亲的眼睛，没有赌气时的闪躲，“我上周跟三中门口开士多店的王姨打听过，她表姐在昆山电子厂做线长。",
+        "severity": "soft"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "正文把「我爸」写成主角亲属,但作者文字未设定该关系(father)",
+        "detector": "invented_relation",
+        "offset": 999,
+        "quote": "“那家里这窟窿什么时候能堵上？”陈麦的声音也高了半度，压抑的隐忍终于破了个口子，“我爸走的时候留下的那些账，你每个月光是利息就得填多少？你这炒粉摊一个月挣三四千，扣掉摊位费、菜钱和租房子的钱，手里还剩几个？下个月摊位没了，你连这六百块的本钱都交不上，拿什么供我读到高三？我是你女儿，不是累赘，我算过账了，现在退学是最快出路。",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "新增了明令禁止的元素(必须听我的):不得由母亲单方面命令解决",
+        "detector": "forbidden:forced_decision",
+        "offset": 1624,
+        "quote": "但是，高二一结束，期末成绩出来，要是数理化还是这个不上不下的死样子，你必须听我的，要么老老实实回学校念高三，要么……到时候你想去哪儿打工，我不拦着。",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 3,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 25.55,
+      "chars": 2039,
+      "de_per_1000": 34.33,
+      "dialogue_ratio": 0.556,
+      "max_sentence_len": 162,
+      "min_sentence_len": 1,
+      "paragraphs": 24,
+      "sentences": 78,
+      "simile_per_1000": 0.98
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得由老师出面解决",
+          "detail": "ok",
+          "id": "teacher_rescue",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不得回来",
+          "detail": "ok",
+          "id": "father_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现新收入或补助",
+          "detail": "ok",
+          "id": "windfall",
+          "ok": true
+        },
+        {
+          "desc": "不得由母亲单方面命令解决",
+          "detail": "出现禁止项:必须听我的",
+          "id": "forced_decision",
+          "ok": false
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "押金一千五",
+          "detail": "ok",
+          "id": "deposit",
+          "ok": true
+        },
+        {
+          "desc": "每月摊位费六百",
+          "detail": "ok",
+          "id": "stall_fee",
+          "ok": true
+        },
+        {
+          "desc": "下月起清退",
+          "detail": "ok",
+          "id": "clear_out",
+          "ok": true
+        },
+        {
+          "desc": "陈麦读高二",
+          "detail": "ok",
+          "id": "grade",
+          "ok": true
+        },
+        {
+          "desc": "丈夫两年前走了,不回来",
+          "detail": "未与任一项共现:走、没回来、不在",
+          "id": "father_gone",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "李巧云说清退这件事",
+          "detail": "ok",
+          "id": "clearance_told",
+          "ok": true
+        },
+        {
+          "desc": "陈麦说出算过账的实际理由",
+          "detail": "ok",
+          "id": "daughter_reason",
+          "ok": true
+        },
+        {
+          "desc": "谈成一个只到本学期的暂定安排",
+          "detail": "ok",
+          "id": "temporary_deal",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代明天一早的具体一件事",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_stall-scene_writer-r2": {
+    "case_id": "real_stall",
+    "chars": 1238,
+    "counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(下月起清退):未与任一项共现:清退、不让摆、腾出来、收回去",
+        "detector": "must_keep:clear_out",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      },
+      {
+        "category": "fact_violation",
+        "detail": "必须保持的事实未成立(丈夫两年前走了,不回来):未出现任一项:两年",
+        "detector": "must_keep:father_gone",
+        "offset": -1,
+        "quote": "",
+        "severity": "hard"
+      }
+    ],
+    "hard_counts": {
+      "fact_violation": 2,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 28.19,
+      "chars": 1238,
+      "de_per_1000": 36.35,
+      "dialogue_ratio": 0.528,
+      "max_sentence_len": 72,
+      "min_sentence_len": 1,
+      "paragraphs": 14,
+      "sentences": 43,
+      "simile_per_1000": 3.23
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得由老师出面解决",
+          "detail": "ok",
+          "id": "teacher_rescue",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不得回来",
+          "detail": "ok",
+          "id": "father_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现新收入或补助",
+          "detail": "ok",
+          "id": "windfall",
+          "ok": true
+        },
+        {
+          "desc": "不得由母亲单方面命令解决",
+          "detail": "ok",
+          "id": "forced_decision",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "押金一千五",
+          "detail": "ok",
+          "id": "deposit",
+          "ok": true
+        },
+        {
+          "desc": "每月摊位费六百",
+          "detail": "ok",
+          "id": "stall_fee",
+          "ok": true
+        },
+        {
+          "desc": "下月起清退",
+          "detail": "未与任一项共现:清退、不让摆、腾出来、收回去",
+          "id": "clear_out",
+          "ok": false
+        },
+        {
+          "desc": "陈麦读高二",
+          "detail": "ok",
+          "id": "grade",
+          "ok": true
+        },
+        {
+          "desc": "丈夫两年前走了,不回来",
+          "detail": "未出现任一项:两年",
+          "id": "father_gone",
+          "ok": false
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "李巧云说清退这件事",
+          "detail": "ok",
+          "id": "clearance_told",
+          "ok": true
+        },
+        {
+          "desc": "陈麦说出算过账的实际理由",
+          "detail": "ok",
+          "id": "daughter_reason",
+          "ok": true
+        },
+        {
+          "desc": "谈成一个只到本学期的暂定安排",
+          "detail": "ok",
+          "id": "temporary_deal",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代明天一早的具体一件事",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "real_stall-scene_writer-r3": {
+    "case_id": "real_stall",
+    "chars": 1804,
+    "counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "findings": [],
+    "hard_counts": {
+      "fact_violation": 0,
+      "instruction_leak": 0,
+      "metaphor_stack": 0,
+      "outcome_unfulfilled": 0,
+      "pov_breach": 0,
+      "rule_recitation": 0
+    },
+    "metrics": {
+      "ai_phrase_total": 0,
+      "ai_phrases": {},
+      "avg_sentence_len": 25.54,
+      "chars": 1804,
+      "de_per_1000": 29.93,
+      "dialogue_ratio": 0.446,
+      "max_sentence_len": 73,
+      "min_sentence_len": 1,
+      "paragraphs": 22,
+      "sentences": 69,
+      "simile_per_1000": 2.22
+    },
+    "requirements": {
+      "forbidden": [
+        {
+          "desc": "不得由老师出面解决",
+          "detail": "ok",
+          "id": "teacher_rescue",
+          "ok": true
+        },
+        {
+          "desc": "丈夫不得回来",
+          "detail": "ok",
+          "id": "father_returns",
+          "ok": true
+        },
+        {
+          "desc": "不得出现新收入或补助",
+          "detail": "ok",
+          "id": "windfall",
+          "ok": true
+        },
+        {
+          "desc": "不得由母亲单方面命令解决",
+          "detail": "ok",
+          "id": "forced_decision",
+          "ok": true
+        }
+      ],
+      "must_keep": [
+        {
+          "desc": "押金一千五",
+          "detail": "ok",
+          "id": "deposit",
+          "ok": true
+        },
+        {
+          "desc": "每月摊位费六百",
+          "detail": "ok",
+          "id": "stall_fee",
+          "ok": true
+        },
+        {
+          "desc": "下月起清退",
+          "detail": "ok",
+          "id": "clear_out",
+          "ok": true
+        },
+        {
+          "desc": "陈麦读高二",
+          "detail": "ok",
+          "id": "grade",
+          "ok": true
+        },
+        {
+          "desc": "丈夫两年前走了,不回来",
+          "detail": "ok",
+          "id": "father_gone",
+          "ok": true
+        }
+      ],
+      "required_outcomes": [
+        {
+          "desc": "李巧云说清退这件事",
+          "detail": "ok",
+          "id": "clearance_told",
+          "ok": true
+        },
+        {
+          "desc": "陈麦说出算过账的实际理由",
+          "detail": "ok",
+          "id": "daughter_reason",
+          "ok": true
+        },
+        {
+          "desc": "谈成一个只到本学期的暂定安排",
+          "detail": "ok",
+          "id": "temporary_deal",
+          "ok": true
+        },
+        {
+          "desc": "结尾交代明天一早的具体一件事",
+          "detail": "ok",
+          "id": "next_morning",
+          "ok": true
+        }
+      ]
+    }
+  }
+}

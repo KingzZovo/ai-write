@@ -1,0 +1,11 @@
+# 后台运行评估的上下文对齐
+
+原evaluation_tasks._run_evaluate_task_async只给模型当前正文、细纲、认知与统计，漏了相邻章节和项目风格。现接入load_evaluation_neighbors（项目范围校验、前后文隔离、按书序与待审标记）及resolve_style_prompt（项目/章节选择），透传previous_summary、following_context和style_profile。
+
+所有资料读取仍在模型前的会话内完成，提交running并退出后才调用评审。邻章/风格读取失败时回滚并重读任务，记固定evaluation_context_unavailable，不携缺失材料继续评分。若重读发现已经completed则保留该结果。请求chapter_id不等于任务绑定章节时返回chapter_mismatch，不加载或写入另一章的评审。
+
+验证：最终56项离线回归通过，新增5项执行真实后台函数，覆盖上下文实参、模型调用时无打开会话、两种上下文错误、任务章错配、回滚重读已完成结果保留。首轮另包含4项既有PG邻章测试，全部在数据库连接时PermissionError，未进入断言；不计为通过。2文件AST与git diff --check通过。
+
+按shadow-mind无可靠只读隔离回退，冻结后本地核对任务绑定、模型前事务释放、错误持久化及回滚后状态。复核补了已完成任务不被新错误覆盖的分支，并复跑离线用例。
+
+限制：上述保护只针对重读时已经观察到的完成状态，并不提供任务全面并发互斥或模型执行期间的正文版本校验；这些仍需后续来源/版本保护。认知与统计仍沿用原有可选读取行为；本轮不推断历史作者要求。真实PG/Neo4j、Celery/浏览器完整链、模型对照和文学质量验收、部署仍未完成。

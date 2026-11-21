@@ -1,0 +1,127 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "1ad6cf51-d21c-4147-9df3-35a4648d0dbf",
+    "status": "ok",
+    "chars_raw": 1331,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1331
+    },
+    "chars": 1331,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 35.8,
+    "summary_written": true,
+    "summary_chars": 121,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "adad3e50-68b2-4c1a-aa51-f9fe7736b301",
+    "status": "ok",
+    "chars_raw": 1370,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1370
+    },
+    "chars": 1370,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 38.4,
+    "summary_written": true,
+    "summary_chars": 119,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "c401b5a1-8ced-41d9-9240-1511e655f432",
+    "status": "ok",
+    "chars_raw": 1689,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1689
+    },
+    "chars": 1689,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 38.7,
+    "summary_written": true,
+    "summary_chars": 151,
+    "entity_error": "EntityExtractionError: location_changes[0].evidence无法在原文逐字定位",
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition_offending": [
+      "“十二。”周航说,“最低了。”女人点了点头:“行,那你修吧。我明天上午来拿。”"
+    ],
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  }
+]

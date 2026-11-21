@@ -1,0 +1,784 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "ffe0ed36-53e1-40a8-a416-cf8e99b88dd5",
+    "status": "ok",
+    "chars_raw": 1603,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1603
+    },
+    "chars": 1603,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 20.9,
+    "summary_written": true,
+    "summary_chars": 123,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "1639064e-83d2-475f-9961-282cbb49a72b",
+    "status": "ok",
+    "chars_raw": 1295,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1295
+    },
+    "chars": 1295,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 28.0,
+    "summary_written": true,
+    "summary_chars": 148,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition_offending": [
+      "这半年的铺租，今天可是到期了。八百块钱，你看是不是把账结一下"
+    ],
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "695ec295-25fc-47df-99af-777bf2e0b05f",
+    "status": "ok",
+    "chars_raw": 1227,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1227
+    },
+    "chars": 1227,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 20.3,
+    "summary_written": true,
+    "summary_chars": 123,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "1fc1b8ab-26f3-4c72-824a-30f59a6401c7",
+    "status": "ok",
+    "chars_raw": 1700,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1700
+    },
+    "chars": 1700,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第四章 一碗没有加蛋的面",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 28.0,
+    "summary_written": true,
+    "summary_chars": 129,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "7bf82b08-239e-46c3-8454-ec35157fbfa9",
+    "status": "ok",
+    "chars_raw": 1337,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1337
+    },
+    "chars": 1337,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "袋子里的东西",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 25.6,
+    "summary_written": true,
+    "summary_chars": 141,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "c9dbcb94-1a2c-4944-9b3c-e798b6021acd",
+    "status": "ok",
+    "chars_raw": 1008,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1008
+    },
+    "chars": 1008,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "老陈的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 23.2,
+    "summary_written": true,
+    "summary_chars": 130,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "fa8d1bf0-172f-4d75-a6d8-a28a7b65f788",
+    "status": "ok",
+    "chars_raw": 953,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 953
+    },
+    "chars": 953,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "铁盒里的顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 26.0,
+    "summary_written": true,
+    "summary_chars": 138,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition_error": "EntityExtractionError: 认知提取不是有效 JSON 数组",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "b6b0425b-dc92-4931-bc75-3881bfafe6ab",
+    "status": "ok",
+    "chars_raw": 21,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 21
+    },
+    "chars": 21,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第八章 校服的钱",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 98.1,
+    "summary_written": false,
+    "summary_chars": 0,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "d3e58fcb-f7c6-4863-bb38-c7382e335f09",
+    "status": "ok",
+    "chars_raw": 1011,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1011
+    },
+    "chars": 1011,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "中秋前的七百",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 37.4,
+    "summary_written": true,
+    "summary_chars": 127,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "a993e3b4-2bc0-483c-9279-677c57ae3f7a",
+    "status": "ok",
+    "chars_raw": 1050,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1050
+    },
+    "chars": 1050,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "最后一班渡船",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 37.5,
+    "summary_written": true,
+    "summary_chars": 114,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 11,
+    "chapter_id": "963a1dcd-2a96-47ae-89a0-a36a6ea70b7b",
+    "status": "ok",
+    "chars_raw": 1714,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1714
+    },
+    "chars": 1714,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第十一章 复查单",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 55.7,
+    "summary_written": true,
+    "summary_chars": 218,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 12,
+    "chapter_id": "29f42be3-7db3-4caf-b175-967367fd0763",
+    "status": "ok",
+    "chars_raw": 1540,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1540
+    },
+    "chars": 1540,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "老周的收音机",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 37.4,
+    "summary_written": true,
+    "summary_chars": 115,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 13,
+    "chapter_id": "abb07290-9802-4f4c-a752-7b02dbd4a9f2",
+    "status": "ok",
+    "chars_raw": 1808,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1808
+    },
+    "chars": 1808,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "两岸各说一半",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 39.2,
+    "summary_written": true,
+    "summary_chars": 149,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 14,
+    "chapter_id": "768ee638-4486-4a07-a35b-a65569087e78",
+    "status": "ok",
+    "chars_raw": 1685,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1685
+    },
+    "chars": 1685,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "收费窗口",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 23.5,
+    "summary_written": true,
+    "summary_chars": 172,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 15,
+    "chapter_id": "fc191dee-91fe-4f8a-a0b9-f2df3f117be8",
+    "status": "ok",
+    "chars_raw": 1372,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1372
+    },
+    "chars": 1372,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "停航通知",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 79.0,
+    "summary_written": true,
+    "summary_chars": 109,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 16,
+    "chapter_id": "6ba86fbd-fd43-4d19-886b-c7fc5c63b704",
+    "status": "ok",
+    "chars_raw": 1034,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1034
+    },
+    "chars": 1034,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "九百块的铺子",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 21.5,
+    "summary_written": true,
+    "summary_chars": 130,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 17,
+    "chapter_id": "48012016-b8f1-4098-8d59-5ff69dab1c52",
+    "status": "ok",
+    "chars_raw": 950,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 950
+    },
+    "chars": 950,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "电器铺的盘算",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 30.9,
+    "summary_written": true,
+    "summary_chars": 141,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 18,
+    "chapter_id": "bc8daef7-5fb5-4b39-92d2-bcc9a7bb661b",
+    "status": "ok",
+    "chars_raw": 1071,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1071
+    },
+    "chars": 1071,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "摊开的账",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 28.8,
+    "summary_written": true,
+    "summary_chars": 128,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 19,
+    "chapter_id": "2d3c0186-a776-4c6f-bc71-0b4d53246bb9",
+    "status": "ok",
+    "chars_raw": 1019,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1019
+    },
+    "chars": 1019,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "半间铺面",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 28.8,
+    "summary_written": true,
+    "summary_chars": 31,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 20,
+    "chapter_id": "d2c3d179-454e-4151-809e-47abb78f3b0c",
+    "status": "ok",
+    "chars_raw": 1217,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1217
+    },
+    "chars": 1217,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第二十章 一半的铺子",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.7,
+    "summary_written": true,
+    "summary_chars": 116,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 21,
+    "chapter_id": "150ff6bb-8c51-4823-96e7-4143236dc88e",
+    "status": "ok",
+    "chars_raw": 1033,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1033
+    },
+    "chars": 1033,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "最后一班",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 29.1,
+    "summary_written": true,
+    "summary_chars": 135,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 22,
+    "chapter_id": "1cbe3059-6033-43fb-83b8-13377c59ae49",
+    "status": "ok",
+    "chars_raw": 2055,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2055
+    },
+    "chars": 2055,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "住院部病房结清账目",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 26.2,
+    "summary_written": true,
+    "summary_chars": 26,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 23,
+    "chapter_id": "8e284b65-f9a2-4c9b-880f-20a277298220",
+    "status": "ok",
+    "chars_raw": 1177,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1177
+    },
+    "chars": 1177,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第一批货与账目",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 23.9,
+    "summary_written": true,
+    "summary_chars": 188,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 24,
+    "chapter_id": "bfb35204-485e-49c1-9a4f-582443d2ecdc",
+    "status": "ok",
+    "chars_raw": 1352,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1352
+    },
+    "chars": 1352,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第二十四章 结账",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 22.4,
+    "summary_written": true,
+    "summary_chars": 217,
+    "entity_error": "ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"status_digest\" of relation \"character_states\" does not exist\n[SQL: INSERT INTO char",
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition_offending": [
+      "周芸从随身的布包里掏出一个用旧报纸包得平平整整、外面拿粗棉线扎了好几道活结的信封。",
+      "母亲伸出略显粗糙的手掌，稳稳地接住了那个信封，贴身揣进了棉袄内侧的口袋里，用纽扣仔细扣好。"
+    ],
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  }
+]

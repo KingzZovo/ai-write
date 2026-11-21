@@ -1,0 +1,96 @@
+{
+  "deepseek41": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "deepseek-ai/deepseek-v4.1-flash",
+      "fallback": false,
+      "received": false,
+      "error_type": "BadRequestError",
+      "status_code": 400,
+      "seconds": 1.29
+    }
+  ],
+  "glm53": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "z-ai/glm-5.3-flash",
+      "fallback": false,
+      "received": false,
+      "error_type": "BadRequestError",
+      "status_code": 400,
+      "seconds": 1.22
+    }
+  ],
+  "kimi3": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "moonshotai/kimi-k3",
+      "fallback": false,
+      "received": false,
+      "error_type": "BadRequestError",
+      "status_code": 400,
+      "seconds": 1.21
+    }
+  ],
+  "isolated-deepseek41": [
+    {
+      "case": "saved",
+      "gateway": "isolated CPA 58317",
+      "model": "deepseek-ai/deepseek-v4.1-flash",
+      "fallback": false,
+      "received": false,
+      "error_type": "APITimeoutError",
+      "status_code": null,
+      "seconds": 121.2
+    }
+  ],
+  "isolated-glm53": [
+    {
+      "case": "saved",
+      "gateway": "isolated CPA 58317",
+      "model": "z-ai/glm-5.3-flash",
+      "fallback": false,
+      "received": false,
+      "error_type": "LLMEmptyCompletionError",
+      "status_code": null,
+      "seconds": 98.33
+    }
+  ],
+  "isolated-kimi3": [
+    {
+      "case": "saved",
+      "gateway": "isolated CPA 58317",
+      "model": "moonshotai/kimi-k3",
+      "fallback": false,
+      "received": false,
+      "error_type": "APITimeoutError",
+      "status_code": null,
+      "seconds": 121.1
+    }
+  ],
+  "glm-no-thinking": [
+    {
+      "case": "saved",
+      "gateway": "isolated CPA 58317",
+      "model": "z-ai/glm-5.3-flash",
+      "received": false,
+      "error_type": "APITimeoutError",
+      "status_code": null,
+      "seconds": 121.26
+    }
+  ],
+  "glm-budget8192": [
+    {
+      "case": "saved",
+      "gateway": "isolated CPA 58317",
+      "model": "z-ai/glm-5.3-flash",
+      "received": false,
+      "error_type": "APITimeoutError",
+      "status_code": null,
+      "seconds": 301.24
+    }
+  ]
+}

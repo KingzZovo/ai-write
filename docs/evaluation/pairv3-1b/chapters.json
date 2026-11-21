@@ -1,0 +1,80 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "3a30cd28-a7a5-4dd6-af89-c1964a92b56c",
+    "status": "ok",
+    "chars_raw": 1746,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1746
+    },
+    "chars": 1746,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "面摊交钱",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口离别",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 27.5,
+    "summary_written": true,
+    "summary_chars": 133,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "1bf56ecb-8781-46f9-ae20-6eb0bc1c2379",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 3,
+    "chapter_id": "0b257a09-4641-44b1-8e7e-30b30ead1239",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  },
+  {
+    "index": 4,
+    "chapter_id": "08e43029-e39b-4873-a2bc-bc2cd75c7992",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 4
+  }
+]

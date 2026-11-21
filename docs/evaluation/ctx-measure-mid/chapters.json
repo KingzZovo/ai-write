@@ -1,0 +1,140 @@
+[
+  {
+    "index": 1,
+    "status": "resumed",
+    "chars": 1654
+  },
+  {
+    "index": 2,
+    "status": "resumed",
+    "chars": 1118
+  },
+  {
+    "index": 3,
+    "status": "resumed",
+    "chars": 1549
+  },
+  {
+    "index": 4,
+    "status": "resumed",
+    "chars": 1289
+  },
+  {
+    "index": 5,
+    "status": "resumed",
+    "chars": 1238
+  },
+  {
+    "index": 6,
+    "status": "resumed",
+    "chars": 1245
+  },
+  {
+    "index": 7,
+    "status": "resumed",
+    "chars": 1430
+  },
+  {
+    "index": 8,
+    "status": "resumed",
+    "chars": 720
+  },
+  {
+    "index": 9,
+    "status": "resumed",
+    "chars": 1656
+  },
+  {
+    "index": 10,
+    "status": "resumed",
+    "chars": 977
+  },
+  {
+    "index": 11,
+    "status": "resumed",
+    "chars": 942
+  },
+  {
+    "index": 12,
+    "status": "resumed",
+    "chars": 1289
+  },
+  {
+    "index": 13,
+    "status": "resumed",
+    "chars": 1203
+  },
+  {
+    "index": 14,
+    "status": "resumed",
+    "chars": 990
+  },
+  {
+    "index": 15,
+    "status": "resumed",
+    "chars": 1331
+  },
+  {
+    "index": 16,
+    "status": "resumed",
+    "chars": 1241
+  },
+  {
+    "index": 17,
+    "status": "resumed",
+    "chars": 979
+  },
+  {
+    "index": 18,
+    "chapter_id": "fbad0a02-810d-491e-bfd8-f606df1103bc",
+    "status": "ok",
+    "chars_raw": 974,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 974
+    },
+    "chars": 974,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "两岸账目",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 12.7,
+    "summary_written": true,
+    "summary_chars": 133,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 19,
+    "chapter_id": "c02a78ed-8575-4828-80e8-5d28df890287",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_retrieval_unavailable",
+    "error_code": null
+  }
+]

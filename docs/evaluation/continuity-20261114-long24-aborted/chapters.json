@@ -1,0 +1,290 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "1187c7bf-408f-457d-8b82-595e81d19acf",
+    "status": "ok",
+    "chars_raw": 890,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 890
+    },
+    "chars": 890,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 13.8,
+    "summary_written": true,
+    "summary_chars": 153,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "685ad0c6-8e5c-485c-85c0-3981cbf374cd",
+    "status": "ok",
+    "chars_raw": 1007,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1007
+    },
+    "chars": 1007,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "清晨催租与铜顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 23.6,
+    "summary_written": true,
+    "summary_chars": 130,
+    "entity_error": "EntityExtractionError: new_characters[1].evidence无法在原文逐字定位",
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 2,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "467f5dec-eb02-406f-ab54-7db3f977ae61",
+    "status": "ok",
+    "chars_raw": 817,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 817
+    },
+    "chars": 817,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "电器铺的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 17.5,
+    "summary_written": true,
+    "summary_chars": 317,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "c615fe58-4c12-4a2c-becc-69334ffc7c83",
+    "status": "ok",
+    "chars_raw": 952,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 952
+    },
+    "chars": 952,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口夜话",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 19.9,
+    "summary_written": true,
+    "summary_chars": 93,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "de737e9c-4e22-4c7a-91bb-d98752f1f54b",
+    "status": "ok",
+    "chars_raw": 1027,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1027
+    },
+    "chars": 1027,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 19.7,
+    "summary_written": true,
+    "summary_chars": 156,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "b98a116b-b96c-4498-8497-bcc0b931fe72",
+    "status": "ok",
+    "chars_raw": 1041,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1041
+    },
+    "chars": 1041,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "老陈的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 20.1,
+    "summary_written": true,
+    "summary_chars": 150,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "4fd4a13a-d870-45f3-ac3f-a685f753de33",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  },
+  {
+    "index": 8,
+    "chapter_id": "3082e880-a4f1-45b0-95ce-70066e51c84a",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "chapters": 3,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 2164,
+      "target": 2000,
+      "ratio": 1.082
+    },
+    "ch02.txt": {
+      "chars": 2134,
+      "target": 2000,
+      "ratio": 1.067
+    },
+    "ch03.txt": {
+      "chars": 2104,
+      "target": 2000,
+      "ratio": 1.052
+    }
+  },
+  "findings": [
+    {
+      "check": "unknown_character",
+      "name": "大姐",
+      "chapters": [
+        "ch01.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大姐」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "小老板",
+      "chapters": [
+        "ch01.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「小老板」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 2
+}

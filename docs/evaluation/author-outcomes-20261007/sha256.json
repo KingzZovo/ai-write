@@ -1,0 +1,14 @@
+{
+  "REVIEW.md": "fb0d4d1db164c8c22d436a0ee51b4cf10c09e7d7bcd732fef89f1f9c24aef564",
+  "candidate-source.json": "25bbb498e37870fc4d40f06d4682c589473e44b4c3e9dfa9cce4fa8f2a49c8d1",
+  "control-evaluation-request.json": "250500c34423a73fc8fa5ccc52cab44bf0eecf67c409248c5ef385afc25d4a0b",
+  "control-evaluation-response.json": "50d65d41fd2e3a535b01cf28424f6ee59f8ced2e9a35f38fc80998ee7fc2f7ac",
+  "evaluations.json": "c60604109ed76a287f40ff7f22e5132cdcc020e717c5a285498d4fb398340fee",
+  "initial-chapter.txt": "bea29215dd6445750c30cd562581f37cd5f00cf040a599dac7b11aa2c5af4688",
+  "prompt-revisions.json": "9c67cea77c304489b69eaeca2f640b36732a4ca1687d37e21927022e7ac398bb",
+  "request.json": "30d6770759e18cb51bc9fe1a70e3225de384296dbfadb60754af2117bbb42aff",
+  "result.json": "d44e934ca6b3870f33124e74d290751fd9ac9c67372df248e3919a58ae4db72c",
+  "saved-chapter.txt": "bea29215dd6445750c30cd562581f37cd5f00cf040a599dac7b11aa2c5af4688",
+  "saved-evaluation-request.json": "7dbdcda0480c8870c77b8318fc6dc2ecae9679f0ccfc2b17bd7e7a96b36e1d05",
+  "saved-evaluation-response.json": "fd5c0e13857599fa261a90c7c9ef80e7a9fa1e192d4fd4b160c60e68d0f9b165"
+}

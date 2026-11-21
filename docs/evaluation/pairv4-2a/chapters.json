@@ -1,0 +1,94 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "e9c93b41-6d8e-4c9e-9259-e81d663b74a9",
+    "status": "truncated",
+    "chars_raw": 1093,
+    "guard": "truncated",
+    "chars": 1093,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 31.4
+  },
+  {
+    "index": 2,
+    "chapter_id": "a1ccc3dc-b859-45f5-9358-3a40d55dc3da",
+    "status": "ok",
+    "chars_raw": 1047,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1047
+    },
+    "chars": 1047,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 23.3,
+    "summary_written": true,
+    "summary_chars": 99,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知依据无法在正文逐字定位",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "b1c87795-3682-4a46-8a66-fcf0989dcdc4",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 3
+  },
+  {
+    "index": 4,
+    "chapter_id": "5ac61890-6665-4420-bf51-55fa0715d847",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 3
+  },
+  {
+    "index": 5,
+    "chapter_id": "1d9f1c7f-2922-4b1c-9207-2e5903ee4bc9",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null,
+    "attempts": 3
+  }
+]

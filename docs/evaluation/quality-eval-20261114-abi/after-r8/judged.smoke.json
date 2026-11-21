@@ -1,0 +1,152 @@
+[
+  {
+    "stem": "real_ferry-scene_writer-r1",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1705,
+    "status": "error",
+    "error_type": "QualityEvalError",
+    "error_message": "judge returned empty text"
+  },
+  {
+    "stem": "real_ferry-scene_writer-r2",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1593,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 13.559,
+    "output_tokens": 1761,
+    "verdicts": [
+      {
+        "id": "shortfall_declared",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 9,
+        "verified": true,
+        "quote": "姐,这回怎么只有两千?"
+      },
+      {
+        "id": "plan_made",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 22,
+        "verified": true,
+        "quote": "你宽限我半个月,等过了这礼拜,我跟隔壁张姐匀一点......"
+      },
+      {
+        "id": "brother_boards",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 33,
+        "verified": true,
+        "quote": "周芸站在原地,看着弟弟穿过昏暗的候船棚,混在零星的几个晚归乘客里上了船。"
+      },
+      {
+        "id": "sister_stays",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 29,
+        "verified": true,
+        "quote": "周芸没有立刻离开。她站在岸边,看着渡船缓缓倒车、调头,向江对岸驶去。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_ferry-scene_writer-r3",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1219,
+    "status": "error",
+    "error_type": "QualityEvalError",
+    "error_message": "judge returned empty text"
+  },
+  {
+    "stem": "real_ferry-scene_writer-r4",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1576,
+    "status": "error",
+    "error_type": "QualityEvalError",
+    "error_message": "judge returned empty text"
+  },
+  {
+    "stem": "real_ferry-scene_writer-r5",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1223,
+    "status": "error",
+    "error_type": "QualityEvalError",
+    "error_message": "judge returned empty text"
+  },
+  {
+    "stem": "real_ferry-scene_writer-r6",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1648,
+    "status": "error",
+    "error_type": "QualityEvalError",
+    "error_message": "judge returned empty text"
+  },
+  {
+    "stem": "real_ferry-scene_writer-r7",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1926,
+    "status": "error",
+    "error_type": "QualityEvalError",
+    "error_message": "judge returned empty text"
+  },
+  {
+    "stem": "real_ferry-scene_writer-r8",
+    "case_id": "real_ferry",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1492,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 14.279,
+    "output_tokens": 1881,
+    "verdicts": [
+      {
+        "id": "shortfall_declared",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 34,
+        "verified": true,
+        "quote": "我今天紧赶慢赶坐末班船过来,本来以为你那边手头宽裕点,能全拿上。两千......这不够。"
+      },
+      {
+        "id": "plan_made",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 56,
+        "verified": true,
+        "quote": "这两千你先拿着用。明早过江后,你紧着那边的主意办,剩下的那一千,等我这边的账款收回来,立刻托人捎过去,或者我直接给你送镇上去。"
+      },
+      {
+        "id": "brother_boards",
+        "delivered": false,
+        "locatable": "unlocated",
+        "common_substring": 0,
+        "verified": true,
+        "quote": ""
+      },
+      {
+        "id": "sister_stays",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 24,
+        "verified": true,
+        "quote": "周芸站在面摊的灯光下,看着弟弟清瘦的背影融进夜色里。"
+      }
+    ],
+    "delivered": 3,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  }
+]

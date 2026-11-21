@@ -1,0 +1,1578 @@
+[
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "周芸",
+        "周航"
+      ],
+      "forbidden": [
+        "不得出现第三人替他们解决钱的问题",
+        "欠款不得被免除或清零",
+        "不得新增订单、固定工资或中奖",
+        "不得新增亲属"
+      ],
+      "genre": "现实生活",
+      "id": "real_ferry",
+      "label": "现实生活·渡口姐弟",
+      "must_keep": [
+        "原欠款为三千元",
+        "本次交付两千元",
+        "仍有一千元缺口",
+        "弟弟明天要交店面租金",
+        "周芸事前不知道弟弟明天交租",
+        "弟弟不愿姐姐向邻居借"
+      ],
+      "pov": "第三人称限知,全程跟随姐姐周芸",
+      "pov_character": "周芸",
+      "required_outcomes": [
+        "周航明确说出钱不够",
+        "两人谈清一项具体的后续安排(含时间或分期)",
+        "弟弟带着两千元上船离开",
+        "姐姐留在岸上"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "real_ferry",
+    "chars": 1752,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 10.786,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "现实生活",
+    "input_tokens": 467,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 438,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 360,
+          "name": "scene_brief",
+          "sha256": "42d295e28c3d05d0",
+          "source": "case.brief"
+        },
+        {
+          "chars": 76,
+          "name": "character_roster",
+          "sha256": "13f9323dcb7f685d",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 798,
+          "name": "writer_contract",
+          "sha256": "5b8cafc4ab57212e",
+          "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+        },
+        {
+          "chars": 83,
+          "name": "planning_ledger_note",
+          "sha256": "abf1b79a2f197782",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 493,
+          "name": "scene_writer_system",
+          "sha256": "806255474cc40ff3",
+          "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "dd6f47d46e2e781770f92e937b9d7f44167251992aad3a4e30ba825d049333f5",
+      "system_chars": 493,
+      "task_type": "scene_writer",
+      "user_chars": 1354,
+      "variant": "scene_writer"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "4e26f7c3dd429d887a8d7027c01c1c27fc3d59162c46158e1882f6747e81f1fa",
+    "variant": "scene_writer"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "周芸",
+        "周航"
+      ],
+      "forbidden": [
+        "不得出现第三人替他们解决钱的问题",
+        "欠款不得被免除或清零",
+        "不得新增订单、固定工资或中奖",
+        "不得新增亲属"
+      ],
+      "genre": "现实生活",
+      "id": "real_ferry",
+      "label": "现实生活·渡口姐弟",
+      "must_keep": [
+        "原欠款为三千元",
+        "本次交付两千元",
+        "仍有一千元缺口",
+        "弟弟明天要交店面租金",
+        "周芸事前不知道弟弟明天交租",
+        "弟弟不愿姐姐向邻居借"
+      ],
+      "pov": "第三人称限知,全程跟随姐姐周芸",
+      "pov_character": "周芸",
+      "required_outcomes": [
+        "周航明确说出钱不够",
+        "两人谈清一项具体的后续安排(含时间或分期)",
+        "弟弟带着两千元上船离开",
+        "姐姐留在岸上"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "real_ferry",
+    "chars": 1394,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 8.184,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "现实生活",
+    "input_tokens": 643,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 348,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 1844,
+          "name": "preflight_blueprint",
+          "sha256": "9e16c163e3c9ec3d",
+          "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+        },
+        {
+          "chars": 360,
+          "name": "scene_brief",
+          "sha256": "42d295e28c3d05d0",
+          "source": "case.brief"
+        },
+        {
+          "chars": 345,
+          "name": "chapter_writer_system",
+          "sha256": "52440efa9bafa557",
+          "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "e8b1e05b57b73738ea84bcf29c9d9f21f22431c902410f719816972854c0a46f",
+      "system_chars": 345,
+      "task_type": "generation",
+      "user_chars": 2206,
+      "variant": "chapter_single_shot"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "82ba7dd14be28774b341c3ec3faa4462a5802aecf991e5c955e7f51059154c14",
+    "variant": "chapter_single_shot"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "truncated",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "周芸",
+        "周航"
+      ],
+      "forbidden": [
+        "不得出现第三人替他们解决钱的问题",
+        "欠款不得被免除或清零",
+        "不得新增订单、固定工资或中奖",
+        "不得新增亲属"
+      ],
+      "genre": "现实生活",
+      "id": "real_ferry",
+      "label": "现实生活·渡口姐弟",
+      "must_keep": [
+        "原欠款为三千元",
+        "本次交付两千元",
+        "仍有一千元缺口",
+        "弟弟明天要交店面租金",
+        "周芸事前不知道弟弟明天交租",
+        "弟弟不愿姐姐向邻居借"
+      ],
+      "pov": "第三人称限知,全程跟随姐姐周芸",
+      "pov_character": "周芸",
+      "required_outcomes": [
+        "周航明确说出钱不够",
+        "两人谈清一项具体的后续安排(含时间或分期)",
+        "弟弟带着两千元上船离开",
+        "姐姐留在岸上"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "real_ferry",
+    "chars": 1373,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 9.093,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "现实生活",
+    "input_tokens": 100,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 343,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 360,
+          "name": "scene_brief",
+          "sha256": "42d295e28c3d05d0",
+          "source": "case.brief"
+        },
+        {
+          "chars": 17,
+          "name": "bare_system",
+          "sha256": "8a9d5afd922330b8",
+          "source": "inline"
+        }
+      ],
+      "prompt_sha256": "9d5d57d059f0c3414d6390ec1b6b2cbdf053e8cd73c6c89d78f80c7b3648aa6e",
+      "system_chars": 17,
+      "task_type": "generation",
+      "user_chars": 360,
+      "variant": "bare"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "9f78874bcf7026232b205f3692b6089cfaa6c7de60e907e92589f919189bfefc",
+    "variant": "bare"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "李巧云",
+        "陈麦"
+      ],
+      "forbidden": [
+        "不得由老师出面解决",
+        "丈夫不得回来",
+        "不得出现新收入或补助",
+        "不得由母亲单方面命令解决"
+      ],
+      "genre": "现实生活",
+      "id": "real_stall",
+      "label": "现实生活·夜市摊位",
+      "must_keep": [
+        "押金一千五",
+        "每月摊位费六百",
+        "下月起清退",
+        "陈麦读高二",
+        "丈夫两年前走了,不回来"
+      ],
+      "pov": "第三人称限知,全程跟随母亲李巧云",
+      "pov_character": "李巧云",
+      "required_outcomes": [
+        "李巧云说清退这件事",
+        "陈麦说出算过账的实际理由",
+        "谈成一个只到本学期的暂定安排",
+        "结尾交代明天一早的具体一件事"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "real_stall",
+    "chars": 1574,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 9.39,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "现实生活",
+    "input_tokens": 463,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 393,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 340,
+          "name": "scene_brief",
+          "sha256": "10ac4a8899a0ff87",
+          "source": "case.brief"
+        },
+        {
+          "chars": 77,
+          "name": "character_roster",
+          "sha256": "484a5782d20cb13b",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 798,
+          "name": "writer_contract",
+          "sha256": "5b8cafc4ab57212e",
+          "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+        },
+        {
+          "chars": 83,
+          "name": "planning_ledger_note",
+          "sha256": "abf1b79a2f197782",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 493,
+          "name": "scene_writer_system",
+          "sha256": "806255474cc40ff3",
+          "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "f4381cdb9fbcc01eb9426251325ebe7dbbfa7d9778c1bf346a4b5ba6f60b0dfc",
+      "system_chars": 493,
+      "task_type": "scene_writer",
+      "user_chars": 1335,
+      "variant": "scene_writer"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "6e7fd2d495f940dc5fc276bbec72ba1a00e3b80123aa915192859d3467ce8986",
+    "variant": "scene_writer"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "李巧云",
+        "陈麦"
+      ],
+      "forbidden": [
+        "不得由老师出面解决",
+        "丈夫不得回来",
+        "不得出现新收入或补助",
+        "不得由母亲单方面命令解决"
+      ],
+      "genre": "现实生活",
+      "id": "real_stall",
+      "label": "现实生活·夜市摊位",
+      "must_keep": [
+        "押金一千五",
+        "每月摊位费六百",
+        "下月起清退",
+        "陈麦读高二",
+        "丈夫两年前走了,不回来"
+      ],
+      "pov": "第三人称限知,全程跟随母亲李巧云",
+      "pov_character": "李巧云",
+      "required_outcomes": [
+        "李巧云说清退这件事",
+        "陈麦说出算过账的实际理由",
+        "谈成一个只到本学期的暂定安排",
+        "结尾交代明天一早的具体一件事"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "real_stall",
+    "chars": 1488,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 19.41,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "现实生活",
+    "input_tokens": 638,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 372,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 1844,
+          "name": "preflight_blueprint",
+          "sha256": "9e16c163e3c9ec3d",
+          "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+        },
+        {
+          "chars": 340,
+          "name": "scene_brief",
+          "sha256": "10ac4a8899a0ff87",
+          "source": "case.brief"
+        },
+        {
+          "chars": 345,
+          "name": "chapter_writer_system",
+          "sha256": "52440efa9bafa557",
+          "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "53f967c6f1cb1a726db6789b513e1f8db0dc8fe75effc14c5f6b943040da5c23",
+      "system_chars": 345,
+      "task_type": "generation",
+      "user_chars": 2186,
+      "variant": "chapter_single_shot"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "c2e48acb8a032a3ad427784841974675af7a24cc85c625f059dca27a1c1ec9d3",
+    "variant": "chapter_single_shot"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "李巧云",
+        "陈麦"
+      ],
+      "forbidden": [
+        "不得由老师出面解决",
+        "丈夫不得回来",
+        "不得出现新收入或补助",
+        "不得由母亲单方面命令解决"
+      ],
+      "genre": "现实生活",
+      "id": "real_stall",
+      "label": "现实生活·夜市摊位",
+      "must_keep": [
+        "押金一千五",
+        "每月摊位费六百",
+        "下月起清退",
+        "陈麦读高二",
+        "丈夫两年前走了,不回来"
+      ],
+      "pov": "第三人称限知,全程跟随母亲李巧云",
+      "pov_character": "李巧云",
+      "required_outcomes": [
+        "李巧云说清退这件事",
+        "陈麦说出算过账的实际理由",
+        "谈成一个只到本学期的暂定安排",
+        "结尾交代明天一早的具体一件事"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "real_stall",
+    "chars": 1139,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 7.28,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "现实生活",
+    "input_tokens": 95,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 284,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 340,
+          "name": "scene_brief",
+          "sha256": "10ac4a8899a0ff87",
+          "source": "case.brief"
+        },
+        {
+          "chars": 17,
+          "name": "bare_system",
+          "sha256": "8a9d5afd922330b8",
+          "source": "inline"
+        }
+      ],
+      "prompt_sha256": "e30933e448e17aacf6138c34c2f0bc21444ee8b11f6e5767ca7c0902e2e3169c",
+      "system_chars": 17,
+      "task_type": "generation",
+      "user_chars": 340,
+      "variant": "bare"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "f12f4748420d075e7870f3170398a9b973a42ebf04f265aee2fb223c3836f728",
+    "variant": "bare"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "林叶",
+        "许舟"
+      ],
+      "forbidden": [
+        "不得增添河底敌人或怪物",
+        "不得新增可用道具",
+        "不得飞行或隔空搬运",
+        "不得插入身世揭晓"
+      ],
+      "genre": "东方幻想",
+      "id": "fantasy_bell",
+      "label": "东方幻想·洪水铜铃",
+      "must_keep": [
+        "铜铃烧毁且不可恢复",
+        "许舟腿受伤不能游泳",
+        "水路只维持十次呼吸",
+        "水路只够一个人走",
+        "两人同行三年"
+      ],
+      "pov": "第三人称限知,全程跟随林叶",
+      "pov_character": "林叶",
+      "required_outcomes": [
+        "林叶做出用掉铜铃的具体决定",
+        "沿水路走到桥墩",
+        "把许舟背回近岸",
+        "两人安全上岸",
+        "结尾写出两人对失去铜铃的具体反应"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "fantasy_bell",
+    "chars": 1313,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 8.478,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "东方幻想",
+    "input_tokens": 474,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 328,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 388,
+          "name": "scene_brief",
+          "sha256": "4ea1309a6bb7ba30",
+          "source": "case.brief"
+        },
+        {
+          "chars": 76,
+          "name": "character_roster",
+          "sha256": "4608b29ddce5aaa9",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 798,
+          "name": "writer_contract",
+          "sha256": "5b8cafc4ab57212e",
+          "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+        },
+        {
+          "chars": 83,
+          "name": "planning_ledger_note",
+          "sha256": "abf1b79a2f197782",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 493,
+          "name": "scene_writer_system",
+          "sha256": "806255474cc40ff3",
+          "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "5dba62dafacc2a68ba107ad193094d7a3ce8a94df3b73f668ba1cbeff121f3cd",
+      "system_chars": 493,
+      "task_type": "scene_writer",
+      "user_chars": 1382,
+      "variant": "scene_writer"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "4d61fc0134f554f5a920d0cbc8a6f52dd5227f5bd2356098afc680f02f035f3e",
+    "variant": "scene_writer"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "relay_error",
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "林叶",
+        "许舟"
+      ],
+      "forbidden": [
+        "不得增添河底敌人或怪物",
+        "不得新增可用道具",
+        "不得飞行或隔空搬运",
+        "不得插入身世揭晓"
+      ],
+      "genre": "东方幻想",
+      "id": "fantasy_bell",
+      "label": "东方幻想·洪水铜铃",
+      "must_keep": [
+        "铜铃烧毁且不可恢复",
+        "许舟腿受伤不能游泳",
+        "水路只维持十次呼吸",
+        "水路只够一个人走",
+        "两人同行三年"
+      ],
+      "pov": "第三人称限知,全程跟随林叶",
+      "pov_character": "林叶",
+      "required_outcomes": [
+        "林叶做出用掉铜铃的具体决定",
+        "沿水路走到桥墩",
+        "把许舟背回近岸",
+        "两人安全上岸",
+        "结尾写出两人对失去铜铃的具体反应"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "fantasy_bell",
+    "chars": 1133,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 8.327,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "东方幻想",
+    "input_tokens": 650,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 283,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 1844,
+          "name": "preflight_blueprint",
+          "sha256": "9e16c163e3c9ec3d",
+          "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+        },
+        {
+          "chars": 388,
+          "name": "scene_brief",
+          "sha256": "4ea1309a6bb7ba30",
+          "source": "case.brief"
+        },
+        {
+          "chars": 345,
+          "name": "chapter_writer_system",
+          "sha256": "52440efa9bafa557",
+          "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "0c70f9dc82603a5622bb47f08e3501621a914df18c71357f059cf133fb9ab59c",
+      "system_chars": 345,
+      "task_type": "generation",
+      "user_chars": 2234,
+      "variant": "chapter_single_shot"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "e311479e4e9ef3be72eda4b571e5df9037c12c545b9de509681e1d46881d0255",
+    "variant": "chapter_single_shot"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "林叶",
+        "许舟"
+      ],
+      "forbidden": [
+        "不得增添河底敌人或怪物",
+        "不得新增可用道具",
+        "不得飞行或隔空搬运",
+        "不得插入身世揭晓"
+      ],
+      "genre": "东方幻想",
+      "id": "fantasy_bell",
+      "label": "东方幻想·洪水铜铃",
+      "must_keep": [
+        "铜铃烧毁且不可恢复",
+        "许舟腿受伤不能游泳",
+        "水路只维持十次呼吸",
+        "水路只够一个人走",
+        "两人同行三年"
+      ],
+      "pov": "第三人称限知,全程跟随林叶",
+      "pov_character": "林叶",
+      "required_outcomes": [
+        "林叶做出用掉铜铃的具体决定",
+        "沿水路走到桥墩",
+        "把许舟背回近岸",
+        "两人安全上岸",
+        "结尾写出两人对失去铜铃的具体反应"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "fantasy_bell",
+    "chars": 1337,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 9.078,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "东方幻想",
+    "input_tokens": 107,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 334,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 388,
+          "name": "scene_brief",
+          "sha256": "4ea1309a6bb7ba30",
+          "source": "case.brief"
+        },
+        {
+          "chars": 17,
+          "name": "bare_system",
+          "sha256": "8a9d5afd922330b8",
+          "source": "inline"
+        }
+      ],
+      "prompt_sha256": "e8af0c42b0ccd7b9feec362c7c8d35c8363bdfeacf43f03a24cc62fe7d650aee",
+      "system_chars": 17,
+      "task_type": "generation",
+      "user_chars": 388,
+      "variant": "bare"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "32e85230d8badd8279f2ef56d69311db79dd2dde1d34c5b44e0bdd39aab4b53e",
+    "variant": "bare"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "阿棠",
+        "柳先生"
+      ],
+      "forbidden": [
+        "柳先生不得当天赶回",
+        "不得出现另一坛醋或第三人送醋",
+        "走地根不得自己留在原地不动",
+        "不得两全"
+      ],
+      "genre": "东方幻想",
+      "id": "fantasy_herb",
+      "label": "东方幻想·药铺陈醋",
+      "must_keep": [
+        "只剩半坛陈醋",
+        "必须今夜封坛",
+        "陈醋是三年陈",
+        "柳先生出门未归",
+        "今日是第二日"
+      ],
+      "pov": "第三人称限知,全程跟随学徒阿棠",
+      "pov_character": "阿棠",
+      "required_outcomes": [
+        "阿棠发现醋只剩半坛且两处都要用",
+        "阿棠意识到两处不能同时满足",
+        "阿棠做出明确选择并动手",
+        "写明后果:走地根的去向或产妇那边的情况",
+        "结尾交代次日清晨的具体处境"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "fantasy_herb",
+    "chars": 1283,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 9.573,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "东方幻想",
+    "input_tokens": 464,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 320,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 344,
+          "name": "scene_brief",
+          "sha256": "7387a55871dc52cd",
+          "source": "case.brief"
+        },
+        {
+          "chars": 77,
+          "name": "character_roster",
+          "sha256": "4cf325f1ada4c2a3",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 798,
+          "name": "writer_contract",
+          "sha256": "5b8cafc4ab57212e",
+          "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+        },
+        {
+          "chars": 83,
+          "name": "planning_ledger_note",
+          "sha256": "abf1b79a2f197782",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 493,
+          "name": "scene_writer_system",
+          "sha256": "806255474cc40ff3",
+          "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "fe46f62b120241ea8d039abf7b385933713b3ceefa0742fab9251629b4dc461c",
+      "system_chars": 493,
+      "task_type": "scene_writer",
+      "user_chars": 1339,
+      "variant": "scene_writer"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "2e73212c8204c6642cc9d0c9caeb4e788bfa44e704749f323e4dc1fbbc042928",
+    "variant": "scene_writer"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "阿棠",
+        "柳先生"
+      ],
+      "forbidden": [
+        "柳先生不得当天赶回",
+        "不得出现另一坛醋或第三人送醋",
+        "走地根不得自己留在原地不动",
+        "不得两全"
+      ],
+      "genre": "东方幻想",
+      "id": "fantasy_herb",
+      "label": "东方幻想·药铺陈醋",
+      "must_keep": [
+        "只剩半坛陈醋",
+        "必须今夜封坛",
+        "陈醋是三年陈",
+        "柳先生出门未归",
+        "今日是第二日"
+      ],
+      "pov": "第三人称限知,全程跟随学徒阿棠",
+      "pov_character": "阿棠",
+      "required_outcomes": [
+        "阿棠发现醋只剩半坛且两处都要用",
+        "阿棠意识到两处不能同时满足",
+        "阿棠做出明确选择并动手",
+        "写明后果:走地根的去向或产妇那边的情况",
+        "结尾交代次日清晨的具体处境"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "fantasy_herb",
+    "chars": 1306,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 7.938,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "东方幻想",
+    "input_tokens": 639,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 326,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 1844,
+          "name": "preflight_blueprint",
+          "sha256": "9e16c163e3c9ec3d",
+          "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+        },
+        {
+          "chars": 344,
+          "name": "scene_brief",
+          "sha256": "7387a55871dc52cd",
+          "source": "case.brief"
+        },
+        {
+          "chars": 345,
+          "name": "chapter_writer_system",
+          "sha256": "52440efa9bafa557",
+          "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "ec08a5397105d0dc6d3f7c698fa3419b6e85242a2de5d7994dcc253cd8c9a253",
+      "system_chars": 345,
+      "task_type": "generation",
+      "user_chars": 2190,
+      "variant": "chapter_single_shot"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "e817d43ff1c34b02b466025084a578a78a4800d7e41e62bfc816fe91cb8d3b48",
+    "variant": "chapter_single_shot"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "阿棠",
+        "柳先生"
+      ],
+      "forbidden": [
+        "柳先生不得当天赶回",
+        "不得出现另一坛醋或第三人送醋",
+        "走地根不得自己留在原地不动",
+        "不得两全"
+      ],
+      "genre": "东方幻想",
+      "id": "fantasy_herb",
+      "label": "东方幻想·药铺陈醋",
+      "must_keep": [
+        "只剩半坛陈醋",
+        "必须今夜封坛",
+        "陈醋是三年陈",
+        "柳先生出门未归",
+        "今日是第二日"
+      ],
+      "pov": "第三人称限知,全程跟随学徒阿棠",
+      "pov_character": "阿棠",
+      "required_outcomes": [
+        "阿棠发现醋只剩半坛且两处都要用",
+        "阿棠意识到两处不能同时满足",
+        "阿棠做出明确选择并动手",
+        "写明后果:走地根的去向或产妇那边的情况",
+        "结尾交代次日清晨的具体处境"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "fantasy_herb",
+    "chars": 1170,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 6.93,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "东方幻想",
+    "input_tokens": 96,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 292,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 344,
+          "name": "scene_brief",
+          "sha256": "7387a55871dc52cd",
+          "source": "case.brief"
+        },
+        {
+          "chars": 17,
+          "name": "bare_system",
+          "sha256": "8a9d5afd922330b8",
+          "source": "inline"
+        }
+      ],
+      "prompt_sha256": "4cc595cf3d757b0e59866e17b98e9baf20644edb39d27bd786a9a92c320d39d7",
+      "system_chars": 17,
+      "task_type": "generation",
+      "user_chars": 344,
+      "variant": "bare"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "d1d0639920b3462bc245322076cf1deab395981498eb9a77475fb4f2727ba1fc",
+    "variant": "bare"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "陆沉",
+        "老周"
+      ],
+      "forbidden": [
+        "不得出现第三方救兵",
+        "不得揭示信是空的",
+        "老周不得是失散亲人"
+      ],
+      "genre": "悬疑",
+      "id": "mystery_bridge",
+      "label": "悬疑·断桥信使",
+      "must_keep": [
+        "左臂自肘下没有",
+        "过河价一百文",
+        "身上只有六十文",
+        "腰牌可抵八十文但明天要验",
+        "天亮前必须送到",
+        "信有火漆且不能湿"
+      ],
+      "pov": "第三人称限知,全程跟随信使陆沉",
+      "pov_character": "陆沉",
+      "required_outcomes": [
+        "陆沉说清送信的期限和条件",
+        "老周报出一百文且不赊",
+        "陆沉权衡交出腰牌的代价",
+        "陆沉实际交付或拒绝,并承担后果",
+        "结尾交代信到没到对岸"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "mystery_bridge",
+    "chars": 1372,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 21.717,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "悬疑",
+    "input_tokens": 463,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 343,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 344,
+          "name": "scene_brief",
+          "sha256": "506746399a3b9293",
+          "source": "case.brief"
+        },
+        {
+          "chars": 76,
+          "name": "character_roster",
+          "sha256": "f86f37158df96ca5",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 798,
+          "name": "writer_contract",
+          "sha256": "5b8cafc4ab57212e",
+          "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+        },
+        {
+          "chars": 83,
+          "name": "planning_ledger_note",
+          "sha256": "abf1b79a2f197782",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 493,
+          "name": "scene_writer_system",
+          "sha256": "806255474cc40ff3",
+          "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "90960234b5165f1222195491a4d977f4e1a6bc4783d77bf72064a0840cd00cf3",
+      "system_chars": 493,
+      "task_type": "scene_writer",
+      "user_chars": 1338,
+      "variant": "scene_writer"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "7237b7495ac3f9e4f4d6b3ff714d088116ca1c15a5eb92a5229f7061217a4ecc",
+    "variant": "scene_writer"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "陆沉",
+        "老周"
+      ],
+      "forbidden": [
+        "不得出现第三方救兵",
+        "不得揭示信是空的",
+        "老周不得是失散亲人"
+      ],
+      "genre": "悬疑",
+      "id": "mystery_bridge",
+      "label": "悬疑·断桥信使",
+      "must_keep": [
+        "左臂自肘下没有",
+        "过河价一百文",
+        "身上只有六十文",
+        "腰牌可抵八十文但明天要验",
+        "天亮前必须送到",
+        "信有火漆且不能湿"
+      ],
+      "pov": "第三人称限知,全程跟随信使陆沉",
+      "pov_character": "陆沉",
+      "required_outcomes": [
+        "陆沉说清送信的期限和条件",
+        "老周报出一百文且不赊",
+        "陆沉权衡交出腰牌的代价",
+        "陆沉实际交付或拒绝,并承担后果",
+        "结尾交代信到没到对岸"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "mystery_bridge",
+    "chars": 1744,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 33.389,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "悬疑",
+    "input_tokens": 639,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 436,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 1844,
+          "name": "preflight_blueprint",
+          "sha256": "9e16c163e3c9ec3d",
+          "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+        },
+        {
+          "chars": 344,
+          "name": "scene_brief",
+          "sha256": "506746399a3b9293",
+          "source": "case.brief"
+        },
+        {
+          "chars": 345,
+          "name": "chapter_writer_system",
+          "sha256": "52440efa9bafa557",
+          "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "8171f704fbab9ffd4bb2768566487a47658f3742d4cc8a23757a15a10756ed26",
+      "system_chars": 345,
+      "task_type": "generation",
+      "user_chars": 2190,
+      "variant": "chapter_single_shot"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "c3089020ddfb540abae95cbeb9ddd48cab5c92de0f4b032e871be070edbf318a",
+    "variant": "chapter_single_shot"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "陆沉",
+        "老周"
+      ],
+      "forbidden": [
+        "不得出现第三方救兵",
+        "不得揭示信是空的",
+        "老周不得是失散亲人"
+      ],
+      "genre": "悬疑",
+      "id": "mystery_bridge",
+      "label": "悬疑·断桥信使",
+      "must_keep": [
+        "左臂自肘下没有",
+        "过河价一百文",
+        "身上只有六十文",
+        "腰牌可抵八十文但明天要验",
+        "天亮前必须送到",
+        "信有火漆且不能湿"
+      ],
+      "pov": "第三人称限知,全程跟随信使陆沉",
+      "pov_character": "陆沉",
+      "required_outcomes": [
+        "陆沉说清送信的期限和条件",
+        "老周报出一百文且不赊",
+        "陆沉权衡交出腰牌的代价",
+        "陆沉实际交付或拒绝,并承担后果",
+        "结尾交代信到没到对岸"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "mystery_bridge",
+    "chars": 911,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 7.58,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "悬疑",
+    "input_tokens": 96,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 227,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 344,
+          "name": "scene_brief",
+          "sha256": "506746399a3b9293",
+          "source": "case.brief"
+        },
+        {
+          "chars": 17,
+          "name": "bare_system",
+          "sha256": "8a9d5afd922330b8",
+          "source": "inline"
+        }
+      ],
+      "prompt_sha256": "02ea78aa79ddcff0a6329066b02a5e1ead36542d8b8ed025c6cdee5503d73d46",
+      "system_chars": 17,
+      "task_type": "generation",
+      "user_chars": 344,
+      "variant": "bare"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "f093cbebb51f03acf7ee5e3ce91db7d6affedeee70d5b4740d044d3fa3814030",
+    "variant": "bare"
+  },
+  {
+    "attempts": [
+      "relay_error",
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "苏姐",
+        "伙计阿六"
+      ],
+      "forbidden": [
+        "陈九不得当场现身解释",
+        "不得由官府立刻破案",
+        "苏姐不得有特殊身份或武功",
+        "不得把投宿者写成鬼"
+      ],
+      "genre": "悬疑",
+      "id": "mystery_lodger",
+      "label": "悬疑·客栈空房",
+      "must_keep": [
+        "屋里只有一只湿透的布鞋",
+        "信没封口",
+        "昨夜下了一夜雨",
+        "客栈十四间房",
+        "丈夫不在不许单独进房"
+      ],
+      "pov": "第三人称限知,全程跟随老板娘苏姐",
+      "pov_character": "苏姐",
+      "required_outcomes": [
+        "苏姐先处理阿六(支开或叮嘱)",
+        "苏姐决定进不进房并执行",
+        "苏姐读了信",
+        "信的内容改变了她的判断",
+        "她做出一个具体的处置行动"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "mystery_lodger",
+    "chars": 1521,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 22.075,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "悬疑",
+    "input_tokens": 466,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 380,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 351,
+          "name": "scene_brief",
+          "sha256": "eb4139eb51abfea7",
+          "source": "case.brief"
+        },
+        {
+          "chars": 78,
+          "name": "character_roster",
+          "sha256": "78f6f9db2385caa1",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 798,
+          "name": "writer_contract",
+          "sha256": "5b8cafc4ab57212e",
+          "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+        },
+        {
+          "chars": 83,
+          "name": "planning_ledger_note",
+          "sha256": "abf1b79a2f197782",
+          "source": "scene_orchestrator.write_scene_stream"
+        },
+        {
+          "chars": 493,
+          "name": "scene_writer_system",
+          "sha256": "806255474cc40ff3",
+          "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "08241c76ec7e1c641d781efed6734c506b97121d8f898c5fb023dc5974017add",
+      "system_chars": 493,
+      "task_type": "scene_writer",
+      "user_chars": 1347,
+      "variant": "scene_writer"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "3bde80b5d396a59a879b5e28fe06a29fdffc6d368c3feadd802eeed086d91ae3",
+    "variant": "scene_writer"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "苏姐",
+        "伙计阿六"
+      ],
+      "forbidden": [
+        "陈九不得当场现身解释",
+        "不得由官府立刻破案",
+        "苏姐不得有特殊身份或武功",
+        "不得把投宿者写成鬼"
+      ],
+      "genre": "悬疑",
+      "id": "mystery_lodger",
+      "label": "悬疑·客栈空房",
+      "must_keep": [
+        "屋里只有一只湿透的布鞋",
+        "信没封口",
+        "昨夜下了一夜雨",
+        "客栈十四间房",
+        "丈夫不在不许单独进房"
+      ],
+      "pov": "第三人称限知,全程跟随老板娘苏姐",
+      "pov_character": "苏姐",
+      "required_outcomes": [
+        "苏姐先处理阿六(支开或叮嘱)",
+        "苏姐决定进不进房并执行",
+        "苏姐读了信",
+        "信的内容改变了她的判断",
+        "她做出一个具体的处置行动"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "mystery_lodger",
+    "chars": 1310,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 8.493,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "悬疑",
+    "input_tokens": 641,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 327,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 1844,
+          "name": "preflight_blueprint",
+          "sha256": "9e16c163e3c9ec3d",
+          "source": "narrative_quality_gates.preflight_scene_blueprint_prompt"
+        },
+        {
+          "chars": 351,
+          "name": "scene_brief",
+          "sha256": "eb4139eb51abfea7",
+          "source": "case.brief"
+        },
+        {
+          "chars": 345,
+          "name": "chapter_writer_system",
+          "sha256": "52440efa9bafa557",
+          "source": "prompts.scene_writing.CHAPTER_WRITER_SYSTEM"
+        }
+      ],
+      "prompt_sha256": "118d7db65bb5a465d2c32c6cd5ef413d5a37c8e2c8233702ecca7e1a936419ae",
+      "system_chars": 345,
+      "task_type": "generation",
+      "user_chars": 2197,
+      "variant": "chapter_single_shot"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "cd0ce96b82313cd1c3575a7e029572960d81dc8f513a364ac18cac276d242621",
+    "variant": "chapter_single_shot"
+  },
+  {
+    "attempts": [
+      "ok"
+    ],
+    "case": {
+      "cast": [
+        "苏姐",
+        "伙计阿六"
+      ],
+      "forbidden": [
+        "陈九不得当场现身解释",
+        "不得由官府立刻破案",
+        "苏姐不得有特殊身份或武功",
+        "不得把投宿者写成鬼"
+      ],
+      "genre": "悬疑",
+      "id": "mystery_lodger",
+      "label": "悬疑·客栈空房",
+      "must_keep": [
+        "屋里只有一只湿透的布鞋",
+        "信没封口",
+        "昨夜下了一夜雨",
+        "客栈十四间房",
+        "丈夫不在不许单独进房"
+      ],
+      "pov": "第三人称限知,全程跟随老板娘苏姐",
+      "pov_character": "苏姐",
+      "required_outcomes": [
+        "苏姐先处理阿六(支开或叮嘱)",
+        "苏姐决定进不进房并执行",
+        "苏姐读了信",
+        "信的内容改变了她的判断",
+        "她做出一个具体的处置行动"
+      ],
+      "target_words": 1000,
+      "word_range": [
+        850,
+        1250
+      ]
+    },
+    "case_id": "mystery_lodger",
+    "chars": 1155,
+    "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+    "elapsed_seconds": 7.689,
+    "endpoint": "http://127.0.0.1:8317/v1",
+    "finish_reason": "stop",
+    "genre": "悬疑",
+    "input_tokens": 98,
+    "max_tokens": 4096,
+    "model_returned": "gemini-3.1-pro",
+    "output_tokens": 288,
+    "prompt": {
+      "blocks": [
+        {
+          "chars": 351,
+          "name": "scene_brief",
+          "sha256": "eb4139eb51abfea7",
+          "source": "case.brief"
+        },
+        {
+          "chars": 17,
+          "name": "bare_system",
+          "sha256": "8a9d5afd922330b8",
+          "source": "inline"
+        }
+      ],
+      "prompt_sha256": "a8f526fa09044bf6a24e2806c9627d844e3a861fecdf1b3e79cec63b1b90bab7",
+      "system_chars": 17,
+      "task_type": "generation",
+      "user_chars": 351,
+      "variant": "bare"
+    },
+    "repeat": 1,
+    "requested_model": "gemini-3.1-pro",
+    "status": "returned",
+    "temperature": 0.3,
+    "text_sha256": "01ef562f4fd79ecc7ae051acd92b41aceeac05abd0f0bfdfaaa2d9e903d36fa7",
+    "variant": "bare"
+  }
+]

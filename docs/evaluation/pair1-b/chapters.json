@@ -1,0 +1,418 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "64b9948c-7c30-486e-b076-f75a8ace24c4",
+    "status": "ok",
+    "chars_raw": 1268,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1268
+    },
+    "chars": 1268,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "面摊交钱",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口别离",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 64.6,
+    "summary_written": true,
+    "summary_chars": 120,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "970c5298-070f-495a-9983-a34f0707089a",
+    "status": "ok",
+    "chars_raw": 1179,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1179
+    },
+    "chars": 1179,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "清晨催租",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "铁盒与明天",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 38.2,
+    "summary_written": true,
+    "summary_chars": 143,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "d4636a96-b3db-4639-a850-76f048bb3e82",
+    "status": "ok",
+    "chars_raw": 1177,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1177
+    },
+    "chars": 1177,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺的账目",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "旧电饭锅的修理",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 30.8,
+    "summary_written": true,
+    "summary_chars": 180,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "62b6b7d6-7f70-4e4c-8bf5-748b955faf90",
+    "status": "ok",
+    "chars_raw": 1131,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1131
+    },
+    "chars": 1131,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的相遇",
+          "target_words": 580
+        },
+        {
+          "idx": 2,
+          "title": "缝纫铺里的夜活与备好之物",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 34.7,
+    "summary_written": true,
+    "summary_chars": 154,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "dc6ef55c-8eb0-4792-bf6c-69c3cfe568c0",
+    "status": "ok",
+    "chars_raw": 1188,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1188
+    },
+    "chars": 1188,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺的布头与零钱",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "袋子里的归程",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 167.1,
+    "summary_written": true,
+    "summary_chars": 134,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "e4fea788-bfd2-4317-9160-22141b3aa9a2",
+    "status": "ok",
+    "chars_raw": 992,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 992
+    },
+    "chars": 992,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "杂货铺对账",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "账本日期与归程",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 62.0,
+    "summary_written": true,
+    "summary_chars": 124,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "e69010e7-a6e6-4521-a452-5e90cc0e31d9",
+    "status": "ok",
+    "chars_raw": 1076,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1076
+    },
+    "chars": 1076,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "缝纫铺内的盘算",
+          "target_words": 580
+        },
+        {
+          "idx": 2,
+          "title": "灯下算账与赶工",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 99.3,
+    "summary_written": true,
+    "summary_chars": 131,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "31975c9f-f5e3-41ae-8f72-f385d9758efc",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_retrieval_unavailable",
+    "error_code": null
+  },
+  {
+    "index": 9,
+    "chapter_id": "585fdd59-1026-40cb-8aa0-490164880b9c",
+    "status": "ok",
+    "chars_raw": 1235,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1235
+    },
+    "chars": 1235,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "凑齐七百与当面划账",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "说出那一千与捎东西",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 63.0,
+    "summary_written": true,
+    "summary_chars": 172,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "053e109e-7f7f-4b07-8704-87c8b7071ec0",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null
+  }
+]

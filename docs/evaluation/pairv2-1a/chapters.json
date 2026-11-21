@@ -1,0 +1,155 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "2d870e93-235a-415a-9b0b-5e58b8d99381",
+    "status": "ok",
+    "chars_raw": 1398,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1398
+    },
+    "chars": 1398,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的牛皮纸信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 24.3,
+    "summary_written": true,
+    "summary_chars": 147,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "bfbb7dfe-ebe1-4ea6-89b3-39a3df9628d9",
+    "status": "ok",
+    "chars_raw": 1252,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1252
+    },
+    "chars": 1252,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第二章 顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 26.3,
+    "summary_written": true,
+    "summary_chars": 107,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "619c2d84-ec2e-4c32-8677-daee18774fdd",
+    "status": "ok",
+    "chars_raw": 1646,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1646
+    },
+    "chars": 1646,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第三章 修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 31.9,
+    "summary_written": true,
+    "summary_chars": 145,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "34708eb1-5fdb-4cde-8a29-9dce1d582b00",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_retrieval_unavailable",
+    "error_code": null,
+    "attempts": 3
+  },
+  {
+    "index": 5,
+    "chapter_id": "c2b72301-d3fd-4cb3-b1ca-3558298caf6b",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_retrieval_unavailable",
+    "error_code": null,
+    "attempts": 3
+  }
+]

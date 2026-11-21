@@ -1,0 +1,105 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1316,
+      "target": 1200,
+      "ratio": 1.097
+    },
+    "ch02.txt": {
+      "chars": 1013,
+      "target": 1200,
+      "ratio": 0.844
+    },
+    "ch03.txt": {
+      "chars": 1049,
+      "target": 1200,
+      "ratio": 0.874
+    },
+    "ch04.txt": {
+      "chars": 1136,
+      "target": 1200,
+      "ratio": 0.947
+    },
+    "ch05.txt": {
+      "chars": 969,
+      "target": 1200,
+      "ratio": 0.807
+    },
+    "ch06.txt": {
+      "chars": 1719,
+      "target": 1200,
+      "ratio": 1.433
+    },
+    "ch07.txt": {
+      "chars": 1150,
+      "target": 1200,
+      "ratio": 0.958
+    },
+    "ch08.txt": {
+      "chars": 1271,
+      "target": 1200,
+      "ratio": 1.059
+    },
+    "ch09.txt": {
+      "chars": 1069,
+      "target": 1200,
+      "ratio": 0.891
+    },
+    "ch10.txt": {
+      "chars": 1085,
+      "target": 1200,
+      "ratio": 0.904
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 1013,
+      "target": 1200,
+      "ratio": 0.844,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch03.txt",
+      "declared": "同日午后",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch05.txt",
+      "chars": 969,
+      "target": 1200,
+      "ratio": 0.807,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "大石头",
+      "chapters": [
+        "ch09.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大石头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "房东大叔",
+      "chapters": [
+        "ch08.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「房东大叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "陈大姐",
+      "chapters": [
+        "ch07.txt",
+        "ch08.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「陈大姐」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 6
+}

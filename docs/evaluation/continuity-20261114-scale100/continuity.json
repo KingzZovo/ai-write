@@ -1,0 +1,633 @@
+{
+  "chapters": 100,
+  "word_counts": {
+    "ch01.txt": 1320,
+    "ch02.txt": 1320,
+    "ch03.txt": 1320,
+    "ch04.txt": 1320,
+    "ch05.txt": 1320,
+    "ch06.txt": 1320,
+    "ch07.txt": 1320,
+    "ch08.txt": 1320,
+    "ch09.txt": 1320,
+    "ch10.txt": 1320,
+    "ch100.txt": 1320,
+    "ch11.txt": 1320,
+    "ch12.txt": 1320,
+    "ch13.txt": 1320,
+    "ch14.txt": 1320,
+    "ch15.txt": 1320,
+    "ch16.txt": 1320,
+    "ch17.txt": 1320,
+    "ch18.txt": 1320,
+    "ch19.txt": 1320,
+    "ch20.txt": 1320,
+    "ch21.txt": 1320,
+    "ch22.txt": 1320,
+    "ch23.txt": 1320,
+    "ch24.txt": 1320,
+    "ch25.txt": 1320,
+    "ch26.txt": 1320,
+    "ch27.txt": 1320,
+    "ch28.txt": 1320,
+    "ch29.txt": 1320,
+    "ch30.txt": 1320,
+    "ch31.txt": 1320,
+    "ch32.txt": 1320,
+    "ch33.txt": 1320,
+    "ch34.txt": 1320,
+    "ch35.txt": 1320,
+    "ch36.txt": 1320,
+    "ch37.txt": 1320,
+    "ch38.txt": 1320,
+    "ch39.txt": 1320,
+    "ch40.txt": 1320,
+    "ch41.txt": 1320,
+    "ch42.txt": 1320,
+    "ch43.txt": 1320,
+    "ch44.txt": 1320,
+    "ch45.txt": 1320,
+    "ch46.txt": 1320,
+    "ch47.txt": 1320,
+    "ch48.txt": 1320,
+    "ch49.txt": 1320,
+    "ch50.txt": 1320,
+    "ch51.txt": 1320,
+    "ch52.txt": 1320,
+    "ch53.txt": 1320,
+    "ch54.txt": 1320,
+    "ch55.txt": 1320,
+    "ch56.txt": 1320,
+    "ch57.txt": 1320,
+    "ch58.txt": 1320,
+    "ch59.txt": 1320,
+    "ch60.txt": 1320,
+    "ch61.txt": 1320,
+    "ch62.txt": 1320,
+    "ch63.txt": 1320,
+    "ch64.txt": 1320,
+    "ch65.txt": 1320,
+    "ch66.txt": 1320,
+    "ch67.txt": 1320,
+    "ch68.txt": 1320,
+    "ch69.txt": 1320,
+    "ch70.txt": 1320,
+    "ch71.txt": 1320,
+    "ch72.txt": 1320,
+    "ch73.txt": 1320,
+    "ch74.txt": 1320,
+    "ch75.txt": 1320,
+    "ch76.txt": 1320,
+    "ch77.txt": 1320,
+    "ch78.txt": 1320,
+    "ch79.txt": 1320,
+    "ch80.txt": 1320,
+    "ch81.txt": 1320,
+    "ch82.txt": 1320,
+    "ch83.txt": 1320,
+    "ch84.txt": 1320,
+    "ch85.txt": 1320,
+    "ch86.txt": 1320,
+    "ch87.txt": 1320,
+    "ch88.txt": 1320,
+    "ch89.txt": 1320,
+    "ch90.txt": 1320,
+    "ch91.txt": 1320,
+    "ch92.txt": 1320,
+    "ch93.txt": 1320,
+    "ch94.txt": 1320,
+    "ch95.txt": 1320,
+    "ch96.txt": 1320,
+    "ch97.txt": 1320,
+    "ch98.txt": 1320,
+    "ch99.txt": 1320
+  },
+  "findings": [
+    {
+      "check": "repeated_opening",
+      "chapter": "ch02.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch03.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch04.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch05.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch06.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch07.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch08.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch09.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch10.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch100.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch11.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch12.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch13.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch14.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch15.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch16.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch17.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch18.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch19.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch20.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch21.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch22.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch23.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch24.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch25.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch26.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch27.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch28.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch29.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch30.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch31.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch32.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch33.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch34.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch35.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch36.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch37.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch38.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch39.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch40.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch41.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch42.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch43.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch44.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch45.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch46.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch47.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch48.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch49.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch50.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch51.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch52.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch53.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch54.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch55.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch56.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch57.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch58.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch59.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch60.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch61.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch62.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch63.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch64.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch65.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch66.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch67.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch68.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch69.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch70.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch71.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch72.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch73.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch74.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch75.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch76.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch77.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch78.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch79.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch80.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch81.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch82.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch83.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch84.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch85.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch86.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch87.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch88.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch89.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch90.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch91.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch92.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch93.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch94.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch95.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch96.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch97.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch98.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "repeated_opening",
+      "chapter": "ch99.txt",
+      "detail": "与上一章开头字符重合度 1.00"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "信封",
+      "detail": "全篇未出现已设定的道具「信封」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "顶针",
+      "detail": "全篇未出现已设定的道具「顶针」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "三千",
+      "detail": "书级既定数字「三千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "两千",
+      "detail": "书级既定数字「两千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "一千",
+      "detail": "书级既定数字「一千」全篇未出现"
+    }
+  ],
+  "violations": 105
+}

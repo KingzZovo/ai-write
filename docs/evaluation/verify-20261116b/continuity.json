@@ -1,0 +1,130 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1268,
+      "target": 1200,
+      "ratio": 1.057
+    },
+    "ch02.txt": {
+      "chars": 987,
+      "target": 1200,
+      "ratio": 0.823
+    },
+    "ch03.txt": {
+      "chars": 571,
+      "target": 1200,
+      "ratio": 0.476
+    },
+    "ch04.txt": {
+      "chars": 1350,
+      "target": 1200,
+      "ratio": 1.125
+    },
+    "ch05.txt": {
+      "chars": 1232,
+      "target": 1200,
+      "ratio": 1.027
+    },
+    "ch06.txt": {
+      "chars": 1098,
+      "target": 1200,
+      "ratio": 0.915
+    },
+    "ch07.txt": {
+      "chars": 1183,
+      "target": 1200,
+      "ratio": 0.986
+    },
+    "ch08.txt": {
+      "chars": 940,
+      "target": 1200,
+      "ratio": 0.783
+    },
+    "ch09.txt": {
+      "chars": 1013,
+      "target": 1200,
+      "ratio": 0.844
+    },
+    "ch10.txt": {
+      "chars": 2233,
+      "target": 1200,
+      "ratio": 1.861
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 987,
+      "target": 1200,
+      "ratio": 0.823,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch03.txt",
+      "chars": 571,
+      "target": 1200,
+      "ratio": 0.476,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch03.txt",
+      "declared": "同日午后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch08.txt",
+      "chars": 940,
+      "target": 1200,
+      "ratio": 0.783,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch08.txt",
+      "declared": "一周后",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch08.txt",
+      "declared": "一周后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch09.txt",
+      "chars": 1013,
+      "target": 1200,
+      "ratio": 0.844,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "大丫头",
+      "chapters": [
+        "ch04.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大丫头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "李婶",
+      "chapters": [
+        "ch07.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「李婶」,需核对是否为有意新增"
+    },
+    {
+      "check": "book_fact_conflict",
+      "chapter": "ch01.txt",
+      "fact": "两千八",
+      "detail": "出现与书级既定数字冲突的说法「两千八」"
+    }
+  ],
+  "violations": 10
+}

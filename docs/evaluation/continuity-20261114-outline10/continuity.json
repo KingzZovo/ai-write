@@ -1,0 +1,86 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1041,
+      "target": 1200,
+      "ratio": 0.868
+    },
+    "ch02.txt": {
+      "chars": 954,
+      "target": 1200,
+      "ratio": 0.795
+    },
+    "ch03.txt": {
+      "chars": 1032,
+      "target": 1200,
+      "ratio": 0.86
+    },
+    "ch04.txt": {
+      "chars": 1241,
+      "target": 1200,
+      "ratio": 1.034
+    },
+    "ch05.txt": {
+      "chars": 1836,
+      "target": 1200,
+      "ratio": 1.53
+    },
+    "ch06.txt": {
+      "chars": 1082,
+      "target": 1200,
+      "ratio": 0.902
+    },
+    "ch07.txt": {
+      "chars": 1036,
+      "target": 1200,
+      "ratio": 0.863
+    },
+    "ch08.txt": {
+      "chars": 1489,
+      "target": 1200,
+      "ratio": 1.241
+    },
+    "ch09.txt": {
+      "chars": 1184,
+      "target": 1200,
+      "ratio": 0.987
+    },
+    "ch10.txt": {
+      "chars": 1394,
+      "target": 1200,
+      "ratio": 1.162
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 954,
+      "target": 1200,
+      "ratio": 0.795,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch07.txt",
+      "declared": "三天后",
+      "keys": [
+        "三天",
+        "三日后",
+        "过了三天",
+        "第三天"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "number_conflict",
+      "key": "在我这",
+      "detail": "在我这 跨章取值不同:七百 vs 一千",
+      "chapters": [
+        "ch06.txt"
+      ]
+    }
+  ],
+  "violations": 3
+}

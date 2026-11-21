@@ -1,0 +1,223 @@
+/* ai-write design tokens (chunk-14).
+ *
+ * Tailwind v4 reads custom tokens from the @theme block. Each token here is
+ * exposed to utilities automatically, e.g.
+ *   --color-brand-500 -> bg-brand-500 / text-brand-500 / border-brand-500
+ *   --radius-card     -> rounded-card
+ *   --shadow-card     -> shadow-card
+ *   --text-display    -> text-display
+ *
+ * Semantic aliases (surface/border/text/brand) are the canonical API;
+ * the numeric scales underneath keep raw palette access when needed.
+ */
+
+@import "tailwindcss";
+
+@theme inline {
+  /* Typography */
+  /* Installed fonts keep builds independent of external font services. */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.15;
+  --text-h1: 2rem;
+  --text-h1--line-height: 1.25;
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.3;
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.4;
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.45;
+
+  /* Warm paper neutral scale. Overrides Tailwind's default (cool) gray so
+   * every existing `gray-*` utility shifts to a stone-like, reading-friendly
+   * tone without touching component markup. */
+  --color-gray-50: #fafaf9;
+  --color-gray-100: #f5f5f4;
+  --color-gray-200: #e7e5e4;
+  --color-gray-300: #d6d3d1;
+  --color-gray-400: #a8a29e;
+  --color-gray-500: #78716c;
+  --color-gray-600: #57534e;
+  --color-gray-700: #44403c;
+  --color-gray-800: #292524;
+  --color-gray-900: #1c1917;
+  --color-gray-950: #0c0a09;
+
+  /* Brand scale (indigo-leaning) */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+
+  /* Status colors */
+  --color-success-50: #ecfdf5;
+  --color-success-500: #10b981;
+  --color-success-700: #047857;
+  --color-warning-50: #fffbeb;
+  --color-warning-500: #f59e0b;
+  --color-warning-700: #b45309;
+  --color-danger-50: #fef2f2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-info-50: #eff6ff;
+  --color-info-500: #3b82f6;
+  --color-info-700: #1d4ed8;
+
+  /* Semantic surface + text + border (light defaults; dark overrides below) */
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-inverted: var(--surface-inverted);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverted: var(--text-inverted);
+  --color-text-brand: var(--color-brand-600);
+
+  /* Radii */
+  --radius-card: 0.75rem;
+  --radius-panel: 1rem;
+  --radius-pill: 9999px;
+
+  /* Shadows (soft, layered, warm-tinted to match the neutral scale) */
+  --shadow-card: 0 1px 2px rgb(28 25 23 / 0.04), 0 1px 3px rgb(28 25 23 / 0.05);
+  --shadow-card-hover: 0 2px 4px rgb(28 25 23 / 0.05), 0 10px 24px -4px rgb(28 25 23 / 0.1);
+  --shadow-popover: 0 4px 10px rgb(28 25 23 / 0.06), 0 12px 28px -4px rgb(28 25 23 / 0.14);
+  --shadow-modal: 0 12px 24px rgb(28 25 23 / 0.1), 0 32px 64px -12px rgb(28 25 23 / 0.22);
+
+  /* Motion. Exposed as animate-fade-in / animate-slide-up / animate-dropdown /
+   * animate-shake utilities; keyframes are defined below the theme block. */
+  --animate-fade-in: fade-in 0.2s ease-out both;
+  --animate-slide-up: slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-dropdown: dropdown-in 0.16s ease-out both;
+  --animate-shake: shake 0.35s ease-in-out;
+
+  /* Layout containers */
+  --container-readable: 48rem;
+  --container-workspace: 80rem;
+}
+
+/* Light theme (default) -- warm paper neutrals */
+:root {
+  --surface: #ffffff;
+  --surface-muted: #fafaf9;
+  --surface-raised: #ffffff;
+  --surface-inverted: #1c1917;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --text: #1c1917;
+  --text-muted: #57534e;
+  --text-inverted: #fafaf9;
+}
+
+/* Dark theme -- opt-in via prefers-color-scheme today; switchable to a
+ *  `.dark` class later without touching token names. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1c1917;
+    --surface-muted: #171412;
+    --surface-raised: #232019;
+    --surface-inverted: #fafaf9;
+    --border: #2e2a26;
+    --border-strong: #44403c;
+    --text: #fafaf9;
+    --text-muted: #a8a29e;
+    --text-inverted: #1c1917;
+  }
+}
+
+body {
+  font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
+  background-color: var(--surface);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Motion keyframes backing the --animate-* theme tokens above. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes shake {
+  0%, 100% { transform: none; }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Loading placeholder with a subtle warm shimmer. Size/rounding come from
+ * the element's own utility classes. */
+.skeleton {
+  background-color: var(--border);
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgb(255 255 255 / 0.5) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background-image: linear-gradient(
+      100deg,
+      transparent 40%,
+      rgb(255 255 255 / 0.06) 50%,
+      transparent 60%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* chunk-16: safe-area utility classes.
+ * Apply to fixed bars / drawers so iOS notches and Android gesture bars
+ * don't clip content. Uses max() so existing padding is respected on
+ * devices without safe-area insets. */
+.safe-area-x {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

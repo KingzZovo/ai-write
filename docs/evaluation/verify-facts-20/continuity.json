@@ -1,0 +1,132 @@
+{
+  "chapters": 20,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 2047,
+      "target": 2000,
+      "ratio": 1.024
+    },
+    "ch02.txt": {
+      "chars": 2164,
+      "target": 2000,
+      "ratio": 1.082
+    },
+    "ch03.txt": {
+      "chars": 2006,
+      "target": 2000,
+      "ratio": 1.003
+    },
+    "ch04.txt": {
+      "chars": 2105,
+      "target": 2000,
+      "ratio": 1.052
+    },
+    "ch05.txt": {
+      "chars": 2227,
+      "target": 2000,
+      "ratio": 1.113
+    },
+    "ch06.txt": {
+      "chars": 2041,
+      "target": 2000,
+      "ratio": 1.02
+    },
+    "ch07.txt": {
+      "chars": 2113,
+      "target": 2000,
+      "ratio": 1.056
+    },
+    "ch08.txt": {
+      "chars": 2004,
+      "target": 2000,
+      "ratio": 1.002
+    },
+    "ch09.txt": {
+      "chars": 2117,
+      "target": 2000,
+      "ratio": 1.058
+    },
+    "ch10.txt": {
+      "chars": 2130,
+      "target": 2000,
+      "ratio": 1.065
+    },
+    "ch11.txt": {
+      "chars": 2200,
+      "target": 2000,
+      "ratio": 1.1
+    },
+    "ch12.txt": {
+      "chars": 2042,
+      "target": 2000,
+      "ratio": 1.021
+    },
+    "ch13.txt": {
+      "chars": 2092,
+      "target": 2000,
+      "ratio": 1.046
+    },
+    "ch14.txt": {
+      "chars": 2236,
+      "target": 2000,
+      "ratio": 1.118
+    },
+    "ch15.txt": {
+      "chars": 2258,
+      "target": 2000,
+      "ratio": 1.129
+    },
+    "ch16.txt": {
+      "chars": 2127,
+      "target": 2000,
+      "ratio": 1.063
+    },
+    "ch17.txt": {
+      "chars": 2265,
+      "target": 2000,
+      "ratio": 1.133
+    },
+    "ch18.txt": {
+      "chars": 2065,
+      "target": 2000,
+      "ratio": 1.032
+    },
+    "ch19.txt": {
+      "chars": 2234,
+      "target": 2000,
+      "ratio": 1.117
+    },
+    "ch20.txt": {
+      "chars": 2081,
+      "target": 2000,
+      "ratio": 1.04
+    }
+  },
+  "findings": [
+    {
+      "check": "unknown_character",
+      "name": "余头",
+      "chapters": [
+        "ch19.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「余头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "老张叔",
+      "chapters": [
+        "ch16.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「老张叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "钟头",
+      "chapters": [
+        "ch07.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「钟头」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 3
+}

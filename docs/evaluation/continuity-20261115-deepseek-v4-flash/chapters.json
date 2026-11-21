@@ -1,0 +1,58 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "57ea4a1e-1022-4e63-855c-5a92c5bb04eb",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: provider_incomplete_response",
+    "error_code": null
+  },
+  {
+    "index": 2,
+    "chapter_id": "9050f7d7-f316-46c3-8709-8686365c5549",
+    "status": "ok",
+    "chars_raw": 1178,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1178
+    },
+    "chars": 1178,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "铁盒里的顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 70.7,
+    "summary_written": true,
+    "summary_chars": 131,
+    "entity_error": "ValueError: provider_incomplete_response",
+    "cognition_error": "ValueError: provider_incomplete_response",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "477353f0-fac6-48cb-83f5-b68f4963f43c",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  },
+  {
+    "index": 4,
+    "chapter_id": "046f8955-a57d-404a-a0ab-dac5b64b6e33",
+    "status": "error",
+    "error_type": "RequiredContextUnavailable",
+    "error_message": "character_cognition_not_ready",
+    "error_code": null
+  }
+]

@@ -1,0 +1,403 @@
+[
+  {
+    "stem": "fantasy_bell-scene_writer",
+    "case_id": "fantasy_bell",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1313,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting ',' delimiter: line 1 column 480 (char 479)"
+  },
+  {
+    "stem": "fantasy_herb-scene_writer",
+    "case_id": "fantasy_herb",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1283,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "stem": "mystery_bridge-scene_writer",
+    "case_id": "mystery_bridge",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1372,
+    "status": "ok",
+    "model_returned": "claude-sonnet-4-6",
+    "elapsed_seconds": 5.964,
+    "output_tokens": 353,
+    "verdicts": [
+      {
+        "id": "states_errand",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 26,
+        "verified": true,
+        "quote": "天亮前必须送到对岸柳树下的茶棚里，一炷香都耽误不得。"
+      },
+      {
+        "id": "price_named",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 24,
+        "verified": true,
+        "quote": "过河一百文，少一个子儿也不行。概不赊账，拿钱来。"
+      },
+      {
+        "id": "weighs",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 30,
+        "verified": true,
+        "quote": "一边是差事砸了、信送不到的重罚，一边是明日交不出腰牌的绝路。"
+      },
+      {
+        "id": "acts",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 51,
+        "verified": true,
+        "quote": "右手探入怀中，将那块带有体温的铜腰牌连同仅有的六十文铜钱一并掏了出来，重重地拍在木棚外湿漉漉的木桩上。"
+      },
+      {
+        "id": "letter_status",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 55,
+        "verified": true,
+        "quote": "陆沉没有丝毫耽搁，跨步上岸，冰冷的夜风中，那株柳树下的茶棚已在黑暗中显出模糊的轮廓。而他的怀里，火漆信完好无损"
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "mystery_lodger-scene_writer",
+    "case_id": "mystery_lodger",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1521,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting ',' delimiter: line 1 column 65 (char 64)"
+  },
+  {
+    "stem": "real_ferry-scene_writer",
+    "case_id": "real_ferry",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1752,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "stem": "real_stall-scene_writer",
+    "case_id": "real_stall",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1574,
+    "status": "ok",
+    "model_returned": "claude-sonnet-4-6",
+    "elapsed_seconds": 5.2,
+    "output_tokens": 403,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 33,
+        "verified": true,
+        "quote": "市场管理员下午来过一趟。不止烤面筋家，咱们这一排，下个月全得清退。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 122,
+        "verified": true,
+        "quote": "我上学期期末考全班第二十八名，文科死记硬背背不下来，数学大题连题干都读不懂。就算我拼死拼活熬到高三，考个大专，三年下来还得家里贴钱。我在厂里干一年，就能挣四万。妈，我算过，你每天炸粉站到夜里两点，腰都直不起来，一个月到底能落几个钱？咱们别撑"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 43,
+        "verified": true,
+        "quote": "这学期还有两个月。期末考试，你给我去考。不管考第几名，高二的课你得上完。这是我的底线。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 63,
+        "verified": true,
+        "quote": "明天一早，李巧云得去市场管理处把退押金的单子签字按手印，而陈麦得赶在早自习打铃前走进教室，把桌上没做完的那套数学卷子再看一眼。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "fantasy_bell-scene_writer",
+    "case_id": "fantasy_bell",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1313,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting ',' delimiter: line 1 column 480 (char 479)"
+  },
+  {
+    "stem": "fantasy_herb-scene_writer",
+    "case_id": "fantasy_herb",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1283,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting ',' delimiter: line 1 column 123 (char 122)"
+  },
+  {
+    "stem": "mystery_lodger-scene_writer",
+    "case_id": "mystery_lodger",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1521,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting ',' delimiter: line 1 column 65 (char 64)"
+  },
+  {
+    "stem": "real_ferry-scene_writer",
+    "case_id": "real_ferry",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1752,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "stem": "fantasy_bell-scene_writer",
+    "case_id": "fantasy_bell",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1313,
+    "status": "ok",
+    "model_returned": "claude-sonnet-4-6",
+    "elapsed_seconds": 5.577,
+    "output_tokens": 498,
+    "verdicts": [
+      {
+        "id": "decision",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 20,
+        "verified": true,
+        "quote": "他没有犹豫，拇指扣住铜舌，猛地向外一扣。"
+      },
+      {
+        "id": "walks_to_pier",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 92,
+        "verified": true,
+        "quote": "林叶双腿一发力，沿着这凭空出现的清凌水路疾步冲向前去。脚下虽是水流，踩上去却如踏青石般坚实，只是两旁翻涌的巨浪带着令人窒息的压迫感呼啸而过。他几步冲到桥墩旁，水路刚好稳稳搭在许舟身侧。"
+      },
+      {
+        "id": "carries_back",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 36,
+        "verified": true,
+        "quote": "林叶双臂反手死死扣住许舟的大腿，腰腹骤然发力，硬生生将对方往背上托了托。"
+      },
+      {
+        "id": "both_ashore",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 33,
+        "verified": true,
+        "quote": "林叶带着背上的许舟猛地向前一扑，两人重重地摔打在近岸泥泞的草地上。"
+      },
+      {
+        "id": "loss_reaction",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 70,
+        "verified": true,
+        "quote": "许舟动了动干裂的嘴唇，看着地上的黑灰，低声道：\"这回……真成穷光蛋了。\"林叶没说话，脱下外衫胡乱擦了擦手上的灰迹，望着眼前翻滚的洪水，哑声应道：\"人活着，总比死在河心强。\""
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "fantasy_herb-scene_writer",
+    "case_id": "fantasy_herb",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1283,
+    "status": "error",
+    "error_type": "JSONDecodeError",
+    "error_message": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "stem": "mystery_lodger-scene_writer",
+    "case_id": "mystery_lodger",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1521,
+    "status": "ok",
+    "model_returned": "claude-sonnet-4-6",
+    "elapsed_seconds": 6.057,
+    "output_tokens": 606,
+    "verdicts": [
+      {
+        "id": "handles_waiter",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 63,
+        "verified": true,
+        "quote": "苏姐眉头微蹙，压下心头那丝隐隐的不安，对阿六沉声吩咐：\"前堂还煮着茶，去把火看好，顺便把门前的水沟疏通一下，别让水漫进柜台里。这里不用你盯着了。\""
+      },
+      {
+        "id": "decides_entry",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 54,
+        "verified": true,
+        "quote": "她从怀里摸出一根薄铜片，顺着门缝轻轻一拨，将里面别着的木栓拨开。她推开房门，潮湿的水汽和一股淡淡的草木灰气味扑面而来。"
+      },
+      {
+        "id": "reads_letter",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 53,
+        "verified": true,
+        "quote": "苏姐关上房门，反手将门栓重新搭好，这才走到桌前。她没有立刻碰那只鞋，而是伸出两根手指，将那张信笺抽了出来。"
+      },
+      {
+        "id": "judgment_changes",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 100,
+        "verified": true,
+        "quote": "苏姐握着信纸的手微微发紧，心头原本因丈夫未归而积压的焦躁，瞬间被另一种冰冷的疑虑所替代。陈九根本不是什么做布匹生意的客商，他到底在躲什么？而丈夫的迟归，又是否和这城西刘记、和这个叫陈九的人有什么牵扯？"
+      },
+      {
+        "id": "concrete_action",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 67,
+        "verified": true,
+        "quote": "苏姐走到柜台后，端起账本翻了翻，声音听不出一丝异样：\"阿六，待会儿官差来查簿子，天字三号房就说陈客官昨夜偶感风寒，清晨趁雨小已经出门抓药去了，午后便回。\""
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  },
+  {
+    "stem": "real_ferry-scene_writer",
+    "case_id": "real_ferry",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1752,
+    "status": "ok",
+    "model_returned": "claude-sonnet-4-6",
+    "elapsed_seconds": 6.189,
+    "output_tokens": 396,
+    "verdicts": [
+      {
+        "id": "shortfall_declared",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 34,
+        "verified": true,
+        "quote": "周航看着那只被碗压住的牛皮纸信封，终于把压在心里的话倒了出来：\"姐，两千不够。\""
+      },
+      {
+        "id": "plan_made",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 53,
+        "verified": true,
+        "quote": "行吧，先拿这两千把眼前的窟窿堵上。剩下的那一千，你别急着去抵押什么，等我明天跟房东好说歹说再宽限两天才算。"
+      },
+      {
+        "id": "brother_boards",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 60,
+        "verified": true,
+        "quote": "周航没有多留，转身踩着水泥台阶快步朝江边走去。夜色里的渡口风大得刮面生疼，他单薄的背影很快融进昏黄的灯影和来往的行人里。"
+      },
+      {
+        "id": "sister_stays",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 67,
+        "verified": true,
+        "quote": "周芸站在原地，双手插在围裙兜里，一直望着那艘亮着橘红色航行灯的渡船解开缆绳、缓缓退离岸边，消失在漆黑的江面上，才转过身迎着江风往回走。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "fantasy_herb-scene_writer",
+    "case_id": "fantasy_herb",
+    "requested_model": "claude-sonnet-4-6",
+    "chars": 1283,
+    "status": "ok",
+    "model_returned": "claude-sonnet-4-6",
+    "elapsed_seconds": 7.137,
+    "output_tokens": 621,
+    "verdicts": [
+      {
+        "id": "discovers_shortage",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 70,
+        "verified": true,
+        "quote": "见底的陶罐里只汪着浅浅的一层醋。泛着微酸的浑浊液体堪堪盖过底部，别说灌满坛口，就连把那株正在陶罐底部不安撞击、试图拱开泥封的\"走地根\"彻底淹没都远远不够。"
+      },
+      {
+        "id": "recognizes_conflict",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 27,
+        "verified": true,
+        "quote": "两边都要用，可这半坛醋倒进哪个碗里，另一个就必然落空。"
+      },
+      {
+        "id": "makes_choice",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 32,
+        "verified": true,
+        "quote": "她不再迟疑，提着那半坛陈醋大步迈出库房，哗啦一声拉开药铺的门闩。"
+      },
+      {
+        "id": "consequence",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 67,
+        "verified": true,
+        "quote": "阿棠低头看着陶坛底仅剩的一层薄薄醋液，那株\"走地根\"失去了足够的浸泡，顿时在坛底疯狂地挣扎起来，粗壮的根须狠狠撞击着陶壁，发出令人毛骨悚然的刮擦声。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 128,
+        "verified": true,
+        "quote": "次日清晨，天色微明，细碎的晨光透过药铺的木格窗照进来。阿棠揉着酸涩的眼睛推开库房门，只见那只陶坛的泥封已经彻底被顶开，坛口空空如也，湿漉漉的土痕顺着墙根蜿蜒出一道触目惊心的印记，直通向后窗半开的缝隙外。而隔壁巷子的方向，隐约传出了几声婴儿微"
+      }
+    ],
+    "delivered": 5,
+    "unverified": 0,
+    "missing": 0,
+    "items": 5
+  }
+]

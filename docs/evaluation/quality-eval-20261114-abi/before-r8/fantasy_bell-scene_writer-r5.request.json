@@ -1,0 +1,98 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "林叶",
+      "许舟"
+    ],
+    "forbidden": [
+      "不得增添河底敌人或怪物",
+      "不得新增可用道具",
+      "不得飞行或隔空搬运",
+      "不得插入身世揭晓"
+    ],
+    "genre": "东方幻想",
+    "id": "fantasy_bell",
+    "label": "东方幻想·洪水铜铃",
+    "must_keep": [
+      "铜铃烧毁且不可恢复",
+      "许舟腿受伤不能游泳",
+      "水路只维持十次呼吸",
+      "水路只够一个人走",
+      "两人同行三年"
+    ],
+    "pov": "第三人称限知,全程跟随林叶",
+    "pov_character": "林叶",
+    "required_outcomes": [
+      "林叶做出用掉铜铃的具体决定",
+      "沿水路走到桥墩",
+      "把许舟背回近岸",
+      "两人安全上岸",
+      "结尾写出两人对失去铜铃的具体反应"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "fantasy_bell",
+  "chars": 1165,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 7.42,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "东方幻想",
+  "input_tokens": 474,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 291,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 388,
+        "name": "scene_brief",
+        "sha256": "4ea1309a6bb7ba30",
+        "source": "case.brief"
+      },
+      {
+        "chars": 76,
+        "name": "character_roster",
+        "sha256": "4608b29ddce5aaa9",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 798,
+        "name": "writer_contract",
+        "sha256": "5b8cafc4ab57212e",
+        "source": "snapshot:HEAD"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 493,
+        "name": "scene_writer_system",
+        "sha256": "806255474cc40ff3",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "5dba62dafacc2a68ba107ad193094d7a3ce8a94df3b73f668ba1cbeff121f3cd",
+    "system_chars": 493,
+    "task_type": "scene_writer",
+    "user_chars": 1382,
+    "variant": "scene_writer"
+  },
+  "repeat": 5,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": "HEAD",
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "d814fc479740f2fd5b998b02e84264c6606e827e7a6658777123247850a050e6",
+  "variant": "scene_writer"
+}

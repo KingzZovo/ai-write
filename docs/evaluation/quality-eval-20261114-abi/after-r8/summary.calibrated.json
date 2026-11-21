@@ -1,0 +1,193 @@
+{
+  "by_genre": {
+    "unknown": {
+      "cases": 6,
+      "chars": 7584,
+      "counts": {
+        "fact_violation": 12,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 1,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "东方幻想": {
+      "cases": 14,
+      "chars": 15383,
+      "counts": {
+        "fact_violation": 12,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 13,
+        "pov_breach": 5,
+        "rule_recitation": 3
+      },
+      "hard_counts": {
+        "fact_violation": 11,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 13,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "悬疑": {
+      "cases": 14,
+      "chars": 15608,
+      "counts": {
+        "fact_violation": 24,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 14,
+        "pov_breach": 0,
+        "rule_recitation": 3
+      },
+      "hard_counts": {
+        "fact_violation": 12,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 14,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "现实生活": {
+      "cases": 14,
+      "chars": 20517,
+      "counts": {
+        "fact_violation": 25,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 9,
+        "pov_breach": 1,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 14,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 9,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "by_variant": {
+    "scene_writer": {
+      "cases": 42,
+      "chars": 51508,
+      "counts": {
+        "fact_violation": 61,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 36,
+        "pov_breach": 6,
+        "rule_recitation": 6
+      },
+      "hard_counts": {
+        "fact_violation": 37,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 36,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "unknown": {
+      "cases": 6,
+      "chars": 7584,
+      "counts": {
+        "fact_violation": 12,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 1,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "calls": 48,
+  "cases": 6,
+  "chars": 59092,
+  "contract": {
+    "blueprint_version": "v4.14",
+    "narrative_contract_version": "world_logic_contract_v4_15_scene_planning",
+    "scene_writer_system_sha256": "806255474cc40ff3",
+    "writer_contract_sha256": "7109b170f9908bf2"
+  },
+  "counts": {
+    "fact_violation": 73,
+    "instruction_leak": 0,
+    "metaphor_stack": 1,
+    "outcome_unfulfilled": 42,
+    "pov_breach": 7,
+    "rule_recitation": 6
+  },
+  "elapsed_seconds": 452.539,
+  "failed": 0,
+  "hard_counts": {
+    "fact_violation": 46,
+    "instruction_leak": 0,
+    "metaphor_stack": 0,
+    "outcome_unfulfilled": 42,
+    "pov_breach": 0,
+    "rule_recitation": 0
+  },
+  "returned": 48,
+  "tokens": {
+    "input": 26480,
+    "output": 14758
+  },
+  "unmet": {
+    "forbidden:both_saved": 2,
+    "forbidden:new_benefactor": 1,
+    "must_keep:bell_destroyed": 2,
+    "must_keep:debt_total": 1,
+    "must_keep:father_gone": 5,
+    "must_keep:fourteen_rooms": 5,
+    "must_keep:half_jar": 1,
+    "must_keep:master_away": 1,
+    "must_keep:no_neighbor_loan": 4,
+    "must_keep:one_person_wide": 1,
+    "must_keep:price": 1,
+    "must_keep:rain": 3,
+    "must_keep:rule": 2,
+    "must_keep:sister_ignorant": 3,
+    "must_keep:ten_breaths": 3,
+    "must_keep:three_years": 2,
+    "must_keep:three_years_vin": 2,
+    "must_keep:tonight_seal": 1,
+    "must_keep:wet_shoe": 3,
+    "required_outcomes:brother_boards": 5,
+    "required_outcomes:concrete_action": 2,
+    "required_outcomes:decision": 2,
+    "required_outcomes:discovers_shortage": 1,
+    "required_outcomes:handles_waiter": 6,
+    "required_outcomes:judgment_changes": 1,
+    "required_outcomes:makes_choice": 2,
+    "required_outcomes:next_morning": 1,
+    "required_outcomes:plan_made": 3,
+    "required_outcomes:price_named": 1,
+    "required_outcomes:reads_letter": 4,
+    "required_outcomes:recognizes_conflict": 6,
+    "required_outcomes:sister_stays": 3,
+    "required_outcomes:walks_to_pier": 1
+  }
+}

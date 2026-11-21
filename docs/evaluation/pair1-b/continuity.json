@@ -1,0 +1,78 @@
+{
+  "chapters": 8,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1268,
+      "target": 1200,
+      "ratio": 1.057
+    },
+    "ch02.txt": {
+      "chars": 1179,
+      "target": 1200,
+      "ratio": 0.983
+    },
+    "ch03.txt": {
+      "chars": 1177,
+      "target": 1200,
+      "ratio": 0.981
+    },
+    "ch04.txt": {
+      "chars": 1131,
+      "target": 1200,
+      "ratio": 0.943
+    },
+    "ch05.txt": {
+      "chars": 1188,
+      "target": 1200,
+      "ratio": 0.99
+    },
+    "ch06.txt": {
+      "chars": 992,
+      "target": 1200,
+      "ratio": 0.827
+    },
+    "ch07.txt": {
+      "chars": 1076,
+      "target": 1200,
+      "ratio": 0.897
+    },
+    "ch09.txt": {
+      "chars": 1235,
+      "target": 1200,
+      "ratio": 1.029
+    }
+  },
+  "findings": [
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch02.txt",
+      "declared": "次日清晨",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch06.txt",
+      "chars": 992,
+      "target": 1200,
+      "ratio": 0.827,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王大爷",
+      "chapters": [
+        "ch03.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王大爷」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "赵叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「赵叔」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 4
+}

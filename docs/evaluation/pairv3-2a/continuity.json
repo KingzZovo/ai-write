@@ -1,0 +1,66 @@
+{
+  "chapters": 5,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1580,
+      "target": 1200,
+      "ratio": 1.317
+    },
+    "ch02.txt": {
+      "chars": 1335,
+      "target": 1200,
+      "ratio": 1.113
+    },
+    "ch03.txt": {
+      "chars": 1196,
+      "target": 1200,
+      "ratio": 0.997
+    },
+    "ch06.txt": {
+      "chars": 894,
+      "target": 1200,
+      "ratio": 0.745
+    },
+    "ch07.txt": {
+      "chars": 1185,
+      "target": 1200,
+      "ratio": 0.988
+    }
+  },
+  "findings": [
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch01.txt",
+      "values": [
+        "一千",
+        "三千"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch06.txt",
+      "chars": 894,
+      "target": 1200,
+      "ratio": 0.745,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王大爷",
+      "chapters": [
+        "ch03.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王大爷」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 4
+}

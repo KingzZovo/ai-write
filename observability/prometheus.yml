@@ -1,0 +1,21 @@
+# Prometheus scrape config for ai-write stack.
+# Docker compose service DNS names are resolvable from inside the
+# prometheus container.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: dev
+    stack: ai-write
+
+scrape_configs:
+  - job_name: ai-write-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - backend:8000
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090

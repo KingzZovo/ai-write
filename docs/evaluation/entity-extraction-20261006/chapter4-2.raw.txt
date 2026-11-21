@@ -1,0 +1,3 @@
+```json
+{"new_characters": [], "state_changes": [{"name": "阿Ｑ", "changes": {"因調戲吳媽答應賠罪、負擔道士費用、禁足趙府等條件並質押了氈帽和棉被": "事實"}, "evidence": "阿Ｑ正沒有現錢，便用一頂氈帽何壁，並且訂定了五條件……阿Ｑ自然都答應了，可惜沒有錢。幸而已經春天，棉被可以無用，便質了二千大錢，履行條約。"}], "new_relationships": [], "changed_relationships": [{"char1": "阿Ｑ", "char2": "吳媽", "type": "因阿Ｑ調戲及後續賠罪條件而成為受害與加害關係", "evidence": "阿Ｑ忽然搶上去，對伊跪下了……四　吳媽此後倘有不測，惟阿Ｑ是問。"}], "location_changes": [{"character": "阿Ｑ", "location": "土谷祠內", "evidence": "自然而然的走出後門，不多工夫，已在土谷祠內了。"}]}
+```

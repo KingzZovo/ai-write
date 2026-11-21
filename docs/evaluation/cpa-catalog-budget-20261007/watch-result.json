@@ -1,0 +1,13 @@
+{
+  "before": {
+    "watch_count": 2
+  },
+  "inplace": {
+    "visible": true,
+    "watch_count": 2
+  },
+  "atomic_replace": {
+    "visible": false,
+    "watch_count": 1
+  }
+}

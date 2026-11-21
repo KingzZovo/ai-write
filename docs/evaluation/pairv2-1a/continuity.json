@@ -1,0 +1,47 @@
+{
+  "chapters": 3,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1398,
+      "target": 1200,
+      "ratio": 1.165
+    },
+    "ch02.txt": {
+      "chars": 1252,
+      "target": 1200,
+      "ratio": 1.043
+    },
+    "ch03.txt": {
+      "chars": 1646,
+      "target": 1200,
+      "ratio": 1.372
+    }
+  },
+  "findings": [
+    {
+      "check": "unknown_character",
+      "name": "张叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「张叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "李叔",
+      "chapters": [
+        "ch03.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「李叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王阿姨",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王阿姨」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 3
+}

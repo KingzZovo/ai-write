@@ -1,0 +1,82 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1161,
+      "target": 1200,
+      "ratio": 0.968
+    },
+    "ch02.txt": {
+      "chars": 1129,
+      "target": 1200,
+      "ratio": 0.941
+    },
+    "ch03.txt": {
+      "chars": 1436,
+      "target": 1200,
+      "ratio": 1.197
+    },
+    "ch04.txt": {
+      "chars": 1264,
+      "target": 1200,
+      "ratio": 1.053
+    },
+    "ch05.txt": {
+      "chars": 1296,
+      "target": 1200,
+      "ratio": 1.08
+    },
+    "ch06.txt": {
+      "chars": 1483,
+      "target": 1200,
+      "ratio": 1.236
+    },
+    "ch07.txt": {
+      "chars": 970,
+      "target": 1200,
+      "ratio": 0.808
+    },
+    "ch08.txt": {
+      "chars": 1108,
+      "target": 1200,
+      "ratio": 0.923
+    },
+    "ch09.txt": {
+      "chars": 1276,
+      "target": 1200,
+      "ratio": 1.063
+    },
+    "ch10.txt": {
+      "chars": 1312,
+      "target": 1200,
+      "ratio": 1.093
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch07.txt",
+      "chars": 970,
+      "target": 1200,
+      "ratio": 0.808,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "张叔",
+      "chapters": [
+        "ch06.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「张叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "钟头",
+      "chapters": [
+        "ch09.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「钟头」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 3
+}

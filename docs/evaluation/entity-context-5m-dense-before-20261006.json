@@ -1,0 +1,53 @@
+{
+  "chapters": 2000,
+  "body_chars": 5000000,
+  "characters": 20,
+  "states_per_chapter": 5,
+  "scenario": "synthetic_state_history",
+  "runs": [
+    {
+      "mode": "postgres",
+      "iteration": 1,
+      "seconds": 0.8712,
+      "sql_queries": 21
+    },
+    {
+      "mode": "neo4j",
+      "iteration": 1,
+      "seconds": 2.1087,
+      "sql_queries": 20
+    },
+    {
+      "mode": "postgres",
+      "iteration": 2,
+      "seconds": 0.9662,
+      "sql_queries": 21
+    },
+    {
+      "mode": "neo4j",
+      "iteration": 2,
+      "seconds": 1.9444,
+      "sql_queries": 20
+    },
+    {
+      "mode": "postgres",
+      "iteration": 3,
+      "seconds": 0.8882,
+      "sql_queries": 21
+    },
+    {
+      "mode": "neo4j",
+      "iteration": 3,
+      "seconds": 1.8591,
+      "sql_queries": 20
+    }
+  ],
+  "materialize": {
+    "status": "failed",
+    "seconds": 6.1287,
+    "error": "InterfaceError",
+    "detail": "(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) <class 'asyncpg.exceptions._base.InterfaceError'>: the number of query arguments cannot exceed 32767\n"
+  },
+  "edit_invalidates_without_cleanup": true,
+  "max_rss_mib": 217.7
+}

@@ -1,0 +1,388 @@
+{
+  "chapters": 24,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1654,
+      "target": 1200,
+      "ratio": 1.378
+    },
+    "ch02.txt": {
+      "chars": 1118,
+      "target": 1200,
+      "ratio": 0.932
+    },
+    "ch03.txt": {
+      "chars": 1549,
+      "target": 1200,
+      "ratio": 1.291
+    },
+    "ch04.txt": {
+      "chars": 1289,
+      "target": 1200,
+      "ratio": 1.074
+    },
+    "ch05.txt": {
+      "chars": 1238,
+      "target": 1200,
+      "ratio": 1.032
+    },
+    "ch06.txt": {
+      "chars": 1245,
+      "target": 1200,
+      "ratio": 1.038
+    },
+    "ch07.txt": {
+      "chars": 1430,
+      "target": 1200,
+      "ratio": 1.192
+    },
+    "ch08.txt": {
+      "chars": 720,
+      "target": 1200,
+      "ratio": 0.6
+    },
+    "ch09.txt": {
+      "chars": 1656,
+      "target": 1200,
+      "ratio": 1.38
+    },
+    "ch10.txt": {
+      "chars": 977,
+      "target": 1200,
+      "ratio": 0.814
+    },
+    "ch11.txt": {
+      "chars": 942,
+      "target": 1200,
+      "ratio": 0.785
+    },
+    "ch12.txt": {
+      "chars": 1289,
+      "target": 1200,
+      "ratio": 1.074
+    },
+    "ch13.txt": {
+      "chars": 1203,
+      "target": 1200,
+      "ratio": 1.002
+    },
+    "ch14.txt": {
+      "chars": 990,
+      "target": 1200,
+      "ratio": 0.825
+    },
+    "ch15.txt": {
+      "chars": 1331,
+      "target": 1200,
+      "ratio": 1.109
+    },
+    "ch16.txt": {
+      "chars": 1241,
+      "target": 1200,
+      "ratio": 1.034
+    },
+    "ch17.txt": {
+      "chars": 979,
+      "target": 1200,
+      "ratio": 0.816
+    },
+    "ch18.txt": {
+      "chars": 973,
+      "target": 1200,
+      "ratio": 0.811
+    },
+    "ch19.txt": {
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76
+    },
+    "ch20.txt": {
+      "chars": 1038,
+      "target": 1200,
+      "ratio": 0.865
+    },
+    "ch21.txt": {
+      "chars": 1002,
+      "target": 1200,
+      "ratio": 0.835
+    },
+    "ch22.txt": {
+      "chars": 1281,
+      "target": 1200,
+      "ratio": 1.067
+    },
+    "ch23.txt": {
+      "chars": 739,
+      "target": 1200,
+      "ratio": 0.616
+    },
+    "ch24.txt": {
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch08.txt",
+      "chars": 720,
+      "target": 1200,
+      "ratio": 0.6,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch08.txt",
+      "declared": "一周后",
+      "keys": [
+        "一周",
+        "七天",
+        "一个星期",
+        "昨天"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch09.txt",
+      "values": [
+        "一",
+        "七百",
+        "两"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch10.txt",
+      "chars": 977,
+      "target": 1200,
+      "ratio": 0.814,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch10.txt",
+      "declared": "中秋前三天的傍晚",
+      "keys": [
+        "中秋",
+        "傍晚",
+        "天黑"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch11.txt",
+      "chars": 942,
+      "target": 1200,
+      "ratio": 0.785,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch11.txt",
+      "keyword": "复查",
+      "pinned_in": "ch11.txt",
+      "allowed": [
+        "一千二",
+        "1200"
+      ],
+      "found": [
+        20.0
+      ],
+      "detail": "「复查」在 ch11.txt 已定为 一千二/1200,本章出现别的金额 20"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch12.txt",
+      "declared": "同日午后",
+      "keys": [
+        "午后",
+        "下午",
+        "中午"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch14.txt",
+      "chars": 990,
+      "target": 1200,
+      "ratio": 0.825,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch14.txt",
+      "keyword": "复查",
+      "pinned_in": "ch11.txt",
+      "allowed": [
+        "一千二",
+        "1200"
+      ],
+      "found": [
+        1000.0
+      ],
+      "detail": "「复查」在 ch11.txt 已定为 一千二/1200,本章出现别的金额 1000"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch16.txt",
+      "declared": "一周后上午",
+      "keys": [
+        "一周",
+        "上午",
+        "一早"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch16.txt",
+      "keyword": "铺租",
+      "pinned_in": "ch16.txt",
+      "allowed": [
+        "九百",
+        "900"
+      ],
+      "found": [
+        100.0,
+        800.0
+      ],
+      "detail": "「铺租」在 ch16.txt 已定为 九百/900,本章出现别的金额 100/800"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch16.txt",
+      "values": [
+        "一",
+        "九百一十"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch17.txt",
+      "chars": 979,
+      "target": 1200,
+      "ratio": 0.816,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch18.txt",
+      "chars": 973,
+      "target": 1200,
+      "ratio": 0.811,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "pinned_number_conflict",
+      "chapter": "ch18.txt",
+      "keyword": "复查",
+      "pinned_in": "ch11.txt",
+      "allowed": [
+        "一千二",
+        "1200"
+      ],
+      "found": [
+        1000.0
+      ],
+      "detail": "「复查」在 ch11.txt 已定为 一千二/1200,本章出现别的金额 1000"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch19.txt",
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch20.txt",
+      "declared": "三天后午后",
+      "keys": [
+        "三天",
+        "午后",
+        "下午"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch21.txt",
+      "chars": 1002,
+      "target": 1200,
+      "ratio": 0.835,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch22.txt",
+      "declared": "次日早上",
+      "keys": [
+        "次日",
+        "早上",
+        "一早"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch23.txt",
+      "chars": 739,
+      "target": 1200,
+      "ratio": 0.616,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch23.txt",
+      "declared": "一周后上午",
+      "keys": [
+        "一周",
+        "上午",
+        "一早"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch24.txt",
+      "chars": 912,
+      "target": 1200,
+      "ratio": 0.76,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "number_conflict",
+      "key": "呢",
+      "detail": "呢 跨章取值不同:一千 vs 八百",
+      "chapters": [
+        "ch15.txt"
+      ]
+    },
+    {
+      "check": "number_variance",
+      "key": "的铺租",
+      "chapter": "ch16.txt",
+      "values": [
+        "九百",
+        "八百"
+      ],
+      "detail": "同一名目在同一章出现多个金额,需人工核对"
+    },
+    {
+      "check": "number_conflict",
+      "key": "的铺租",
+      "detail": "的铺租 跨章取值不同:八百 vs 九百",
+      "chapters": [
+        "ch16.txt"
+      ]
+    }
+  ],
+  "violations": 26
+}

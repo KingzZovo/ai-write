@@ -1,0 +1,24 @@
+[
+  {
+    "mode": "nonstream",
+    "gateway": "CPA",
+    "model": "gemini-3.1-pro",
+    "fallback": false,
+    "received": true,
+    "chars": 334,
+    "overall": 10.0,
+    "issues": 0,
+    "seconds": 4.33
+  },
+  {
+    "mode": "internal_stream",
+    "gateway": "CPA",
+    "model": "gemini-3.1-pro",
+    "fallback": false,
+    "received": true,
+    "chars": 322,
+    "overall": 10.0,
+    "issues": 0,
+    "seconds": 3.64
+  }
+]

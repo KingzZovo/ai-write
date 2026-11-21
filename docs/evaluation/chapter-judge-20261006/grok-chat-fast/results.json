@@ -1,0 +1,62 @@
+[
+  {
+    "case": "mystery_bridge",
+    "source": "context-pressure-20261006/mystery_bridge-candidate.txt",
+    "model": "grok-chat-fast",
+    "commit": "e87ac58d27004afc30d3270d259a86594e795483",
+    "text_sha256": "c26cf4bc4b1dc160f99e55cf8888ff037a7cacafcd0e98ca13547338033bd6b1",
+    "accepted": false,
+    "parse_failed": false,
+    "overall": 7.4,
+    "elapsed_seconds": 6.581,
+    "input_tokens": 776,
+    "output_tokens": 577,
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 2400
+  },
+  {
+    "case": "fantasy_cost",
+    "source": "context-pressure-20261006/fantasy_cost-candidate.txt",
+    "model": "grok-chat-fast",
+    "commit": "e87ac58d27004afc30d3270d259a86594e795483",
+    "text_sha256": "5c4b8c18baca1e4459baeb595a2340fac3e528b4b5743c0ba3cbf4814da9b656",
+    "accepted": true,
+    "parse_failed": false,
+    "overall": 10.0,
+    "elapsed_seconds": 4.223,
+    "input_tokens": 764,
+    "output_tokens": 81,
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 2400
+  },
+  {
+    "case": "scifi_airlock",
+    "source": "context-pressure-20261006/scifi_airlock-candidate.txt",
+    "model": "grok-chat-fast",
+    "commit": "e87ac58d27004afc30d3270d259a86594e795483",
+    "text_sha256": "0d747e77c58decfd46e23a962fc9a504dce0481adb1e0dde9fede1f7943410fc",
+    "accepted": false,
+    "parse_failed": false,
+    "overall": 7.4,
+    "elapsed_seconds": 13.593,
+    "input_tokens": 762,
+    "output_tokens": 592,
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 2400
+  },
+  {
+    "case": "mystery_delivery_control",
+    "source": "handwritten fictional positive control",
+    "model": "grok-chat-fast",
+    "commit": "e87ac58d27004afc30d3270d259a86594e795483",
+    "text_sha256": "c17657959f16a63df0b4c3da4934dfbf04532996792174391397364f53c17199",
+    "accepted": false,
+    "parse_failed": false,
+    "overall": 7.6,
+    "elapsed_seconds": 8.698,
+    "input_tokens": 670,
+    "output_tokens": 569,
+    "requested_temperature": 0.3,
+    "requested_max_tokens": 2400
+  }
+]

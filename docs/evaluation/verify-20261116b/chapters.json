@@ -1,0 +1,374 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "aae813a3-e637-4735-b34a-6bc6d9a63047",
+    "status": "ok",
+    "chars_raw": 1268,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1268
+    },
+    "chars": 1268,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的牛皮纸信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 16.9,
+    "summary_written": true,
+    "summary_chars": 178,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "df1c23a7-9603-4981-88de-5cf4de60da28",
+    "status": "ok",
+    "chars_raw": 987,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 987
+    },
+    "chars": 987,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 34.5,
+    "summary_written": true,
+    "summary_chars": 110,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "5d6f01b4-a66a-473d-ab77-b3d52d3797be",
+    "status": "truncated",
+    "chars_raw": 571,
+    "guard": "truncated",
+    "chars": 571,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第三章 修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 45.2
+  },
+  {
+    "index": 4,
+    "chapter_id": "a97298f7-e9bd-49cc-a6cb-ec737108a16c",
+    "status": "ok",
+    "chars_raw": 1350,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1350
+    },
+    "chars": 1350,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的夜活",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 16.8,
+    "summary_written": true,
+    "summary_chars": 183,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "d52fb118-a132-4155-9f6d-1762bcaca427",
+    "status": "truncated",
+    "chars_raw": 1232,
+    "guard": "truncated",
+    "chars": 1232,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第五章 袋子里的东西",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 23.5
+  },
+  {
+    "index": 6,
+    "chapter_id": "94b2f08d-27c3-4f12-9891-38bb0f79fb90",
+    "status": "ok",
+    "chars_raw": 1098,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1098
+    },
+    "chars": 1098,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第六章 老陈的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 15.6,
+    "summary_written": true,
+    "summary_chars": 21,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "993e32df-5959-4eaf-9290-08e0dc75d813",
+    "status": "ok",
+    "chars_raw": 1183,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1183
+    },
+    "chars": 1183,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "铁盒里的顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 22.7,
+    "summary_written": true,
+    "summary_chars": 31,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "781c6be8-1753-47da-becc-f36a8e071c35",
+    "status": "ok",
+    "chars_raw": 940,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 940
+    },
+    "chars": 940,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "校服收账与未寄出的信",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 62.8,
+    "summary_written": true,
+    "summary_chars": 137,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "b63061d2-f89b-4076-bc07-37fb1389fae7",
+    "status": "ok",
+    "chars_raw": 1013,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1013
+    },
+    "chars": 1013,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺还账",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 31.2,
+    "summary_written": true,
+    "summary_chars": 122,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "a72d0a51-2ba0-49eb-8c08-ae5a2732a05a",
+    "status": "refusal",
+    "chars_raw": 2233,
+    "guard": "refusal",
+    "chars": 2233,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口清算",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 39.4
+  }
+]

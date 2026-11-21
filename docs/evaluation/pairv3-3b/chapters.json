@@ -1,0 +1,176 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "03131f28-dc45-444c-99d3-9eb07776e8d1",
+    "status": "ok",
+    "chars_raw": 1250,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1250
+    },
+    "chars": 1250,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "面碗下的两千元",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "末班船与岸边人",
+          "target_words": 550
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 47.4,
+    "summary_written": true,
+    "summary_chars": 159,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "ee04bc0a-8be9-4a9a-a9c5-c842e794d40d",
+    "status": "ok",
+    "chars_raw": 470,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 470
+    },
+    "chars": 470,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "清晨催租与备用抵押",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "盘算与缝纫活计的交代",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 90.5,
+    "summary_written": true,
+    "summary_chars": 85,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "1d22e111-5480-4b1b-9ed2-4a9d7c863f36",
+    "status": "ok",
+    "chars_raw": 1093,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1093
+    },
+    "chars": 1093,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "电器铺里的账目",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "旧电饭锅的现金",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 181.6,
+    "summary_written": true,
+    "summary_chars": 182,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "66db32ee-97a6-4b03-9918-fe1e22c49cdd",
+    "status": "truncated",
+    "chars_raw": 777,
+    "guard": "truncated",
+    "chars": 777,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "面摊上的闲话",
+          "target_words": 580
+        },
+        {
+          "idx": 2,
+          "title": "预备的布袋",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 84.8
+  }
+]

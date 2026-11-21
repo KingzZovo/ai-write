@@ -1,0 +1,51 @@
+{
+  "chapters": 4,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 759,
+      "target": 1200,
+      "ratio": 0.632
+    },
+    "ch02.txt": {
+      "chars": 2155,
+      "target": 1200,
+      "ratio": 1.796
+    },
+    "ch03.txt": {
+      "chars": 1117,
+      "target": 1200,
+      "ratio": 0.931
+    },
+    "ch04.txt": {
+      "chars": 1466,
+      "target": 1200,
+      "ratio": 1.222
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch01.txt",
+      "chars": 759,
+      "target": 1200,
+      "ratio": 0.632,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch01.txt",
+      "values": [
+        "一",
+        "一千",
+        "千"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    }
+  ],
+  "violations": 3
+}

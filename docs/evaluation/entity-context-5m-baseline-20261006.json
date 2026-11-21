@@ -1,0 +1,46 @@
+{
+  "chapters": 2000,
+  "body_chars": 5000000,
+  "characters": 20,
+  "scenario": "synthetic_state_history",
+  "runs": [
+    {
+      "mode": "postgres",
+      "iteration": 1,
+      "seconds": 0.6607,
+      "sql_queries": 21
+    },
+    {
+      "mode": "neo4j",
+      "iteration": 1,
+      "seconds": 1.2695,
+      "sql_queries": 20
+    },
+    {
+      "mode": "postgres",
+      "iteration": 2,
+      "seconds": 0.8089,
+      "sql_queries": 21
+    },
+    {
+      "mode": "neo4j",
+      "iteration": 2,
+      "seconds": 0.9023,
+      "sql_queries": 20
+    },
+    {
+      "mode": "postgres",
+      "iteration": 3,
+      "seconds": 0.753,
+      "sql_queries": 21
+    },
+    {
+      "mode": "neo4j",
+      "iteration": 3,
+      "seconds": 0.9455,
+      "sql_queries": 20
+    }
+  ],
+  "edit_invalidates_without_cleanup": true,
+  "max_rss_mib": 125.1
+}

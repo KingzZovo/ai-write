@@ -1,0 +1,29 @@
+{
+  "chapters": 3,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1656,
+      "target": 1200,
+      "ratio": 1.38
+    },
+    "ch02.txt": {
+      "chars": 1330,
+      "target": 1200,
+      "ratio": 1.108
+    },
+    "ch03.txt": {
+      "chars": 1058,
+      "target": 1200,
+      "ratio": 0.882
+    }
+  },
+  "findings": [
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch03.txt",
+      "declared": "同日午后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    }
+  ],
+  "violations": 1
+}

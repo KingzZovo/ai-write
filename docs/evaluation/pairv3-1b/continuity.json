@@ -1,0 +1,12 @@
+{
+  "chapters": 1,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1746,
+      "target": 1200,
+      "ratio": 1.455
+    }
+  },
+  "findings": [],
+  "violations": 0
+}

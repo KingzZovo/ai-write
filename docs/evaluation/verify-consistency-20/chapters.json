@@ -1,0 +1,902 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "bfd98a19-bb39-4683-b261-ebdad7bf7e12",
+    "status": "ok",
+    "chars_raw": 2160,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2160
+    },
+    "chars": 2160,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "底噪里的姐姐与编号规律",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 40.7,
+    "summary_written": true,
+    "summary_chars": 275,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "cb4af05f-4ff5-4287-ba1d-764a077c8166",
+    "status": "ok",
+    "chars_raw": 2227,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2227
+    },
+    "chars": 2227,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "索引里的空缺与新卡",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 53.3,
+    "summary_written": true,
+    "summary_chars": 237,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "44d7af8c-4dd5-4fbb-a0fb-c5bd915deceb",
+    "status": "ok",
+    "chars_raw": 2500,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2500
+    },
+    "chars": 2500,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "修车铺里的旧钥匙",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 29.6,
+    "summary_written": true,
+    "summary_chars": 148,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "7a68c9ca-07d4-4bae-bf12-ab7c1ba6c84f",
+    "status": "ok",
+    "chars_raw": 2417,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2417
+    },
+    "chars": 2417,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "机房里的供电开盘机与周三记录",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 41.0,
+    "summary_written": true,
+    "summary_chars": 233,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "be426ed4-b76e-4224-babe-acc5b8f18303",
+    "status": "ok",
+    "chars_raw": 2197,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2197
+    },
+    "chars": 2197,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "巷口小卖部的周三账本与提醒",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 40.8,
+    "summary_written": true,
+    "summary_chars": 202,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "eb035e42-6d4d-4b68-af1b-f8cd03598fb6",
+    "status": "ok",
+    "chars_raw": 2375,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2375
+    },
+    "chars": 2375,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第六章 复制品",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 26.9,
+    "summary_written": true,
+    "summary_chars": 198,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "45bf80fb-8e46-4335-99ae-f8dcdfb64c39",
+    "status": "ok",
+    "chars_raw": 2020,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2020
+    },
+    "chars": 2020,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "另一盘磁带与整点报时",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 36.5,
+    "summary_written": true,
+    "summary_chars": 266,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "a44cb248-bb2b-4685-b962-5bd6efe66594",
+    "status": "ok",
+    "chars_raw": 2700,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2700
+    },
+    "chars": 2700,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "声学实验室的频谱比对",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 23.4,
+    "summary_written": true,
+    "summary_chars": 137,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "b174d85d-fdad-4694-8967-ee74afcf1a17",
+    "status": "ok",
+    "chars_raw": 2022,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2022
+    },
+    "chars": 2022,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "周三夜里的车与换过的锁",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 37.4,
+    "summary_written": true,
+    "summary_chars": 158,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 10,
+    "chapter_id": "1111f24c-46ea-4174-8041-9e381ca07e3a",
+    "status": "ok",
+    "chars_raw": 2168,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2168
+    },
+    "chars": 2168,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "修车铺里的旧账与新锁",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 43.1,
+    "summary_written": true,
+    "summary_chars": 288,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 11,
+    "chapter_id": "505f01ec-814a-4982-b943-ba19ba4dcd57",
+    "status": "ok",
+    "chars_raw": 2048,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2048
+    },
+    "chars": 2048,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "同一天的两张发票",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 46.0,
+    "summary_written": true,
+    "summary_chars": 253,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 12,
+    "chapter_id": "040d88b6-d1f3-439b-8cbd-79e7b789131f",
+    "status": "ok",
+    "chars_raw": 2249,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2249
+    },
+    "chars": 2249,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "档案窗口的核对",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 33.2,
+    "summary_written": true,
+    "summary_chars": 209,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 13,
+    "chapter_id": "fd5bab24-e2f8-4a0c-a9e1-3f7184ae427f",
+    "status": "ok",
+    "chars_raw": 2138,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2138
+    },
+    "chars": 2138,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "旧货库房里的来路、挑拣与收条",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 34.2,
+    "summary_written": true,
+    "summary_chars": 224,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 14,
+    "chapter_id": "a9fdd03f-cdc7-459c-ad8b-2af3b1d8c671",
+    "status": "ok",
+    "chars_raw": 1981,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1981
+    },
+    "chars": 1981,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "八百块的收条与清场账目",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 35.3,
+    "summary_written": true,
+    "summary_chars": 203,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 15,
+    "chapter_id": "d6ece45c-2486-4c5f-ae6d-43fef7515c54",
+    "status": "ok",
+    "chars_raw": 2160,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2160
+    },
+    "chars": 2160,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "补偿登记里的八百元",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 68.2,
+    "summary_written": true,
+    "summary_chars": 231,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 16,
+    "chapter_id": "124287ed-2456-4941-a23c-559c3257de7a",
+    "status": "ok",
+    "chars_raw": 2573,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2573
+    },
+    "chars": 2573,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "中介门店的租约",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 25.1,
+    "summary_written": true,
+    "summary_chars": 264,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 17,
+    "chapter_id": "06cfd510-d595-4f4f-880b-7a5f22579f05",
+    "status": "ok",
+    "chars_raw": 2182,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2182
+    },
+    "chars": 2182,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "被划掉的行与替签",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 34.0,
+    "summary_written": true,
+    "summary_chars": 227,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 18,
+    "chapter_id": "b7e3fefd-c1f7-4d80-b580-a81a19bab174",
+    "status": "ok",
+    "chars_raw": 2094,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2094
+    },
+    "chars": 2094,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "替签笔迹与私下交接的决断",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 31.5,
+    "summary_written": true,
+    "summary_chars": 211,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 19,
+    "chapter_id": "8428e199-86c0-4e08-a0d2-414976d000d1",
+    "status": "ok",
+    "chars_raw": 2183,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2183
+    },
+    "chars": 2183,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第三盘磁带的声纹与约定",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 30.9,
+    "summary_written": true,
+    "summary_chars": 136,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 20,
+    "chapter_id": "b2eecdd8-46b8-48fd-8072-86e6efc749f5",
+    "status": "ok",
+    "chars_raw": 2071,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 2071
+    },
+    "chars": 2071,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "十二号楼三层三零四与程野",
+          "target_words": 2160
+        }
+      ],
+      "chapter_target": 2160
+    },
+    "elapsed_seconds": 38.0,
+    "summary_written": true,
+    "summary_chars": 167,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

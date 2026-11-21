@@ -1,0 +1,302 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "bda9fa92-009a-4f98-acda-176232b25dc5",
+    "status": "ok",
+    "chars_raw": 1402,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1402
+    },
+    "chars": 1402,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "面摊压钱",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口岸边",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 33.4,
+    "summary_written": true,
+    "summary_chars": 152,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "c48d47aa-1a23-4ecc-9b24-43e319ae33f0",
+    "status": "ok",
+    "chars_raw": 1102,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1102
+    },
+    "chars": 1102,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "清晨催租",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "盘算夜活",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 38.9,
+    "summary_written": true,
+    "summary_chars": 147,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "b20617df-facd-4ab6-84af-ac051160ddce",
+    "status": "ok",
+    "chars_raw": 1019,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1019
+    },
+    "chars": 1019,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第一场 铺里的账本与催款",
+          "target_words": 580
+        },
+        {
+          "idx": 2,
+          "title": "第二场 旧电饭锅的转机",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 30.4,
+    "summary_written": true,
+    "summary_chars": 132,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "b4fe479d-7bd9-4dc7-8fef-b3bb189c40f6",
+    "status": "ok",
+    "chars_raw": 1311,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1311
+    },
+    "chars": 1311,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "面摊上的素面",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "缝纫铺里的布袋",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 46.1,
+    "summary_written": true,
+    "summary_chars": 127,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 5,
+    "chapter_id": "fc544443-08b2-473d-a1c1-0af45a339ef2",
+    "status": "ok",
+    "chars_raw": 1385,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1385
+    },
+    "chars": 1385,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上铺面",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "铺内收尾",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 31.0,
+    "summary_written": true,
+    "summary_chars": 139,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 6,
+    "chapter_id": "02d99924-6663-4291-9a73-b2ca3b51d619",
+    "status": "ok",
+    "chars_raw": 1292,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1292
+    },
+    "chars": 1292,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第一场：翻开账本说总数",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "第二场：议定中秋前还清",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 51.5,
+    "summary_written": true,
+    "summary_chars": 117,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

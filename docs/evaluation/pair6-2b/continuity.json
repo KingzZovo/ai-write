@@ -1,0 +1,93 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1464,
+      "target": 1200,
+      "ratio": 1.22
+    },
+    "ch02.txt": {
+      "chars": 1329,
+      "target": 1200,
+      "ratio": 1.107
+    },
+    "ch03.txt": {
+      "chars": 1050,
+      "target": 1200,
+      "ratio": 0.875
+    },
+    "ch04.txt": {
+      "chars": 1404,
+      "target": 1200,
+      "ratio": 1.17
+    },
+    "ch05.txt": {
+      "chars": 1226,
+      "target": 1200,
+      "ratio": 1.022
+    },
+    "ch06.txt": {
+      "chars": 1221,
+      "target": 1200,
+      "ratio": 1.018
+    },
+    "ch07.txt": {
+      "chars": 1205,
+      "target": 1200,
+      "ratio": 1.004
+    },
+    "ch08.txt": {
+      "chars": 1127,
+      "target": 1200,
+      "ratio": 0.939
+    },
+    "ch09.txt": {
+      "chars": 1130,
+      "target": 1200,
+      "ratio": 0.942
+    },
+    "ch10.txt": {
+      "chars": 1402,
+      "target": 1200,
+      "ratio": 1.168
+    }
+  },
+  "findings": [
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch01.txt",
+      "values": [
+        "一千",
+        "八百"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch07.txt",
+      "values": [
+        "一千",
+        "四十"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch08.txt",
+      "values": [
+        "一千",
+        "二十"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "unknown_character",
+      "name": "房东叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「房东叔」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 4
+}

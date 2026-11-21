@@ -1,0 +1,98 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "周芸",
+      "周航"
+    ],
+    "forbidden": [
+      "不得出现第三人替他们解决钱的问题",
+      "欠款不得被免除或清零",
+      "不得新增订单、固定工资或中奖",
+      "不得新增亲属"
+    ],
+    "genre": "现实生活",
+    "id": "real_ferry",
+    "label": "现实生活·渡口姐弟",
+    "must_keep": [
+      "原欠款为三千元",
+      "本次交付两千元",
+      "仍有一千元缺口",
+      "弟弟明天要交店面租金",
+      "周芸事前不知道弟弟明天交租",
+      "弟弟不愿姐姐向邻居借"
+    ],
+    "pov": "第三人称限知,全程跟随姐姐周芸",
+    "pov_character": "周芸",
+    "required_outcomes": [
+      "周航明确说出钱不够",
+      "两人谈清一项具体的后续安排(含时间或分期)",
+      "弟弟带着两千元上船离开",
+      "姐姐留在岸上"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "real_ferry",
+  "chars": 1347,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 8.074,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "现实生活",
+  "input_tokens": 537,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 336,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 360,
+        "name": "scene_brief",
+        "sha256": "42d295e28c3d05d0",
+        "source": "case.brief"
+      },
+      {
+        "chars": 76,
+        "name": "character_roster",
+        "sha256": "13f9323dcb7f685d",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 1075,
+        "name": "writer_contract",
+        "sha256": "6cc3311ac6f3baf0",
+        "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 493,
+        "name": "scene_writer_system",
+        "sha256": "806255474cc40ff3",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "232ec2ec2ea83c16b9ea2fb2950b6a2d963f6760fc4fe4ed1178bc8093aa4467",
+    "system_chars": 493,
+    "task_type": "scene_writer",
+    "user_chars": 1631,
+    "variant": "scene_writer"
+  },
+  "repeat": 1,
+  "requested_model": "gemini-3.1-pro",
+  "snapshot_rev": null,
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "cca239f059655ce7dafdfd735bce062adc7c3c48764de08bd7125b4c1ca755cc",
+  "variant": "scene_writer"
+}

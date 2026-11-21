@@ -1,0 +1,91 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1421,
+      "target": 1200,
+      "ratio": 1.184
+    },
+    "ch02.txt": {
+      "chars": 1066,
+      "target": 1200,
+      "ratio": 0.888
+    },
+    "ch03.txt": {
+      "chars": 1021,
+      "target": 1200,
+      "ratio": 0.851
+    },
+    "ch04.txt": {
+      "chars": 1122,
+      "target": 1200,
+      "ratio": 0.935
+    },
+    "ch05.txt": {
+      "chars": 1062,
+      "target": 1200,
+      "ratio": 0.885
+    },
+    "ch06.txt": {
+      "chars": 1030,
+      "target": 1200,
+      "ratio": 0.858
+    },
+    "ch07.txt": {
+      "chars": 1149,
+      "target": 1200,
+      "ratio": 0.958
+    },
+    "ch08.txt": {
+      "chars": 1063,
+      "target": 1200,
+      "ratio": 0.886
+    },
+    "ch09.txt": {
+      "chars": 1058,
+      "target": 1200,
+      "ratio": 0.882
+    },
+    "ch10.txt": {
+      "chars": 1109,
+      "target": 1200,
+      "ratio": 0.924
+    }
+  },
+  "findings": [
+    {
+      "check": "unknown_character",
+      "name": "大头",
+      "chapters": [
+        "ch07.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王婶",
+      "chapters": [
+        "ch07.txt",
+        "ch08.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王婶」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "老赵叔",
+      "chapters": [
+        "ch08.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「老赵叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "赵叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「赵叔」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 4
+}

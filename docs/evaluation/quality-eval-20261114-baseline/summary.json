@@ -1,0 +1,181 @@
+{
+  "by_genre": {
+    "东方幻想": {
+      "cases": 6,
+      "chars": 7542,
+      "counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 2,
+        "outcome_unfulfilled": 10,
+        "pov_breach": 2,
+        "rule_recitation": 3
+      },
+      "hard_counts": {
+        "fact_violation": 9,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 10,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "悬疑": {
+      "cases": 6,
+      "chars": 8013,
+      "counts": {
+        "fact_violation": 11,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 7,
+        "pov_breach": 1,
+        "rule_recitation": 12
+      },
+      "hard_counts": {
+        "fact_violation": 3,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 7,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "现实生活": {
+      "cases": 6,
+      "chars": 8720,
+      "counts": {
+        "fact_violation": 8,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      },
+      "hard_counts": {
+        "fact_violation": 8,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "by_variant": {
+    "bare": {
+      "cases": 6,
+      "chars": 7085,
+      "counts": {
+        "fact_violation": 8,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 11,
+        "pov_breach": 1,
+        "rule_recitation": 4
+      },
+      "hard_counts": {
+        "fact_violation": 6,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 11,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "chapter_single_shot": {
+      "cases": 6,
+      "chars": 8375,
+      "counts": {
+        "fact_violation": 10,
+        "instruction_leak": 0,
+        "metaphor_stack": 1,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 2,
+        "rule_recitation": 5
+      },
+      "hard_counts": {
+        "fact_violation": 6,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 6,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    },
+    "scene_writer": {
+      "cases": 6,
+      "chars": 8815,
+      "counts": {
+        "fact_violation": 10,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 6
+      },
+      "hard_counts": {
+        "fact_violation": 8,
+        "instruction_leak": 0,
+        "metaphor_stack": 0,
+        "outcome_unfulfilled": 5,
+        "pov_breach": 0,
+        "rule_recitation": 0
+      }
+    }
+  },
+  "calls": 18,
+  "cases": 6,
+  "chars": 24275,
+  "contract": {
+    "blueprint_version": "v4.14",
+    "narrative_contract_version": "world_logic_contract_v4_15_scene_planning"
+  },
+  "counts": {
+    "fact_violation": 28,
+    "instruction_leak": 0,
+    "metaphor_stack": 2,
+    "outcome_unfulfilled": 22,
+    "pov_breach": 3,
+    "rule_recitation": 15
+  },
+  "elapsed_seconds": 215.41,
+  "failed": 0,
+  "hard_counts": {
+    "fact_violation": 20,
+    "instruction_leak": 0,
+    "metaphor_stack": 0,
+    "outcome_unfulfilled": 22,
+    "pov_breach": 0,
+    "rule_recitation": 0
+  },
+  "returned": 18,
+  "tokens": {
+    "input": 7239,
+    "output": 6062
+  },
+  "unmet": {
+    "forbidden:both_saved": 1,
+    "forbidden:windfall": 1,
+    "must_keep:father_gone": 2,
+    "must_keep:fourteen_rooms": 2,
+    "must_keep:master_away": 1,
+    "must_keep:no_neighbor_loan": 2,
+    "must_keep:one_person_wide": 3,
+    "must_keep:sister_ignorant": 3,
+    "must_keep:three_years": 1,
+    "must_keep:tonight_seal": 2,
+    "must_keep:two_days": 1,
+    "must_keep:wet_shoe": 1,
+    "required_outcomes:brother_boards": 2,
+    "required_outcomes:concrete_action": 2,
+    "required_outcomes:handles_waiter": 1,
+    "required_outcomes:judgment_changes": 2,
+    "required_outcomes:makes_choice": 2,
+    "required_outcomes:next_morning": 1,
+    "required_outcomes:plan_made": 2,
+    "required_outcomes:reads_letter": 1,
+    "required_outcomes:recognizes_conflict": 2,
+    "required_outcomes:shortfall_declared": 1,
+    "required_outcomes:walks_to_pier": 3
+  }
+}

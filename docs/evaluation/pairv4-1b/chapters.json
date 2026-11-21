@@ -1,0 +1,313 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "067281b0-3cb8-41a8-9a58-ec19c4936001",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 2,
+    "chapter_id": "ba1facb4-bee8-4e84-b491-9e6031ce4b5e",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 3,
+    "chapter_id": "e975ab05-2604-448e-9068-b9f34cdf5d6e",
+    "status": "ok",
+    "chars_raw": 1123,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1123
+    },
+    "chars": 1123,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上铺中的两百元与催账",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "旧电饭锅与手头的零钱",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 34.5,
+    "summary_written": true,
+    "summary_chars": 155,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "f13bca5b-4c4c-4f4f-8879-5f6d98b5e092",
+    "status": "truncated",
+    "chars_raw": 1538,
+    "guard": "truncated",
+    "chars": 1538,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的夜活",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "远行的决定与归置",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 100.1
+  },
+  {
+    "index": 5,
+    "chapter_id": "68b91115-d7fb-4a46-8bb2-7fe62ca6bb4c",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 6,
+    "chapter_id": "268bf284-2314-4a4f-95be-1cd94ddc340a",
+    "status": "ok",
+    "chars_raw": 922,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 922
+    },
+    "chars": 922,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "盘点旧账",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "商定还期",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 38.8,
+    "summary_written": true,
+    "summary_chars": 135,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "52c44e85-ee98-4a13-a93f-7e6f721acbc7",
+    "status": "ok",
+    "chars_raw": 1159,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1159
+    },
+    "chars": 1159,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "缝纫铺的铁盒与期限",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "算帐与挑灯夜战",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 36.3,
+    "summary_written": true,
+    "summary_chars": 21,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "6b67e867-8290-4d1a-9e48-db48bac96cf5",
+    "status": "ok",
+    "chars_raw": 1188,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1188
+    },
+    "chars": 1188,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "算账与交租",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "未寄出的信与决定",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 46.5,
+    "summary_written": true,
+    "summary_chars": 188,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 9,
+    "chapter_id": "3d979b34-0d22-4815-86f6-87dafa028c3c",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 10,
+    "chapter_id": "a583b5fe-df2e-492f-a719-fc2e945f8e41",
+    "status": "ok",
+    "chars_raw": 1619,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1619
+    },
+    "chars": 1619,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口启程",
+          "target_words": 600
+        },
+        {
+          "idx": 2,
+          "title": "渡口两岸",
+          "target_words": 600
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 45.1,
+    "summary_written": true,
+    "summary_chars": 336,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition_error": "EntityExtractionError: 认知提取不是有效 JSON 数组",
+    "cognition": {
+      "status": "skipped",
+      "attempts": 3
+    }
+  }
+]

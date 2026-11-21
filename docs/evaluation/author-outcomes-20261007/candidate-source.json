@@ -1,0 +1,14 @@
+{
+  "base_commit": "c3378e1",
+  "image": "aiwrite-backend:author-outcomes-candidate",
+  "build_stamp": "c3378e1-author-outcomes-r2",
+  "container_source_hashes_matched": true,
+  "files": {
+    "backend/app/services/narrative_contract.py": "c8abc66473fc37b1a556a18b90f421fbc6d4a9c1079f226eee1219982ebdfde7",
+    "backend/app/services/narrative_quality_gates.py": "92df919543ec95832f3216ba425224bbe3798e78d98aee9f0528591f24a5ed10",
+    "backend/app/services/auto_revise.py": "9372e2ec926c1756cb0b9bf2bc6b971284c47c77337645955a9426dcc72b2b98",
+    "backend/app/services/chapter_generator.py": "74c74eed20d5494683a50b8c9840de952ecf3f8f24e5e19ec840544b1413aa8e",
+    "backend/app/services/prompt_registry.py": "b913870f5a14eb9d2a09426e5a291e74d9170ff4f2e994c29282e9972307d0ac",
+    "backend/app/services/prompts/scene_writing.py": "d73b4cf36a1367684be903a2d72547f1fb38dd8f607b0281d4ce8c4b6d938abe"
+  }
+}

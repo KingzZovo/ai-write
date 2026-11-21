@@ -1,0 +1,10 @@
+{
+  "added_models": [
+    "deepseek-ai/deepseek-v4.1-flash",
+    "z-ai/glm-5.3-flash",
+    "moonshotai/kimi-k3"
+  ],
+  "existing_configuration_preserved": true,
+  "before_sha256": "79eb4fa1355ff3f2814af0aec4cc19a7a1ca78e5b9c3394093690be8674db7de",
+  "after_sha256": "ed2c4fad84b299a676cff436395132713e85214a6c7b92f3830dd55ae8c2dbd1"
+}

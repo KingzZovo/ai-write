@@ -1,0 +1,74 @@
+{
+  "plot_coherence": {
+    "score": 5.5,
+    "issues": [
+      {
+        "paragraph": 6,
+        "description": "chapter_completion_violation：本章到期结果是阿青把密信交给守卫。正文只写到守卫伸手去拿金币，信仍由阿青持有，未见递出与收下；请求代送和给钱都不等于完成交付。断桥阻力已展示，但解决办法也停在提议。",
+        "suggestion": "在取金币之后补上阿青将密信递到守卫手中、守卫确认收信；金币只作伴随，不能替代交信。",
+        "violation_type": "chapter_completion_violation",
+        "severity": "high",
+        "quote": "最终，他叹了口气，伸手去拿金币。"
+      },
+      {
+        "paragraph": 5,
+        "description": "space_rule_violation：正文已限定左手缺失且右手正握密信，紧接着却直接从怀中掏币并放到桥边，未交代唯一可用的手如何腾出。单手短暂夹信或放下再取有常识可能，故不把省略视为已证实的不可能。",
+        "suggestion": "取币前用一句写明信先夹在腋下或放上桥缘，再以右手完成掏币。",
+        "violation_type": "space_rule_violation",
+        "severity": "low",
+        "quote": "他从怀中掏出几枚闪闪发光的金币，放在断桥边缘"
+      }
+    ]
+  },
+  "character_consistency": {
+    "score": 6.5,
+    "issues": [
+      {
+        "paragraph": 4,
+        "description": "expression_contract_violation：守卫尚未接触密信，台词却声明不能提前泄露秘密，与阿青复述任务限制的口吻同质；去掉说话人后，这段更像叙述者在交代禁令，而不是守卫的当场盘问。",
+        "suggestion": "改成守卫只核对接信身份或封缄，不要让他说出自己并不掌握的保密内容。",
+        "violation_type": "expression_contract_violation",
+        "severity": "medium",
+        "quote": "我不能提前泄露任何秘密，但如果你能证明自己不是骗子"
+      }
+    ]
+  },
+  "style_adherence": {
+    "score": 5.5,
+    "issues": [
+      {
+        "paragraph": 3,
+        "description": "expression_contract_violation：叙述直接写角色必须展示阻力和解决办法，把本章任务说明写进了内心，语域从场景跳成写作提纲。",
+        "suggestion": "删掉这句任务宣告，改由阿青的停步、示信和无法落脚来体现阻力与办法。",
+        "violation_type": "expression_contract_violation",
+        "severity": "medium",
+        "quote": "他必须用行动来展示断桥的阻力和解决办法。"
+      },
+      {
+        "paragraph": 5,
+        "description": "expression_contract_violation：同一保密限制在短章内被几乎原句重复，属于机械复述任务，而不是新的判断。",
+        "suggestion": "全章只保留一次不宣读的决定，其余改为交信动作。",
+        "violation_type": "expression_contract_violation",
+        "severity": "medium",
+        "quote": "他不能提前说出信中秘密，因为守卫不知道内容"
+      }
+    ]
+  },
+  "narrative_pacing": {
+    "score": 5.5,
+    "issues": [
+      {
+        "paragraph": 5,
+        "description": "expression_contract_violation：交信被第二次口头解释断桥危险拖住，压力没有升级，关键动作因此延后到章末仍未发生。",
+        "suggestion": "砍掉这句重复说明，改为守卫举矛逼近时阿青立即递信。",
+        "violation_type": "expression_contract_violation",
+        "severity": "medium",
+        "quote": "断桥的阻力和危险太大了，我一手之力难以完成跨越。"
+      }
+    ]
+  },
+  "foreshadow_handling": {
+    "score": 8.0,
+    "issues": []
+  }
+}

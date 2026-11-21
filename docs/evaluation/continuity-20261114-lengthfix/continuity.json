@@ -1,0 +1,75 @@
+{
+  "chapters": 6,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 696,
+      "target": 1200,
+      "ratio": 0.58
+    },
+    "ch02.txt": {
+      "chars": 981,
+      "target": 1200,
+      "ratio": 0.818
+    },
+    "ch03.txt": {
+      "chars": 785,
+      "target": 1200,
+      "ratio": 0.654
+    },
+    "ch04.txt": {
+      "chars": 1061,
+      "target": 1200,
+      "ratio": 0.884
+    },
+    "ch05.txt": {
+      "chars": 1198,
+      "target": 1200,
+      "ratio": 0.998
+    },
+    "ch06.txt": {
+      "chars": 588,
+      "target": 1200,
+      "ratio": 0.49
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch01.txt",
+      "chars": 696,
+      "target": 1200,
+      "ratio": 0.58,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 981,
+      "target": 1200,
+      "ratio": 0.818,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch03.txt",
+      "chars": 785,
+      "target": 1200,
+      "ratio": 0.654,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch06.txt",
+      "chars": 588,
+      "target": 1200,
+      "ratio": 0.49,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    }
+  ],
+  "violations": 5
+}

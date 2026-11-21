@@ -1,0 +1,18 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "8486e0af-2f52-42e9-a82a-37ba0dc189c3",
+    "status": "error",
+    "error_type": "ValueError",
+    "error_message": "provider_incomplete_response",
+    "error_code": null
+  },
+  {
+    "index": 2,
+    "chapter_id": "cec27f12-6a82-4a9e-acf4-e2c788c93669",
+    "status": "error",
+    "error_type": "ValueError",
+    "error_message": "provider_incomplete_response",
+    "error_code": null
+  }
+]

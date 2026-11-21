@@ -1,0 +1,122 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1520,
+      "target": 1200,
+      "ratio": 1.267
+    },
+    "ch02.txt": {
+      "chars": 800,
+      "target": 1200,
+      "ratio": 0.667
+    },
+    "ch03.txt": {
+      "chars": 1171,
+      "target": 1200,
+      "ratio": 0.976
+    },
+    "ch04.txt": {
+      "chars": 1054,
+      "target": 1200,
+      "ratio": 0.878
+    },
+    "ch05.txt": {
+      "chars": 880,
+      "target": 1200,
+      "ratio": 0.733
+    },
+    "ch06.txt": {
+      "chars": 757,
+      "target": 1200,
+      "ratio": 0.631
+    },
+    "ch07.txt": {
+      "chars": 1084,
+      "target": 1200,
+      "ratio": 0.903
+    },
+    "ch08.txt": {
+      "chars": 1363,
+      "target": 1200,
+      "ratio": 1.136
+    },
+    "ch09.txt": {
+      "chars": 1010,
+      "target": 1200,
+      "ratio": 0.842
+    },
+    "ch10.txt": {
+      "chars": 1086,
+      "target": 1200,
+      "ratio": 0.905
+    }
+  },
+  "findings": [
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch01.txt",
+      "declared": "当日傍晚",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 800,
+      "target": 1200,
+      "ratio": 0.667,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch02.txt",
+      "declared": "次日清晨",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch04.txt",
+      "declared": "次日傍晚",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch05.txt",
+      "chars": 880,
+      "target": 1200,
+      "ratio": 0.733,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch06.txt",
+      "chars": 757,
+      "target": 1200,
+      "ratio": 0.631,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch07.txt",
+      "declared": "三天后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch09.txt",
+      "chars": 1010,
+      "target": 1200,
+      "ratio": 0.842,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "房东大哥",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「房东大哥」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 9
+}

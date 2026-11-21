@@ -1,0 +1,160 @@
+{
+  "chapters": 24,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1404,
+      "target": 1200,
+      "ratio": 1.17
+    },
+    "ch02.txt": {
+      "chars": 1087,
+      "target": 1200,
+      "ratio": 0.906
+    },
+    "ch03.txt": {
+      "chars": 1799,
+      "target": 1200,
+      "ratio": 1.499
+    },
+    "ch04.txt": {
+      "chars": 1587,
+      "target": 1200,
+      "ratio": 1.323
+    },
+    "ch05.txt": {
+      "chars": 1374,
+      "target": 1200,
+      "ratio": 1.145
+    },
+    "ch06.txt": {
+      "chars": 1549,
+      "target": 1200,
+      "ratio": 1.291
+    },
+    "ch07.txt": {
+      "chars": 587,
+      "target": 1200,
+      "ratio": 0.489
+    },
+    "ch08.txt": {
+      "chars": 720,
+      "target": 1200,
+      "ratio": 0.6
+    },
+    "ch09.txt": {
+      "chars": 1304,
+      "target": 1200,
+      "ratio": 1.087
+    },
+    "ch10.txt": {
+      "chars": 1163,
+      "target": 1200,
+      "ratio": 0.969
+    },
+    "ch11.txt": {
+      "chars": 931,
+      "target": 1200,
+      "ratio": 0.776
+    },
+    "ch12.txt": {
+      "chars": 1746,
+      "target": 1200,
+      "ratio": 1.455
+    },
+    "ch13.txt": {
+      "chars": 1324,
+      "target": 1200,
+      "ratio": 1.103
+    },
+    "ch14.txt": {
+      "chars": 1359,
+      "target": 1200,
+      "ratio": 1.133
+    },
+    "ch15.txt": {
+      "chars": 1164,
+      "target": 1200,
+      "ratio": 0.97
+    },
+    "ch16.txt": {
+      "chars": 897,
+      "target": 1200,
+      "ratio": 0.748
+    },
+    "ch17.txt": {
+      "chars": 1132,
+      "target": 1200,
+      "ratio": 0.943
+    },
+    "ch18.txt": {
+      "chars": 1366,
+      "target": 1200,
+      "ratio": 1.138
+    },
+    "ch19.txt": {
+      "chars": 1321,
+      "target": 1200,
+      "ratio": 1.101
+    },
+    "ch20.txt": {
+      "chars": 1665,
+      "target": 1200,
+      "ratio": 1.387
+    },
+    "ch21.txt": {
+      "chars": 1328,
+      "target": 1200,
+      "ratio": 1.107
+    },
+    "ch22.txt": {
+      "chars": 1701,
+      "target": 1200,
+      "ratio": 1.417
+    },
+    "ch23.txt": {
+      "chars": 1173,
+      "target": 1200,
+      "ratio": 0.978
+    },
+    "ch24.txt": {
+      "chars": 1487,
+      "target": 1200,
+      "ratio": 1.239
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch07.txt",
+      "chars": 587,
+      "target": 1200,
+      "ratio": 0.489,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch08.txt",
+      "chars": 720,
+      "target": 1200,
+      "ratio": 0.6,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch11.txt",
+      "chars": 931,
+      "target": 1200,
+      "ratio": 0.776,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch16.txt",
+      "chars": 897,
+      "target": 1200,
+      "ratio": 0.748,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    }
+  ],
+  "violations": 4
+}

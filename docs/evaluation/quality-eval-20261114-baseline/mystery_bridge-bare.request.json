@@ -1,0 +1,79 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "陆沉",
+      "老周"
+    ],
+    "forbidden": [
+      "不得出现第三方救兵",
+      "不得揭示信是空的",
+      "老周不得是失散亲人"
+    ],
+    "genre": "悬疑",
+    "id": "mystery_bridge",
+    "label": "悬疑·断桥信使",
+    "must_keep": [
+      "左臂自肘下没有",
+      "过河价一百文",
+      "身上只有六十文",
+      "腰牌可抵八十文但明天要验",
+      "天亮前必须送到",
+      "信有火漆且不能湿"
+    ],
+    "pov": "第三人称限知,全程跟随信使陆沉",
+    "pov_character": "陆沉",
+    "required_outcomes": [
+      "陆沉说清送信的期限和条件",
+      "老周报出一百文且不赊",
+      "陆沉权衡交出腰牌的代价",
+      "陆沉实际交付或拒绝,并承担后果",
+      "结尾交代信到没到对岸"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "mystery_bridge",
+  "chars": 911,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 7.58,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "悬疑",
+  "input_tokens": 96,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 227,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 344,
+        "name": "scene_brief",
+        "sha256": "506746399a3b9293",
+        "source": "case.brief"
+      },
+      {
+        "chars": 17,
+        "name": "bare_system",
+        "sha256": "8a9d5afd922330b8",
+        "source": "inline"
+      }
+    ],
+    "prompt_sha256": "02ea78aa79ddcff0a6329066b02a5e1ead36542d8b8ed025c6cdee5503d73d46",
+    "system_chars": 17,
+    "task_type": "generation",
+    "user_chars": 344,
+    "variant": "bare"
+  },
+  "repeat": 1,
+  "requested_model": "gemini-3.1-pro",
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "f093cbebb51f03acf7ee5e3ce91db7d6affedeee70d5b4740d044d3fa3814030",
+  "variant": "bare"
+}

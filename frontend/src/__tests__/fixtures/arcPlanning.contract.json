@@ -1,0 +1,461 @@
+{
+  "input": {
+    "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+    "expected_source": {
+      "version": 1,
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "source_hash": "1108779304fcf22ab376581658f207d6db342e5cf47fd9b787fb3e96e532a398"
+    },
+    "mode": "start",
+    "idea": "还钱以后",
+    "background": "欠三千，交两千，余一千。",
+    "core_setup": "姐弟据实际进项商量还款。",
+    "opening_scene": "信封放在碗下面。",
+    "target_chapters": 4
+  },
+  "pending": {
+    "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+    "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+    "request_hash": "f40de3119bdedf4a2076ee34c7a403919e3b03b3057a1ce87677cc7fd481273e",
+    "status": "pending",
+    "phase": "meta",
+    "target_chapters": 4,
+    "target_volume_idx": 6,
+    "accepted_chapters": 0,
+    "revision": 1,
+    "execution_attempts": 0,
+    "error_code": "",
+    "error_message": "",
+    "result": null,
+    "created_at": "2026-10-09T19:26:03",
+    "updated_at": "2026-10-09T19:26:03",
+    "dispatch_confirmed": true
+  },
+  "before": {
+    "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+    "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+    "request_hash": "f40de3119bdedf4a2076ee34c7a403919e3b03b3057a1ce87677cc7fd481273e",
+    "status": "pending",
+    "phase": "meta",
+    "target_chapters": 4,
+    "target_volume_idx": 6,
+    "accepted_chapters": 0,
+    "revision": 1,
+    "execution_attempts": 0,
+    "error_code": "",
+    "error_message": "",
+    "result": null,
+    "created_at": "2026-10-09T19:26:03",
+    "updated_at": "2026-10-09T19:26:03",
+    "integrity_valid": true,
+    "can_resume": true,
+    "request": {
+      "version": 1,
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+      "expected_source": {
+        "version": 1,
+        "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+        "source_hash": "1108779304fcf22ab376581658f207d6db342e5cf47fd9b787fb3e96e532a398"
+      },
+      "mode": "start",
+      "idea": "还钱以后",
+      "background": "欠三千，交两千，余一千。",
+      "core_setup": "姐弟据实际进项商量还款。",
+      "opening_scene": "信封放在碗下面。",
+      "target_chapters": 4
+    },
+    "source": {
+      "version": 3,
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "target_volume_idx": 6,
+      "volume_order": [
+        {
+          "id": "d7ca0443-7845-4441-8ee7-26a37cbcc360",
+          "volume_idx": 5
+        }
+      ],
+      "previous": null,
+      "book_context": {
+        "version": 2,
+        "project": {
+          "id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+          "title": "弧规划恢复",
+          "genre": null,
+          "premise": null,
+          "target_word_count": 5000000
+        },
+        "outline": null,
+        "world_rules": {
+          "version": 1,
+          "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+          "rules": [],
+          "book_source": null
+        }
+      }
+    },
+    "journal": {
+      "version": 1,
+      "target_chapters": 4,
+      "source_prompt": "只规划作者请求的当前弧，保留全书已建立的事实与已有长线。\n本弧到期的事写到结果，后续才到期的事保持未完成；不能为了把本弧写成独立故事而删除已有线索，也不擅自新增远期终局。\n人物从自己的所求、已知和顾虑出发行动，后续章节承接前面的回应、情绪和实际状态。计划与作者填写的进展记录不等于已核实正文。\n每章可以是行动、谈话、静场或过渡，详略围绕值得展开的选择与变化，不强制新增冲突、代价、反转或悬念。允许顺利完成、合理省略和自然收束。\n保留原作者明确的人物关系、数量、时间、物件去向与结果；未确认的既往事实保留未知，不冒充正文已发生。\n可在作者要求内规划新情节、创造贴合处境的生活细节；不为省略人物选择，临时新增能化解核心问题的债务、旧怨、资源或制度。\n本弧准确规划 4 章。正文尚未发生，不能把本次规划当作事实。\n【作者本次完整材料】\n{\"idea\": \"还钱以后\", \"background\": \"欠三千，交两千，余一千。\", \"core_setup\": \"姐弟据实际进项商量还款。\", \"opening_scene\": \"信封放在碗下面。\"}\n【前弧材料：进展由作者填写，大纲是计划；均不能替代实际正文核对】\n{}\n【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。",
+      "stages": []
+    },
+    "execution_history": [],
+    "original_result": null,
+    "book_material_text": "【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。",
+    "accepted_outline": {
+      "chapter_summaries": []
+    }
+  },
+  "after": {
+    "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+    "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+    "request_hash": "f40de3119bdedf4a2076ee34c7a403919e3b03b3057a1ce87677cc7fd481273e",
+    "status": "completed",
+    "phase": "done",
+    "target_chapters": 4,
+    "target_volume_idx": 6,
+    "accepted_chapters": 4,
+    "revision": 7,
+    "execution_attempts": 1,
+    "error_code": "",
+    "error_message": "",
+    "result": {
+      "version": 1,
+      "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "request_hash": "f40de3119bdedf4a2076ee34c7a403919e3b03b3057a1ce87677cc7fd481273e",
+      "journal_hash": "165ac02e623cf446dbcbc504829af3e97ae78f870e8bd9a0ce73aed54591a493",
+      "chapter_count": 4,
+      "volume_id": "7e44033a-0070-4fdd-9739-94b997a31651",
+      "volume_idx": 6,
+      "outline_id": "a51d8434-dff9-4277-a7f9-d23727cb02d4",
+      "chapter_ids": [
+        "1876cb83-888d-48ed-b394-ca41b1eb0782",
+        "6aefd973-901f-479c-b822-2bbe37e0f2d0",
+        "72e4c5ed-bd1a-4edf-a3ad-2386d7f40251",
+        "e0fc2be7-2f9c-4692-bd17-37c00e85e885"
+      ],
+      "arc": {
+        "title": "修好以后",
+        "target_chapters": 4,
+        "status": "active",
+        "chapters_written": 0
+      }
+    },
+    "created_at": "2026-10-09T19:26:03",
+    "updated_at": "2026-10-09T19:26:03.989003",
+    "integrity_valid": true,
+    "can_resume": false,
+    "request": {
+      "version": 1,
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+      "expected_source": {
+        "version": 1,
+        "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+        "source_hash": "1108779304fcf22ab376581658f207d6db342e5cf47fd9b787fb3e96e532a398"
+      },
+      "mode": "start",
+      "idea": "还钱以后",
+      "background": "欠三千，交两千，余一千。",
+      "core_setup": "姐弟据实际进项商量还款。",
+      "opening_scene": "信封放在碗下面。",
+      "target_chapters": 4
+    },
+    "source": {
+      "version": 3,
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "target_volume_idx": 6,
+      "volume_order": [
+        {
+          "id": "d7ca0443-7845-4441-8ee7-26a37cbcc360",
+          "volume_idx": 5
+        }
+      ],
+      "previous": null,
+      "book_context": {
+        "version": 2,
+        "project": {
+          "id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+          "title": "弧规划恢复",
+          "genre": null,
+          "premise": null,
+          "target_word_count": 5000000
+        },
+        "outline": null,
+        "world_rules": {
+          "version": 1,
+          "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+          "rules": [],
+          "book_source": null
+        }
+      }
+    },
+    "journal": {
+      "version": 1,
+      "target_chapters": 4,
+      "source_prompt": "只规划作者请求的当前弧，保留全书已建立的事实与已有长线。\n本弧到期的事写到结果，后续才到期的事保持未完成；不能为了把本弧写成独立故事而删除已有线索，也不擅自新增远期终局。\n人物从自己的所求、已知和顾虑出发行动，后续章节承接前面的回应、情绪和实际状态。计划与作者填写的进展记录不等于已核实正文。\n每章可以是行动、谈话、静场或过渡，详略围绕值得展开的选择与变化，不强制新增冲突、代价、反转或悬念。允许顺利完成、合理省略和自然收束。\n保留原作者明确的人物关系、数量、时间、物件去向与结果；未确认的既往事实保留未知，不冒充正文已发生。\n可在作者要求内规划新情节、创造贴合处境的生活细节；不为省略人物选择，临时新增能化解核心问题的债务、旧怨、资源或制度。\n本弧准确规划 4 章。正文尚未发生，不能把本次规划当作事实。\n【作者本次完整材料】\n{\"idea\": \"还钱以后\", \"background\": \"欠三千，交两千，余一千。\", \"core_setup\": \"姐弟据实际进项商量还款。\", \"opening_scene\": \"信封放在碗下面。\"}\n【前弧材料：进展由作者填写，大纲是计划；均不能替代实际正文核对】\n{}\n【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。",
+      "stages": [
+        {
+          "key": "meta",
+          "task": "arc_outline_meta",
+          "original_input": "只规划作者请求的当前弧，保留全书已建立的事实与已有长线。\n本弧到期的事写到结果，后续才到期的事保持未完成；不能为了把本弧写成独立故事而删除已有线索，也不擅自新增远期终局。\n人物从自己的所求、已知和顾虑出发行动，后续章节承接前面的回应、情绪和实际状态。计划与作者填写的进展记录不等于已核实正文。\n每章可以是行动、谈话、静场或过渡，详略围绕值得展开的选择与变化，不强制新增冲突、代价、反转或悬念。允许顺利完成、合理省略和自然收束。\n保留原作者明确的人物关系、数量、时间、物件去向与结果；未确认的既往事实保留未知，不冒充正文已发生。\n可在作者要求内规划新情节、创造贴合处境的生活细节；不为省略人物选择，临时新增能化解核心问题的债务、旧怨、资源或制度。\n本弧准确规划 4 章。正文尚未发生，不能把本次规划当作事实。\n【作者本次完整材料】\n{\"idea\": \"还钱以后\", \"background\": \"欠三千，交两千，余一千。\", \"core_setup\": \"姐弟据实际进项商量还款。\", \"opening_scene\": \"信封放在碗下面。\"}\n【前弧材料：进展由作者填写，大纲是计划；均不能替代实际正文核对】\n{}\n【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。\n【本阶段：弧整体规划】只返回以下元信息，不返回章节数组：\n{\"title\": \"本弧标题\", \"chapter_count\": 4, \"core_conflict\": \"本弧要处理的处境或问题，可为日常合作而非对抗\", \"emotional_arc\": \"人物态度如何随事情发展变化，不强制反转\", \"volume_start_state\": \"起始人物、物件和未完成的事\", \"volume_end_state\": \"本弧计划达到的结果和应保留的未完成事项\", \"transition_to_next\": \"本弧自然收束或必要衔接，不另造悬念\", \"foreshadow_progression\": \"已有线索在本弧处理什么、什么留待原定后续；无则明确无\"}",
+          "route": {
+            "version": 1,
+            "task_type": "arc_outline_meta",
+            "prompt_id": "b97f5022-bedd-48b0-a878-287dc86613d8",
+            "endpoint_id": "f8675a90-1f28-4059-a5e8-5cc9b79d7c37",
+            "model": "configured-model",
+            "temperature": 0.7,
+            "max_tokens": 8192,
+            "system_prompt": "依据作者完整材料写中文剧情规划。",
+            "mode": "structured",
+            "preferred_tier": null
+          },
+          "attempts": [
+            {
+              "number": 1,
+              "state": "accepted",
+              "input": "只规划作者请求的当前弧，保留全书已建立的事实与已有长线。\n本弧到期的事写到结果，后续才到期的事保持未完成；不能为了把本弧写成独立故事而删除已有线索，也不擅自新增远期终局。\n人物从自己的所求、已知和顾虑出发行动，后续章节承接前面的回应、情绪和实际状态。计划与作者填写的进展记录不等于已核实正文。\n每章可以是行动、谈话、静场或过渡，详略围绕值得展开的选择与变化，不强制新增冲突、代价、反转或悬念。允许顺利完成、合理省略和自然收束。\n保留原作者明确的人物关系、数量、时间、物件去向与结果；未确认的既往事实保留未知，不冒充正文已发生。\n可在作者要求内规划新情节、创造贴合处境的生活细节；不为省略人物选择，临时新增能化解核心问题的债务、旧怨、资源或制度。\n本弧准确规划 4 章。正文尚未发生，不能把本次规划当作事实。\n【作者本次完整材料】\n{\"idea\": \"还钱以后\", \"background\": \"欠三千，交两千，余一千。\", \"core_setup\": \"姐弟据实际进项商量还款。\", \"opening_scene\": \"信封放在碗下面。\"}\n【前弧材料：进展由作者填写，大纲是计划；均不能替代实际正文核对】\n{}\n【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。\n【本阶段：弧整体规划】只返回以下元信息，不返回章节数组：\n{\"title\": \"本弧标题\", \"chapter_count\": 4, \"core_conflict\": \"本弧要处理的处境或问题，可为日常合作而非对抗\", \"emotional_arc\": \"人物态度如何随事情发展变化，不强制反转\", \"volume_start_state\": \"起始人物、物件和未完成的事\", \"volume_end_state\": \"本弧计划达到的结果和应保留的未完成事项\", \"transition_to_next\": \"本弧自然收束或必要衔接，不另造悬念\", \"foreshadow_progression\": \"已有线索在本弧处理什么、什么留待原定后续；无则明确无\"}",
+              "output": {
+                "title": "修好以后",
+                "chapter_count": 4,
+                "core_conflict": "宋岚修好借来的旧书，再和林禾商量归还的日子。",
+                "emotional_arc": "从担心被责怪，到能够说明修补经过。",
+                "volume_start_state": {
+                  "旧书": "在宋岚手中，封面尚未修补"
+                },
+                "volume_end_state": {
+                  "旧书": "本弧计划修好并交给林禾"
+                },
+                "transition_to_next": "本弧自然收束，后续按作者方向继续。",
+                "foreshadow_progression": "保留全书已经约定的线索，本弧不新增强制悬念。"
+              },
+              "raw_text": "{\"title\": \"修好以后\", \"chapter_count\": 4, \"core_conflict\": \"宋岚修好借来的旧书，再和林禾商量归还的日子。\", \"emotional_arc\": \"从担心被责怪，到能够说明修补经过。\", \"volume_start_state\": {\"旧书\": \"在宋岚手中，封面尚未修补\"}, \"volume_end_state\": {\"旧书\": \"本弧计划修好并交给林禾\"}, \"transition_to_next\": \"本弧自然收束，后续按作者方向继续。\", \"foreshadow_progression\": \"保留全书已经约定的线索，本弧不新增强制悬念。\"}",
+              "error": "",
+              "started_at": "2026-10-09T19:26:03.849918+00:00",
+              "finished_at": "2026-10-09T19:26:03.876375+00:00"
+            }
+          ]
+        },
+        {
+          "key": "chapters_1_4",
+          "task": "arc_outline_batch",
+          "original_input": "只规划作者请求的当前弧，保留全书已建立的事实与已有长线。\n本弧到期的事写到结果，后续才到期的事保持未完成；不能为了把本弧写成独立故事而删除已有线索，也不擅自新增远期终局。\n人物从自己的所求、已知和顾虑出发行动，后续章节承接前面的回应、情绪和实际状态。计划与作者填写的进展记录不等于已核实正文。\n每章可以是行动、谈话、静场或过渡，详略围绕值得展开的选择与变化，不强制新增冲突、代价、反转或悬念。允许顺利完成、合理省略和自然收束。\n保留原作者明确的人物关系、数量、时间、物件去向与结果；未确认的既往事实保留未知，不冒充正文已发生。\n可在作者要求内规划新情节、创造贴合处境的生活细节；不为省略人物选择，临时新增能化解核心问题的债务、旧怨、资源或制度。\n本弧准确规划 4 章。正文尚未发生，不能把本次规划当作事实。\n【作者本次完整材料】\n{\"idea\": \"还钱以后\", \"background\": \"欠三千，交两千，余一千。\", \"core_setup\": \"姐弟据实际进项商量还款。\", \"opening_scene\": \"信封放在碗下面。\"}\n【前弧材料：进展由作者填写，大纲是计划；均不能替代实际正文核对】\n{}\n【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。\n【本弧完整规划：尚待正文落实】\n{\"title\": \"修好以后\", \"chapter_count\": 4, \"core_conflict\": \"宋岚修好借来的旧书，再和林禾商量归还的日子。\", \"emotional_arc\": \"从担心被责怪，到能够说明修补经过。\", \"volume_start_state\": {\"旧书\": \"在宋岚手中，封面尚未修补\"}, \"volume_end_state\": {\"旧书\": \"本弧计划修好并交给林禾\"}, \"transition_to_next\": \"本弧自然收束，后续按作者方向继续。\", \"foreshadow_progression\": \"保留全书已经约定的线索，本弧不新增强制悬念。\"}\n【此前完整章节规划：不是已发生事实，不重排或重复已安排过程】\n[]\n【本批】start=1, end=4, count=4。只返回chapter_summaries数组，准确覆盖本批编号，不返回其他批次。每章summary写清人物为何行动、关键回应及结果，key_events写可展开的过程；事件可为谈话、认识或关系变化，不设最少两次外部事件。start_state/end_state/handoff_to_next保留状态与未完成事项。character_choices与narrative_focus按本章需要补充，不强制心理转折。台账允许完整JSON对象/数组，标题和summary必须为文字，编号为JSON整数。最后的第4章落实弧末目标；若为作者指定全书结尾则自然完结。\n【单章字段示例；本批仍须输出全部指定章节】\n{\"chapter_summaries\": [{\"chapter_idx\": 1, \"title\": \"标题\", \"summary\": \"剧情过程及选择依据\", \"key_events\": [\"一个完整的情节过程，可按需要增加条目\"], \"start_state\": \"承接状态\", \"end_state\": \"本章计划结果\", \"handoff_to_next\": \"未完事项或自然收束\"}]}",
+          "route": {
+            "version": 1,
+            "task_type": "arc_outline_batch",
+            "prompt_id": "7ab38a23-101a-4ba4-a0a6-694b4fbfc153",
+            "endpoint_id": "4f67813c-ca51-43bc-95aa-eb3e9ed415bb",
+            "model": "configured-model",
+            "temperature": 0.7,
+            "max_tokens": 8192,
+            "system_prompt": "依据作者完整材料写中文剧情规划。",
+            "mode": "structured",
+            "preferred_tier": null
+          },
+          "attempts": [
+            {
+              "number": 1,
+              "state": "accepted",
+              "input": "只规划作者请求的当前弧，保留全书已建立的事实与已有长线。\n本弧到期的事写到结果，后续才到期的事保持未完成；不能为了把本弧写成独立故事而删除已有线索，也不擅自新增远期终局。\n人物从自己的所求、已知和顾虑出发行动，后续章节承接前面的回应、情绪和实际状态。计划与作者填写的进展记录不等于已核实正文。\n每章可以是行动、谈话、静场或过渡，详略围绕值得展开的选择与变化，不强制新增冲突、代价、反转或悬念。允许顺利完成、合理省略和自然收束。\n保留原作者明确的人物关系、数量、时间、物件去向与结果；未确认的既往事实保留未知，不冒充正文已发生。\n可在作者要求内规划新情节、创造贴合处境的生活细节；不为省略人物选择，临时新增能化解核心问题的债务、旧怨、资源或制度。\n本弧准确规划 4 章。正文尚未发生，不能把本次规划当作事实。\n【作者本次完整材料】\n{\"idea\": \"还钱以后\", \"background\": \"欠三千，交两千，余一千。\", \"core_setup\": \"姐弟据实际进项商量还款。\", \"opening_scene\": \"信封放在碗下面。\"}\n【前弧材料：进展由作者填写，大纲是计划；均不能替代实际正文核对】\n{}\n【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。\n【本弧完整规划：尚待正文落实】\n{\"title\": \"修好以后\", \"chapter_count\": 4, \"core_conflict\": \"宋岚修好借来的旧书，再和林禾商量归还的日子。\", \"emotional_arc\": \"从担心被责怪，到能够说明修补经过。\", \"volume_start_state\": {\"旧书\": \"在宋岚手中，封面尚未修补\"}, \"volume_end_state\": {\"旧书\": \"本弧计划修好并交给林禾\"}, \"transition_to_next\": \"本弧自然收束，后续按作者方向继续。\", \"foreshadow_progression\": \"保留全书已经约定的线索，本弧不新增强制悬念。\"}\n【此前完整章节规划：不是已发生事实，不重排或重复已安排过程】\n[]\n【本批】start=1, end=4, count=4。只返回chapter_summaries数组，准确覆盖本批编号，不返回其他批次。每章summary写清人物为何行动、关键回应及结果，key_events写可展开的过程；事件可为谈话、认识或关系变化，不设最少两次外部事件。start_state/end_state/handoff_to_next保留状态与未完成事项。character_choices与narrative_focus按本章需要补充，不强制心理转折。台账允许完整JSON对象/数组，标题和summary必须为文字，编号为JSON整数。最后的第4章落实弧末目标；若为作者指定全书结尾则自然完结。\n【单章字段示例；本批仍须输出全部指定章节】\n{\"chapter_summaries\": [{\"chapter_idx\": 1, \"title\": \"标题\", \"summary\": \"剧情过程及选择依据\", \"key_events\": [\"一个完整的情节过程，可按需要增加条目\"], \"start_state\": \"承接状态\", \"end_state\": \"本章计划结果\", \"handoff_to_next\": \"未完事项或自然收束\"}]}",
+              "output": {
+                "chapter_summaries": [
+                  {
+                    "chapter_idx": 1,
+                    "title": "约定第1步",
+                    "summary": "宋岚与林禾处理第1次约定，说明当时可行的安排。",
+                    "key_events": [
+                      "二人谈清第1次约定的具体安排。"
+                    ],
+                    "start_state": {
+                      "进展": "承接第0章的实际结果"
+                    },
+                    "end_state": {
+                      "进展": "第1次安排得到明确回应"
+                    },
+                    "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+                    "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+                    "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+                  },
+                  {
+                    "chapter_idx": 2,
+                    "title": "约定第2步",
+                    "summary": "宋岚与林禾处理第2次约定，说明当时可行的安排。",
+                    "key_events": [
+                      "二人谈清第2次约定的具体安排。"
+                    ],
+                    "start_state": {
+                      "进展": "承接第1章的实际结果"
+                    },
+                    "end_state": {
+                      "进展": "第2次安排得到明确回应"
+                    },
+                    "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+                    "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+                    "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+                  },
+                  {
+                    "chapter_idx": 3,
+                    "title": "约定第3步",
+                    "summary": "宋岚与林禾处理第3次约定，说明当时可行的安排。",
+                    "key_events": [
+                      "二人谈清第3次约定的具体安排。"
+                    ],
+                    "start_state": {
+                      "进展": "承接第2章的实际结果"
+                    },
+                    "end_state": {
+                      "进展": "第3次安排得到明确回应"
+                    },
+                    "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+                    "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+                    "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+                  },
+                  {
+                    "chapter_idx": 4,
+                    "title": "约定第4步",
+                    "summary": "宋岚与林禾处理第4次约定，说明当时可行的安排。",
+                    "key_events": [
+                      "二人谈清第4次约定的具体安排。"
+                    ],
+                    "start_state": {
+                      "进展": "承接第3章的实际结果"
+                    },
+                    "end_state": {
+                      "进展": "第4次安排得到明确回应"
+                    },
+                    "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+                    "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+                    "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+                  }
+                ]
+              },
+              "raw_text": "{\"chapter_summaries\": [{\"chapter_idx\": 1, \"title\": \"约定第1步\", \"summary\": \"宋岚与林禾处理第1次约定，说明当时可行的安排。\", \"key_events\": [\"二人谈清第1次约定的具体安排。\"], \"start_state\": {\"进展\": \"承接第0章的实际结果\"}, \"end_state\": {\"进展\": \"第1次安排得到明确回应\"}, \"handoff_to_next\": \"按约定继续；若为末章则在本弧结果处收束。\", \"character_choices\": \"林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。\", \"narrative_focus\": \"详写双方如何回应具体顾虑，不重复介绍旧书来历。\"}, {\"chapter_idx\": 2, \"title\": \"约定第2步\", \"summary\": \"宋岚与林禾处理第2次约定，说明当时可行的安排。\", \"key_events\": [\"二人谈清第2次约定的具体安排。\"], \"start_state\": {\"进展\": \"承接第1章的实际结果\"}, \"end_state\": {\"进展\": \"第2次安排得到明确回应\"}, \"handoff_to_next\": \"按约定继续；若为末章则在本弧结果处收束。\", \"character_choices\": \"林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。\", \"narrative_focus\": \"详写双方如何回应具体顾虑，不重复介绍旧书来历。\"}, {\"chapter_idx\": 3, \"title\": \"约定第3步\", \"summary\": \"宋岚与林禾处理第3次约定，说明当时可行的安排。\", \"key_events\": [\"二人谈清第3次约定的具体安排。\"], \"start_state\": {\"进展\": \"承接第2章的实际结果\"}, \"end_state\": {\"进展\": \"第3次安排得到明确回应\"}, \"handoff_to_next\": \"按约定继续；若为末章则在本弧结果处收束。\", \"character_choices\": \"林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。\", \"narrative_focus\": \"详写双方如何回应具体顾虑，不重复介绍旧书来历。\"}, {\"chapter_idx\": 4, \"title\": \"约定第4步\", \"summary\": \"宋岚与林禾处理第4次约定，说明当时可行的安排。\", \"key_events\": [\"二人谈清第4次约定的具体安排。\"], \"start_state\": {\"进展\": \"承接第3章的实际结果\"}, \"end_state\": {\"进展\": \"第4次安排得到明确回应\"}, \"handoff_to_next\": \"按约定继续；若为末章则在本弧结果处收束。\", \"character_choices\": \"林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。\", \"narrative_focus\": \"详写双方如何回应具体顾虑，不重复介绍旧书来历。\"}]}",
+              "error": "",
+              "started_at": "2026-10-09T19:26:03.897577+00:00",
+              "finished_at": "2026-10-09T19:26:03.925372+00:00"
+            }
+          ]
+        }
+      ]
+    },
+    "execution_history": [
+      {
+        "execution_id": "4eb74003-13b8-44fe-a938-85e0bf8a4273",
+        "number": 1,
+        "kind": "planning",
+        "started_at": "2026-10-09T19:26:03.828489+00:00"
+      }
+    ],
+    "original_result": {
+      "version": 1,
+      "request_id": "70b5cb32-c710-4ef8-8eee-65cbb1c4ce50",
+      "project_id": "8ad0ecfc-55a2-4c55-9143-98e3daa1823e",
+      "request_hash": "f40de3119bdedf4a2076ee34c7a403919e3b03b3057a1ce87677cc7fd481273e",
+      "journal_hash": "165ac02e623cf446dbcbc504829af3e97ae78f870e8bd9a0ce73aed54591a493",
+      "chapter_count": 4,
+      "volume_id": "7e44033a-0070-4fdd-9739-94b997a31651",
+      "volume_idx": 6,
+      "outline_id": "a51d8434-dff9-4277-a7f9-d23727cb02d4",
+      "chapter_ids": [
+        "1876cb83-888d-48ed-b394-ca41b1eb0782",
+        "6aefd973-901f-479c-b822-2bbe37e0f2d0",
+        "72e4c5ed-bd1a-4edf-a3ad-2386d7f40251",
+        "e0fc2be7-2f9c-4692-bd17-37c00e85e885"
+      ],
+      "arc": {
+        "title": "修好以后",
+        "target_chapters": 4,
+        "status": "active",
+        "chapters_written": 0
+      }
+    },
+    "book_material_text": "【本书创作材料：设定与计划不能证明事件已经发生】\n这些是作品原始立意、当前书纲和登记规则，不是正文事实提取；规则可能来自作者编辑或已有提取，不能据此补造过去的事件。本次作者明确修改设定时，保留修改的范围，不用旧计划覆盖当前要求。全书未来安排只用于约束当前弧的范围，不能为本弧收束提前兑现后续结局。\n\n作品：弧规划恢复\n题材：未填写\n原目标规模：5000000 字\n原始立意：\n未填写\n\n【全书大纲】本书尚无已保存书纲；不把缺少计划解释为没有长线。\n\n【已登记世界规则】\n\n尚无已登记条目；不能推定人物没有其他限制。",
+    "accepted_outline": {
+      "chapter_summaries": [
+        {
+          "chapter_idx": 1,
+          "title": "约定第1步",
+          "summary": "宋岚与林禾处理第1次约定，说明当时可行的安排。",
+          "key_events": [
+            "二人谈清第1次约定的具体安排。"
+          ],
+          "start_state": {
+            "进展": "承接第0章的实际结果"
+          },
+          "end_state": {
+            "进展": "第1次安排得到明确回应"
+          },
+          "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+          "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+          "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+        },
+        {
+          "chapter_idx": 2,
+          "title": "约定第2步",
+          "summary": "宋岚与林禾处理第2次约定，说明当时可行的安排。",
+          "key_events": [
+            "二人谈清第2次约定的具体安排。"
+          ],
+          "start_state": {
+            "进展": "承接第1章的实际结果"
+          },
+          "end_state": {
+            "进展": "第2次安排得到明确回应"
+          },
+          "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+          "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+          "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+        },
+        {
+          "chapter_idx": 3,
+          "title": "约定第3步",
+          "summary": "宋岚与林禾处理第3次约定，说明当时可行的安排。",
+          "key_events": [
+            "二人谈清第3次约定的具体安排。"
+          ],
+          "start_state": {
+            "进展": "承接第2章的实际结果"
+          },
+          "end_state": {
+            "进展": "第3次安排得到明确回应"
+          },
+          "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+          "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+          "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+        },
+        {
+          "chapter_idx": 4,
+          "title": "约定第4步",
+          "summary": "宋岚与林禾处理第4次约定，说明当时可行的安排。",
+          "key_events": [
+            "二人谈清第4次约定的具体安排。"
+          ],
+          "start_state": {
+            "进展": "承接第3章的实际结果"
+          },
+          "end_state": {
+            "进展": "第4次安排得到明确回应"
+          },
+          "handoff_to_next": "按约定继续；若为末章则在本弧结果处收束。",
+          "character_choices": "林禾听完修补经过后说明自己的顾虑，宋岚据此调整安排。",
+          "narrative_focus": "详写双方如何回应具体顾虑，不重复介绍旧书来历。"
+        }
+      ],
+      "title": "修好以后",
+      "chapter_count": 4,
+      "core_conflict": "宋岚修好借来的旧书，再和林禾商量归还的日子。",
+      "emotional_arc": "从担心被责怪，到能够说明修补经过。",
+      "volume_start_state": {
+        "旧书": "在宋岚手中，封面尚未修补"
+      },
+      "volume_end_state": {
+        "旧书": "本弧计划修好并交给林禾"
+      },
+      "transition_to_next": "本弧自然收束，后续按作者方向继续。",
+      "foreshadow_progression": "保留全书已经约定的线索，本弧不新增强制悬念。"
+    }
+  }
+}

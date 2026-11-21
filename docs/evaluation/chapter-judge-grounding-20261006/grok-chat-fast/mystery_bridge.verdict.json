@@ -1,0 +1,96 @@
+{
+  "plot_coherence": 8.0,
+  "character_consistency": 9.0,
+  "style_adherence": 8.0,
+  "narrative_pacing": 7.0,
+  "foreshadow_handling": 8.0,
+  "overall": 8.0,
+  "issues": [
+    {
+      "dimension": "plot_coherence",
+      "location": 1,
+      "description": "space_rule_violation: 阿青被明确设定为只能用右手持信，另一只手臂需在空中挥舞以吸引守卫注意，但正文未描述任何后续挥舞动作或与守卫互动完成这一尝试",
+      "suggestion": "补充分配右臂挥舞尝试并展示其效果以建立位置与动作因果",
+      "violation_type": "space_rule_violation",
+      "severity": "medium",
+      "quote": ""
+    },
+    {
+      "dimension": "plot_coherence",
+      "location": 4,
+      "description": "result_strength_violation: 阿青明确付出所有金币作为代价以完成交接，但守卫仅叹气伸手去拿金币，实际结果未包含交付密信或展示断桥阻力的解决办法",
+      "suggestion": "添加守卫实际接走金币并接过密信的后续完成动作",
+      "violation_type": "result_strength_violation",
+      "severity": "medium",
+      "quote": "最终，他叹了口气，伸手去拿金币。",
+      "quote_verified": true
+    },
+    {
+      "dimension": "plot_coherence",
+      "location": 2,
+      "description": "cognition_violation: 守卫要求守卫直接说出信中秘密，但正文未显示其获取信息路径或能力",
+      "suggestion": "展示守卫通过常识或技能获悉信件内容",
+      "violation_type": "cognition_violation",
+      "severity": "medium",
+      "quote": "守卫眉头紧皱，他不信任阿青的说法。断桥的阻力让他怀疑这是不是一个陷阱。",
+      "quote_verified": true
+    },
+    {
+      "dimension": "character_consistency",
+      "location": 1,
+      "description": "character_consistency: 阿青被设定为左臂缺失无法轻松持物，却未体现右臂对信件或金币的实际操作限制",
+      "suggestion": "明确右臂在持物时的困难或调整为左手缺失",
+      "violation_type": "character_consistency",
+      "severity": "low",
+      "quote": ""
+    },
+    {
+      "dimension": "character_consistency",
+      "location": 3,
+      "description": "character_consistency: 阿青反复强调不能提前说出信中秘密，但正文未展示其内心或动作体现此一致性",
+      "suggestion": "添加阿青内心独白或犹豫动作强化此性格点",
+      "violation_type": "character_consistency",
+      "severity": "low",
+      "quote": ""
+    },
+    {
+      "dimension": "style_adherence",
+      "location": 1,
+      "description": "style_adherence: 正文以第三人称有限视角叙述阿青动作与守卫对话，但未严格遵循约定可能以守卫视角或强调守卫保密规则",
+      "suggestion": "调整为守卫第一人称视角强化其不信任与保密立场",
+      "violation_type": "style_adherence",
+      "severity": "low",
+      "quote": ""
+    },
+    {
+      "dimension": "narrative_pacing",
+      "location": 1,
+      "description": "narrative_pacing: 描述断桥位置、守卫警惕、阿青内心独白和警告时内省过多，耗费过长篇幅影响整体节奏",
+      "suggestion": "合并内省与环境描述，并加速至守卫对话过渡",
+      "violation_type": "narrative_pacing",
+      "severity": "low",
+      "quote": "夜风呼啸，带着寒意，吹得阿青的衣袍猎猎作响。断桥的裂口如一道巨大的伤口，深不见底，桥下是湍急的河流和嶙峋的岩石，任何试图徒步跨越的人都将面临死亡的威胁。",
+      "quote_verified": true
+    },
+    {
+      "dimension": "narrative_pacing",
+      "location": 2,
+      "description": "narrative_pacing: 阿青内心独白重复说明不能提前说出秘密，拖慢了推进到交接环节",
+      "suggestion": "删除重复内心独白并直接过渡至金币和对话",
+      "violation_type": "narrative_pacing",
+      "severity": "low",
+      "quote": "阿青知道这正是关键。他不能提前说出信中秘密，因为守卫不知道内容，如果他说了，守卫可能会不以为然或泄露出去。",
+      "quote_verified": true
+    },
+    {
+      "dimension": "foreshadow_handling",
+      "location": 0,
+      "description": "foreshadow_handling: 正文未主动处理或深化大纲要求的展示断桥形成的阻力和解决办法",
+      "suggestion": "在阿青叙述或守卫反应中主动体现断桥的具体阻力和潜在解决方法",
+      "violation_type": "foreshadow_handling",
+      "severity": "medium",
+      "quote": ""
+    }
+  ],
+  "parse_failed": false
+}

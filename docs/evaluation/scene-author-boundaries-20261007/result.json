@@ -1,0 +1,15 @@
+{
+  "done": true,
+  "seconds": 74.178,
+  "events": {
+    "generating": 1,
+    "fallback_restart": 1,
+    "error": 1
+  },
+  "sql": {
+    "samples": 74,
+    "active_prompt_updates": 0,
+    "max_prompt_update_transaction_seconds": 0,
+    "max_idle_transaction_seconds": 10.038989
+  }
+}

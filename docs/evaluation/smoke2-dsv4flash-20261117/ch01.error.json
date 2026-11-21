@@ -1,0 +1,9 @@
+{
+  "index": 1,
+  "chapter_id": "52d9cebd-c0c7-4fa5-95b2-eea3011d70ce",
+  "status": "error",
+  "error_type": "APIError",
+  "error_message": "upstream stream closed before any chunk carried finish_reason",
+  "error_code": "internal_server_error",
+  "attempts": 1
+}

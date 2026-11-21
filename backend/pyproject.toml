@@ -1,0 +1,60 @@
+[project]
+name = "ai-write-backend"
+version = "0.1.0"
+description = "AI Writing Platform Backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg",
+    "alembic",
+    "celery[redis]",
+    "redis",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "httpx",
+    "anthropic",
+    "openai",
+    "qdrant-client",
+    "neo4j",
+    "python-multipart",
+    "jieba",
+    "scikit-learn",
+    "ebooklib",
+    "beautifulsoup4",
+    "lxml",
+    "parsel",
+    "dukpy",
+    "numpy",
+    "PyJWT",
+    "mobi",
+    "bcrypt",
+    "cryptography",
+    "prometheus-client",
+    "sentry-sdk[fastapi,celery]",
+    "loguru",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "reportlab",
+    "python-docx",
+    "json-repair",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+
+[tool.pytest.ini_options]
+# v1.5.0 D-1 — pin event-loop scope to session so the module-level
+# SQLAlchemy AsyncEngine connection pool stays bound to a single loop
+# across the test session. Per-function loop (pytest-asyncio default)
+# caused asyncpg "Future attached to a different loop" RuntimeError
+# on the second test that touched the engine pool.
+asyncio_mode = "strict"
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"

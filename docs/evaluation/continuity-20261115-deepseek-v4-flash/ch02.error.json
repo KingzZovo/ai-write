@@ -1,0 +1,8 @@
+{
+  "index": 2,
+  "chapter_id": "9050f7d7-f316-46c3-8709-8686365c5549",
+  "status": "error",
+  "error_type": "RuntimeError",
+  "error_message": "All stream tier-fallback attempts failed for task 'scene_writer': LLMRelayResponseError:Relay stream opening exceeded validation buffer",
+  "error_code": null
+}

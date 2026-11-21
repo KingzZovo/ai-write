@@ -1,0 +1,314 @@
+"""StyleDetection: Deep writing style analysis combining statistics + LLM.
+
+Extracts:
+- Statistical features (sentence patterns, dialogue ratio, rhythm)
+- LLM-powered deep analysis (narrative voice, rhetoric, emotion, style labels)
+- Filters out person names and place names from keyword lists
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+# AI-generated patterns to detect
+AI_MARKERS = [
+    "璀璨", "瑰丽", "熠熠生辉", "油然而生", "心潮澎湃",
+    "不禁", "缓缓", "仿佛", "宛如", "犹如", "此外",
+    "值得注意的是", "需要强调的是", "不可忽视", "彰显",
+    "诠释", "赋能", "映射", "折射", "毫无疑问",
+    "不言而喻", "无法自拔", "血液沸腾", "电光火石",
+]
+
+LLM_STYLE_PROMPT = """你是顶级文学风格分析师。请从以下16个维度全面分析小说文本的写作风格。
+
+分析维度（每项必须填写）：
+1. narrative_pov（叙事视角）：第一人称/第三人称有限/第三人称全知/多视角交替
+2. narrative_pace（叙事节奏）：快节奏/中节奏/慢节奏，并说明节奏变化特点
+3. rhetoric_techniques（修辞手法）：列出3-5种使用的修辞，附具体例句
+4. emotional_tone（情感基调）：主基调+辅基调，如"热血为主，穿插幽默吐槽"
+5. sentence_style（句式偏好）：短句/长句/交替/对话驱动，说明句式特色
+6. description_focus（描写重点）：动作/心理/环境/对话/五感，按占比排序
+7. dialogue_style（对话特色）：对话的功能（推情节/立人物/造冲突），是否有潜台词
+8. conflict_pattern（冲突模式）：冲突如何构建和释放，是否有信息差
+9. hook_techniques（钩子技巧）：章节间如何制造悬念和追读力
+10. character_voice（角色声音）：不同角色的语言是否有区分度
+11. humor_style（幽默方式）：吐槽/反差/冷幽默/戏仿/无（描述具体手法）
+12. world_building_method（世界观呈现）：直接说明/融入对话/行动展示/旁白注释
+13. style_labels（风格标签）：5-8个精准概括此文风的标签
+14. strengths（写作优势）：最突出的3个写作特点
+15. writing_rules（写作规则）：基于以上分析，生成5-8条可执行的写作规则，每条规则要具体到可以直接指导AI写作
+16. anti_ai_rules（反 AI 规则）：基于此文风的语言习惯，列出 8-12 条 AI 仿写时最容易暴露 AI 痕迹的语言陷阱（不是源文本里出现的词，而是 AI 仿写本书风格时倾向产出但本书作者不会写的句式/词汇/修辞），每条返回对象 {"pattern": "<要避免的句式或词汇>", "replacement": "<改写指引或目标手法>"}。pattern 优先用具体短语，其次用句式公式（例："X，X更甚"）；不得列出本书原文常见词汇。
+
+输出纯 JSON 格式。
+
+文本内容：
+"""
+
+
+def detect_style_features(text: str) -> dict:
+    """Statistical analysis of text style features (no LLM, fast)."""
+    if not text or len(text) < 100:
+        return {"error": "文本过短，无法分析"}
+
+    features: dict = {}
+
+    # 1. Basic stats
+    sentences = re.split(r'[。！？…]+', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    avg_sentence_len = sum(len(s) for s in sentences) / max(len(sentences), 1)
+    features["basic"] = {
+        "total_chars": len(text),
+        "sentence_count": len(sentences),
+        "avg_sentence_length": round(avg_sentence_len, 1),
+        "paragraph_count": text.count("\n\n") + 1,
+    }
+
+    # 2. Dialogue ratio — match Chinese quotes: \u201c...\u201d and \u300c...\u300d
+    dialogue_matches = re.findall(r'\u201c[^\u201d]*\u201d|\u300c[^\u300d]*\u300d|\u300e[^\u300f]*\u300f', text)
+    dialogue_chars = sum(len(m) for m in dialogue_matches)
+    features["dialogue_ratio"] = round(dialogue_chars / max(len(text), 1), 3)
+
+    # 3. Description density
+    adj_patterns = re.findall(r'[\u7684][\u4e00-\u9fff]{1,4}', text)
+    features["description_density"] = round(len(adj_patterns) / max(len(sentences), 1), 2)
+
+    # 4. AI marker detection
+    ai_hits: list[str] = []
+    for marker in AI_MARKERS:
+        count = text.count(marker)
+        if count > 0:
+            ai_hits.append(f"{marker}({count})")
+    features["ai_markers"] = ai_hits
+    features["ai_marker_density"] = round(len(ai_hits) / max(len(text) / 1000, 1), 2)
+
+    # 5. Sentence length distribution
+    short = sum(1 for s in sentences if len(s) < 10)
+    medium = sum(1 for s in sentences if 10 <= len(s) < 30)
+    long = sum(1 for s in sentences if len(s) >= 30)
+    total = max(len(sentences), 1)
+    features["sentence_distribution"] = {
+        "short_pct": round(short / total, 2),
+        "medium_pct": round(medium / total, 2),
+        "long_pct": round(long / total, 2),
+    }
+
+    # 6. Tone
+    exclamation_ratio = text.count("！") / max(len(sentences), 1)
+    question_ratio = text.count("？") / max(len(sentences), 1)
+    features["tone"] = {
+        "exclamation_ratio": round(exclamation_ratio, 3),
+        "question_ratio": round(question_ratio, 3),
+    }
+
+    # 7. Style labels — derived from features, NOT high-frequency words
+    features["style_labels"] = _derive_style_labels(features)
+
+    return features
+
+
+def _derive_style_labels(features: dict) -> list[str]:
+    """Derive meaningful style labels from statistical features.
+
+    Returns labels like "节奏紧凑", "对话驱动", "画面感强" instead of
+    useless high-frequency words like "没有", "时候".
+    """
+    labels: list[str] = []
+
+    # Sentence rhythm
+    dist = features.get("sentence_distribution", {})
+    if dist.get("short_pct", 0) > 0.45:
+        labels.append("节奏紧凑")
+    elif dist.get("long_pct", 0) > 0.4:
+        labels.append("叙事舒缓")
+    else:
+        labels.append("节奏均衡")
+
+    avg_len = features.get("basic", {}).get("avg_sentence_length", 15)
+    if avg_len < 12:
+        labels.append("短句为主")
+    elif avg_len > 25:
+        labels.append("长句绵密")
+
+    # Dialogue
+    dr = features.get("dialogue_ratio", 0)
+    if dr > 0.35:
+        labels.append("对话驱动")
+    elif dr > 0.2:
+        labels.append("对话适中")
+    elif dr < 0.05:
+        labels.append("纯叙述")
+    else:
+        labels.append("叙述为主")
+
+    # Description density
+    dd = features.get("description_density", 0)
+    if dd > 2.0:
+        labels.append("描写细腻")
+    elif dd > 1.2:
+        labels.append("画面感强")
+
+    # Tone
+    tone = features.get("tone", {})
+    if tone.get("exclamation_ratio", 0) > 0.15:
+        labels.append("情感强烈")
+    if tone.get("question_ratio", 0) > 0.1:
+        labels.append("悬念感强")
+
+    # AI markers
+    ai_count = len(features.get("ai_markers", []))
+    if ai_count == 0:
+        labels.append("语言自然")
+    elif ai_count > 5:
+        labels.append("AI痕迹重")
+
+    # Paragraph density
+    basic = features.get("basic", {})
+    chars = basic.get("total_chars", 0)
+    paras = basic.get("paragraph_count", 1)
+    if paras > 0 and chars / paras < 100:
+        labels.append("段落紧凑")
+    elif paras > 0 and chars / paras > 300:
+        labels.append("段落厚重")
+
+    return labels
+
+
+async def detect_style_with_llm(text: str) -> dict:
+    """Deep style analysis using LLM. Returns structured analysis."""
+    from app.services.model_router import get_model_router
+
+    router = get_model_router()
+
+    # Truncate to ~3000 chars for LLM analysis
+    sample = text[:3000] if len(text) > 3000 else text
+
+    try:
+        result = await router.generate(
+            task_type="extraction",
+            messages=[
+                {"role": "system", "content": "你是文学风格分析专家，只输出 JSON。"},
+                {"role": "user", "content": LLM_STYLE_PROMPT + sample},
+            ],
+            # 2026-11-17 审计:16 维分析 + writing_rules + anti_ai_rules 塞在
+            # 1024 token 里,长文风格画像必被截断 → json.loads 失败 → 整段
+            # LLM 维度静默降级成 {"llm_error"}。抬高上限并显式识别截断。
+            max_tokens=3000,
+        )
+        if str(getattr(result, "finish_reason", "") or "") == "length":
+            logger.warning(
+                "LLM style detection hit max_tokens; JSON may be truncated "
+                "(sample_chars=%d)", len(sample),
+            )
+        cleaned = result.text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        return json.loads(cleaned)
+    except Exception as e:
+        logger.warning("LLM style detection failed: %s", e)
+        return {"llm_error": str(e)}
+
+
+def features_to_rules(features: dict, llm_analysis: dict | None = None) -> tuple[list[dict], list[dict]]:
+    """Convert detected features + LLM analysis into StyleProfile rules_json format.
+
+    Returns (rules, anti_ai_rules).
+    """
+    rules: list[dict] = []
+
+    # --- Rules from statistical features ---
+
+    dist = features.get("sentence_distribution", {})
+    if dist.get("short_pct", 0) > 0.4:
+        rules.append({"rule": "偏好短句，节奏紧凑", "weight": 0.7, "category": "rhythm"})
+    elif dist.get("long_pct", 0) > 0.4:
+        rules.append({"rule": "偏好长句，叙事从容", "weight": 0.7, "category": "rhythm"})
+    else:
+        rules.append({"rule": "长短句交替，节奏自然", "weight": 0.6, "category": "rhythm"})
+
+    dr = features.get("dialogue_ratio", 0)
+    if dr > 0.3:
+        rules.append({"rule": "对话密集，以对话推动情节", "weight": 0.75, "category": "structure"})
+    elif dr < 0.1:
+        rules.append({"rule": "叙述为主，少量对话", "weight": 0.65, "category": "structure"})
+
+    dd = features.get("description_density", 0)
+    if dd > 1.5:
+        rules.append({"rule": "注重环境和细节描写", "weight": 0.7, "category": "style"})
+
+    # --- Rules from LLM analysis (higher confidence, 15 dimensions) ---
+    if llm_analysis and "llm_error" not in llm_analysis:
+        # Map each LLM dimension to a rule
+        dim_map = [
+            ("narrative_pov", "叙事视角", 0.85, "structure"),
+            ("narrative_pace", "叙事节奏", 0.8, "rhythm"),
+            ("emotional_tone", "情感基调", 0.8, "style"),
+            ("sentence_style", "句式偏好", 0.75, "rhythm"),
+            ("description_focus", "描写重点", 0.7, "style"),
+            ("dialogue_style", "对话特色", 0.8, "dialogue"),
+            ("conflict_pattern", "冲突模式", 0.75, "structure"),
+            ("hook_techniques", "钩子技巧", 0.8, "structure"),
+            ("character_voice", "角色声音", 0.75, "dialogue"),
+            ("humor_style", "幽默方式", 0.7, "style"),
+            ("world_building_method", "世界观呈现", 0.7, "structure"),
+        ]
+        for key, label, weight, category in dim_map:
+            val = llm_analysis.get(key, "")
+            if val:
+                text = val if isinstance(val, str) else str(val)
+                if text and text not in ("无", "None", "null", ""):
+                    rules.append({"rule": f"{label}：{text[:100]}", "weight": weight, "category": category})
+
+        # Rhetoric (may be list)
+        rhetoric = llm_analysis.get("rhetoric_techniques", [])
+        if isinstance(rhetoric, list) and rhetoric:
+            # Each rhetoric item may be a string or dict with example
+            parts = []
+            for r in rhetoric[:5]:
+                if isinstance(r, str):
+                    parts.append(r)
+                elif isinstance(r, dict):
+                    parts.append(r.get("name", r.get("technique", str(r))))
+            rules.append({"rule": f"常用修辞：{'、'.join(parts)}", "weight": 0.75, "category": "style"})
+        elif isinstance(rhetoric, str) and rhetoric:
+            rules.append({"rule": f"常用修辞：{rhetoric}", "weight": 0.75, "category": "style"})
+
+        # LLM-generated writing rules (highest weight, up to 8)
+        llm_rules = llm_analysis.get("writing_rules", [])
+        if isinstance(llm_rules, list):
+            for r in llm_rules[:8]:
+                rule_text = r if isinstance(r, str) else r.get("rule", str(r))
+                if rule_text:
+                    rules.append({"rule": rule_text[:150], "weight": 0.85, "category": "llm_derived"})
+
+    # --- Anti-AI rules from markers ---
+    anti_ai: list[dict] = []
+    for marker_str in features.get("ai_markers", []):
+        word = marker_str.split("(")[0]
+        anti_ai.append({"pattern": word, "replacement": "", "autoRewrite": False})
+
+    # --- Anti-AI rules from LLM analysis (book-specific traps) ---
+    if llm_analysis and "llm_error" not in llm_analysis:
+        seen_patterns = {a["pattern"] for a in anti_ai}
+        llm_anti = llm_analysis.get("anti_ai_rules", [])
+        if isinstance(llm_anti, list):
+            for item in llm_anti[:15]:
+                if isinstance(item, str):
+                    pattern = item.strip()
+                    replacement = ""
+                elif isinstance(item, dict):
+                    pattern = str(item.get("pattern", "")).strip()
+                    replacement = str(item.get("replacement", "") or "").strip()
+                else:
+                    continue
+                if not pattern or pattern in seen_patterns:
+                    continue
+                seen_patterns.add(pattern)
+                anti_ai.append(
+                    {"pattern": pattern[:120], "replacement": replacement[:200], "autoRewrite": False}
+                )
+
+    return rules, anti_ai

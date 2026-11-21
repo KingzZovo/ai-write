@@ -1,0 +1,11 @@
+[
+  {
+    "case": "saved",
+    "gateway": "CPA",
+    "model": "grok-4.5",
+    "fallback": false,
+    "received": false,
+    "error_type": "APITimeoutError",
+    "seconds": 121.36
+  }
+]

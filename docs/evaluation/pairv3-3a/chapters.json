@@ -1,0 +1,123 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "c47811c7-8ed1-4890-bccc-f28ec65ced04",
+    "status": "refusal",
+    "chars_raw": 106,
+    "guard": "refusal",
+    "chars": 106,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "碗底的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 47.2
+  },
+  {
+    "index": 2,
+    "chapter_id": "63892d9f-1b69-445e-acc1-d3ca5790030f",
+    "status": "ok",
+    "chars_raw": 966,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 966
+    },
+    "chars": 966,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "晨光中的缝纫铺",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 50.2,
+    "summary_written": true,
+    "summary_chars": 132,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 3,
+    "chapter_id": "373ef88e-5c86-4da3-aae6-6237ac9308eb",
+    "status": "truncated",
+    "chars_raw": 847,
+    "guard": "truncated",
+    "chars": 847,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第三章 修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 35.4
+  },
+  {
+    "index": 4,
+    "chapter_id": "cf010d1b-46dc-4510-bd0b-d83d548c0f6f",
+    "status": "truncated",
+    "chars_raw": 888,
+    "guard": "truncated",
+    "chars": 888,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第四章 一碗没有加蛋的面",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 120.1
+  },
+  {
+    "index": 5,
+    "chapter_id": "953c5280-6547-4327-8d6b-0122f6e819ad",
+    "status": "truncated",
+    "chars_raw": 675,
+    "guard": "truncated",
+    "chars": 675,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "镇上电器铺",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 54.8
+  }
+]

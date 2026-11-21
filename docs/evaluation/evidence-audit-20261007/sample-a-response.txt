@@ -1,0 +1,46 @@
+```json
+{
+  "checks": [
+    {
+      "category": "time",
+      "findings": []
+    },
+    {
+      "category": "state",
+      "findings": []
+    },
+    {
+      "category": "objects",
+      "findings": []
+    },
+    {
+      "category": "action",
+      "findings": [
+        {
+          "evidence": [
+            {
+              "source": "chapter",
+              "quote": "陈川拎起水桶朝车场走去，皮靴踩在水泥地上发出闷响；"
+            },
+            {
+              "source": "chapter",
+              "quote": "他穿一件洗得发白的蓝色夹克，右手拎着洗车用的水桶，沾着泥点的布鞋在水泥地上轻轻蹭了两下。"
+            }
+          ],
+          "problem": "前文交代陈川穿的是“沾着泥点的布鞋”，结尾处行动描写却突然变成了“皮靴踩在水泥地上发出闷响”，鞋履材质前后矛盾。",
+          "suggestion": "将结尾的“皮靴”修改为“布鞋”或与之相符的鞋履描述。"
+        }
+      ]
+    },
+    {
+      "category": "pov",
+      "findings": []
+    },
+    {
+      "category": "completion",
+      "findings": []
+    }
+  ],
+  "uncertain": []
+}
+```

@@ -1,0 +1,73 @@
+{
+  "plot_coherence": {
+    "score": 8,
+    "issues": [
+      {
+        "paragraph": 0,
+        "description": "[space_rule_violation] 阿青左手截肢却仍用右手抛石块绳头、卷起左袖并由右臂托信袋（全书未建立单手投掷或单臂上肢加载物理机制）；",
+        "suggestion": "降级为单手辅助或补足功能",
+        "violation_type": "space_rule_violation",
+        "severity": "high",
+        "quote": "阿青把信夹在右臂与胸口之间，从腰间抽出绳子。空着的左袖被风掀了起来。\n“接住，别拉。”他用右手把系着石块的绳头抛过去。"
+      },
+      {
+        "paragraph": 1,
+        "description": "[mechanism_rule_violation] 石块系绳抛投过断口无触发条件/成本/反制，信袋滑过卡住又未明确重量/摩擦/速度机制；",
+        "suggestion": "补足重量/摩擦/速度细节",
+        "violation_type": "mechanism_rule_violation",
+        "severity": "high",
+        "quote": "第一回落进河里。他收回湿绳，退后两步，第二回才越过缺口，砸在守卫脚边。\n信袋滑过断口，卡在绳结处。他抖了两下，袋子终于滑到了对岸。"
+      },
+      {
+        "paragraph": 1,
+        "description": "[mechanism_rule_violation] 守卫解下信袋后未触发任何反制或检查动作（未搜身/翻看）；",
+        "suggestion": "补足反制或信息交换动作",
+        "violation_type": "mechanism_rule_violation",
+        "severity": "high",
+        "quote": "守卫解下信袋，隔河扬了扬。“给谁的？”\n“收信人的名字写在背面。别拆。”"
+      },
+      {
+        "paragraph": 1,
+        "description": "[result_strength_violation] 前置仅“断桥无法徒步过桥”却直接完成交付，无降级为疑点/代价/局部胜利/误导；",
+        "suggestion": "降级结果为疑点或后续线索",
+        "violation_type": "result_strength_violation",
+        "severity": "high",
+        "quote": "阿青松开磨破掌心的绳子，退进桥头的暗处。"
+      }
+    ]
+  },
+  "character_consistency": {
+    "score": 7,
+    "issues": [
+      {
+        "paragraph": 0,
+        "description": "[cognition_violation] 阿青自称“收信人的名字写在背面”但仅展示信袋未实际见字，未获“收信人姓名”信息却直接命令守卫“别拆”；",
+        "suggestion": "补足收信人姓名或降级为含糊表达",
+        "violation_type": "cognition_violation",
+        "severity": "high",
+        "quote": "守卫解下信袋，隔河扬了扬。“给谁的？”\n“收信人的名字写在背面。别拆。”"
+      }
+    ]
+  },
+  "style_adherence": {
+    "score": 8,
+    "issues": [
+      {
+        "paragraph": 0,
+        "description": "[expression_contract_violation] 动作序列“抛绳”“卷袖”“夹信”“退步”“抛绳”缺乏感官、呼吸或沉浸感，切片式列表化；",
+        "suggestion": "加入感官锚定或压缩切片",
+        "violation_type": "expression_contract_violation",
+        "severity": "low",
+        "quote": "阿青把信夹在右臂与胸口之间，从腰间抽出绳子。空着的左袖被风掀了起来。\n“接住，别拉。”他用右手把系着石块的绳头抛过去。第一回落进河里。"
+      }
+    ]
+  },
+  "narrative_pacing": {
+    "score": 7,
+    "issues": []
+  },
+  "foreshadow_handling": {
+    "score": 8,
+    "issues": []
+  }
+}

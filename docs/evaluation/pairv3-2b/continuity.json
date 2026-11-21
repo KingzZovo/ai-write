@@ -1,0 +1,46 @@
+{
+  "chapters": 2,
+  "word_counts": {
+    "ch02.txt": {
+      "chars": 917,
+      "target": 1200,
+      "ratio": 0.764
+    },
+    "ch04.txt": {
+      "chars": 1136,
+      "target": 1200,
+      "ratio": 0.947
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 917,
+      "target": 1200,
+      "ratio": 0.764,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "信封",
+      "detail": "全篇未出现已设定的道具「信封」"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "三千",
+      "detail": "书级既定数字「三千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "两千",
+      "detail": "书级既定数字「两千」全篇未出现"
+    },
+    {
+      "check": "book_fact_missing",
+      "fact": "一千",
+      "detail": "书级既定数字「一千」全篇未出现"
+    }
+  ],
+  "violations": 5
+}

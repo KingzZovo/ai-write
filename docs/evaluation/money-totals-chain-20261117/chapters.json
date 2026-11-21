@@ -1,0 +1,122 @@
+[
+  {
+    "index": 1,
+    "status": "resumed",
+    "chars": 1654
+  },
+  {
+    "index": 2,
+    "status": "resumed",
+    "chars": 1118
+  },
+  {
+    "index": 3,
+    "status": "resumed",
+    "chars": 1549
+  },
+  {
+    "index": 4,
+    "status": "resumed",
+    "chars": 1289
+  },
+  {
+    "index": 5,
+    "status": "resumed",
+    "chars": 1238
+  },
+  {
+    "index": 6,
+    "status": "resumed",
+    "chars": 1245
+  },
+  {
+    "index": 7,
+    "chapter_id": "0fbebac1-4c9b-4fff-83b0-f9b8a6ef3770",
+    "status": "ok",
+    "chars_raw": 986,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 986
+    },
+    "chars": 986,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第七章 铁盒里的顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 49.6,
+    "summary_written": true,
+    "summary_chars": 143,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "6c6f2fc1-b949-4a6e-89b2-84e3b36c49c8",
+    "status": "ok",
+    "chars_raw": 1566,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1566
+    },
+    "chars": 1566,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "校服工钱",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 36.8,
+    "summary_written": true,
+    "summary_chars": 164,
+    "entity": {
+      "status": "skipped",
+      "reason": "already_completed",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  }
+]

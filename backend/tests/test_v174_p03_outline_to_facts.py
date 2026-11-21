@@ -1,0 +1,277 @@
+"""v1.7.4 P0-3: tests for outline_to_facts ETL.
+
+Covers:
+- etl_characters: deterministic insert from volume.new_characters
+- foreshadow plans are read from outlines, never imported as facts
+- etl_world_rules JSON parsing: fenced JSON / bare JSON / regex fallback
+- Idempotency: re-running an ETL skips existing rows
+
+world_rules LLM extraction is mocked (no real LLM call) so the test runs offline.
+"""
+from __future__ import annotations
+
+import json
+import types
+import uuid
+from dataclasses import dataclass
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.services.outline_to_facts import (
+    etl_characters,
+    etl_world_rules,
+)
+
+
+PID = "f14712d6-6dc6-4cfb-b05f-e107fa02b63d"
+
+
+class _FakeRow:
+    def __init__(self, val):
+        self._v = val
+
+    def __getitem__(self, idx):
+        return self._v[idx] if isinstance(self._v, tuple) else self._v
+
+
+class _FakeResult:
+    """Mock SQLAlchemy result that supports .all(), .first(), .scalars().all()."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return list(self._rows)
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+    def scalars(self):
+        return self
+
+
+class _FakeDB:
+    """Minimal AsyncSession stub: records add() / commit() / execute()."""
+
+    def __init__(self, execute_responses):
+        # execute_responses: list of _FakeResult to return in order.
+        self._responses = list(execute_responses)
+        self.added: list = []
+        self.commits = 0
+
+    async def execute(self, *_args, **_kwargs):
+        if not self._responses:
+            return _FakeResult([])
+        return self._responses.pop(0)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+
+
+# ---------------------------------------------------------------------------
+# Offline Neo4j: these ETL tests are meant to run offline (LLM is mocked), but
+# etl_world_rules writes rules ONLY to Neo4j and returns (0,0) when the driver
+# is None. Provide a non-None fake driver + no-op init/materialize so the whole
+# module is deterministic and credential-free (no real Neo4j needed).
+# ---------------------------------------------------------------------------
+
+
+class _FakeNeo4jResult:
+    async def consume(self):
+        return None
+
+
+class _FakeNeo4jSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def run(self, *args, **kwargs):
+        return _FakeNeo4jResult()
+
+
+class _FakeNeo4jDriver:
+    def session(self, *args, **kwargs):
+        return _FakeNeo4jSession()
+
+
+@pytest.fixture(autouse=True)
+def _offline_neo4j(monkeypatch):
+    from app.services import outline_to_facts as o2f
+
+    monkeypatch.setattr(o2f, "init_neo4j", AsyncMock())
+    monkeypatch.setattr(o2f._neo4j_mod, "_driver", _FakeNeo4jDriver())
+    monkeypatch.setattr(o2f, "_materialize_entities_to_postgres", AsyncMock())
+
+
+# ---------------------------------------------------------------------------
+# etl_characters
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_etl_characters_inserts_all_new_chars():
+    # First execute: existing names lookup -> empty.
+    # Second execute: volume outlines lookup -> one volume with 2 chars.
+    vol_outline = {
+        "volume_idx": 1,
+        "new_characters": [
+            {"name": "裴归尘", "role": "导师", "identity": "馆长"},
+            {"name": "罗弥", "role": "商人", "identity": "烟契者"},
+        ],
+    }
+    db = _FakeDB([
+        _FakeResult([]),  # existing names empty
+        _FakeResult([(vol_outline,)]),  # volume outline
+    ])
+    inserted, skipped = await etl_characters(db, PID)
+    assert inserted == 2
+    assert skipped == 0
+    assert db.commits == 1
+    assert len(db.added) == 2
+    assert {c.name for c in db.added} == {"裴归尘", "罗弥"}
+
+
+@pytest.mark.asyncio
+async def test_etl_characters_skips_existing():
+    vol_outline = {
+        "volume_idx": 1,
+        "new_characters": [
+            {"name": "裴归尘", "role": "导师", "identity": "馆长"},
+        ],
+    }
+    db = _FakeDB([
+        _FakeResult([("裴归尘",)]),  # existing names
+        _FakeResult([(vol_outline,)]),
+    ])
+    inserted, skipped = await etl_characters(db, PID)
+    assert inserted == 0
+    assert skipped == 1
+    assert db.commits == 0  # nothing to commit
+
+
+@pytest.mark.asyncio
+async def test_etl_characters_handles_empty_outlines():
+    db = _FakeDB([
+        _FakeResult([]),
+        _FakeResult([]),
+    ])
+    inserted, skipped = await etl_characters(db, PID)
+    assert inserted == 0 and skipped == 0
+
+
+@pytest.mark.asyncio
+async def test_full_etl_leaves_foreshadow_plans_in_their_outlines(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.services import outline_to_facts as module
+    for name in ('etl_characters', 'etl_world_rules', 'etl_organizations', 'etl_items'):
+        monkeypatch.setattr(module, name, AsyncMock(return_value=(0, 0)))
+    db = _FakeDB([])
+    result = await module.run_full_etl(db, PID)
+    assert result['foreshadows'] == {'inserted': 0, 'skipped': 0, 'mode': 'read_plans_from_outlines'}
+    assert not db.added
+    assert not hasattr(module, 'etl_foreshadows')
+
+
+# ---------------------------------------------------------------------------
+# etl_world_rules (LLM mocked)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _StubGenResult:
+    text: str
+
+
+@pytest.mark.asyncio
+async def test_etl_world_rules_parses_fenced_json():
+    book_outline = {"raw_text": "这是一份超过200字的书级大纲。" * 20}
+    db = _FakeDB([
+        _FakeResult([(book_outline,)]),  # book outline raw_text
+        _FakeResult([]),  # existing rules
+    ])
+    fake_text = (
+        "```json\n"
+        '[{"category": "重力", "rule_text": "万物下落"},'
+        ' {"category": "时间", "rule_text": "时间单向流动"}]\n```'
+    )
+    with patch(
+        "app.services.prompt_registry.run_text_prompt",
+        new=AsyncMock(return_value=_StubGenResult(text=fake_text)),
+    ):
+        ins, sk = await etl_world_rules(db, PID)
+    assert ins == 2 and sk == 0
+    # World rules are written to Neo4j (MERGE), not the SQLAlchemy session, so
+    # db.added stays empty here; the ins/sk counts above verify parse+insert.
+
+
+@pytest.mark.asyncio
+async def test_etl_world_rules_parses_bare_json():
+    book_outline = {"raw_text": "x" * 400}
+    db = _FakeDB([_FakeResult([(book_outline,)]), _FakeResult([])])
+    fake_text = '[{"category": "A", "rule_text": "规则一二"}]'
+    with patch(
+        "app.services.prompt_registry.run_text_prompt",
+        new=AsyncMock(return_value=_StubGenResult(text=fake_text)),
+    ):
+        ins, sk = await etl_world_rules(db, PID)
+    assert ins == 1 and sk == 0
+
+
+@pytest.mark.asyncio
+async def test_etl_world_rules_parses_with_regex_fallback():
+    book_outline = {"raw_text": "x" * 400}
+    db = _FakeDB([_FakeResult([(book_outline,)]), _FakeResult([])])
+    # LLM included surrounding prose around the JSON array.
+    fake_text = (
+        "以下是抽取结果：\n[{\"category\": \"X\", \"rule_text\": \"规则二三\"}]\n完毕。"
+    )
+    with patch(
+        "app.services.prompt_registry.run_text_prompt",
+        new=AsyncMock(return_value=_StubGenResult(text=fake_text)),
+    ):
+        ins, sk = await etl_world_rules(db, PID)
+    assert ins == 1 and sk == 0
+
+
+@pytest.mark.asyncio
+async def test_etl_world_rules_returns_zero_for_short_outline():
+    book_outline = {"raw_text": "太短"}
+    db = _FakeDB([_FakeResult([(book_outline,)])])
+    ins, sk = await etl_world_rules(db, PID)
+    assert ins == 0 and sk == 0
+
+
+@pytest.mark.asyncio
+async def test_etl_world_rules_skips_existing():
+    book_outline = {"raw_text": "x" * 400}
+    db = _FakeDB([
+        _FakeResult([(book_outline,)]),
+        _FakeResult([("规则一二",)]),  # already exists
+    ])
+    fake_text = '[{"category": "A", "rule_text": "规则一二"}]'
+    with patch(
+        "app.services.prompt_registry.run_text_prompt",
+        new=AsyncMock(return_value=_StubGenResult(text=fake_text)),
+    ):
+        ins, sk = await etl_world_rules(db, PID)
+    assert ins == 0 and sk == 1
+
+
+@pytest.mark.asyncio
+async def test_etl_world_rules_handles_unparseable():
+    book_outline = {"raw_text": "x" * 400}
+    db = _FakeDB([_FakeResult([(book_outline,)]), _FakeResult([])])
+    fake_text = "这是一段纯文本，没有 JSON 数组。"
+    with patch(
+        "app.services.prompt_registry.run_text_prompt",
+        new=AsyncMock(return_value=_StubGenResult(text=fake_text)),
+    ):
+        ins, sk = await etl_world_rules(db, PID)
+    assert ins == 0 and sk == 0

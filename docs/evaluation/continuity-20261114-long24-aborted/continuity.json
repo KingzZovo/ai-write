@@ -1,0 +1,140 @@
+{
+  "chapters": 6,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 890,
+      "target": 1200,
+      "ratio": 0.742
+    },
+    "ch02.txt": {
+      "chars": 1007,
+      "target": 1200,
+      "ratio": 0.839
+    },
+    "ch03.txt": {
+      "chars": 817,
+      "target": 1200,
+      "ratio": 0.681
+    },
+    "ch04.txt": {
+      "chars": 952,
+      "target": 1200,
+      "ratio": 0.793
+    },
+    "ch05.txt": {
+      "chars": 1027,
+      "target": 1200,
+      "ratio": 0.856
+    },
+    "ch06.txt": {
+      "chars": 1041,
+      "target": 1200,
+      "ratio": 0.868
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch01.txt",
+      "chars": 890,
+      "target": 1200,
+      "ratio": 0.742,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch01.txt",
+      "declared": "当日傍晚",
+      "keys": [
+        "傍晚",
+        "天色将晚",
+        "天黑",
+        "暮色",
+        "夕阳"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 1007,
+      "target": 1200,
+      "ratio": 0.839,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch03.txt",
+      "chars": 817,
+      "target": 1200,
+      "ratio": 0.681,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch03.txt",
+      "declared": "同日午后",
+      "keys": [
+        "午后",
+        "下午",
+        "中午",
+        "晌午"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch04.txt",
+      "chars": 952,
+      "target": 1200,
+      "ratio": 0.793,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_missing",
+      "chapter": "ch06.txt",
+      "declared": "当日午后",
+      "keys": [
+        "午后",
+        "下午",
+        "中午"
+      ],
+      "detail": "全章没有出现任何能定位时间的说法"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch06.txt",
+      "values": [
+        "一",
+        "七百"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "unknown_character",
+      "name": "李叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「李叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "蓝布头",
+      "chapters": [
+        "ch04.txt",
+        "ch05.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「蓝布头」,需核对是否为有意新增"
+    },
+    {
+      "check": "number_conflict",
+      "key": "一分都",
+      "detail": "一分都 跨章取值不同:三千 vs 八百",
+      "chapters": [
+        "ch02.txt"
+      ]
+    }
+  ],
+  "violations": 11
+}

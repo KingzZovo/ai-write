@@ -1,0 +1,71 @@
+{
+  "chapters": 6,
+  "word_counts": {
+    "ch03.txt": {
+      "chars": 1123,
+      "target": 1200,
+      "ratio": 0.936
+    },
+    "ch04.txt": {
+      "chars": 1538,
+      "target": 1200,
+      "ratio": 1.282
+    },
+    "ch06.txt": {
+      "chars": 922,
+      "target": 1200,
+      "ratio": 0.768
+    },
+    "ch07.txt": {
+      "chars": 1159,
+      "target": 1200,
+      "ratio": 0.966
+    },
+    "ch08.txt": {
+      "chars": 1188,
+      "target": 1200,
+      "ratio": 0.99
+    },
+    "ch10.txt": {
+      "chars": 1619,
+      "target": 1200,
+      "ratio": 1.349
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch06.txt",
+      "chars": 922,
+      "target": 1200,
+      "ratio": 0.768,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch06.txt",
+      "values": [
+        "一百",
+        "七百"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "unknown_character",
+      "name": "大石头",
+      "chapters": [
+        "ch08.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「大石头」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "王婶",
+      "chapters": [
+        "ch07.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「王婶」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 4
+}

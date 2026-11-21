@@ -1,0 +1,386 @@
+[
+  {
+    "stem": "real_stall-scene_writer-r1",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1749,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 0.956,
+    "output_tokens": 2345,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 34,
+        "verified": true,
+        "quote": "刚才收摊前,市场老张过来说了句话。下个月开始,咱们这一排摊位要清退,不让摆了。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 203,
+        "verified": true,
+        "quote": "“妈,我算过账的。”陈麦把身子往前倾了倾,语气平稳得没有一点高二学生赌气时的尖锐,“我问过厂里去了的刘娟。电子厂虽然累,两班倒,但管吃管住。底薪加上加班费,一个月死死能拿四千五到五千。我在学校呢?学费、资料费、辅导书、还有平时零零碎碎的开销"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "partial",
+        "common_substring": 86,
+        "verified": true,
+        "quote": "“高二这学期读完,期末考试落听,”李巧云盯着女儿的眼睛,一字一顿地说,“如果期末你的总分能进年级前三百五十名,说明你还能往上走,高三这年无论多难,妈砸锅卖铁也供你念;要是进不去......”她顿了顿,喉咙有些发哽,“要是进不去,暑假你想去哪"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 42,
+        "verified": true,
+        "quote": "“嗯。”陈麦把折叠凳合拢,夹在胳膊底下,“那我明早六点去张叔那儿把借来的推车还了,顺便把桌子擦干净。”"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r2",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1600,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 1.272,
+    "output_tokens": 833,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 30,
+        "verified": true,
+        "quote": "“下个月起,南边这一排全清退。”李巧云看着女儿的眼睛,把话说得清清楚楚"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 128,
+        "verified": true,
+        "quote": "“我算过账了,妈。咱家现在这个摊位,下个月被清退了以后去哪儿摆?换个地方光是转让费和新摊位的押金就得几千。炒粉一天赚个百八十块,抛开菜钱油钱,连我下学期的学费和住宿费都凑不齐。我去厂里,哪怕一个月只拿三千,三个月也能拿九千。除去我自己的花销"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 14,
+        "verified": true,
+        "quote": "“行。那就听到这学期结束。”"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 59,
+        "verified": true,
+        "quote": "明天一早,你六点半必须起床去学校上早自习,不许迟到;我天不亮就得去一趟农贸市场,把剩下的那半袋米和蒜苗退给老王,能抠回几个算几个。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r3",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1248,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 0.476,
+    "output_tokens": 1680,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 36,
+        "verified": true,
+        "quote": "“市场办今天下午又来人催了。这一排摊位下个月起正式清退,咱们这摊子,干不到月底了。”"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 151,
+        "verified": true,
+        "quote": "“我在学校,住校费、伙食费加上资料钱,一个月稳当当得一千五。你炒粉一碗六块,一天卖百来碗,除掉米面油气,一个月能剩多少?这摊子下个月连地方都没了,就算换个地方,重新交押金、找人脉,哪个不要钱?我打听过了,城西的电子厂现在正招包装工,管吃住,"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 48,
+        "verified": true,
+        "quote": "“这样,你把这学期读完。期末考试看成绩,要是还跟上回一样卡在中游,暑假你想去电子厂,我不拦着。但现在,书得接着念。”"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 49,
+        "verified": true,
+        "quote": "明天一早,李巧云得去市场办盯着退押金的登记,而陈麦则得挤七点半的公交车,赶在早读铃响前踏进高二(3)班的教室。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r4",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1373,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 1.533,
+    "output_tokens": 1484,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 12,
+        "verified": true,
+        "quote": "这一排摊位,下个月真得清退。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 65,
+        "verified": true,
+        "quote": "我算过账的,咱们现在手里总共不到三千块现金,如果我继续念,高三这一年光是资料费和住宿费就得两千多。到时候不仅供不起,连你进货的本钱都要搭进去。"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 22,
+        "verified": true,
+        "quote": "高二不能说断就断。把这学期念完,期末考试看总成绩。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 39,
+        "verified": true,
+        "quote": "明天一早,我得去市场办把押金退还的签字给办了,顺便问问附近还有没有便宜点的推车空地"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r5",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1399,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 0.649,
+    "output_tokens": 2223,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 33,
+        "verified": true,
+        "quote": "今天市场管理员过来转了一圈,口头通知了。咱们这一排摊位,下月起要全部清退。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 137,
+        "verified": true,
+        "quote": "你别急着骂我任性,我是算过账的。”陈麦抬起眼皮,直视着母亲的眼睛,语速很慢但很稳,“我在学校成绩也就是个中等,就算读完高二高三,考上好大学的概率有多大?家里这两年的情况,我心里有数。爸走的时候没留下一分钱,你炒粉摊每天起早贪黑,一个月挣的钱"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 83,
+        "verified": true,
+        "quote": "这样吧,高二这学期刚过半,你把这几个月读完。期末考完,如果你的成绩还是老样子,我不拦着你。但在这之前,书得念,我也得抓紧时间看看城南还有没有别的地方能摆摊。这学期剩下的时间,咱们各退一步。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 43,
+        "verified": true,
+        "quote": "明天一早我得去趟市场办,找那个管理员把清退的登记表再确认一遍,免得到月底押金退的时候出岔子。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r6",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1482,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 1.04,
+    "output_tokens": 738,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 37,
+        "verified": true,
+        "quote": "今天收摊时,市场老刘又过来说了一趟。下个月起,这一排连着都要清退,说是规划重新整修。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 126,
+        "verified": true,
+        "quote": "我在电子厂打听过了,普工底薪两千二,全勤加上加班,一个月能拿到三千多。高二读下去也就是混日子,期中考试我的名次你也看见了,就算勉强考上个大专,学费和家里这一摊子......妈,我不是赌气,我算过账的。我在厂里干一年,不仅能自己养活自己,还能"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 73,
+        "verified": true,
+        "quote": "高二这一学期,你给我老老实实读完。期末考完要是还这个名次,你想去哪儿打工,我不拦着你。这几个月里,学费和吃饭的钱不用你操心,只要我在一天,这摊子就能撑到这学期结束。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 56,
+        "verified": true,
+        "quote": "明天一早六点半,我得去老市场西头看看有没有转让的散摊,顺便把废纸箱卖了;你明早早点起,把数学错题本整理出来,早自习前必须交。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r7",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1239,
+    "status": "ok",
+    "model_returned": "deepseek/deepseek-v4.1-flash-1017",
+    "elapsed_seconds": 11.437,
+    "output_tokens": 1241,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 31,
+        "verified": true,
+        "quote": "市场办今天下午又来人催了一趟。下个月起，南夜市这一排全得清退。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 103,
+        "verified": true,
+        "quote": "我不是一时冲动。这一年多你每天夜里三点起，起早贪黑供我，可我期中考试还是老样子，卡在中间不上不下。就算勉强熬到高三考个大专，学费生活费又是多少？夜市这一清退，妈你连个固定的营生都没有了，咱们拿什么撑到明年？"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 80,
+        "verified": true,
+        "quote": "行，厂里吃住虽然管，但那流水线不是人呆的地方，一天站十几个小时。妈不同意你直接把学籍退了……这样，高二这一学期，你给我踏踏实实念完。期末考完，真要走，妈不拦你。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "exact",
+        "common_substring": 56,
+        "verified": true,
+        "quote": "明天一早，六点钟你得准时起来背书，别耽误早自习；我七点得去趟市场办，把押金退条和上个月的账单亲自找管理员对清楚。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  },
+  {
+    "stem": "real_stall-scene_writer-r8",
+    "case_id": "real_stall",
+    "requested_model": "deepseek-v4.1-flash",
+    "chars": 1499,
+    "status": "ok",
+    "model_returned": "deepseek-v4.1-flash",
+    "elapsed_seconds": 2.017,
+    "output_tokens": 799,
+    "verdicts": [
+      {
+        "id": "clearance_told",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 27,
+        "verified": true,
+        "quote": "三天前市场管理员来过,口头通知说这一排摊位下个月起要清退。"
+      },
+      {
+        "id": "daughter_reason",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 13,
+        "verified": true,
+        "quote": "妈,我不是一时任性。我算过账了。"
+      },
+      {
+        "id": "temporary_deal",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 77,
+        "verified": true,
+        "quote": "只到本学期结束。这几个月的学费和生活费妈手里还有数,不用你操心。等这学期期末考完了,要是成绩真跟不上,或者你自己还是铁了心要走这条路,到时候你想去哪儿打工,妈绝不拦着你。"
+      },
+      {
+        "id": "next_morning",
+        "delivered": true,
+        "locatable": "normalized",
+        "common_substring": 80,
+        "verified": true,
+        "quote": "明天一早,我去市场办公室把那一千五的押金退回来,顺便把剩下的木架子和煤气罐拉回东关的平房里;你明早六点半必须准时起床,把压在箱子底的那套秋季校服找出来,早自习前赶到学校去。"
+      }
+    ],
+    "delivered": 4,
+    "unverified": 0,
+    "missing": 0,
+    "items": 4
+  }
+]

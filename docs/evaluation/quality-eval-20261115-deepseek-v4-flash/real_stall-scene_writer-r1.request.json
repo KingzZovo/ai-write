@@ -1,0 +1,98 @@
+{
+  "attempts": [
+    "truncated",
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "李巧云",
+      "陈麦"
+    ],
+    "forbidden": [
+      "不得由老师出面解决",
+      "丈夫不得回来",
+      "不得出现新收入或补助",
+      "不得由母亲单方面命令解决"
+    ],
+    "genre": "现实生活",
+    "id": "real_stall",
+    "label": "现实生活·夜市摊位",
+    "must_keep": [
+      "押金一千五",
+      "每月摊位费六百",
+      "下月起清退",
+      "陈麦读高二",
+      "丈夫两年前走了,不回来"
+    ],
+    "pov": "第三人称限知,全程跟随母亲李巧云",
+    "pov_character": "李巧云",
+    "required_outcomes": [
+      "李巧云说清退这件事",
+      "陈麦说出算过账的实际理由",
+      "谈成一个只到本学期的暂定安排",
+      "结尾交代明天一早的具体一件事"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "real_stall",
+  "chars": 1649,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 40.288,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "现实生活",
+  "input_tokens": 1484,
+  "max_tokens": 4096,
+  "model_returned": "deepseek-v4-flash",
+  "output_tokens": 2979,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 340,
+        "name": "scene_brief",
+        "sha256": "10ac4a8899a0ff87",
+        "source": "case.brief"
+      },
+      {
+        "chars": 77,
+        "name": "character_roster",
+        "sha256": "484a5782d20cb13b",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 1139,
+        "name": "writer_contract",
+        "sha256": "7109b170f9908bf2",
+        "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 571,
+        "name": "scene_writer_system",
+        "sha256": "23bc9ee90d1bf072",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "2579fe555e1d55ebeb7f5cf4c1709212edf97cbcf9f432489328792c0bf7dbf8",
+    "system_chars": 571,
+    "task_type": "scene_writer",
+    "user_chars": 1676,
+    "variant": "scene_writer"
+  },
+  "repeat": 1,
+  "requested_model": "deepseek-v4-flash",
+  "snapshot_rev": null,
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "db6ec2eabb32332de39e3489654abb5e91198c18d7872331b1d8b920e1dc7e61",
+  "variant": "scene_writer"
+}

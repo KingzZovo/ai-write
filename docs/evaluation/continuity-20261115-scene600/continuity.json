@@ -1,0 +1,126 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 846,
+      "target": 1200,
+      "ratio": 0.705
+    },
+    "ch02.txt": {
+      "chars": 864,
+      "target": 1200,
+      "ratio": 0.72
+    },
+    "ch03.txt": {
+      "chars": 1269,
+      "target": 1200,
+      "ratio": 1.058
+    },
+    "ch04.txt": {
+      "chars": 1185,
+      "target": 1200,
+      "ratio": 0.988
+    },
+    "ch05.txt": {
+      "chars": 819,
+      "target": 1200,
+      "ratio": 0.682
+    },
+    "ch06.txt": {
+      "chars": 1059,
+      "target": 1200,
+      "ratio": 0.882
+    },
+    "ch07.txt": {
+      "chars": 654,
+      "target": 1200,
+      "ratio": 0.545
+    },
+    "ch08.txt": {
+      "chars": 791,
+      "target": 1200,
+      "ratio": 0.659
+    },
+    "ch09.txt": {
+      "chars": 1019,
+      "target": 1200,
+      "ratio": 0.849
+    },
+    "ch10.txt": {
+      "chars": 1117,
+      "target": 1200,
+      "ratio": 0.931
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch01.txt",
+      "chars": 846,
+      "target": 1200,
+      "ratio": 0.705,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch02.txt",
+      "chars": 864,
+      "target": 1200,
+      "ratio": 0.72,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch05.txt",
+      "chars": 819,
+      "target": 1200,
+      "ratio": 0.682,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch07.txt",
+      "chars": 654,
+      "target": 1200,
+      "ratio": 0.545,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch07.txt",
+      "declared": "三天后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch08.txt",
+      "chars": 791,
+      "target": 1200,
+      "ratio": 0.659,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch08.txt",
+      "declared": "一周后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "word_below_target",
+      "chapter": "ch09.txt",
+      "chars": 1019,
+      "target": 1200,
+      "ratio": 0.849,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "unknown_character",
+      "name": "蓝布头",
+      "chapters": [
+        "ch05.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「蓝布头」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 9
+}

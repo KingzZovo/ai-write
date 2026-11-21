@@ -1,0 +1,24 @@
+[
+  {
+    "upstream": "gemini2",
+    "priority": 0,
+    "variant": "baseline",
+    "model": "gemini-3.1-pro",
+    "user_sha256": "1c111b979ad3b0f1f4bc03386ffa62e34a7254313828f629862061d320236f07",
+    "status": "returned_text",
+    "chars": 1034,
+    "elapsed_seconds": 9.793,
+    "text_sha256": "d9ae9a33b466131403bb8377ca93f1a776d40c450d7b2be604eb759aa8699ac6"
+  },
+  {
+    "upstream": "gemini2",
+    "priority": 0,
+    "variant": "candidate",
+    "model": "gemini-3.1-pro",
+    "user_sha256": "c9d4c733f28d65e3604ef413e816d12541da0ce5d9de8d524d12b699d04ccf5b",
+    "status": "returned_text",
+    "chars": 1615,
+    "elapsed_seconds": 47.223,
+    "text_sha256": "60818cf569767f1784fb5fb0197d876dfa0b607e5719ad49cfdc8116340858da"
+  }
+]

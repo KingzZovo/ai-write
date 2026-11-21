@@ -1,0 +1,33 @@
+{
+  "chapters": 1,
+  "word_counts": {
+    "ch01.txt": 1029
+  },
+  "findings": [
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch01.txt",
+      "values": [
+        "一千",
+        "八百"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "信封",
+      "detail": "全篇未出现已设定的道具「信封」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "顶针",
+      "detail": "全篇未出现已设定的道具「顶针」"
+    },
+    {
+      "check": "prop_missing",
+      "prop": "铁盒",
+      "detail": "全篇未出现已设定的道具「铁盒」"
+    }
+  ],
+  "violations": 4
+}

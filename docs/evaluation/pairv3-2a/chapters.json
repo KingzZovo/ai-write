@@ -1,0 +1,246 @@
+[
+  {
+    "index": 1,
+    "chapter_id": "e7d117c6-8ccc-4b59-82a4-6d3ae0dcc60d",
+    "status": "ok",
+    "chars_raw": 1580,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1580
+    },
+    "chars": 1580,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "渡口面摊的信封",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 28.2,
+    "summary_written": true,
+    "summary_chars": 197,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 2,
+    "chapter_id": "689ec6cc-dec8-4de8-a218-f1dbe094f025",
+    "status": "truncated",
+    "chars_raw": 1335,
+    "guard": "truncated",
+    "chars": 1335,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "顶针与八百块",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 29.6
+  },
+  {
+    "index": 3,
+    "chapter_id": "f75794d5-0da8-4a3c-b828-0e4ff1a88ef1",
+    "status": "ok",
+    "chars_raw": 1196,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1196
+    },
+    "chars": 1196,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第三章 修不好的电饭锅",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 35.6,
+    "summary_written": true,
+    "summary_chars": 98,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 4,
+    "chapter_id": "4250b1c9-4c03-4ad9-8f23-0b3968a9ff86",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 5,
+    "chapter_id": "89108fa4-d123-4b98-a394-f0c3f33abd4b",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 6,
+    "chapter_id": "82428d6f-cbd2-40db-92d1-7a01e7170e6f",
+    "status": "ok",
+    "chars_raw": 894,
+    "guard": "ok",
+    "gate": {
+      "status": "blocked",
+      "rewrite_rounds": 0,
+      "chars_after": 894
+    },
+    "chars": 894,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "第六章 老陈的账本",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 33.5,
+    "summary_written": true,
+    "summary_chars": 114,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 7,
+    "chapter_id": "8fb26f9e-cca0-4b16-b274-a534232db3f7",
+    "status": "ok",
+    "chars_raw": 1185,
+    "guard": "ok",
+    "gate": {
+      "status": "passed",
+      "rewrite_rounds": 0,
+      "chars_after": 1185
+    },
+    "chars": 1185,
+    "plan": {
+      "scenes": [
+        {
+          "idx": 1,
+          "title": "铁盒里的顶针",
+          "target_words": 1200
+        }
+      ],
+      "chapter_target": 1200
+    },
+    "elapsed_seconds": 39.5,
+    "summary_written": true,
+    "summary_chars": 116,
+    "entity": {
+      "status": "ok",
+      "reason": "projected",
+      "attempts": 1,
+      "keys": [
+        "caller",
+        "chapter_idx",
+        "global_idx",
+        "project_id",
+        "projection_token",
+        "reason",
+        "source_hash",
+        "status"
+      ]
+    },
+    "cognition": {
+      "status": "completed",
+      "attempts": 1
+    }
+  },
+  {
+    "index": 8,
+    "chapter_id": "c224e104-2413-4631-ba7a-67469694193a",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 3
+  },
+  {
+    "index": 9,
+    "chapter_id": "195090a8-57ab-48c3-bd64-7d80c79fab6d",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  },
+  {
+    "index": 10,
+    "chapter_id": "a3d13226-fef1-4692-9b70-5126e3ff310c",
+    "status": "error",
+    "error_type": "RuntimeError",
+    "error_message": "scene_planner_failed: 输出不是合法 JSON",
+    "error_code": null,
+    "attempts": 1
+  }
+]

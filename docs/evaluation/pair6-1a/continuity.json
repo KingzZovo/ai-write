@@ -1,0 +1,98 @@
+{
+  "chapters": 10,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1643,
+      "target": 1200,
+      "ratio": 1.369
+    },
+    "ch02.txt": {
+      "chars": 1046,
+      "target": 1200,
+      "ratio": 0.872
+    },
+    "ch03.txt": {
+      "chars": 1131,
+      "target": 1200,
+      "ratio": 0.943
+    },
+    "ch04.txt": {
+      "chars": 1518,
+      "target": 1200,
+      "ratio": 1.265
+    },
+    "ch05.txt": {
+      "chars": 1263,
+      "target": 1200,
+      "ratio": 1.052
+    },
+    "ch06.txt": {
+      "chars": 1124,
+      "target": 1200,
+      "ratio": 0.937
+    },
+    "ch07.txt": {
+      "chars": 1176,
+      "target": 1200,
+      "ratio": 0.98
+    },
+    "ch08.txt": {
+      "chars": 1062,
+      "target": 1200,
+      "ratio": 0.885
+    },
+    "ch09.txt": {
+      "chars": 1376,
+      "target": 1200,
+      "ratio": 1.147
+    },
+    "ch10.txt": {
+      "chars": 1418,
+      "target": 1200,
+      "ratio": 1.182
+    }
+  },
+  "findings": [
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch01.txt",
+      "values": [
+        "一千",
+        "八百"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "remainder_conflict",
+      "chapter": "ch06.txt",
+      "values": [
+        "七百",
+        "三百"
+      ],
+      "detail": "同一章里「剩下/还欠」的数额不一致"
+    },
+    {
+      "check": "time_of_day_missing",
+      "chapter": "ch10.txt",
+      "declared": "中秋前三天的傍晚",
+      "detail": "全章没有任何时段说法,读者无法定位这一刻"
+    },
+    {
+      "check": "unknown_character",
+      "name": "张叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「张叔」,需核对是否为有意新增"
+    },
+    {
+      "check": "unknown_character",
+      "name": "张师傅",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「张师傅」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 5
+}

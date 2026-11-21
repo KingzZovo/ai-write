@@ -1,0 +1,482 @@
+{
+  "before": {
+    "source": {
+      "schema": 1,
+      "project_id": "0bd856a1-a3ca-4386-a2e2-e6bd992938a5",
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "volume_idx": 3,
+      "volume_title": "修好以后",
+      "outline": {
+        "id": "88ec1ab3-3b41-48ce-b194-44da30721927",
+        "version": 1,
+        "hash": "6f622d42ba7612584bf50135739d6b8f9d30195a64b56955a01699f74c843036"
+      },
+      "latest": null,
+      "chapters": [
+        {
+          "id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+          "title": "约定第1步",
+          "chapter_idx": 1,
+          "global_idx": 4,
+          "content_hash": null
+        },
+        {
+          "id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+          "title": "约定第2步",
+          "chapter_idx": 2,
+          "global_idx": 5,
+          "content_hash": null
+        },
+        {
+          "id": "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+          "title": "约定第3步",
+          "chapter_idx": 3,
+          "global_idx": 6,
+          "content_hash": null
+        },
+        {
+          "id": "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a",
+          "title": "约定第4步",
+          "chapter_idx": 4,
+          "global_idx": 7,
+          "content_hash": null
+        }
+      ]
+    },
+    "title": "修好以后",
+    "volume_title": "修好以后",
+    "progress": {
+      "schema": 1,
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "plan_hash": "6c7be4389b1bdfd30e7f2600097208b3ee570dcca77fa0f16860caeb57e4ad78",
+      "chapter_order": [
+        "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+        "7d78084c-e579-4b4f-b002-21ba30a02cde",
+        "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+        "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a"
+      ],
+      "acknowledged": {},
+      "phase": "active",
+      "direction": null,
+      "direction_chapter_id": null,
+      "closed_early": false,
+      "closing_note": "",
+      "legacy_request_id": null,
+      "completion_source_hash": null
+    },
+    "chapters": [
+      {
+        "id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+        "title": "约定第1步",
+        "chapter_idx": 1,
+        "global_idx": 4,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      },
+      {
+        "id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+        "title": "约定第2步",
+        "chapter_idx": 2,
+        "global_idx": 5,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      },
+      {
+        "id": "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+        "title": "约定第3步",
+        "chapter_idx": 3,
+        "global_idx": 6,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      },
+      {
+        "id": "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a",
+        "title": "约定第4步",
+        "chapter_idx": 4,
+        "global_idx": 7,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      }
+    ],
+    "issues": [],
+    "confirmed_count": 0,
+    "chapter_count": 4,
+    "next_chapter_id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+    "legacy": {
+      "unverified": false,
+      "reported_count": 0,
+      "status": "active",
+      "history_request_id": null
+    }
+  },
+  "after": {
+    "source": {
+      "schema": 1,
+      "project_id": "0bd856a1-a3ca-4386-a2e2-e6bd992938a5",
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "volume_idx": 3,
+      "volume_title": "修好以后",
+      "outline": {
+        "id": "88ec1ab3-3b41-48ce-b194-44da30721927",
+        "version": 1,
+        "hash": "6f622d42ba7612584bf50135739d6b8f9d30195a64b56955a01699f74c843036"
+      },
+      "latest": {
+        "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+        "sequence": 1,
+        "result_hash": "f17f548d03818f595cf111391660951f394bc8d721ad3cb566446e5a170cd533"
+      },
+      "chapters": [
+        {
+          "id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+          "title": "约定第1步",
+          "chapter_idx": 1,
+          "global_idx": 4,
+          "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc"
+        },
+        {
+          "id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+          "title": "约定第2步",
+          "chapter_idx": 2,
+          "global_idx": 5,
+          "content_hash": null
+        },
+        {
+          "id": "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+          "title": "约定第3步",
+          "chapter_idx": 3,
+          "global_idx": 6,
+          "content_hash": null
+        },
+        {
+          "id": "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a",
+          "title": "约定第4步",
+          "chapter_idx": 4,
+          "global_idx": 7,
+          "content_hash": null
+        }
+      ]
+    },
+    "title": "修好以后",
+    "volume_title": "修好以后",
+    "progress": {
+      "schema": 1,
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "plan_hash": "6c7be4389b1bdfd30e7f2600097208b3ee570dcca77fa0f16860caeb57e4ad78",
+      "chapter_order": [
+        "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+        "7d78084c-e579-4b4f-b002-21ba30a02cde",
+        "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+        "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a"
+      ],
+      "acknowledged": {
+        "53c03a51-f7c1-4a44-9eb3-4f0e9331b429": {
+          "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+          "title": "约定第1步",
+          "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+          "author_note": "款项及信封去向已核对。"
+        }
+      },
+      "phase": "awaiting_direction",
+      "direction": null,
+      "direction_chapter_id": null,
+      "closed_early": false,
+      "closing_note": "",
+      "legacy_request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+      "completion_source_hash": null
+    },
+    "chapters": [
+      {
+        "id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+        "title": "约定第1步",
+        "chapter_idx": 1,
+        "global_idx": 4,
+        "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+        "state": "confirmed",
+        "confirmation": {
+          "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+          "title": "约定第1步",
+          "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+          "author_note": "款项及信封去向已核对。"
+        }
+      },
+      {
+        "id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+        "title": "约定第2步",
+        "chapter_idx": 2,
+        "global_idx": 5,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      },
+      {
+        "id": "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+        "title": "约定第3步",
+        "chapter_idx": 3,
+        "global_idx": 6,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      },
+      {
+        "id": "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a",
+        "title": "约定第4步",
+        "chapter_idx": 4,
+        "global_idx": 7,
+        "content_hash": null,
+        "state": "pending",
+        "confirmation": null
+      }
+    ],
+    "issues": [],
+    "confirmed_count": 1,
+    "chapter_count": 4,
+    "next_chapter_id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+    "legacy": {
+      "unverified": false,
+      "reported_count": 0,
+      "status": "active",
+      "history_request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d"
+    }
+  },
+  "input": {
+    "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+    "expected_source": {
+      "schema": 1,
+      "project_id": "0bd856a1-a3ca-4386-a2e2-e6bd992938a5",
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "volume_idx": 3,
+      "volume_title": "修好以后",
+      "outline": {
+        "id": "88ec1ab3-3b41-48ce-b194-44da30721927",
+        "version": 1,
+        "hash": "6f622d42ba7612584bf50135739d6b8f9d30195a64b56955a01699f74c843036"
+      },
+      "latest": null,
+      "chapters": [
+        {
+          "id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+          "title": "约定第1步",
+          "chapter_idx": 1,
+          "global_idx": 4,
+          "content_hash": null
+        },
+        {
+          "id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+          "title": "约定第2步",
+          "chapter_idx": 2,
+          "global_idx": 5,
+          "content_hash": null
+        },
+        {
+          "id": "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+          "title": "约定第3步",
+          "chapter_idx": 3,
+          "global_idx": 6,
+          "content_hash": null
+        },
+        {
+          "id": "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a",
+          "title": "约定第4步",
+          "chapter_idx": 4,
+          "global_idx": 7,
+          "content_hash": null
+        }
+      ]
+    },
+    "action": "acknowledge",
+    "chapter_id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+    "expected_content_text": "宋岚点清三千元，收下两千元，把剩下的一千元连同信封交回林禾。",
+    "expected_title": "约定第1步",
+    "author_note": "款项及信封去向已核对。",
+    "direction": null,
+    "closing_note": ""
+  },
+  "receipt": {
+    "schema": 1,
+    "status": "saved",
+    "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+    "project_id": "0bd856a1-a3ca-4386-a2e2-e6bd992938a5",
+    "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+    "volume_title": "修好以后",
+    "volume_idx": 3,
+    "sequence": 1,
+    "action": "acknowledge",
+    "chapter_id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+    "manuscript_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+    "request_hash": "f8e9981d0b946b78a3c74e5ab2619ba92d2e8dc1f371214c1ff05d01ff30f5de",
+    "before_hash": "9da3e1d62c17fdd94ace0cd13fdd66e0633db0b90920a604e0d56fd47e5bac91",
+    "manuscript_snapshot_hash": "8c6090aed48747d33a4b3c58fd7bda6efee1b8cc0babe189ebaf5ab9fd699be3",
+    "progress": {
+      "schema": 1,
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "plan_hash": "6c7be4389b1bdfd30e7f2600097208b3ee570dcca77fa0f16860caeb57e4ad78",
+      "chapter_order": [
+        "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+        "7d78084c-e579-4b4f-b002-21ba30a02cde",
+        "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+        "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a"
+      ],
+      "acknowledged": {
+        "53c03a51-f7c1-4a44-9eb3-4f0e9331b429": {
+          "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+          "title": "约定第1步",
+          "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+          "author_note": "款项及信封去向已核对。"
+        }
+      },
+      "phase": "awaiting_direction",
+      "direction": null,
+      "direction_chapter_id": null,
+      "closed_early": false,
+      "closing_note": "",
+      "legacy_request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+      "completion_source_hash": null
+    }
+  },
+  "detail": {
+    "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+    "receipt": {
+      "schema": 1,
+      "status": "saved",
+      "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+      "project_id": "0bd856a1-a3ca-4386-a2e2-e6bd992938a5",
+      "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+      "volume_title": "修好以后",
+      "volume_idx": 3,
+      "sequence": 1,
+      "action": "acknowledge",
+      "chapter_id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+      "manuscript_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+      "request_hash": "f8e9981d0b946b78a3c74e5ab2619ba92d2e8dc1f371214c1ff05d01ff30f5de",
+      "before_hash": "9da3e1d62c17fdd94ace0cd13fdd66e0633db0b90920a604e0d56fd47e5bac91",
+      "manuscript_snapshot_hash": "8c6090aed48747d33a4b3c58fd7bda6efee1b8cc0babe189ebaf5ab9fd699be3",
+      "progress": {
+        "schema": 1,
+        "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+        "plan_hash": "6c7be4389b1bdfd30e7f2600097208b3ee570dcca77fa0f16860caeb57e4ad78",
+        "chapter_order": [
+          "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+          "7d78084c-e579-4b4f-b002-21ba30a02cde",
+          "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+          "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a"
+        ],
+        "acknowledged": {
+          "53c03a51-f7c1-4a44-9eb3-4f0e9331b429": {
+            "request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+            "title": "约定第1步",
+            "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc",
+            "author_note": "款项及信封去向已核对。"
+          }
+        },
+        "phase": "awaiting_direction",
+        "direction": null,
+        "direction_chapter_id": null,
+        "closed_early": false,
+        "closing_note": "",
+        "legacy_request_id": "1f46d148-8167-4924-83ee-1b1d2f20883d",
+        "completion_source_hash": null
+      }
+    },
+    "before": {
+      "source": {
+        "schema": 1,
+        "project_id": "0bd856a1-a3ca-4386-a2e2-e6bd992938a5",
+        "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+        "volume_idx": 3,
+        "volume_title": "修好以后",
+        "outline": {
+          "id": "88ec1ab3-3b41-48ce-b194-44da30721927",
+          "version": 1,
+          "hash": "6f622d42ba7612584bf50135739d6b8f9d30195a64b56955a01699f74c843036"
+        },
+        "latest": null,
+        "chapters": [
+          {
+            "id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+            "title": "约定第1步",
+            "chapter_idx": 1,
+            "global_idx": 4,
+            "content_hash": null
+          },
+          {
+            "id": "7d78084c-e579-4b4f-b002-21ba30a02cde",
+            "title": "约定第2步",
+            "chapter_idx": 2,
+            "global_idx": 5,
+            "content_hash": null
+          },
+          {
+            "id": "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+            "title": "约定第3步",
+            "chapter_idx": 3,
+            "global_idx": 6,
+            "content_hash": null
+          },
+          {
+            "id": "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a",
+            "title": "约定第4步",
+            "chapter_idx": 4,
+            "global_idx": 7,
+            "content_hash": null
+          }
+        ]
+      },
+      "progress": {
+        "schema": 1,
+        "volume_id": "5ef10358-fb05-469b-a779-5e81f5346a42",
+        "plan_hash": "6c7be4389b1bdfd30e7f2600097208b3ee570dcca77fa0f16860caeb57e4ad78",
+        "chapter_order": [
+          "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+          "7d78084c-e579-4b4f-b002-21ba30a02cde",
+          "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+          "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a"
+        ],
+        "acknowledged": {},
+        "phase": "active",
+        "direction": null,
+        "direction_chapter_id": null,
+        "closed_early": false,
+        "closing_note": "",
+        "legacy_request_id": null,
+        "completion_source_hash": null
+      },
+      "author_note": "款项及信封去向已核对。",
+      "legacy": {
+        "is_arc": true,
+        "title": "修好以后",
+        "core_setup": "宋岚修复旧书再归还",
+        "opening_scene": "检查封面",
+        "target_chapters": 4,
+        "status": "active",
+        "chapters_written": 0,
+        "running_outline": "",
+        "next_direction": null,
+        "suggestions": [],
+        "input_material": {
+          "idea": "修书",
+          "background": "",
+          "core_setup": "宋岚修复旧书再归还",
+          "opening_scene": "检查封面"
+        },
+        "chapter_order": [
+          "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+          "7d78084c-e579-4b4f-b002-21ba30a02cde",
+          "37794f1d-bdcd-468d-8977-f0a4da61f5c3",
+          "ac2bb2f6-05c2-4c24-be26-fbd24d74d18a"
+        ]
+      }
+    },
+    "manuscript": {
+      "chapter_id": "53c03a51-f7c1-4a44-9eb3-4f0e9331b429",
+      "title": "约定第1步",
+      "content_text": "宋岚点清三千元，收下两千元，把剩下的一千元连同信封交回林禾。",
+      "content_hash": "ff5564c21071262e46ae9fdc113f3c869f8ef0957e1547872d1c3b17454326cc"
+    },
+    "integrity_valid": true
+  }
+}

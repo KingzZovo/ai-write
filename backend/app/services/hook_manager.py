@@ -1,0 +1,546 @@
+"""
+Pre/post generation hook system.
+
+Pre-generate hooks run BEFORE chapter generation:
+- Registered foreshadow references
+- Character state consistency validation
+- Outline alignment check
+
+Post-generate hooks run AFTER chapter generation:
+- Entity extraction -> update Neo4j graph
+- Chapter summary generation -> update memory
+- Durable handoff of saved drafts for clue discovery and payoff suggestions
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import async_session_factory
+from app.models.project import Chapter
+from app.services.foreshadow_manager import ForeshadowManager
+from app.services.entity_dispatch import dispatch_entity_extraction
+from app.services.context_errors import RequiredContextUnavailable
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HookResult:
+    """Result of running pre-generation hooks.
+
+    Attributes:
+        can_proceed: Whether generation should proceed.
+        warnings: Non-blocking issues found during checks.
+        errors: Blocking issues that prevent generation.
+        foreshadow_prompts: Optional reference text about registered clues;
+            callers decide whether to use it.
+    """
+
+    can_proceed: bool = True
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    foreshadow_prompts: str = ""
+
+
+class HookManager:
+    """
+    Manages pre-generate and post-generate hooks.
+
+    Pre-generate hooks run BEFORE chapter generation:
+    - Registered foreshadow references
+    - Character state consistency validation
+    - Outline alignment check
+
+    Post-generate hooks run AFTER chapter generation:
+    - Entity extraction -> update Neo4j graph
+    - Chapter summary generation -> update memory
+    - Durable handoff of saved drafts for clue discovery and payoff suggestions
+    """
+
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        self._db = db
+        self._owns_db = False
+        self._foreshadow_mgr: ForeshadowManager | None = None
+
+    async def _get_db(self) -> AsyncSession:
+        if self._db is not None:
+            return self._db
+        # Create a new session — caller must commit/close
+        self._db = async_session_factory()
+        self._owns_db = True
+        return self._db
+
+    async def _commit_if_own_session(self) -> None:
+        """Commit and close the session if we created it ourselves."""
+        if self._db is not None:
+            try:
+                await self._db.commit()
+            except Exception:
+                await self._db.rollback()
+                raise
+
+    async def aclose(self) -> None:
+        """Release every DB session this manager (and its sub-services) owns.
+
+        Sessions held on ``self._db`` were leaking permanently as
+        ``idle in transaction`` connections (one of them lived 1d21h in prod
+        before being killed manually). Always call this in a ``finally``
+        from any caller that constructs HookManager without passing ``db``.
+        """
+        # Foreshadow sub-service may have acquired its own session
+        if self._foreshadow_mgr is not None:
+            try:
+                await self._foreshadow_mgr.aclose()
+            except Exception:
+                logger.exception("foreshadow_mgr.aclose failed")
+            self._foreshadow_mgr = None
+        if self._owns_db and self._db is not None:
+            try:
+                # Defensive rollback: closing a session that is still
+                # ``idle in transaction`` would leave the txn open in the
+                # backend until the connection is recycled.
+                await self._db.rollback()
+            except Exception:
+                pass
+            try:
+                await self._db.close()
+            except Exception:
+                logger.exception("hook_manager session close failed")
+            self._db = None
+            self._owns_db = False
+
+    @property
+    def foreshadow_mgr(self) -> ForeshadowManager:
+        if self._foreshadow_mgr is None:
+            self._foreshadow_mgr = ForeshadowManager(db=self._db)
+        return self._foreshadow_mgr
+
+    # ==================================================================
+    # Public API
+    # ==================================================================
+
+    async def run_pre_hooks(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_outline: dict,
+    ) -> HookResult:
+        """Run all pre-generation checks.
+
+        Args:
+            project_id: The project being generated for.
+            volume_id: The volume containing the chapter.
+            chapter_idx: Index of the chapter about to be generated.
+            chapter_outline: The outline for the chapter.
+
+        Returns:
+            HookResult with warnings, errors, and foreshadow prompt text.
+        """
+        result = HookResult()
+
+        # Persisted positions can differ from fresh arithmetic after edits.
+        try:
+            global_idx = await asyncio.wait_for(
+                self._resolve_global_idx(project_id, volume_id, chapter_idx), timeout=30.0
+            )
+        except (RequiredContextUnavailable, asyncio.TimeoutError):
+            result.can_proceed = False
+            result.errors.append("无法确认本章在全书中的位置，请检查章节记录后重试")
+            return result
+
+        # 1. Registered foreshadow references
+        try:
+            foreshadow_result = await self._check_foreshadows(
+                project_id, global_idx
+            )
+            result.foreshadow_prompts = foreshadow_result
+            if foreshadow_result:
+                result.warnings.append(
+                    "发现已登记伏笔，可结合正文核查进展"
+                )
+        except Exception:
+            logger.exception("Pre-hook _check_foreshadows failed")
+            result.warnings.append(
+                "Foreshadow check failed -- proceeding without foreshadow context"
+            )
+
+        # 2. Character consistency check
+        try:
+            char_warnings = await self._check_character_consistency(
+                project_id, global_idx, chapter_outline
+            )
+            result.warnings.extend(char_warnings)
+        except Exception:
+            logger.exception("Pre-hook _check_character_consistency failed")
+            result.warnings.append(
+                "Character consistency check failed -- proceeding anyway"
+            )
+
+        # 3. Outline alignment check
+        try:
+            alignment_warnings = await self._check_outline_alignment(
+                chapter_outline, {}
+            )
+            result.warnings.extend(alignment_warnings)
+        except Exception:
+            logger.exception("Pre-hook _check_outline_alignment failed")
+            result.warnings.append(
+                "Outline alignment check failed -- proceeding anyway"
+            )
+
+        # Errors block generation; warnings do not
+        if result.errors:
+            result.can_proceed = False
+
+        return result
+
+    async def run_post_hooks(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_text: str,
+    ) -> None:
+        """Run all post-generation updates.
+
+        All post-hooks run independently. Failures are logged but do not
+        propagate -- they should not block the user from receiving the
+        generated text.
+
+        Args:
+            project_id: The project.
+            volume_id: The volume containing the chapter.
+            chapter_idx: Index of the generated chapter.
+            chapter_text: Full text of the generated chapter.
+        """
+        # Per-step hard timeouts. A single hung step (e.g. LLM provider hang,
+        # cooldown wait, infinite reasoning loop) used to block the entire
+        # BatchGenerator pipeline indefinitely, leaving the chapter row
+        # uncommitted -- the worst possible failure mode for the user.
+        async def _run_step(name: str, coro, timeout: float) -> None:
+            try:
+                await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.error(
+                    "Post-hook %s exceeded %.0fs timeout (project=%s chapter=%d) -- skipping",
+                    name, timeout, project_id, chapter_idx,
+                )
+            except Exception:
+                logger.exception("Post-hook %s failed", name)
+
+        # 1. Entity extraction (Celery dispatch -- fast)
+        await _run_step(
+            "_update_entities",
+            self._update_entities(project_id, volume_id, chapter_idx, chapter_text),
+            timeout=30.0,
+        )
+        # 2. Chapter summary (1 LLM call)
+        await _run_step(
+            "_generate_summary",
+            self._generate_summary(project_id, volume_id, chapter_idx, chapter_text),
+            timeout=180.0,
+        )
+        # Only the foreshadow steps require a resolved book-global position.
+        # Independently scoped summary/entity work above must still run.
+        try:
+            await asyncio.wait_for(
+                self._resolve_global_idx(project_id, volume_id, chapter_idx), timeout=30.0
+            )
+        except (RequiredContextUnavailable, asyncio.TimeoutError):
+            logger.warning(
+                "Post-hook foreshadows skipped: persisted chronology unavailable "
+                "(project=%s volume=%s chapter=%s)", project_id, volume_id, chapter_idx,
+            )
+            return
+
+        # 3. The durable job owns both clue discovery and payoff review.
+        await _run_step(
+            "_enqueue_foreshadow_review",
+            self._enqueue_foreshadow_review(project_id, volume_id, chapter_idx, chapter_text),
+            timeout=30.0,
+        )
+
+        logger.info(
+            "Post-hooks completed for project=%s chapter=%d",
+            project_id, chapter_idx,
+        )
+
+    async def _resolve_global_idx(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+    ) -> int:
+        """Read the scoped persisted position; never substitute local/count axes."""
+        from app.services.memory_chronology import resolve_history_boundary
+
+        try:
+            value = await resolve_history_boundary(
+                await self._get_db(), str(project_id), str(volume_id), chapter_idx
+            )
+        except Exception as exc:
+            raise RequiredContextUnavailable("hook_chronology_unavailable") from exc
+        if type(value) is not int or value <= 0:
+            raise RequiredContextUnavailable("hook_chronology_unavailable")
+        return value
+
+    # ==================================================================
+    # Pre-generation hooks
+    # ==================================================================
+
+    async def _check_foreshadows(
+        self,
+        project_id: str | UUID,
+        chapter_idx: int,
+    ) -> str:
+        """Return registered clue references without a maturity calculation.
+
+        Returns:
+            Foreshadow prompt text (empty string if none relevant).
+        """
+        return await self.foreshadow_mgr.get_prompts_for_generation(
+            project_id, chapter_idx
+        )
+
+    async def _check_character_consistency(
+        self,
+        project_id: str | UUID,
+        chapter_idx: int,
+        chapter_outline: dict,
+    ) -> list[str]:
+        """Verify characters referenced in outline are alive and in
+        correct location by querying Neo4j.
+
+        ``chapter_idx`` must be BOOK-GLOBAL here (run_pre_hooks resolves
+        it): both ``character_states.chapter_start`` and the Neo4j
+        chapter_start edges live on the global axis.
+
+        Returns:
+            List of warning strings. Empty if all checks pass.
+        """
+        warnings: list[str] = []
+
+        # Extract character names from outline
+        characters_in_outline = self._extract_character_names(chapter_outline)
+        if not characters_in_outline:
+            return warnings
+
+        # Prefer verified PG projections; unknown or stale death states cannot
+        # veto an outline. Source chronology is strictly before the target chapter.
+        from app.services.entity_context import explicitly_dead, verified_world_snapshot
+        from app.services.entity_context import verified_character_states
+        try:
+            db = await self._get_db()
+            states = await verified_character_states(db, project_id, chapter_idx, characters_in_outline)
+            dead_names = {name for name, state in states.items() if explicitly_dead(state['status'])}
+            if dead_names:
+                for char_name in characters_in_outline:
+                    if char_name in dead_names:
+                        warnings.append(
+                            f"Character '{char_name}' appears in outline "
+                            f"but is marked as dead in the knowledge graph"
+                        )
+                return warnings
+        except Exception as exc:
+            logger.debug(
+                "PG character_states check failed; falling back to Neo4j: %s", exc
+            )
+
+        # Try to query Neo4j for character state
+        try:
+            # B2' (v1.5.0): read via EntityTimelineService so we hit the
+            # canonical (Character)-[:HAS_STATE]->(CharacterState) schema
+            # written by extract_and_update. Reading flat c.status / c.location
+            # produced UnknownPropertyKey GqlStatus warnings every chapter
+            # because those flat fields were never written.
+            from app.db.neo4j import get_neo4j
+
+            driver = None
+            async for d in get_neo4j():
+                driver = d
+                break
+
+            if driver is None:
+                return warnings
+
+            snapshot = await verified_world_snapshot(await self._get_db(), driver, project_id, chapter_idx)
+            active = snapshot.characters
+            by_name = {snap.name: snap for snap in active if snap.name}
+            for char_name in characters_in_outline:
+                snap = by_name.get(char_name)
+                if snap is None:
+                    continue
+                status_dict = snap.status if isinstance(snap.status, dict) else {}
+                if explicitly_dead(status_dict):
+                    warnings.append(
+                        f"Character '{char_name}' appears in outline "
+                        f"but is marked as dead in the knowledge graph"
+                    )
+        except RuntimeError:
+            # Neo4j not initialized -- skip check
+            logger.debug("Neo4j not available, skipping character consistency check")
+        except Exception:
+            logger.exception("Neo4j character check failed")
+
+        return warnings
+
+    async def _check_outline_alignment(
+        self,
+        chapter_outline: dict,
+        generation_context: dict,
+    ) -> list[str]:
+        """Verify that the generation context does not deviate from the
+        chapter outline.
+
+        This is a lightweight structural check. Full semantic alignment
+        requires LLM evaluation and is deferred to post-generation.
+
+        Returns:
+            List of warning strings.
+        """
+        warnings: list[str] = []
+
+        if not chapter_outline:
+            warnings.append("No chapter outline provided -- generation may lack direction")
+            return warnings
+
+        # Check for required outline fields
+        expected_fields = ("events", "summary", "key_points", "main_plot")
+        has_content = any(
+            chapter_outline.get(f)
+            for f in expected_fields
+        )
+        if not has_content:
+            # Check if there's any non-empty string value
+            has_any = any(
+                v for v in chapter_outline.values()
+                if isinstance(v, str) and v.strip()
+            )
+            if not has_any:
+                warnings.append("Chapter outline appears to be empty or lacks detail")
+
+        return warnings
+
+    # ==================================================================
+    # Post-generation hooks
+    # ==================================================================
+
+    async def _update_entities(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_text: str,
+    ) -> None:
+        """Enqueue the entity-extraction Celery task for this chapter.
+
+        B2' (v1.5.0): the actual LLM extraction + Neo4j writes are owned by
+        ``app.tasks.entity_tasks.extract_chapter_entities`` (idempotent,
+        loop-safe, tier-aware fallback, writes the canonical
+        Character-[:HAS_STATE]->CharacterState schema). This hook only
+        dispatches.
+
+        ``chapter_idx`` is volume-local and ambiguous across volumes, so we
+        resolve the chapter's id via ``volume_id`` and pass it along — the
+        task uses it to land on the right chapter and its book-global index.
+
+        ``chapter_text`` is intentionally unused: the task re-loads the
+        canonical text from Postgres so the contract is the same whether
+        dispatch comes from batch_generator (with text) or from a save-
+        path hook (without text).
+        """
+        del chapter_text  # acknowledged but unused -- task reloads from DB
+        chapter_id = None
+        try:
+            db = await self._get_db()
+            chapter_id = (
+                await db.execute(
+                    select(Chapter.id)
+                    .where(
+                        Chapter.volume_id == str(volume_id),
+                        Chapter.chapter_idx == int(chapter_idx),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "chapter_id resolution for entity dispatch failed "
+                "(volume=%s ch=%s): %s",
+                volume_id, chapter_idx, exc,
+            )
+        dispatch_entity_extraction(
+            project_id=project_id,
+            chapter_idx=chapter_idx,
+            chapter_id=chapter_id,
+            caller="HookManager.run_post_hooks",
+        )
+
+    async def _generate_summary(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_text: str,
+    ) -> None:
+        """Summarize only the dispatched, persisted source through Registry/CAS."""
+        from app.services.chapter_summarizer import summarize_scoped_chapter
+
+        await summarize_scoped_chapter(
+            db=await self._get_db(), project_id=project_id, volume_id=volume_id,
+            chapter_idx=chapter_idx, chapter_text=chapter_text,
+        )
+
+    async def _enqueue_foreshadow_review(
+        self,
+        project_id: str | UUID,
+        volume_id: str | UUID,
+        chapter_idx: int,
+        chapter_text: str,
+    ) -> None:
+        """Hand off saved drafts without a second direct model/write path."""
+        from app.services.foreshadow_review_jobs import enqueue_saved_draft_review
+        await enqueue_saved_draft_review(project_id, volume_id, chapter_idx, chapter_text)
+
+    # ==================================================================
+    # Helpers
+    # ==================================================================
+
+    @staticmethod
+    def _extract_character_names(outline: dict) -> list[str]:
+        """Extract character names from a chapter outline dict.
+
+        Looks through common outline keys for character references.
+        """
+        names: list[str] = []
+        seen: set[str] = set()
+
+        def _add(name: str) -> None:
+            clean = name.strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                names.append(clean)
+
+        # Direct character list
+        for char in outline.get("characters", []):
+            if isinstance(char, str):
+                _add(char)
+            elif isinstance(char, dict):
+                _add(char.get("name", ""))
+
+        # Character appearances
+        for char in outline.get("character_appearances", []):
+            if isinstance(char, str):
+                _add(char)
+            elif isinstance(char, dict):
+                _add(char.get("name", ""))
+
+        return names

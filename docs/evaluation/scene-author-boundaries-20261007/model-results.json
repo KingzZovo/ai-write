@@ -1,0 +1,59 @@
+{
+  "mimo": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "mimo-v2.5-pro",
+      "fallback": false,
+      "received": false,
+      "error_type": "AuthenticationError",
+      "seconds": 11.06
+    }
+  ],
+  "claude": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "claude-opus-4-6",
+      "fallback": false,
+      "received": false,
+      "error_type": "AuthenticationError",
+      "seconds": 2.1
+    }
+  ],
+  "flash": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "gemini-3.5-flash",
+      "fallback": false,
+      "received": true,
+      "chars": 322,
+      "overall": 10.0,
+      "issues": 0,
+      "seconds": 4.31
+    },
+    {
+      "case": "control",
+      "gateway": "CPA",
+      "model": "gemini-3.5-flash",
+      "fallback": false,
+      "received": true,
+      "chars": 334,
+      "overall": 10.0,
+      "issues": 0,
+      "seconds": 2.9
+    }
+  ],
+  "glm": [
+    {
+      "case": "saved",
+      "gateway": "CPA",
+      "model": "z-ai/glm-5.2",
+      "fallback": false,
+      "received": false,
+      "error_type": "APIStatusError",
+      "seconds": 3.3
+    }
+  ]
+}

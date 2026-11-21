@@ -1,0 +1,9 @@
+{
+  "index": 4,
+  "chapter_id": "d1cfd418-8848-47f8-b8a0-450c7d9dcfea",
+  "status": "error",
+  "error_type": "RequiredContextUnavailable",
+  "error_message": "character_cognition_not_ready",
+  "error_code": null,
+  "attempts": 4
+}

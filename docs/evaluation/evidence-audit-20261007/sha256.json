@@ -1,0 +1,9 @@
+{
+  "policy.txt": "76aa557485248d66edbe772fe82fc8c082fe1d6e1538da05eadfcfd35dae8687",
+  "sample-a-request.json": "08662668d04d642d7d5ef2fbd5ecb6eaff7576273a65d8dd37648ee04e166d96",
+  "sample-a-response.txt": "3d2a89238167e7100b24148d86f54a5d3b887e3deb05a16ae24bc8433ec2736c",
+  "sample-b-request.json": "e88c058d50a0943a843b77c6bd8b1d08e1ae3f0ff8391d57bed5c4df02ec95cf",
+  "sample-c-request.json": "5e62358fb0221997e30a6943e5ca8c6354f0d50709ad818c359b7fcee9f43a25",
+  "sample-c-response.txt": "a1d84f8c9863e1948c1fea19aeb8f04a87684e9cc70ca9ef19cbf1215daf6c98",
+  "source-checks.json": "c39ba43993d412ee4276813822b34694520ba5ba72d786951049fde2484b2236"
+}

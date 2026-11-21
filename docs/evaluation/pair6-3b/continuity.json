@@ -1,0 +1,75 @@
+{
+  "chapters": 9,
+  "word_counts": {
+    "ch01.txt": {
+      "chars": 1218,
+      "target": 1200,
+      "ratio": 1.015
+    },
+    "ch02.txt": {
+      "chars": 1196,
+      "target": 1200,
+      "ratio": 0.997
+    },
+    "ch03.txt": {
+      "chars": 1246,
+      "target": 1200,
+      "ratio": 1.038
+    },
+    "ch04.txt": {
+      "chars": 1143,
+      "target": 1200,
+      "ratio": 0.953
+    },
+    "ch05.txt": {
+      "chars": 1176,
+      "target": 1200,
+      "ratio": 0.98
+    },
+    "ch06.txt": {
+      "chars": 1212,
+      "target": 1200,
+      "ratio": 1.01
+    },
+    "ch07.txt": {
+      "chars": 1019,
+      "target": 1200,
+      "ratio": 0.849
+    },
+    "ch08.txt": {
+      "chars": 1197,
+      "target": 1200,
+      "ratio": 0.998
+    },
+    "ch09.txt": {
+      "chars": 1186,
+      "target": 1200,
+      "ratio": 0.988
+    }
+  },
+  "findings": [
+    {
+      "check": "word_below_target",
+      "chapter": "ch07.txt",
+      "chars": 1019,
+      "target": 1200,
+      "ratio": 0.849,
+      "detail": "字数低于本章目标 1200 字的 85%"
+    },
+    {
+      "check": "time_progress_missing",
+      "chapter": "ch07.txt",
+      "declared": "三天后",
+      "detail": "大纲声明的是相对时间推进,正文却没有任何「过了多久」的说法,读者接不上时间线"
+    },
+    {
+      "check": "unknown_character",
+      "name": "李叔",
+      "chapters": [
+        "ch02.txt"
+      ],
+      "detail": "出现大纲未点名的具名人物「李叔」,需核对是否为有意新增"
+    }
+  ],
+  "violations": 3
+}

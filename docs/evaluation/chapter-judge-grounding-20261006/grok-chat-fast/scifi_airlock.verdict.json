@@ -1,0 +1,31 @@
+{
+  "plot_coherence": 9.0,
+  "character_consistency": 9.0,
+  "style_adherence": 10.0,
+  "narrative_pacing": 8.0,
+  "foreshadow_handling": 8.0,
+  "overall": 8.8,
+  "issues": [
+    {
+      "dimension": "plot_coherence",
+      "location": 4,
+      "description": "chapter_completion_violation: 未能完成内舱密码获取",
+      "suggestion": "补充任何可行密码尝试或随机尝试行为以展示因果过程",
+      "violation_type": "plot_coherence",
+      "severity": "medium",
+      "quote": "凯恩不知道内舱密码",
+      "quote_verified": true
+    },
+    {
+      "dimension": "character_consistency",
+      "location": 0,
+      "description": "character_consistency: 角色名称与前文摘要不符",
+      "suggestion": "确保角色名称与前文一致",
+      "violation_type": "character_consistency",
+      "severity": "low",
+      "quote": "维修员凯恩",
+      "quote_verified": true
+    }
+  ],
+  "parse_failed": false
+}

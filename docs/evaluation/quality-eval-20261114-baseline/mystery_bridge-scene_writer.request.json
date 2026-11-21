@@ -1,0 +1,97 @@
+{
+  "attempts": [
+    "ok"
+  ],
+  "case": {
+    "cast": [
+      "陆沉",
+      "老周"
+    ],
+    "forbidden": [
+      "不得出现第三方救兵",
+      "不得揭示信是空的",
+      "老周不得是失散亲人"
+    ],
+    "genre": "悬疑",
+    "id": "mystery_bridge",
+    "label": "悬疑·断桥信使",
+    "must_keep": [
+      "左臂自肘下没有",
+      "过河价一百文",
+      "身上只有六十文",
+      "腰牌可抵八十文但明天要验",
+      "天亮前必须送到",
+      "信有火漆且不能湿"
+    ],
+    "pov": "第三人称限知,全程跟随信使陆沉",
+    "pov_character": "陆沉",
+    "required_outcomes": [
+      "陆沉说清送信的期限和条件",
+      "老周报出一百文且不赊",
+      "陆沉权衡交出腰牌的代价",
+      "陆沉实际交付或拒绝,并承担后果",
+      "结尾交代信到没到对岸"
+    ],
+    "target_words": 1000,
+    "word_range": [
+      850,
+      1250
+    ]
+  },
+  "case_id": "mystery_bridge",
+  "chars": 1372,
+  "commit": "854f9b9079d5981ab8f5131f765d8c62e14f61ae",
+  "elapsed_seconds": 21.717,
+  "endpoint": "http://127.0.0.1:8317/v1",
+  "finish_reason": "stop",
+  "genre": "悬疑",
+  "input_tokens": 463,
+  "max_tokens": 4096,
+  "model_returned": "gemini-3.1-pro",
+  "output_tokens": 343,
+  "prompt": {
+    "blocks": [
+      {
+        "chars": 344,
+        "name": "scene_brief",
+        "sha256": "506746399a3b9293",
+        "source": "case.brief"
+      },
+      {
+        "chars": 76,
+        "name": "character_roster",
+        "sha256": "f86f37158df96ca5",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 798,
+        "name": "writer_contract",
+        "sha256": "5b8cafc4ab57212e",
+        "source": "narrative_contract.WRITER_CONTRACT_PROMPT"
+      },
+      {
+        "chars": 83,
+        "name": "planning_ledger_note",
+        "sha256": "abf1b79a2f197782",
+        "source": "scene_orchestrator.write_scene_stream"
+      },
+      {
+        "chars": 493,
+        "name": "scene_writer_system",
+        "sha256": "806255474cc40ff3",
+        "source": "prompts.scene_writing.SCENE_WRITER_SYSTEM"
+      }
+    ],
+    "prompt_sha256": "90960234b5165f1222195491a4d977f4e1a6bc4783d77bf72064a0840cd00cf3",
+    "system_chars": 493,
+    "task_type": "scene_writer",
+    "user_chars": 1338,
+    "variant": "scene_writer"
+  },
+  "repeat": 1,
+  "requested_model": "gemini-3.1-pro",
+  "status": "returned",
+  "temperature": 0.3,
+  "text_sha256": "7237b7495ac3f9e4f4d6b3ff714d088116ca1c15a5eb92a5229f7061217a4ecc",
+  "variant": "scene_writer"
+}

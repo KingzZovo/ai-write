@@ -1,0 +1,8 @@
+{
+  "index": 1,
+  "chapter_id": "57ea4a1e-1022-4e63-855c-5a92c5bb04eb",
+  "status": "error",
+  "error_type": "RuntimeError",
+  "error_message": "scene_planner_failed: provider_incomplete_response",
+  "error_code": null
+}
