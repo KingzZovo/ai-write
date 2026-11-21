@@ -318,30 +318,47 @@ def check_outline_consistency(payload: Any, *, level: str = "book") -> OutlineCo
             # 改为检测**真正的多套特征**:同一卷号在"分卷规划"一节里重复出现。
             section = raw.split("七、分卷规划", 1)[1]
             section = re.split(r"\n\s*[八九十]、", section, 1)[0]
-            tokens = re.findall(r"第([一二三四五六七八九十\d]+)卷", section)
+            # 只认**行首**的卷号条目(列表项/标题),句中引用("承接第一卷的钩子")、
+            # "第一卷到第二卷"这类跨度表述都不计 —— 否则正常回指会被算成第二套方案。
+            tokens = re.findall(r"(?m)^\s*第([一二三四五六七八九十\d]+)卷", section)
             numbers = [n for n in (_volume_number(t) for t in tokens) if n is not None]
             facts["volume_mentions_in_section"] = len(numbers)
             # 2026-11-21 二次修复:同一卷号在标题/概述/要点里被正常重复提及(1,1,1)不是多套方案。
             # 真正的多套方案特征 = 卷号序列**回绕** —— 出现过更大的卷号之后又回到小卷号
             # (例如 1,2,3,1,2,3)。原判定用「重复出现」,实测模型只规划 1 卷时把
             # 「第一卷」在标题+概述里写两遍就被误杀。
-            wraparounds = 0
-            seen_max = 0
+            # 2026-11-21 四次修复。真正的多套方案特征是**以 1 开头的连续递增段
+            # (1,2,3…)出现了 ≥2 次**。逐个排除过:
+            #   - "同一卷号重复提及"(1,1,1)      → 正常
+            #   - 回指(1,2,1 / 1,3,2)            → 正常("第二卷承接第一卷")
+            #   - 单个 1 后面没有 2 的段           → 不算一段
+            # 只有完整重现整个序列(1,2,3,1,2,3)才是残留了第二套方案。
+            runs = 0
+            run_len = 0
+            expect = 1
             for number in numbers:
-                if number < seen_max:
-                    wraparounds += 1
-                seen_max = max(seen_max, number)
-            if wraparounds:
-                facts["volume_plan_wraparounds"] = wraparounds
+                if number == expect:
+                    run_len += 1
+                    expect += 1
+                elif number == 1:
+                    if run_len >= 2:
+                        runs += 1
+                    run_len = 1
+                    expect = 2
+            if run_len >= 2:
+                runs += 1
+            if runs >= 2:
+                facts["volume_plan_restarts"] = runs
                 issues.append(
                     OutlineConsistencyIssue(
                         "possible_multiple_volume_plans",
-                        "分卷规划一节里卷号出现回绕(大卷号之后又回到小卷号),疑似残留多套分卷方案",
-                        details={"wraparounds": wraparounds,
+                        "分卷规划一节里以第一卷开头的连续卷号段出现多次,疑似残留多套分卷方案",
+                        details={"restarts": runs,
                                  "volume_numbers": numbers[:40],
                                  "volume_plan_count": len(plan)},
                     )
                 )
+
 
     for pattern in ALTERNATIVE_PLAN_PATTERNS:
         match = re.search(pattern, text)

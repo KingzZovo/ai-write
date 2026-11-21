@@ -69,7 +69,21 @@ def test_characters_pass_runs_before_relationships(monkeypatch):
 
 
 def test_failed_characters_branch_is_not_silently_empty(monkeypatch):
+    """characters 分支失败必须报错,不能静默当成空提取。
+
+    fake **只**让 characters 失败,其余分支正常返回 —— 否则"三个 pass 全失败
+    才回退合并提取"这条既有契约会让本用例无论 characters 是否被静默当空都通过,
+    等于什么都没锁。
+    """
     async def fake_extract_stream(task_type, system_prompt, outline_text, fields, project_id=None):
+        if task_type == "characters_extraction":
+            raise se.SettingsExtractionError("boom")
+        field = {
+            "world_rules_extraction": "world_rules",
+            "relationships_extraction": "relationships",
+        }.get(task_type)
+        if field:
+            return {field: []}
         raise se.SettingsExtractionError("boom")
 
     monkeypatch.setattr(se, "_extract_stream", fake_extract_stream)

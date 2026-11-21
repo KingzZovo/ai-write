@@ -414,5 +414,15 @@ def _run_async_safe(coro):
                 )
         except Exception:  # noqa: BLE001 - 排空失败不能让任务本身失败
             logger.warning("failed to drain detached tasks", exc_info=True)
+        # Close the loop's Neo4j driver before the loop dies. Drivers are bound
+        # to the loop that created them and this teardown never used to call
+        # close_neo4j(), so every task leaked a driver into app.db.neo4j._drivers
+        # (and a closed loop's cached driver could resurface). Safe no-op when
+        # the task never touched Neo4j.
+        try:
+            from app.db.neo4j import close_neo4j
+            loop.run_until_complete(close_neo4j())
+        except Exception:  # noqa: BLE001 - closing a driver must not fail the task
+            pass
         loop.close()
         loop.close()

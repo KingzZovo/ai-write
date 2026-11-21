@@ -425,12 +425,21 @@ def resolve_chapters_per_volume_pref(settings_json: dict | None) -> tuple[int, i
             return None
         return min(value, 50)
 
+    def _raw_positive(key: str) -> int | None:
+        try:
+            value = int(settings_json.get(key))
+        except (TypeError, ValueError):
+            return None
+        return value if value >= 1 else None
+
     lo = _clamped("chapters_per_volume_min")
     hi = _clamped("chapters_per_volume_max")
     tgt = _clamped("chapters_per_volume_target")
     # 兼容项目设置里的简写键 ``chapters_per_volume``(与 api/generate.py 的
-    # compute_scale 回退口径一致),否则同一份设置在两处读出不同结果。
-    shared = _clamped("chapters_per_volume")
+    # compute_scale 回退口径一致)。**不套 [1,50] 夹取**:这个键是"每卷多少章"的
+    # 真值(如 100),夹到 50 会让卷纲 prompt 的硬约束变成"本卷必须 50 章",
+    # 500 章的规划静默缩成 250 章。50 上限只属于旧的三键语义。
+    shared = _raw_positive("chapters_per_volume")
     if shared is not None:
         lo = lo if lo is not None else shared
         hi = hi if hi is not None else shared
@@ -921,6 +930,13 @@ class OutlineGenerator:
                 raise ValueError(
                     f"全书大纲阶段 A 分卷计划不足:模型给出 {len(plan)} 卷,项目规模要求 {expected} 卷"
                 )
+            # 卷号必须是 1..N:下游 volume_creation._target 与 book_outline_save
+            # 都硬要求连续。缺号/逾号若留到保存阶段才暴露,三次模型调用已经白烧。
+            indices = sorted(int(item.get("idx") or 0) for item in plan)
+            if indices != list(range(1, len(plan) + 1)):
+                raise ValueError(
+                    f"全书大纲阶段 A 分卷计划卷号不连续:实际 {indices},要求 1..{len(plan)}"
+                )
 
     async def _generate_book_outline_staged(self, user_input: str, *, scale: dict | None = None) -> dict:
         """Three-call staged book outline (A skeleton → B/C in parallel).
@@ -964,8 +980,14 @@ class OutlineGenerator:
         if not skeleton_text and skeleton_last_text:
             # 两次重试都因分卷计划不足而不合格时,保留模型写好的骨架正文,
             # 用项目规模补齐缺失卷号(确定性兜底),而不是让整份书纲失败。
-            skeleton_text = self._top_up_volume_plan(skeleton_last_text, scale)
-            logger.warning("Staged outline: stage A volume plan topped up from project scale")
+            try:
+                skeleton_text = self._top_up_volume_plan(skeleton_last_text, scale)
+                logger.warning("Staged outline: stage A volume plan topped up from project scale")
+            except Exception as exc:  # noqa: BLE001
+                # 兜底本身失败时,不能把可读的"A 阶段不完整"换成裸 ValueError
+                # (实测 est_chapters="约100章" 会在这里冒出 int() 的报错)。
+                logger.warning("Staged outline: stage A top-up failed: %s", exc)
+                skeleton_text = ""
         if not skeleton_text:
             raise ValueError("全书骨架生成失败或不完整,两次尝试均未通过校验;未生成替代模板")
 
@@ -1243,20 +1265,37 @@ class OutlineGenerator:
                 continue
             if not isinstance(data, list) or not data:
                 continue
-            for i, item in enumerate(data, start=1):
+            for item in data:
                 if not isinstance(item, dict):
                     continue
                 try:
-                    idx = int(item.get("idx") or i)
+                    idx = int(item.get("idx"))
                 except (TypeError, ValueError):
-                    idx = i
-                merged_volumes.setdefault(idx, {
-                    "idx": idx,
-                    "title": str(item.get("title") or f"第{idx}卷"),
-                    "theme": str(item.get("theme") or ""),
-                    "core_conflict": str(item.get("core_conflict") or ""),
-                    "est_chapters": int(item.get("est_chapters") or 10),
-                })
+                    idx = 0
+                if idx <= 0:
+                    # 无 idx / 非数字:按已合并条数顺延。此前每块都从 enumerate 的 1
+                    # 起算,模型"每卷一整块、块内不带 idx"时所有块都挤到 idx=1,
+                    # 合并后只剩 1 条 —— 正是本次要修的 v4-flash 输出形状。
+                    idx = len(merged_volumes) + 1
+                entry = merged_volumes.setdefault(idx, {"idx": idx})
+                # 块之间字段互补时逐缺补全(先前 setdefault 先到先得,后续块里
+                # 更完整的 est_chapters / title 会被整条丢掉)。
+                for key in ("title", "theme", "core_conflict"):
+                    if not str(entry.get(key) or "").strip() and str(item.get(key) or "").strip():
+                        entry[key] = str(item[key]).strip()
+                try:
+                    est = int(item.get("est_chapters"))
+                except (TypeError, ValueError):
+                    # 模型偶尔写 "约100章" 这类非数字;以前 int() 直接在解析层抛,
+                    # 冒出去会盖掉"A 阶段不完整"这种可读错误。
+                    est = 0
+                if est > 0 and not entry.get("est_chapters"):
+                    entry["est_chapters"] = est
+        for idx, entry in merged_volumes.items():
+            entry.setdefault("title", f"第{idx}卷")
+            entry.setdefault("theme", "")
+            entry.setdefault("core_conflict", "")
+            entry.setdefault("est_chapters", 10)
         if merged_volumes:
             return [merged_volumes[key] for key in sorted(merged_volumes)]
         if last_error:

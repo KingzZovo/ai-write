@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 
 from app.services.outline_consistency_gate import check_outline_consistency
-from app.services.outline_generator import OutlineGenerator
+from app.services.outline_generator import OutlineGenerator, resolve_chapters_per_volume_pref
 
 
 def _generator() -> OutlineGenerator:
@@ -114,3 +114,63 @@ def test_gate_ignores_volume_mentions_outside_planning_section():
     }
     report = check_outline_consistency(payload, level="book")
     assert "possible_multiple_volume_plans" not in [i.code for i in report.issues]
+
+def test_gate_allows_back_reference_to_earlier_volume():
+    """"第二卷承接第一卷的钩子" 这类正常引用(1,2,1)不是多套方案。
+
+    上一版判定用"卷号下降即回绕",会把这种正文判成残留多套 → 书纲存不下。
+    """
+    payload = {
+        "volume_plan": [
+            {"idx": 1, "title": "A", "est_chapters": 10},
+            {"idx": 2, "title": "B", "est_chapters": 10},
+        ],
+        "raw_text": (
+            "七、分卷规划\n第一卷 a\n"
+            "第二卷 b,承接第一卷的钩子(第一卷到第二卷是一条主线)\n"
+        ),
+    }
+    report = check_outline_consistency(payload, level="book")
+    assert "possible_multiple_volume_plans" not in [i.code for i in report.issues]
+
+
+def test_multi_block_without_idx_does_not_collapse():
+    """模型每卷一整块、块内不带 idx 时,合并后应是 2 条而不是 1 条。"""
+    text = (
+        SKELETON
+        + "\n\n" + _block([{"title": "第一卷", "est_chapters": 10}])
+        + "\n\n" + _block([{"title": "第二卷", "est_chapters": 20}])
+    )
+    plan = OutlineGenerator._extract_volume_plan(text)
+    assert [item["idx"] for item in plan] == [1, 2]
+    assert [item["est_chapters"] for item in plan] == [10, 20]
+
+
+def test_multi_block_fills_missing_fields_across_blocks():
+    """后一块补上前一块缺的 est_chapters,不再被 setdefault 整条丢掉。"""
+    text = (
+        SKELETON
+        + "\n\n" + _block([{"idx": 1, "title": "第一卷"}])
+        + "\n\n" + _block([{"idx": 1, "est_chapters": 30}])
+    )
+    plan = OutlineGenerator._extract_volume_plan(text)
+    assert len(plan) == 1
+    assert plan[0]["title"] == "第一卷"
+    assert plan[0]["est_chapters"] == 30
+
+
+def test_non_numeric_est_chapters_does_not_raise():
+    """模型写 "约100章" 时按缺省处理,不能让 int() 冒出去盖掉可读错误。"""
+    text = SKELETON + "\n\n" + _block([{"idx": 1, "title": "第一卷", "est_chapters": "约100章"}])
+    plan = OutlineGenerator._extract_volume_plan(text)
+    assert plan[0]["est_chapters"] == 10
+
+
+def test_chapters_per_volume_alias_is_not_clamped():
+    """简写键是"每卷多少章"的真值,不能被旧三键的 50 上限夹掉(否则 500 章缩成 250)。"""
+    assert resolve_chapters_per_volume_pref({"chapters_per_volume": 100}) == (100, 100)
+
+
+def test_explicit_three_keys_keep_their_own_clamp():
+    """旧三键的 [1,50] 语义不变。"""
+    assert resolve_chapters_per_volume_pref({"chapters_per_volume_min": 100}) == (50, 50)
