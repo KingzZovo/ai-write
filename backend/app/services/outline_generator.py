@@ -571,6 +571,78 @@ def _clamp_chapter_count(value) -> int:
     return count
 
 
+_CHAPTER_PROMPT_BOOK_KEYS = ("main_plot", "characters", "world_setting")
+
+
+def _slim_for_chapter_prompt(
+    book_outline: dict, volume_outline: dict, chapter_idx: int, *, window: int = 2
+) -> tuple[dict, dict]:
+    """章节视角的投影:生成某一章章纲时,不该把整份书纲 + 整卷 100 章都塞进 prompt。
+
+    实测(2026-11-21,百万字项目):未裁剪时单章 prompt ≈ 99,701 字符(约 6.6 万 tokens);
+    按 500 章算要烧掉三千多万输入 tokens,长上下文里模型对"本章该写什么"也更糊。
+
+    但裁剪**不能丢事实**:既有契约要求章纲 prompt 保留书纲事实(它们常写在
+    ``raw_text`` 里)、保留 ``volume_plan``(判断"是不是全书最后一章"要用)、
+    并保留改稿后的新正文。所以:
+
+    * ``raw_text`` **始终保留**(截断到 8000 字),它是事实来源;
+    * ``volume_plan`` 精简为 idx/est_chapters 后保留;
+    * 结构化字段只取内核/人物/世界观;
+    * 卷纲只留卷级设定 + 本章前后各 ``window`` 章;
+    * 任何一步拿不准(不是 dict、投影后为空)就**原样返回**,宁可不裁也不丢。
+    """
+    if not isinstance(book_outline, dict) or not isinstance(volume_outline, dict):
+        return book_outline, volume_outline
+
+    book: dict = {}
+    for key in ("title", "premise"):
+        if book_outline.get(key):
+            book[key] = book_outline[key]
+    if isinstance(book_outline.get("volume_plan"), list):
+        book["volume_plan"] = [
+            {k: item[k] for k in ("idx", "est_chapters") if k in item}
+            for item in book_outline["volume_plan"] if isinstance(item, dict)
+        ]
+    structured = book_outline.get("structured")
+    if isinstance(structured, dict):
+        for key in _CHAPTER_PROMPT_BOOK_KEYS:
+            if structured.get(key):
+                book[key] = structured[key]
+    raw = book_outline.get("raw_text")
+    if raw:
+        book["raw_text"] = str(raw)[:8000]
+    if not book:
+        return book_outline, volume_outline
+
+    volume: dict = {}
+    nearby: list = []
+    for key, value in volume_outline.items():
+        if key in ("sections", "raw_text", "batch", "chapters", "chapter_summaries"):
+            continue
+        if key.startswith("_") or value in (None, "", [], {}):
+            continue
+        volume[key] = value
+    chapters = (volume_outline.get("chapter_summaries")
+                or volume_outline.get("batch")
+                or volume_outline.get("chapters") or [])
+    for item in chapters:
+        if not isinstance(item, dict):
+            continue
+        try:
+            idx = int(item.get("chapter_idx") or 0)
+        except (TypeError, ValueError):
+            continue
+        if idx and abs(idx - int(chapter_idx)) <= window:
+            nearby.append(item)
+    if nearby:
+        # 键名保持 chapter_summaries,兼容既有消费方(chapter_scope_directive 等)
+        volume["chapter_summaries"] = nearby
+    if not volume:
+        return book_outline, volume_outline
+    return book, volume
+
+
 class OutlineGenerator:
     """Generates hierarchical outlines: book → volume → chapter."""
 
@@ -1665,6 +1737,9 @@ class OutlineGenerator:
         merged["chapter_summaries"] = all_summaries
         return merged
 
+
+
+
     async def generate_chapter_outline(
         self,
         book_outline: dict,
@@ -1678,9 +1753,13 @@ class OutlineGenerator:
         """Generate a chapter-level outline from the volume outline."""
         book_outline = outline_for_generation(book_outline)
         volume_outline = outline_for_generation(volume_outline)
+        # 章节视角裁剪:整份书纲 + 整卷 100 章塞进 prompt 会把单章输入顶到约 6.6 万 tokens
+        # (2026-11-21 实测);裁剪后只留内核/人物/世界观 + 卷级设定 + 本章前后各 2 章。
+        book_slim, volume_slim = _slim_for_chapter_prompt(
+            book_outline, volume_outline, chapter_idx)
         context = (
-            f"全书大纲：\n{json.dumps(book_outline, ensure_ascii=False, indent=2)}\n\n"
-            f"本卷大纲：\n{json.dumps(volume_outline, ensure_ascii=False, indent=2)}\n\n"
+            f"全书大纲:\n{json.dumps(book_slim, ensure_ascii=False, indent=2)}\n\n"
+            f"本卷大纲:\n{json.dumps(volume_slim, ensure_ascii=False, indent=2)}\n\n"
             f"请生成第 {chapter_idx} 章的详细大纲。"
         )
         if previous_chapter_summary:
@@ -1689,7 +1768,7 @@ class OutlineGenerator:
             context += f"\n\n用户补充说明：{user_notes}"
 
         from app.services.outline_contract import chapter_scope_directive
-        context += "\n\n" + chapter_scope_directive(book_outline, volume_outline, chapter_idx, target_word_count)
+        context += "\n\n" + chapter_scope_directive(book_slim, volume_slim, chapter_idx, target_word_count)
         _ch_sys = CHAPTER_OUTLINE_SYSTEM + OUTLINE_CHAPTER_CONTRACT_PROMPT + OUTLINE_WRITING_QUALITY_PROMPT
         if self.chapter_naming_directive:
             _ch_sys = _ch_sys + "\n\n" + self.chapter_naming_directive
