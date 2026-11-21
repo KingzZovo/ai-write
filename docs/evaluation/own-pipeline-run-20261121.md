@@ -87,6 +87,52 @@ POST /api/pipeline/{id}/pause | rollback
   共 44 passed / 0 failed。
 - commit `f0f8bad` 已推送 `origin/main`。
 
+## 真正的根因:6 个写作/认知任务的模型路由写错了(已修)
+
+排查"每章都失败"时,worker 日志给出了决定性线索:
+
+```
+OpenAI-compatible endpoint throttle sleeping 2.4s (task=scene_writer model=gemini-3.1-pro ...)
+```
+
+**用户明确指定的是 `deepseek-v4-flash`,而实际写正文用的是 `gemini-3.1-pro`。**
+此前只绑定了大纲 8 个任务与评审任务(`chapter_evaluation` / `critic*` / `evaluation`),
+**写作链与认知链一直没有绑定**:
+
+| 任务 | 改动前 | 改动后 |
+|---|---|---|
+| `scene_writer` / `scene_planner` | gemini-3.1-pro | deepseek-v4-flash |
+| `chapter_cognition` / `chapter_entities` | gemini-3.1-pro | deepseek-v4-flash |
+| `relationship_scope` / `summary` | gemini-3.1-pro | deepseek-v4-flash |
+
+机制细节:每个 task_type 在 `prompt_assets` 里**各有 7 行**(每个端点一行),只有 1 行
+`is_active=1`;那行的 endpoint 本来就是 `novel-v4flash`(base_url 8317),但 `model_name`
+被写成 `gemini-3.1-pro` —— 网关按 model_name 路由,所以实际调的是 gemini。
+
+修法走项目自己的配置入口,不直连改库:
+
+```bash
+curl -s -X PUT "http://127.0.0.1:8020/api/prompts/{prompt_id}?confirm_mismatch=true" \
+  -H "Content-Type: application/json" -H "X-API-Key: [API_KEY]" \
+  -d '{"model_name":"deepseek-v4-flash"}'
+```
+
+**这是数据库配置,不在 git 里。** 种子(`PromptRegistry.seed_builtins`)不写死
+`model_name`,新版本路由从被取代的行继承(`_ROUTE_BINDING_FIELDS`),所以不会被种子覆盖;
+但新环境仍需要操作员配置一次。
+
+效果(卷 1,其余配置不变):改动前 71/153 章 failed(其中 68 章是新章白跑);改动后
+2/3 completed(3317 / 2725 字),唯一失败的 ch2 是**已有正文**的章走局部修订
+(`targeted_revision_unapplied`),不影响新章成书。
+
+## 顺带修掉的一个自身回归
+
+按 event loop 隔离 Neo4j 驱动时把模块级 `_driver` 改名成 `_drivers`,但有 5 处外部代码
+直接读 `neo4j._driver`(`entity_tasks` / `outline_settings_delivery` / `outline_to_facts`×3),
+worker 里实测 `AttributeError: module 'app.db.neo4j' has no attribute '_driver'`,
+实体投影成批失败。补模块级 `__getattr__` 把 `_driver` 映射为"当前 running loop 的驱动",
+保持旧语义(init 后非 None,否则 None),未知属性仍抛 `AttributeError`。commit `e3e2c26`。
+
 ## 全项目 pipeline 的失败率观察(下一层问题,未修)
 
 启动 153 章全项目 pipeline 后,`completed` 停在 2,`failed` 持续增长(5 分钟内 6 → 10)。
