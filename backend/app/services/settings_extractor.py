@@ -184,21 +184,42 @@ async def extract_settings_from_outline(outline_text: str, *, project_id=None) -
     """
     fields = ("characters", "world_rules", "relationships")
     if _settings_split_enabled():
+        # 2026-11-21 修复:三个 pass 此前是**并行**的,而 relationships pass 看不到
+        # characters 名单,却被 _validate_relationships 要求"人名必须字面一致" ——
+        # 真实项目上稳定失败(实测 3/3 次 502 "人物关系与角色列表不一致",
+        # 连带 world_rules 永远为 0,写作链因此卡在 "世界规则暂时无法读取")。
+        # 改为 characters 先出,再把可用名单作为硬约束喂给 relationships pass。
+        characters_result = await _extract_stream(
+            "characters_extraction", CHARACTERS_EXTRACTOR_SYSTEM, outline_text,
+            ("characters",), project_id,
+        )
+        usable_names = [
+            str(item.get("name") or "").strip()
+            for item in characters_result["characters"]
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        relationships_prompt = RELATIONSHIPS_EXTRACTOR_SYSTEM
+        if usable_names:
+            relationships_prompt += (
+                "\n- 本次只能使用下列角色名作为 source_name/target_name,必须逐字一致;"
+                "名单之外的人一律不要出现在 relationships 里:"
+                + "、".join(usable_names)
+            )
         results = await asyncio.gather(*[
             _extract_stream(task, prompt, outline_text, (field,), project_id)
             for task, prompt, field in (
-                ("characters_extraction", CHARACTERS_EXTRACTOR_SYSTEM, "characters"),
                 ("world_rules_extraction", WORLD_RULES_EXTRACTOR_SYSTEM, "world_rules"),
-                ("relationships_extraction", RELATIONSHIPS_EXTRACTOR_SYSTEM, "relationships"),
+                ("relationships_extraction", relationships_prompt, "relationships"),
             )
         ], return_exceptions=True)
-        failures = [result for result in results if isinstance(result, BaseException)]
+        outcomes = [characters_result, *results]
+        failures = [result for result in outcomes if isinstance(result, BaseException)]
         if any(isinstance(result, asyncio.CancelledError) for result in failures):
             raise asyncio.CancelledError
         if not failures:
-            return _validate_relationships({field: result[field] for field, result in zip(fields, results)})
-        if len(failures) != len(results):
-            raise SettingsExtractionError("设定提取尚未完整完成，未写入任何资料，请重试")
+            return _validate_relationships({field: result[field] for field, result in zip(fields, outcomes)})
+        if len(failures) != len(outcomes):
+            raise SettingsExtractionError("设定提取尚未完整完成,未写入任何资料,请重试")
         logger.warning("All settings extraction branches failed; trying one combined extraction")
     result = await _extract_stream("extraction", SETTINGS_EXTRACTOR_SYSTEM, outline_text, fields, project_id)
     return _validate_relationships(result)

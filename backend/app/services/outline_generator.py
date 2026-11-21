@@ -428,6 +428,13 @@ def resolve_chapters_per_volume_pref(settings_json: dict | None) -> tuple[int, i
     lo = _clamped("chapters_per_volume_min")
     hi = _clamped("chapters_per_volume_max")
     tgt = _clamped("chapters_per_volume_target")
+    # 兼容项目设置里的简写键 ``chapters_per_volume``(与 api/generate.py 的
+    # compute_scale 回退口径一致),否则同一份设置在两处读出不同结果。
+    shared = _clamped("chapters_per_volume")
+    if shared is not None:
+        lo = lo if lo is not None else shared
+        hi = hi if hi is not None else shared
+        tgt = tgt if tgt is not None else shared
     candidates = [v for v in (lo, hi, tgt) if v is not None]
     if not candidates:
         return None
@@ -893,7 +900,7 @@ class OutlineGenerator:
         }
         return scaffolds.get(stage_name, "")
 
-    def _validate_book_stage(self, text: str, stage: str, min_chars: int) -> None:
+    def _validate_book_stage(self, text: str, stage: str, min_chars: int, scale: dict | None = None) -> None:
         required = {"A": "一三七八九", "B": "二四五", "C": "六",
                     "B2/characters": "二", "B4/relationships": "四",
                     "B5/factions": "五", "C/world": "六"}[stage]
@@ -901,8 +908,19 @@ class OutlineGenerator:
         missing = [num for num in required if not sections.get(num, "").partition("\n")[2].strip()]
         if len(text.strip()) < min_chars or missing:
             raise ValueError(f"全书大纲阶段 {stage} 不完整：长度 {len(text.strip())}/{min_chars}，缺少正文段落 {','.join(missing) or '无'}")
-        if stage == "A" and not self._extract_volume_plan(text):
-            raise ValueError("全书大纲阶段 A 缺少有效分卷计划")
+        if stage == "A":
+            plan = self._extract_volume_plan(text) or []
+            if not plan:
+                raise ValueError("全书大纲阶段 A 缺少有效分卷计划")
+            # PR-OL10 补:模型偶尔无视 scale 指令只规划 1~2 卷,体积不足的分卷计划
+            # 会让第 2 卷起永远生成不了(`_target` 要求卷号 1..N 连续)。这里把
+            # 「卷数不足」判定为 A 阶段不合格 → 触发既有重试;两次都不足时由
+            # 调用方用 scale 补齐(见 _top_up_volume_plan),不会静默留下残卷。
+            expected = int((scale or {}).get("n_volumes") or 0)
+            if expected and len(plan) < expected:
+                raise ValueError(
+                    f"全书大纲阶段 A 分卷计划不足:模型给出 {len(plan)} 卷,项目规模要求 {expected} 卷"
+                )
 
     async def _generate_book_outline_staged(self, user_input: str, *, scale: dict | None = None) -> dict:
         """Three-call staged book outline (A skeleton → B/C in parallel).
@@ -917,9 +935,10 @@ class OutlineGenerator:
         skeleton_system = skeleton_system + WORLD_LOGIC_CONTRACT + OUTLINE_WRITING_QUALITY_PROMPT
         skeleton_msgs = [
             {"role": "system", "content": skeleton_system},
-            {"role": "user", "content": f"创意：\n{user_input}\n\n请生成骨架五段。"},
+            {"role": "user", "content": f"创意:\n{user_input}\n\n请依次生成下面五段,一段都不能少,保留编号:一、书名与核心概念;三、主角变化与关键选择;七、分卷规划(末尾必须带 <volume-plan> 分卷 JSON);八、核心伏笔;九、基调与类型标签。"},
         ]
         skeleton_text = ""
+        skeleton_last_text = ""
         for attempt in range(1, 3):
             try:
                 skeleton_result = await asyncio.wait_for(
@@ -932,15 +951,23 @@ class OutlineGenerator:
                     timeout=OUTLINE_FAST_CALL_TIMEOUT_SECONDS,
                 )
                 skeleton_text = (getattr(skeleton_result, "text", "") or "").strip()
-                self._validate_book_stage(skeleton_text, "A", _book_stage_min_chars(scale, "skeleton"))
+                self._validate_book_stage(
+                    skeleton_text, "A", _book_stage_min_chars(scale, "skeleton"), scale
+                )
                 if skeleton_text:
                     break
                 logger.warning("Staged outline: stage A attempt %s returned empty text", attempt)
             except Exception as exc:  # noqa: BLE001
+                skeleton_last_text = skeleton_text or skeleton_last_text
                 skeleton_text = ""
                 logger.warning("Staged outline: stage A attempt %s failed: %s", attempt, exc)
+        if not skeleton_text and skeleton_last_text:
+            # 两次重试都因分卷计划不足而不合格时,保留模型写好的骨架正文,
+            # 用项目规模补齐缺失卷号(确定性兜底),而不是让整份书纲失败。
+            skeleton_text = self._top_up_volume_plan(skeleton_last_text, scale)
+            logger.warning("Staged outline: stage A volume plan topped up from project scale")
         if not skeleton_text:
-            raise ValueError("全书骨架生成失败或不完整，两次尝试均未通过校验；未生成替代模板")
+            raise ValueError("全书骨架生成失败或不完整,两次尝试均未通过校验;未生成替代模板")
 
         shared_context = (
             f"创意：\n{user_input}\n\n已生成的骨架：\n{skeleton_text}\n"
@@ -1138,6 +1165,46 @@ class OutlineGenerator:
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             yield m.group("num"), text[start:end]
 
+    def _top_up_volume_plan(self, skeleton_text: str, scale: dict | None) -> str:
+        """把骨架正文里的分卷计划补齐到项目规模要求的卷数。
+
+        模型偶尔无视 scale 指令只规划少量卷,而缺卷会让第 2 卷起的卷纲永远
+        生成不了(``volume_creation._target`` 要求卷号 1..N 连续)。这里保留模型
+        已给出的卷,只为缺失卷号追加显式占位(序号 + 章数),按既有
+        ``<volume-plan>`` 格式追加;该标签在落库前由 ``_strip_volume_plan_tags``
+        从用户可见正文里剥掉,不会泄漏给读者。
+        """
+        if not scale or not isinstance(scale, dict):
+            return skeleton_text
+        expected = int(scale.get("n_volumes") or 0)
+        chapters_per_volume = int(scale.get("chapters_per_volume") or 0)
+        if expected <= 0:
+            return skeleton_text
+        existing = self._extract_volume_plan(skeleton_text) or []
+        have = {
+            int(item.get("idx") or 0)
+            for item in existing
+            if isinstance(item, dict)
+        }
+        if not existing:
+            # 一个卷都没有的情况由 stage A 校验直接判不合格,不在这里凭空造卷。
+            return skeleton_text
+        missing = [idx for idx in range(1, expected + 1) if idx not in have]
+        if not missing:
+            return skeleton_text
+        filler = [
+            {
+                "idx": idx,
+                "title": f"第{idx}卷",
+                "theme": "",
+                "core_conflict": "",
+                "est_chapters": chapters_per_volume or 100,
+            }
+            for idx in missing
+        ]
+        appended = json.dumps(filler, ensure_ascii=False)
+        return f"{skeleton_text}\n\n<volume-plan>{appended}</volume-plan>"
+
     # ------------------------------------------------------------------
     # PR-OL1 — extract structured volume plan from outline text
     # ------------------------------------------------------------------
@@ -1157,7 +1224,14 @@ class OutlineGenerator:
         if not matches:
             return None
         last_error: Exception | None = None
-        for raw_body in reversed(matches):
+        # 2026-11-21 修复:此前这里是 `for raw_body in reversed(matches)`,即只取**最后**
+        # 一个能解析的 <volume-plan> 块。实测 v4-flash 会把分卷计划分多块输出(每卷一块),
+        # 于是只剩最后一个块 → book_outline["volume_plan"] 只有 1 条(如只有 idx=5)。
+        # 后果是连锁的:生成第 2 卷时 snapshot_creation 校验"全书分卷计划卷号不完整"
+        # 直接拒绝,卷纲永远无法为第 2 卷及以后生成。
+        # 改为**合并所有块**(按 idx 去重、先到先得、按卷号排序),块级容错不变。
+        merged_volumes: dict[int, dict] = {}
+        for raw_body in matches:
             body = raw_body.strip()
             # Strip stray ```json ... ``` fences
             body = re.sub(r"^```(?:json)?\s*", "", body)
@@ -1169,19 +1243,22 @@ class OutlineGenerator:
                 continue
             if not isinstance(data, list) or not data:
                 continue
-            out: list[dict] = []
             for i, item in enumerate(data, start=1):
                 if not isinstance(item, dict):
                     continue
-                out.append({
-                    "idx": int(item.get("idx") or i),
-                    "title": str(item.get("title") or f"第{i}卷"),
+                try:
+                    idx = int(item.get("idx") or i)
+                except (TypeError, ValueError):
+                    idx = i
+                merged_volumes.setdefault(idx, {
+                    "idx": idx,
+                    "title": str(item.get("title") or f"第{idx}卷"),
                     "theme": str(item.get("theme") or ""),
                     "core_conflict": str(item.get("core_conflict") or ""),
                     "est_chapters": int(item.get("est_chapters") or 10),
                 })
-            if out:
-                return out
+        if merged_volumes:
+            return [merged_volumes[key] for key in sorted(merged_volumes)]
         if last_error:
             logger.warning("_extract_volume_plan: JSON parse failed: %s", last_error)
         return None
@@ -1231,7 +1308,7 @@ class OutlineGenerator:
             {"role": "system", "content": skeleton_system},
             {
                 "role": "user",
-                "content": f"创意：\n{user_input}\n\n请生成骨架五段。",
+                "content": f"创意:\n{user_input}\n\n请依次生成下面五段,一段都不能少,保留编号:一、书名与核心概念;三、主角变化与关键选择;七、分卷规划(末尾必须带 <volume-plan> 分卷 JSON);八、核心伏笔;九、基调与类型标签。",
             },
         ]
         try:
@@ -1247,7 +1324,21 @@ class OutlineGenerator:
             raise ValueError("全书骨架流式生成失败，未保存不完整大纲") from exc
 
         skeleton_text = "".join(a_buf).strip()
-        self._validate_book_stage(skeleton_text, "A", _book_stage_min_chars(scale, "skeleton"))
+        try:
+            self._validate_book_stage(
+                skeleton_text, "A", _book_stage_min_chars(scale, "skeleton"), scale
+            )
+        except ValueError as _stage_a_exc:
+            # 流式路径没有重试循环。这里**只**为「卷数不足」补齐卷号;
+            # 结构缺失(如漏写七、八、九)必须照旧失败 —— 用补齐去掩盖只会让
+            # 残缺大纲以「已保存」的面目流到下游。
+            if "分卷计划不足" not in str(_stage_a_exc):
+                raise
+            _topped = self._top_up_volume_plan(skeleton_text, scale)
+            if not _topped or not self._extract_volume_plan(_topped):
+                raise
+            logger.warning("Staged stream: stage A volume plan topped up (%s)", _stage_a_exc)
+            skeleton_text = _topped
         yield {"event": "stage_end", "stage": "A", "full_text": skeleton_text}
 
         shared_context = (

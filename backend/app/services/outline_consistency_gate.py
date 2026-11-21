@@ -186,6 +186,38 @@ def _volume_plan_from_payload(payload: Any) -> list[dict[str, Any]]:
         return []
     return [item for item in raw if isinstance(item, dict)]
 
+_CN_VOLUME_DIGITS: dict[str, int] = {
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+}
+
+
+def _volume_number(token: str) -> int | None:
+    """把「第X卷」中的 X 解析为卷号;解析不出来就返回 None(不猜)。"""
+    raw = (token or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return int(raw)
+    if raw in _CN_VOLUME_DIGITS:
+        return _CN_VOLUME_DIGITS[raw]
+    if raw.startswith("十"):
+        tail = raw[1:]
+        if not tail:
+            return 10
+        if tail in _CN_VOLUME_DIGITS and _CN_VOLUME_DIGITS[tail] < 10:
+            return 10 + _CN_VOLUME_DIGITS[tail]
+        return None
+    if "十" in raw:
+        head, _, tail = raw.partition("十")
+        if head in _CN_VOLUME_DIGITS and _CN_VOLUME_DIGITS[head] < 10:
+            base = _CN_VOLUME_DIGITS[head] * 10
+            if not tail:
+                return base
+            if tail in _CN_VOLUME_DIGITS and _CN_VOLUME_DIGITS[tail] < 10:
+                return base + _CN_VOLUME_DIGITS[tail]
+    return None
+
 
 def _is_shenyi_payload(payload: Any, text: str) -> bool:
     if isinstance(payload, dict):
@@ -280,14 +312,34 @@ def check_outline_consistency(payload: Any, *, level: str = "book") -> OutlineCo
                 )
             )
         if plan and "七、分卷规划" in raw:
-            visible_volume_mentions = len(re.findall(r"第[一二三四五六七八九十\d]+卷", raw))
-            facts["visible_volume_mentions"] = visible_volume_mentions
-            if visible_volume_mentions >= len(plan) * 16:
+            # 2026-11-21 修复:原判定是"全文里『第X卷』提及次数 >= len(plan) * 16",
+            # 卷数少时阈值低得离谱(实测模型只给 2 卷时阈值仅 32),正文正常描述多卷
+            # 就会被判成"残留多套分卷方案"→ 书纲永远保存不了(连锁导致第 2 卷起无法生成)。
+            # 改为检测**真正的多套特征**:同一卷号在"分卷规划"一节里重复出现。
+            section = raw.split("七、分卷规划", 1)[1]
+            section = re.split(r"\n\s*[八九十]、", section, 1)[0]
+            tokens = re.findall(r"第([一二三四五六七八九十\d]+)卷", section)
+            numbers = [n for n in (_volume_number(t) for t in tokens) if n is not None]
+            facts["volume_mentions_in_section"] = len(numbers)
+            # 2026-11-21 二次修复:同一卷号在标题/概述/要点里被正常重复提及(1,1,1)不是多套方案。
+            # 真正的多套方案特征 = 卷号序列**回绕** —— 出现过更大的卷号之后又回到小卷号
+            # (例如 1,2,3,1,2,3)。原判定用「重复出现」,实测模型只规划 1 卷时把
+            # 「第一卷」在标题+概述里写两遍就被误杀。
+            wraparounds = 0
+            seen_max = 0
+            for number in numbers:
+                if number < seen_max:
+                    wraparounds += 1
+                seen_max = max(seen_max, number)
+            if wraparounds:
+                facts["volume_plan_wraparounds"] = wraparounds
                 issues.append(
                     OutlineConsistencyIssue(
                         "possible_multiple_volume_plans",
-                        "正文中分卷条目数量明显超过结构化卷计划，疑似残留多套分卷方案",
-                        details={"visible_volume_mentions": visible_volume_mentions, "volume_plan_count": len(plan)},
+                        "分卷规划一节里卷号出现回绕(大卷号之后又回到小卷号),疑似残留多套分卷方案",
+                        details={"wraparounds": wraparounds,
+                                 "volume_numbers": numbers[:40],
+                                 "volume_plan_count": len(plan)},
                     )
                 )
 

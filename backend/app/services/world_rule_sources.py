@@ -1,6 +1,9 @@
 """Read current graph rules; PostgreSQL text copies cannot stand in for them."""
 import asyncio
+import logging
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,9 +20,18 @@ RULE_QUERY = ('MATCH (w:WorldRule {project_id:$pid}) '
 
 
 async def current_rule_driver():
-    from app.db.neo4j import get_neo4j
-    async for driver in get_neo4j():
-        return driver
+    from app.db.neo4j import get_neo4j, init_neo4j
+    try:
+        async for driver in get_neo4j():
+            return driver
+    except RuntimeError:
+        # Celery prefork 子进程不跑 FastAPI 的 lifespan,Neo4j 驱动从未初始化 ——
+        # 于是整条写作链在这里成批失败(现象:153 章全 failed,消息只说
+        # "世界规则暂时无法读取")。首次真正需要时懒初始化一次,不要求
+        # 每个入口自己记得 init。
+        await init_neo4j()
+        async for driver in get_neo4j():
+            return driver
     raise RuntimeError('graph_unavailable')
 
 
@@ -86,5 +98,8 @@ async def read_world_rule_source(db, project_id, *, driver=None):
     except SQLAlchemyError:
         raise
     except Exception:
+        # `from None` 把真因抹掉:Neo4j 驱动未初始化 / 校验不通过 / 超时长得一模一样,
+        # 线上只看到「暂时无法读取」,排查只能靠猜。至少把原始异常留在日志里。
+        logger.warning("world_rules_context_unavailable (project=%s)", pid, exc_info=True)
         raise WorldRuleSourceError('world_rules_context_unavailable',
-            '当前世界规则暂时无法读取，请保留原请求后重试。', status=503) from None
+            '当前世界规则暂时无法读取,请保留原请求后重试。', status=503) from None

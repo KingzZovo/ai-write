@@ -1908,15 +1908,38 @@ async def generate_outline(
                 _settings = _proj.settings_json or {}
                 if not isinstance(_settings, dict):
                     _settings = {}
+
+                def _int_setting(*keys: str, default: int) -> int:
+                    # 每章字数 / 每卷章数在项目设置里存在两个历史键名
+                    # (``target_chapter_words`` 与 ``chapter_words``;
+                    # ``chapters_per_volume_*`` 与 ``chapters_per_volume``)。
+                    # 只认其中一个会让用户设的值被静默忽略 —— 实测把
+                    # "100 万字、每章 2000 字、每卷 100 章"的书纲算成 2 卷 × 125 章。
+                    for key in keys:
+                        try:
+                            value = int(_settings.get(key))
+                        except (TypeError, ValueError):
+                            continue
+                        if value > 0:
+                            return value
+                    return default
+
                 project_scale = compute_scale(
                     _twc,
-                    chapter_words=int(
-                        _settings.get("target_chapter_words")
-                        or CHAPTER_DEFAULT_WORD_COUNT
+                    chapter_words=_int_setting(
+                        "target_chapter_words",
+                        "chapter_words",
+                        default=CHAPTER_DEFAULT_WORD_COUNT,
                     ),
-                    chapters_per_volume_min=int(_settings.get("chapters_per_volume_min") or 100),
-                    chapters_per_volume_max=int(_settings.get("chapters_per_volume_max") or 200),
-                    chapters_per_volume_target=int(_settings.get("chapters_per_volume_target") or 150),
+                    chapters_per_volume_min=_int_setting(
+                        "chapters_per_volume_min", "chapters_per_volume", default=100
+                    ),
+                    chapters_per_volume_max=_int_setting(
+                        "chapters_per_volume_max", "chapters_per_volume", default=200
+                    ),
+                    chapters_per_volume_target=_int_setting(
+                        "chapters_per_volume_target", "chapters_per_volume", default=150
+                    ),
                 )
         except Exception as _scale_err:
             logger.warning("PR-OL10 compute_scale failed: %s", _scale_err)
@@ -2232,7 +2255,9 @@ async def generate_outline(
             yield "data: [DONE]\n\n"
 
         except Exception as e:
-            logger.warning("Outline generation failed: %s", type(e).__name__)
+            # 只记异常类型时,真实的失败原因(缺哪一段、卷数不符)全被吞掉,
+            # 排查只能靠猜。带上消息。
+            logger.warning("Outline generation failed: %s: %s", type(e).__name__, e)
             yield f"data: {json.dumps(generation_error_payload(e, 'outline'), ensure_ascii=False)}\n\n"
 
     async def protected_outline_stream():
