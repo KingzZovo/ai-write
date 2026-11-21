@@ -242,6 +242,35 @@ vol1: 章数 100 | target_words 2000 - 2000
   `cognition-extraction-recovery`(60s)、`entity-projection-recovery`(60s)都由它投递,
   缺它则认知台账不增长、pipeline 命令不重放。
 
+## 当前瓶颈:认知提取的 evidence 拼接(模型侧,未解决)
+
+链路机制已经修到位后,失败收缩到一处,并拿到了决定性诊断(新加的 offender 日志):
+
+```
+Cognition evidence unlocatable attempt=1/3
+offenders=['他画完,把笔收回口袋,退了一步。铁山低头看着自己锁骨下方,没看懂那是什么。
+           他抬起头,想说什么,但没来得及开口。他的膝盖弯了。', ...]
+```
+
+模型返回的"依据"是**跨句/跨段拼接**的长引用,而 `evidence_locatable`
+(`app/services/chapter_entity_extraction.py:27`)刻意只做"逐字包含 + 标点形式归一化",
+注释里写明**不容忍省略号、不容忍拼接两处** —— 那是区分"引用"与"改写"的判据,
+放宽会把伪造依据也放进来。
+
+失败后果:`ch3` 的认知记录 `failed` → `ch4` 起 `character_cognition_not_ready`
+→ 该卷后续章成批失败(实测 `completed=2 / failed=90 / pending=7`)。
+
+**项目自带的出口**:`ALLOW_COGNITION_DEGRADED_CONTINUATION`(`app/config.py`,
+默认 `False`)。它的注释写着"实测 2026-11-14/16 三次,一次提取软失败就让之后每一章
+都被 not_ready 拦住"——正是本次这个状态;打开后那一章按"无认知变化"计入
+(写手拿到的历史少一层),整本书不停,每次降级都有 warning 便于事后补跑提取。
+
+**可选处置**(需要产品决策,本批未动):
+1. 打开 `ALLOW_COGNITION_DEGRADED_CONTINUATION` —— 全书能跑完,代价是少数章少一层历史;
+2. 只给 `chapter_cognition` 这一个任务换更听话的模型(不改用户的默认模型选择);
+3. 继续调提取提示词(注意 SYSTEM_PROMPT 已经写了"不把不相邻的两处拼在一起",边际收益低);
+4. 给 `evidence_locatable` 增加"分段可定位"的宽容——**不建议**,那正是伪造依据的通道。
+
 ## 未做 / 遗留
 
 - 卷 5 卷纲未生成(卷 1–4 已有章节,共 153 章);全项目 153 章 pipeline 已启动、尚在跑。
