@@ -87,6 +87,27 @@ POST /api/pipeline/{id}/pause | rollback
   共 44 passed / 0 failed。
 - commit `f0f8bad` 已推送 `origin/main`。
 
+## 全项目 pipeline 的失败率观察(下一层问题,未修)
+
+启动 153 章全项目 pipeline 后,`completed` 停在 2,`failed` 持续增长(5 分钟内 6 → 10)。
+排查结论:**正文其实生成了** —— `generation_tasks.char_count` 有 4000–5300,
+失败发生在生成之后的修订环节。`params_json.revision_stop_reason` 两类:
+
+- `revision_context_unavailable`(多数):错误文案是"正文生成:人物认知检索暂不可用…"。
+  但 embedding 端点本身是通的(worker 日志 `POST https://integrate.api.nvidia.com/v1/embeddings 200 OK`),
+  Qdrant 里 `chapter_summaries__<project>`(6 点)与 `chapter_cognition__*` 集合也都存在,
+  所以不是"服务没配",而是**自动修订所需的认知上下文在该章尚未建立**。
+- `targeted_revision_unapplied`:局部修订未能可靠落实,保留修订前候选。
+
+`production/chapter_executor._outcome` 的判定本身正确(要求
+`saved_hash == content_hash(chapter.content_text)` 才认 `completed`/`needs_review`),
+因此这些章标 `failed` 意味着**本次生成的正文没有落库**;`revision_stop_reason` 分支明确
+"只把候选留在 task 里,不覆盖章节正文、不写下游记忆" —— 对**已有旧正文**的章这是保护
+(所以卷 1 那两章"原稿已保留"是预期行为),对**新章**则是白跑一次。
+
+本批未改这一层。可选方向:(1) 先用 `enable_polish:false` 跑出可读正文,修订单独处理;
+(2) 让"无旧正文的新章"在修订失败时把候选落库并标 `needs_review`,而不是丢弃。
+
 ## 未做 / 遗留
 
 - 卷 5 卷纲未生成(卷 1–4 已有章节,共 153 章);全项目 153 章 pipeline 已启动、尚在跑。
