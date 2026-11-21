@@ -7,6 +7,7 @@ No database transaction remains open during model generation.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections import Counter
 from datetime import datetime, timezone
 import logging
@@ -76,6 +77,57 @@ async def _heartbeat(sessions, lease, pipeline_id, command_id, worker_id, interv
                 raise OwnershipLost("整书任务执行权已更新")
 
 
+def _cognition_wait_seconds() -> int:
+    """PIPELINE_COGNITION_WAIT_SECONDS=0 disables the wait (legacy behaviour)."""
+    try:
+        return max(0, int(os.getenv("PIPELINE_COGNITION_WAIT_SECONDS", "600")))
+    except (TypeError, ValueError):
+        return 600
+
+
+async def _wait_chapter_cognition(sessions, chapter_id, *, timeout_seconds, poll_seconds=5.0) -> bool:
+    """Wait for this chapter's cognition extraction to reach a usable terminal state.
+
+    Returns True when the record is ``completed`` (or the wait is disabled — a
+    ``0`` timeout intentionally preserves the old behaviour). Returns False on
+    timeout or a non-usable terminal state (``failed`` / ``obsolete``); the
+    caller logs it and moves on rather than stalling the whole book, and the
+    next chapter will surface the missing context explicitly.
+    """
+    if timeout_seconds <= 0:
+        return True
+    from app.models.cognition import ChapterCognition
+
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    last_status = None
+    while True:
+        async with sessions() as db:
+            record = await db.scalar(
+                select(ChapterCognition)
+                .where(ChapterCognition.chapter_id == chapter_id)
+                .order_by(ChapterCognition.updated_at.desc())
+                .limit(1)
+                .execution_options(autoflush=False)
+            )
+            if record is not None:
+                last_status = record.status
+                if record.status == "completed":
+                    return True
+                if record.status in ("failed", "obsolete"):
+                    logger.warning(
+                        "Cognition terminal but unusable chapter=%s status=%s",
+                        chapter_id, record.status,
+                    )
+                    return False
+        if asyncio.get_running_loop().time() >= deadline:
+            logger.warning(
+                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss",
+                chapter_id, last_status, timeout_seconds,
+            )
+            return False
+        await asyncio.sleep(poll_seconds)
+
+
 async def _chapters(sessions, pipeline_id, command_id, worker_id, executor):
     while True:
         async with sessions() as db:
@@ -133,7 +185,22 @@ async def _chapters(sessions, pipeline_id, command_id, worker_id, executor):
             pipeline.completed_chapters = await db.scalar(select(func.count()).select_from(
                 PipelineChapterStatus,
             ).where(PipelineChapterStatus.pipeline_id == pipeline_id, PipelineChapterStatus.state == "completed"))
+            chapter_id = status.chapter_id
             await db.commit()
+        if outcome.state == "completed":
+            # 下一章的上下文要求"它之前所有章"的认知记录已是 completed
+            # (cognition_reader.validate_completed_receipt 对缺失/非 completed 直接
+            # 抛 character_cognition_not_ready),而认知提取是章后**异步**派发的。
+            # 不等就会出现 ch1 成功、ch2 起全部 not_ready 的批量失败。
+            # 这里在提交之后(不持任何行锁)等,心跳任务仍在跑。
+            ready = await _wait_chapter_cognition(
+                sessions, chapter_id, timeout_seconds=_cognition_wait_seconds(),
+            )
+            if not ready:
+                logger.warning(
+                    "Cognition not ready; continuing so the next chapter reports it "
+                    "explicitly pipeline=%s chapter=%s", pipeline_id, chapter_id,
+                )
 
 
 async def run_command(engine, sessions, pipeline_id, command_id, *, executor=execute_chapter, heartbeat_seconds=15) -> bool:

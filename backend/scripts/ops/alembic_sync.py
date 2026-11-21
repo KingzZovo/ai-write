@@ -41,7 +41,9 @@ from dataclasses import dataclass, field
 # head 迁移 → 它留下的可核对痕迹。加新迁移时**必须**在这里补一行,
 # 否则新 head 会落到 `manual`(拒绝自动判断),这是有意的安全默认。
 SCHEMA_PROBES: dict[str, tuple[tuple[str, str, str], ...]] = {
-    # (kind, table, name);kind: column | unique
+    # (kind, table, name);kind: column | unique | table | trigger
+    # a1001962 重装 chapter content_hash 触发器(并回填历史正文的 hash)。
+    "a1001962": (("trigger", "chapters", "chapter_content_hash_changed"),),
     # a1001961 只加一列:usage_estimated(该行 token 是字符数估算,不是供应商计量)。
     "a1001961": (("column", "llm_call_logs", "usage_estimated"),),
     "a1001959": (
@@ -138,6 +140,10 @@ def check_probes(dsn: str, revision: str) -> bool | None:
                         found = (await conn.execute(text(
                             "SELECT 1 FROM pg_constraint WHERE conrelid = CAST(:t AS regclass) "
                             "AND contype = 'u' AND conname = :n"), {"t": table, "n": name})).scalar()
+                    elif kind == "trigger":
+                        found = (await conn.execute(text(
+                            "SELECT 1 FROM pg_trigger WHERE tgrelid = to_regclass(:t) "
+                            "AND tgname = :n AND NOT tgisinternal"), {"t": table, "n": name})).scalar()
                     else:  # table
                         found = (await conn.execute(text(
                             "SELECT to_regclass(:t)"), {"t": table})).scalar()
