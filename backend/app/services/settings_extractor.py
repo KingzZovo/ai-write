@@ -189,13 +189,26 @@ async def extract_settings_from_outline(outline_text: str, *, project_id=None) -
         # 真实项目上稳定失败(实测 3/3 次 502 "人物关系与角色列表不一致",
         # 连带 world_rules 永远为 0,写作链因此卡在 "世界规则暂时无法读取")。
         # 改为 characters 先出,再把可用名单作为硬约束喂给 relationships pass。
-        characters_result = await _extract_stream(
-            "characters_extraction", CHARACTERS_EXTRACTOR_SYSTEM, outline_text,
-            ("characters",), project_id,
+        characters_outcome = await asyncio.gather(
+            _extract_stream(
+                "characters_extraction", CHARACTERS_EXTRACTOR_SYSTEM, outline_text,
+                ("characters",), project_id,
+            ),
+            return_exceptions=True,
         )
+        characters_result = characters_outcome[0]
+        # characters 失败或被取消时都不在这里提前返回:仍要把另外两个 pass 跑完,
+        # 由下面的统一判定决定"重抛 CancelledError / 回退合并提取 / 报未写入"
+        # (tests/test_settings_extractor_failures.py 断言三个 pass 都已被调用)。
+        # characters 失败时不再直接冒泡,而是照旧参与"全失败 → 回退合并提取"的判定
+        # (tests/test_settings_extractor_failures.py 锁了这条契约),只是这次拿不到名单。
         usable_names = [
             str(item.get("name") or "").strip()
-            for item in characters_result["characters"]
+            for item in (
+                characters_result["characters"]
+                if not isinstance(characters_result, BaseException)
+                else []
+            )
             if isinstance(item, dict) and str(item.get("name") or "").strip()
         ]
         relationships_prompt = RELATIONSHIPS_EXTRACTOR_SYSTEM

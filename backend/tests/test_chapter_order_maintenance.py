@@ -51,7 +51,13 @@ def book(monkeypatch):
             return (await execute(query, *args, **kwargs)).scalar()
         async def scalars(query, *args, **kwargs):
             return (await execute(query, *args, **kwargs)).scalars()
-        async def get(model, identity): return session.get(model, UUID(str(identity)))
+        async def get(model, identity, **kwargs):
+            row = session.get(model, UUID(str(identity)))
+            if kwargs.get('populate_existing') and row is not None:
+                # Real AsyncSession re-reads the row; without this the identity map
+                # hands back the stale in-memory object (e.g. pre-reindex global_idx).
+                session.refresh(row)
+            return row
         async def flush(): session.flush()
         async def refresh(row): session.refresh(row)
         async def remove(row): session.delete(row)

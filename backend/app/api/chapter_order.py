@@ -40,7 +40,7 @@ async def structure_write(db, project_id):
         raise HTTPException(409, detail={'code': 'chapter_order_conflict', 'message': message}) from None
     except Exception as exc:
         await db.rollback()
-        logger.warning('Chapter structure save not confirmed (%s)', type(exc).__name__)
+        logger.warning('Chapter structure save not confirmed (%s: %s)', type(exc).__name__, exc, exc_info=True)
         raise HTTPException(503, detail={'code': 'chapter_order_unconfirmed',
             'message': '卷章调整未取得保存确认，请先刷新核对实际顺序，再决定下一步。'}) from None
 

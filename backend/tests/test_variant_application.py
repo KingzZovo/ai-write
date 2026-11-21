@@ -58,7 +58,7 @@ def book(monkeypatch, tmp_path):
             r.queries.append(query)
             return session.execute(query, *args, **kwargs)
         async def scalar(query, *args, **kwargs): return (await execute(query, *args, **kwargs)).scalar()
-        async def get(model, identity): return session.get(model, UUID(str(identity)))
+        async def get(model, identity, **kwargs): return session.get(model, UUID(str(identity)))
         async def flush(): session.flush()
         async def refresh(row): session.refresh(row)
         async def rollback(): session.rollback()
