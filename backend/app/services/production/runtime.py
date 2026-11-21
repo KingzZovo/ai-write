@@ -85,14 +85,23 @@ def _cognition_wait_seconds() -> int:
         return 600
 
 
-async def _wait_chapter_cognition(sessions, chapter_id, *, timeout_seconds, poll_seconds=5.0) -> bool:
+async def _wait_chapter_cognition(
+    sessions, chapter_id, *, timeout_seconds, poll_seconds=5.0, requeue_limit=3,
+) -> bool:
     """Wait for this chapter's cognition extraction to reach a usable terminal state.
 
     Returns True when the record is ``completed`` (or the wait is disabled — a
-    ``0`` timeout intentionally preserves the old behaviour). Returns False on
-    timeout or a non-usable terminal state (``failed`` / ``obsolete``); the
-    caller logs it and moves on rather than stalling the whole book, and the
-    next chapter will surface the missing context explicitly.
+    ``0`` timeout intentionally preserves the old behaviour).
+
+    A ``failed`` extraction is usually transient (it races the body/entity
+    write) and a manual retry does succeed, so instead of giving up we put the
+    record back on the project's own ``pending`` queue — Beat's
+    ``cognition.replay_pending`` picks it up every 60s — and keep waiting, up to
+    ``requeue_limit`` times so a permanently broken chapter cannot loop us.
+
+    ``obsolete`` is an author decision; it is never requeued. Using up the
+    requeues or timing out returns False; the caller logs it and moves on, and
+    the next chapter surfaces the missing context explicitly.
     """
     if timeout_seconds <= 0:
         return True
@@ -100,6 +109,7 @@ async def _wait_chapter_cognition(sessions, chapter_id, *, timeout_seconds, poll
 
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     last_status = None
+    requeues = 0
     while True:
         async with sessions() as db:
             record = await db.scalar(
@@ -113,16 +123,28 @@ async def _wait_chapter_cognition(sessions, chapter_id, *, timeout_seconds, poll
                 last_status = record.status
                 if record.status == "completed":
                     return True
-                if record.status in ("failed", "obsolete"):
+                if record.status == "failed" and requeues < requeue_limit:
+                    await db.execute(
+                        update(ChapterCognition)
+                        .where(ChapterCognition.id == record.id)
+                        .values(status="pending")
+                    )
+                    await db.commit()
+                    requeues += 1
+                    logger.info(
+                        "Cognition requeued for retry chapter=%s attempt=%s/%s",
+                        chapter_id, requeues, requeue_limit,
+                    )
+                elif record.status in ("failed", "obsolete"):
                     logger.warning(
-                        "Cognition terminal but unusable chapter=%s status=%s",
-                        chapter_id, record.status,
+                        "Cognition terminal but unusable chapter=%s status=%s requeues=%s",
+                        chapter_id, record.status, requeues,
                     )
                     return False
         if asyncio.get_running_loop().time() >= deadline:
             logger.warning(
-                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss",
-                chapter_id, last_status, timeout_seconds,
+                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss requeues=%s",
+                chapter_id, last_status, timeout_seconds, requeues,
             )
             return False
         await asyncio.sleep(poll_seconds)
