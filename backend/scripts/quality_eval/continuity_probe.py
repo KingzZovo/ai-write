@@ -824,19 +824,39 @@ async def run_chain(db_url: str, ids: dict[str, Any], api_key: str, model: str,
                 chapter.word_count = len(text)
                 await db.commit()
             if guard == "ok":
-                from app.services.chapter_summarizer import summarize_and_save_chapter
+                # 章后收尾走**统一实现**(与 SSE / 队列同一个服务:
+                # app/services/chapter_finalize.py)。探针没有 Celery worker,
+                # 所以用 inline 模式同步跑抽取 —— 逻辑唯一,只有执行方式不同。
+                from app.services.chapter_finalize import finalize_chapter
+
                 try:
-                    written, summary = await summarize_and_save_chapter(
-                        chapter_id=chapter_id, db=None, overwrite=True,
-                        project_vectors=False, expected_content=text)
-                    record["summary_written"] = bool(written)
-                    record["summary_chars"] = len(summary or "")
-                except Exception as exc:  # noqa: BLE001
-                    record["summary_written"] = False
-                    record["summary_error"] = type(exc).__name__
-            if guard == "ok" and extract:
-                record.update(await _post_chapter_extraction(
-                    ids["project_id"], index, chapter_id))
+                    async with session_factory() as fdb:
+                        chapter_row = await fdb.get(Chapter, chapter_id)
+                        fin = await finalize_chapter(
+                            db=fdb,
+                            chapter=chapter_row,
+                            project_id=ids["project_id"],
+                            chapter_id=chapter_id,
+                            volume_id=getattr(chapter_row, "volume_id", None),
+                            full_text=text,
+                            caller="continuity_probe",
+                            mode="inline",
+                            run_entities=bool(extract),
+                        )
+                    steps = fin.get("steps") or {}
+                    entities = steps.get("entities")
+                    record["finalize"] = {
+                        "summary": bool(steps.get("summary")),
+                        "entities": (entities or {}).get("entity", {}).get("status")
+                        if isinstance(entities, dict) else bool(entities),
+                        "cognition": (entities or {}).get("cognition") if isinstance(entities, dict) else None,
+                        "volume_bridge": bool(steps.get("volume_bridge")),
+                        "foreshadow": bool(steps.get("foreshadow")),
+                        "facts": len(steps.get("facts") or []),
+                        "warnings": fin.get("warnings") or [],
+                    }
+                except Exception as exc:  # noqa: BLE001 - 收尾失败不该停掉跑批
+                    record["finalize_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
         records.append(record)
         (out / "chapters.json").write_text(
             json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")

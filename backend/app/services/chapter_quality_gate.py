@@ -246,6 +246,37 @@ def chapter_persist_status(text: str, quality_meta: dict | None = None) -> str:
         return "draft"
     return "completed"
 
+def classify_issue_severity(
+    issues: Any,
+    *,
+    threshold: float = 8.2,
+) -> dict[str, list[dict[str, Any]]]:
+    """Split already-computed evaluator issues into blocking / non_blocking.
+
+    Purely a re-projection of the existing acceptance semantics
+    (``chapter_acceptance.evaluation_passes``): an issue is *blocking* when it
+    alone would make an otherwise clean evaluation fail -- a causal violation at
+    high/critical severity, or a located causal defect with a verified quote. A
+    non-blocking issue is ordinary feedback (pacing, expression, low-severity
+    advice) and is exactly what the quality-debt path defers.
+
+    Never raises: a non-list input or a non-dict issue is ignored. Existing
+    function signatures are untouched.
+    """
+    from app.services.chapter_acceptance import evaluation_passes
+
+    blocking: list[dict[str, Any]] = []
+    non_blocking: list[dict[str, Any]] = []
+    if not isinstance(issues, list):
+        return {"blocking": blocking, "non_blocking": non_blocking}
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        probe = {"overall": 10.0, "issues": [issue]}
+        target = non_blocking if evaluation_passes(probe, threshold) else blocking
+        target.append(issue)
+    return {"blocking": blocking, "non_blocking": non_blocking}
+
 
 @dataclass
 class ChapterQualityGateResult:

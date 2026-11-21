@@ -6,6 +6,7 @@ from typing import Any
 
 from app.services.chapter_quality_gate import chapter_persist_status
 from app.services.narrative_quality_gates import issue_violation_type
+from app.services.quality_debt import classify_terminal_action
 
 # Literary preferences alone must not become hard acceptance failures.
 _CAUSAL_TYPES = frozenset({
@@ -87,3 +88,41 @@ class ChapterAcceptance:
         if self.required and not self.passed(text):
             return 'needs_review'
         return 'completed'
+
+    def terminal_action(self, text: str, quality_meta: dict | None = None) -> dict:
+        """Structured terminal semantics for this chapter (see quality_debt).
+
+        ``mechanical_status`` comes from the existing ``status()`` chain, so an
+        unusable body (empty / truncated / refusal / block) still reports as
+        ``draft`` and stops; the evaluation signals decide whether a usable body
+        is patched locally, deferred as quality debt, or truly replanned.
+        ``quality_meta`` may carry ``plan_misaligned`` and ``missing_obligations``
+        when the caller knows the plan state; they default to False / [].
+        """
+        meta = quality_meta or {}
+        return classify_terminal_action(
+            mechanical_status=self.status(text, quality_meta),
+            evaluation=self.result,
+            located_causal_issue=has_located_causal_issue(self.result),
+            missing_obligations=list(meta.get("missing_obligations") or []),
+            plan_misaligned=bool(meta.get("plan_misaligned")),
+        )
+
+    def persisted_status(self, text: str, quality_meta: dict | None = None) -> str:
+        """Status to persist, letting usable-but-imperfect chapters move on.
+
+        Only ``stop_for_replan`` (plan mismatch / unmet obligation) becomes
+        ``needs_review``; ``defer_and_continue`` and ``local_patch_plan`` persist
+        as ``completed`` (the former carrying quality debt). A mechanically
+        unusable body keeps its existing ``status()`` verdict -- empty text is
+        never promoted to ``completed`` by quality debt.
+        """
+        base = self.status(text, quality_meta)
+        if base == "draft":
+            return base
+        action = self.terminal_action(text, quality_meta).get("action")
+        if action in ("defer_and_continue", "local_patch_plan"):
+            return "completed"
+        if action == "stop_for_replan":
+            return "needs_review"
+        return base
