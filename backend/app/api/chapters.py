@@ -208,7 +208,12 @@ async def _create_chapter(project_id, body, db):
     db.add(chapter)
     await db.flush()
     await reindex_chapter_structure(db, project_id)
-    await db.refresh(chapter)
+    # 2026-11-21 修复(实测):`reindex_chapter_structure` 之后这一行 refresh 只回填了
+    # 5 个键(chapter_idx/id/outline_json/updated_at/volume_id),title 等列仍是未加载
+    # 状态;随后构造响应时访问 `chapter.title` 触发**同步 IO** → MissingGreenlet →
+    # `structure_write` 兜底成 503 chapter_order_unconfirmed,**建章接口直接不可用**。
+    # 改成显式重读整行(populate_existing),保证响应 payload 用到的列都已加载。
+    chapter = await db.get(Chapter, chapter.id, populate_existing=True)
     project_result = await db.execute(select(Project).where(Project.id == UUID(str(project_id))))
     project = project_result.scalar_one_or_none()
     project_target_chapter_words = None
