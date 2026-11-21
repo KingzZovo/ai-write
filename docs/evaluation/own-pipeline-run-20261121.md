@@ -191,6 +191,57 @@ driver、模块级 `__getattr__` 被 pytest monkeypatch 的 undo 写坏)。
 2. **失败场景要选对**。我一度拿"已有正文"的卷 1 三章当验证对象,那本身走的是修订分支;
    新章才是主线路径,而卷 2 又依赖卷 1 的认知台账 —— pipeline 必须按卷序推进(全项目任务)。
 
+## pipeline 等该章认知就绪(本轮修复,commit `40cd6aa`)
+
+**现象**:ch1 生成成功,ch2 起 99 章全部 `character_cognition_not_ready`。
+
+**根因**:下一章的上下文要求"**它之前所有章**"的认知记录为 `completed`
+(`cognition_reader.validate_completed_receipt`:record 缺失或 status != completed
+直接抛),而认知提取是章后**异步**派发的 —— pipeline 紧接着就取下一章,必然读到缺失。
+
+**改法**([runtime.py](/root/ai-write/backend/app/services/production/runtime.py)):
+`_chapters` 每章 completed 之后、**提交之后**(不持行锁,心跳任务仍在跑)等该章认知
+到达可用终态;`PIPELINE_COGNITION_WAIT_SECONDS` 默认 600(`0` 关闭 = 旧行为);
+`completed` 才算就绪,`failed`/`obsolete` 立即返回(不无限等),超时只记 warning 并继续,
+让下一章显式报错而不是把整本书卡死。
+
+**实测对照**(同配置同卷):
+
+| | 结果 |
+|---|---|
+| 修复前 | 瞬间 100 章全 failed,completed 停在 1–2 |
+| 修复后 | `state=generating`,completed 递增(ch2 2491 字、ch3 2520 字),剩余 82 章 pending |
+
+## 另一处硬根因:`content_hash` 触发器丢失(commit `0f2d6db`)
+
+`chapters` 表上**零触发器**,`content_hash` 列还在 —— 实测 **1096 章有正文、hash 全为空**。
+项目多处用"hash 非空"当"这一章已落库正文"的廉价信号(认知边界 `_has_saved_body`、
+弧进度、前文衔接),于是下游一律认为"前文没有正文"。
+
+迁移 `a1001962` 幂等重装函数/触发器,并只回填"有正文且 hash 为空"的行(不动作者已接受
+的 hash 与正文);`scripts/ops/alembic_sync.py` 的探针登记该 head(并新增 `trigger` 这一
+检查 kind)。验证:`alembic head=a1001962`、触发器存在、hash 非空 1096、有正文但 hash 空 0。
+
+## 规划规模:每章字数/每卷章数(commit `3eb002b`)
+
+`outline_generator._load_chapters_per_volume_pref` 复用了旧三键的 `[1,50]` 夹取,把
+"每卷 100 章"压成 50 → 卷纲硬约束 50 章/卷 → 每章预算 = 卷目标 200000 ÷ 50 = 4000 字。
+即**"每章字数"这条链上从未被读取**,它是被"卷目标 ÷ 章数"反推出来的;章数被污染,
+字数就跟着错。统一读取入口(`chapter_target_words.py`)后实测:
+
+```
+done {"chapters_created": 100, "chapter_word_counts": [2000, 2000, ...]}
+vol1: 章数 100 | target_words 2000 - 2000
+```
+
+## 另外两条运行期约束(踩过)
+
+- **celery worker 必须 `--concurrency=1`**:项目对同一项目的实体投影/认知是**独占**语义,
+  并发两个任务会报 `EntityProjectionBusy('another entity worker owns this project')`。
+- **celery beat 是必需服务**:`pipeline-command-recovery`(30s)、
+  `cognition-extraction-recovery`(60s)、`entity-projection-recovery`(60s)都由它投递,
+  缺它则认知台账不增长、pipeline 命令不重放。
+
 ## 未做 / 遗留
 
 - 卷 5 卷纲未生成(卷 1–4 已有章节,共 153 章);全项目 153 章 pipeline 已启动、尚在跑。
