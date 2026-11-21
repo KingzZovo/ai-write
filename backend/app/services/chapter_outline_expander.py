@@ -173,10 +173,15 @@ async def _gather_context(
     if vol is None:
         raise ChapterOutlineExpandError(f"chapter {chapter.id} 所属卷不存在")
     project_id = vol.project_id
-    from app.services.chapter_target_words import resolve_chapter_target_word_count
+    from app.services.chapter_target_words import (
+        resolve_chapter_target_word_count,
+        resolve_chapter_words,
+    )
     project = await db.scalar(source_query(select(Project).where(Project.id == project_id)))
     settings = project.settings_json if project and isinstance(project.settings_json, dict) else {}
-    target_word_count = resolve_chapter_target_word_count(chapter.target_word_count, settings.get("target_chapter_words"))
+    target_word_count = resolve_chapter_target_word_count(
+        chapter.target_word_count, resolve_chapter_words(settings)
+    )
 
     # 全书大纲：最新已确认版本优先，否则使用最新版本。
     book_q = await db.execute(

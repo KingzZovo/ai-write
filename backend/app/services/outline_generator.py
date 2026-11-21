@@ -21,6 +21,10 @@ import re
 from typing import AsyncIterator
 
 from app.services.outline_prompt_runner import OutlinePromptRunner
+from app.services.chapter_target_words import (
+    resolve_chapters_per_volume_pref as _resolve_cpv_pref,
+    resolve_volume_chapter_range as _resolve_volume_cpv_range,
+)
 from app.services.narrative_contract import WORLD_LOGIC_CONTRACT
 
 logger = logging.getLogger(__name__)
@@ -406,52 +410,15 @@ def compute_scale(
 def resolve_chapters_per_volume_pref(settings_json: dict | None) -> tuple[int, int] | None:
     """Resolve an explicit chapters-per-volume (lo, hi) range from settings_json.
 
-    Reads the keys the project-settings API stores (and api/generate.py's
-    compute_scale path already consumes): ``chapters_per_volume_min`` /
-    ``chapters_per_volume_max`` / ``chapters_per_volume_target``. Values are
-    clamped to [1, 50]; non-numeric / non-positive values are ignored. Returns
-    ``None`` when no key carries a usable value — callers must then keep the
-    legacy behaviour (plan-driven counts, 10-chapter fallback).
+    实现在 ``app.services.chapter_target_words.resolve_chapters_per_volume_pref``——
+    书纲规模(compute_scale)与卷纲硬约束现在共用同一套读取规则,不再各读各键。
+
+    ``chapters_per_volume_min`` / ``_max`` / ``_target`` 夹到 [1, 50];简写键
+    ``chapters_per_volume`` 不夹取(它是每卷章数的真值,如 100),只补缺失的槽位。
+    Returns ``None`` when no key carries a usable value — callers must then keep
+    the legacy behaviour (plan-driven counts, 10-chapter fallback).
     """
-    if not isinstance(settings_json, dict):
-        return None
-
-    def _clamped(key: str) -> int | None:
-        try:
-            value = int(settings_json.get(key))
-        except (TypeError, ValueError):
-            return None
-        if value < 1:
-            return None
-        return min(value, 50)
-
-    def _raw_positive(key: str) -> int | None:
-        try:
-            value = int(settings_json.get(key))
-        except (TypeError, ValueError):
-            return None
-        return value if value >= 1 else None
-
-    lo = _clamped("chapters_per_volume_min")
-    hi = _clamped("chapters_per_volume_max")
-    tgt = _clamped("chapters_per_volume_target")
-    # 兼容项目设置里的简写键 ``chapters_per_volume``(与 api/generate.py 的
-    # compute_scale 回退口径一致)。**不套 [1,50] 夹取**:这个键是"每卷多少章"的
-    # 真值(如 100),夹到 50 会让卷纲 prompt 的硬约束变成"本卷必须 50 章",
-    # 500 章的规划静默缩成 250 章。50 上限只属于旧的三键语义。
-    shared = _raw_positive("chapters_per_volume")
-    if shared is not None:
-        lo = lo if lo is not None else shared
-        hi = hi if hi is not None else shared
-        tgt = tgt if tgt is not None else shared
-    candidates = [v for v in (lo, hi, tgt) if v is not None]
-    if not candidates:
-        return None
-    lo = lo if lo is not None else min(candidates)
-    hi = hi if hi is not None else max(candidates)
-    if hi < lo:
-        lo, hi = hi, lo
-    return lo, hi
+    return _resolve_cpv_pref(settings_json)
 
 
 def _format_scale_directive(scale: dict) -> str:
@@ -687,15 +654,21 @@ class OutlineGenerator:
         return {"project_id": self.project_id, "task_type": task_type}
 
     async def _load_chapters_per_volume_pref(self) -> tuple[int, int] | None:
-        """Read the project's chapters-per-volume preference from settings_json.
+        """Read the project's per-volume chapter range from settings_json.
 
         E2E defect (2026-07-26): a project configured for 3-4 chapters/volume
         still got 10-chapter staged volume outlines because this path never
-        consulted settings. Reads the same keys api/generate.py's compute_scale
-        already uses (``chapters_per_volume_min`` / ``chapters_per_volume_max``
-        / ``chapters_per_volume_target``). Returns a clamped (lo, hi) range, or
-        None when the project carries no explicit setting so legacy behaviour
-        (model/plan-driven counts) is preserved. Never raises.
+        consulted settings.
+
+        E2E defect (2026-11-21): the same settings were read by two different
+        rules — ``compute_scale`` used the raw values (“每卷 100 章” → 5 卷 × 100
+        章) while this path applied the legacy [1, 50] clamp and turned it into
+        “本卷必须 50 章”, halving the confirmed book plan and doubling every
+        chapter's word budget (卷目标字数 ÷ 50 = 4000). Resolved through
+        ``chapter_target_words.resolve_volume_chapter_range`` so both stages read
+        the setting the same way. Returns None when the project carries no
+        explicit setting so legacy behaviour (model/plan-driven counts) is
+        preserved. Never raises.
         """
         if not self.project_id:
             return None
@@ -708,7 +681,7 @@ class OutlineGenerator:
                 proj_settings = proj.settings_json if proj is not None else None
             if not isinstance(proj_settings, dict):
                 return None
-            return resolve_chapters_per_volume_pref(proj_settings)
+            return _resolve_volume_cpv_range(proj_settings)
         except Exception as exc:  # noqa: BLE001
             logger.warning("chapters-per-volume setting load failed: %s", exc)
             return None

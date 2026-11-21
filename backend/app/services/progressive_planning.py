@@ -246,17 +246,14 @@ def _book_user_input(project: Project | None) -> str:
 def _book_scale(project: Project | None) -> dict | None:
     if project is None or not project.target_word_count:
         return None
-    try:
-        from app.services.outline_generator import compute_scale
+    # 每章字数 / 每卷章数走统一读取(规范键 ``target_chapter_words`` /
+    # ``chapters_per_volume_*`` 与简写键双侧回退)。此前只读简写键,前端写规范键时
+    # 这一路恒用 2000 字/卷 100 章。
+    from app.services.chapter_target_words import build_planning_scale
 
-        settings = project.settings_json if isinstance(project.settings_json, dict) else {}
-        chapter_words = int(settings.get("chapter_words") or 2000)
-        chapters_per_volume = int(settings.get("chapters_per_volume") or 100)
-        return compute_scale(
-            project.target_word_count,
-            chapter_words=chapter_words,
-            chapters_per_volume_target=chapters_per_volume,
-        )
+    settings = project.settings_json if isinstance(project.settings_json, dict) else {}
+    try:
+        return build_planning_scale(project.target_word_count, settings)
     except Exception:  # noqa: BLE001 - 规模只是提示,拿不到就退回自由发挥
         return None
 

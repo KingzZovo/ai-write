@@ -13,6 +13,7 @@ from app.models.project import Chapter, Project, Volume
 from app.services.chapter_target_words import (
     CHAPTER_DEFAULT_WORD_COUNT,
     resolve_chapter_target_word_count,
+    resolve_chapter_words,
 )
 from app.services.outline_readiness import LAYER_LABELS, build_outline_readiness_report
 from app.api.chapter_order import router as order_router, structure_write
@@ -145,7 +146,7 @@ async def list_chapters(
     project = project_result.scalar_one_or_none()
     if project is not None and isinstance(project.settings_json, dict):
         project_settings = project.settings_json
-        project_target_chapter_words = project_settings.get("target_chapter_words")
+        project_target_chapter_words = resolve_chapter_words(project_settings)
     if lightweight:
         # PR-OUTLINE-BUTTONS: keep outline_json so OutlineTree's per-chapter
         # "⊶大纲" button can render. Drop only content_text (the heavy field).
@@ -218,7 +219,7 @@ async def _create_chapter(project_id, body, db):
     project = project_result.scalar_one_or_none()
     project_target_chapter_words = None
     if project is not None and isinstance(project.settings_json, dict):
-        project_target_chapter_words = project.settings_json.get("target_chapter_words")
+        project_target_chapter_words = resolve_chapter_words(project.settings_json)
     return ChapterResponse.model_validate(
         _chapter_response_payload(chapter, project_target_chapter_words)
     )
@@ -236,7 +237,7 @@ async def get_chapter(
     project = project_result.scalar_one_or_none()
     project_target_chapter_words = None
     if project is not None and isinstance(project.settings_json, dict):
-        project_target_chapter_words = project.settings_json.get("target_chapter_words")
+        project_target_chapter_words = resolve_chapter_words(project.settings_json)
     return ChapterResponse.model_validate(
         _chapter_response_payload(chapter, project_target_chapter_words)
     )
@@ -346,7 +347,7 @@ async def _update_chapter(project_id, chapter_id, body, db, *, chapter=None):
     project = project_result.scalar_one_or_none()
     project_target_chapter_words = None
     if project is not None and isinstance(project.settings_json, dict):
-        project_target_chapter_words = project.settings_json.get("target_chapter_words")
+        project_target_chapter_words = resolve_chapter_words(project.settings_json)
     return ChapterResponse.model_validate(
         _chapter_response_payload(chapter, project_target_chapter_words)
     )

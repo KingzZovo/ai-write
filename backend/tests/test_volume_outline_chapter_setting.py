@@ -210,3 +210,42 @@ async def test_no_setting_still_requires_valid_meta(monkeypatch):
 async def test_pref_loader_returns_none_without_project_id():
     gen = OutlineGenerator(project_id=None)
     assert await gen._load_chapters_per_volume_pref() is None
+
+
+@pytest.mark.asyncio
+async def test_pref_loader_keeps_confirmed_100_chapters_per_volume(monkeypatch):
+    """2026-11-21:规范键写「每章 2000 字、每卷 100 章」时,卷纲硬约束必须是 100 章/卷。
+
+    旧实现复用 ``resolve_chapters_per_volume_pref`` 的 [1, 50] 夹取 → 返回 (50, 50):
+    卷纲被硬约束成 50 章/卷,每章预算 = 卷目标字数 ÷ 50(=200000/50 = 4000 字/章),
+    与已确认书纲的「5 卷 × 100 章、每章 2000 字」自相矛盾(实测故障:设置改了仍按
+    4000 字/章算)。
+    """
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    import app.db.session as db_session
+
+    project = SimpleNamespace(
+        target_word_count=1_000_000,
+        settings_json={
+            "target_chapter_words": 2000,
+            "chapters_per_volume_min": 100,
+            "chapters_per_volume_max": 100,
+            "chapters_per_volume_target": 100,
+        },
+    )
+
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, model, pk):
+            return project
+
+    monkeypatch.setattr(db_session, "async_session_factory", lambda: _FakeSession())
+    gen = OutlineGenerator(project_id=str(uuid4()))
+    assert await gen._load_chapters_per_volume_pref() == (100, 100)

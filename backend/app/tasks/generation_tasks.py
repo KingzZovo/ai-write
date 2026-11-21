@@ -231,11 +231,14 @@ def _resolve_task_chapter_target_words(params, chapter_target_word_count, projec
     chapter row value, then legacy 50k defaults are remapped via
     resolve_chapter_target_word_count to the project setting or 4000 fallback.
     """
-    from app.services.chapter_target_words import resolve_chapter_target_word_count
+    from app.services.chapter_target_words import (
+        resolve_chapter_target_word_count,
+        resolve_chapter_words,
+    )
 
     return resolve_chapter_target_word_count(
         (params or {}).get("target_words") or chapter_target_word_count,
-        (project_settings or {}).get("target_chapter_words"),
+        resolve_chapter_words(project_settings),
     )
 
 
@@ -888,14 +891,12 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                 await db.commit()
 
             elif task.task_type == "outline_book":
-                from app.services.outline_generator import compute_scale
-                from app.services.chapter_target_words import CHAPTER_DEFAULT_WORD_COUNT
-                book_scale = compute_scale(
-                    project_target_word_count,
-                    chapter_words=int(project_settings.get("target_chapter_words") or CHAPTER_DEFAULT_WORD_COUNT),
-                    chapters_per_volume_min=int(project_settings.get("chapters_per_volume_min") or 100),
-                    chapters_per_volume_max=int(project_settings.get("chapters_per_volume_max") or 200),
-                    chapters_per_volume_target=int(project_settings.get("chapters_per_volume_target") or 150),
+                from app.services.chapter_target_words import build_planning_scale
+
+                # 每章字数 / 每卷章数统一走 chapter_target_words(规范键与简写键
+                # 双侧回退),避免只认规范键让简写键写的设置被静默忽略。
+                book_scale = build_planning_scale(
+                    project_target_word_count, project_settings
                 )
                 if book_scale and params.get("target_volumes") is not None:
                     requested_volumes = int(params["target_volumes"])

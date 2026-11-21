@@ -10,7 +10,10 @@ from sqlalchemy import select, tuple_
 
 from app.models.project import Chapter, Outline, Project, Volume
 from app.services.chapter_outline_expander import _validate_and_normalize, _validate_expansion_payload
-from app.services.chapter_target_words import resolve_chapter_target_word_count
+from app.services.chapter_target_words import (
+    resolve_chapter_target_word_count,
+    resolve_chapter_words,
+)
 from app.services.summary_provenance import summary_is_current
 from app.services.outline_authority import TEXT_REVISION, outline_for_generation
 from app.services.outline_order import bind_chapter_content, chapter_stub
@@ -95,7 +98,9 @@ async def _read(db, project_id, parent_id, chapter_idx, *, lock=False):
             'outlines': [_values(outline) for outline in outlines]}
     digest = hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
     settings = project.settings_json if isinstance(project.settings_json, dict) else {}
-    target = resolve_chapter_target_word_count(chapter.target_word_count, settings.get('target_chapter_words'))
+    target = resolve_chapter_target_word_count(
+        chapter.target_word_count, resolve_chapter_words(settings)
+    )
     previous_summary = prev.summary.strip() if prev and prev.status == 'completed' and summary_is_current(prev) else ''
     plan = chapter.outline_json if isinstance(chapter.outline_json, dict) and chapter.outline_json else (
         chapter_stub(content, chapter) if not content.get(TEXT_REVISION) else {})

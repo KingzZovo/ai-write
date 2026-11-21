@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.project import Project, Chapter, Outline
 from app.services.chapter_target_words import (
-    CHAPTER_DEFAULT_WORD_COUNT,
+    build_planning_scale,
     resolve_chapter_target_word_count,
+    resolve_chapter_words,
 )
 from app.services.chapter_quality_gate import apply_chapter_quality_gate, chapter_persist_status, looks_truncated, looks_like_refusal
 from app.services.chapter_generator import ChapterGenerator
@@ -512,7 +513,7 @@ async def generate_chapter(
 
     target_words = resolve_chapter_target_word_count(
         target_words,
-        project_settings.get("target_chapter_words"),
+        resolve_chapter_words(project_settings),
     )
 
     # Resolve style: manual text > explicit style_id > settings/bind chain.
@@ -1862,7 +1863,7 @@ async def generate_outline(
         target_chapter = target_chapters[0] if target_chapters else None
         if target_chapter is not None:
             chapter_word_target = resolve_chapter_target_word_count(
-                target_chapter.target_word_count, project_settings.get("target_chapter_words"),
+                target_chapter.target_word_count, resolve_chapter_words(project_settings),
             )
 
     # Saved chapter plans and the actual predecessor are resolved together in
@@ -1900,7 +1901,6 @@ async def generate_outline(
     project_scale: dict | None = None
     if req.project_id:
         try:
-            from app.services.outline_generator import compute_scale
             from app.models.project import Project as _Project
             _proj = await db.get(_Project, req.project_id)
             if _proj is not None:
@@ -1909,38 +1909,11 @@ async def generate_outline(
                 if not isinstance(_settings, dict):
                     _settings = {}
 
-                def _int_setting(*keys: str, default: int) -> int:
-                    # 每章字数 / 每卷章数在项目设置里存在两个历史键名
-                    # (``target_chapter_words`` 与 ``chapter_words``;
-                    # ``chapters_per_volume_*`` 与 ``chapters_per_volume``)。
-                    # 只认其中一个会让用户设的值被静默忽略 —— 实测把
-                    # "100 万字、每章 2000 字、每卷 100 章"的书纲算成 2 卷 × 125 章。
-                    for key in keys:
-                        try:
-                            value = int(_settings.get(key))
-                        except (TypeError, ValueError):
-                            continue
-                        if value > 0:
-                            return value
-                    return default
-
-                project_scale = compute_scale(
-                    _twc,
-                    chapter_words=_int_setting(
-                        "target_chapter_words",
-                        "chapter_words",
-                        default=CHAPTER_DEFAULT_WORD_COUNT,
-                    ),
-                    chapters_per_volume_min=_int_setting(
-                        "chapters_per_volume_min", "chapters_per_volume", default=100
-                    ),
-                    chapters_per_volume_max=_int_setting(
-                        "chapters_per_volume_max", "chapters_per_volume", default=200
-                    ),
-                    chapters_per_volume_target=_int_setting(
-                        "chapters_per_volume_target", "chapters_per_volume", default=150
-                    ),
-                )
+                # 每章字数 / 每卷章数统一走 chapter_target_words(规范键
+                # ``target_chapter_words``/``chapters_per_volume_*`` 与简写键
+                # ``chapter_words``/``chapters_per_volume`` 双侧回退),避免只认一套
+                # 让用户设的值被静默忽略。
+                project_scale = build_planning_scale(_twc, _settings)
         except Exception as _scale_err:
             logger.warning("PR-OL10 compute_scale failed: %s", _scale_err)
             project_scale = None
