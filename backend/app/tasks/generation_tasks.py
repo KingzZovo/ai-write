@@ -1160,12 +1160,17 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                                     persist_chapter.status = "needs_review"
                                 await persist_db.commit()
                                 if generated_chapter_id_safe:
-                                    await _dispatch_chapter_entities(
-                                        persist_chapter, persist_db, project_id
-                                    )
-                                    await _backfill_volume_summary_safe(
-                                        getattr(persist_chapter, "volume_id", None)
-                                    )
+                                    from app.services.chapter_finalize import finalize_chapter
+
+                                    # 章后收尾走统一实现(唯一执行链):摘要 / 实体派发 /
+                                    # 卷桥接 / 伏笔 / 事实检查 —— 三入口共用同一条链。
+                                    await finalize_chapter(
+                                        db=persist_db, chapter=persist_chapter,
+                                        project_id=project_id,
+                                        chapter_id=getattr(persist_chapter, "id", None),
+                                        volume_id=getattr(persist_chapter, "volume_id", None),
+                                        full_text=getattr(persist_chapter, "content_text", "") or "",
+                                        caller="tasks.run_async_generation")
                             logger.warning(
                                 "force_direct_chapter persisted via fresh session task_id=%s chapter_id=%s chars=%d",
                                 task_id,
@@ -1760,11 +1765,15 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                             ))
                             await db.commit()
                             try:
-                                await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                                from app.services.chapter_finalize import finalize_chapter
+
+                                # 章后收尾走统一实现(唯一执行链)
+                                await finalize_chapter(
+                                    db=db, chapter=ch, project_id=project_id,
+                                    chapter_id=chapter_id_for_eval, volume_id=volume_id_for_eval,
+                                    full_text=full_text, caller="tasks.run_async_generation")
                             except Exception as sum_err:
-                                logger.warning("Auto chapter summarize failed after quality-gate review save: %s", sum_err)
-                            await _dispatch_chapter_entities(ch, db, project_id)
-                            await _backfill_volume_summary_safe(volume_id_for_eval)
+                                logger.warning("Chapter finalize failed after quality-gate review save: %s", sum_err)
                             return
                         if quality_result.rewrite_rounds > 0:
                             logger.info(
@@ -1813,11 +1822,15 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                         ))
                         await db.commit()
                         try:
-                            await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                            from app.services.chapter_finalize import finalize_chapter
+
+                            # 章后收尾走统一实现(唯一执行链)
+                            await finalize_chapter(
+                                db=db, chapter=ch, project_id=project_id,
+                                chapter_id=chapter_id_for_eval, volume_id=volume_id_for_eval,
+                                full_text=full_text, caller="tasks.run_async_generation")
                         except Exception as sum_err:
-                            logger.warning("Auto chapter summarize failed after quality-gate error save: %s", sum_err)
-                        await _dispatch_chapter_entities(ch, db, project_id)
-                        await _backfill_volume_summary_safe(volume_id_for_eval)
+                            logger.warning("Chapter finalize failed after quality-gate error save: %s", sum_err)
                         return
 
                 try:
@@ -1861,11 +1874,15 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                         ))
                         await db.commit()
                         try:
-                            await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                            from app.services.chapter_finalize import finalize_chapter
+
+                            # 章后收尾走统一实现(唯一执行链)
+                            await finalize_chapter(
+                                db=db, chapter=ch, project_id=project_id,
+                                chapter_id=chapter_id_for_eval, volume_id=volume_id_for_eval,
+                                full_text=full_text, caller="tasks.run_async_generation")
                         except Exception as sum_err:
-                            logger.warning("Auto chapter summarize failed after fact-contract review save: %s", sum_err)
-                        await _dispatch_chapter_entities(ch, db, project_id)
-                        await _backfill_volume_summary_safe(volume_id_for_eval)
+                            logger.warning("Chapter finalize failed after fact-contract review save: %s", sum_err)
                         return
                 except Exception as fact_err:
                     logger.warning(
@@ -1902,11 +1919,15 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                     ))
                     await db.commit()
                     try:
-                        await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                        from app.services.chapter_finalize import finalize_chapter
+
+                        # 章后收尾走统一实现(唯一执行链)
+                        await finalize_chapter(
+                            db=db, chapter=ch, project_id=project_id,
+                            chapter_id=chapter_id_for_eval, volume_id=volume_id_for_eval,
+                            full_text=full_text, caller="tasks.run_async_generation")
                     except Exception as sum_err:
-                        logger.warning("Auto chapter summarize failed after fact-contract error save: %s", sum_err)
-                    await _dispatch_chapter_entities(ch, db, project_id)
-                    await _backfill_volume_summary_safe(volume_id_for_eval)
+                        logger.warning("Chapter finalize failed after fact-contract error save: %s", sum_err)
                     return
 
                 ch.content_text = full_text
@@ -1994,18 +2015,18 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                 # entity extraction after every chapter save. Without this,
                 # projects generated via the background task queue got no
                 # states/locations/relationships at all.
-                await _dispatch_chapter_entities(ch, db, project_id)
+                # 章后收尾走**统一实现**(唯一执行链):摘要 / 实体派发 / 卷桥接 /
+                # 伏笔缺铺垫 / 事实一致性 —— 三入口(SSE / 队列 / 探针)共用同一条链,
+                # 见 app/services/chapter_finalize.py。
                 try:
-                    await summarize_and_save_chapter(chapter_id=chapter_id_for_eval, db=db, overwrite=True)
+                    from app.services.chapter_finalize import finalize_chapter
+
+                    await finalize_chapter(
+                        db=db, chapter=ch, project_id=project_id,
+                        chapter_id=chapter_id_for_eval, volume_id=volume_id_for_eval,
+                        full_text=full_text, caller="tasks.run_async_generation")
                 except Exception as sum_err:
-                    logger.warning("Auto chapter summarize failed after evaluation: %s", sum_err)
-                # Cross-volume memory: backfill the PREVIOUS volume's
-                # VolumeSummary row (L2 bridge read by context_pack for
-                # chapters 1-3 of a volume). Runs after the commit above so it
-                # can never block or fail the save; awaited (not create_task)
-                # because the celery event loop closes when the task returns.
-                # Cheap no-op unless the prev volume lacks a summary row.
-                await _backfill_volume_summary_safe(volume_id_for_eval)
+                    logger.warning("Chapter finalize failed after evaluation: %s", sum_err)
                 # Cognition ledger ingestion on every FINAL save (audit
                 # 2026-07-26). Q3 v1.9.1 gated this on `passed`, but that was
                 # lossy: a needs_review final save still persists full_text as
@@ -2231,10 +2252,15 @@ async def _run_async_generation_impl(task_id: str, *, session_factory=None, read
                                 ch2.status = "needs_review"
                         await db2.commit()
                         if ch2 is not None:
-                            await _dispatch_chapter_entities(ch2, db2, project_id)
-                            await _backfill_volume_summary_safe(
-                                getattr(ch2, "volume_id", None)
-                            )
+                            from app.services.chapter_finalize import finalize_chapter
+
+                            # 章后收尾走统一实现(唯一执行链)
+                            await finalize_chapter(
+                                db=db2, chapter=ch2, project_id=project_id,
+                                chapter_id=getattr(ch2, "id", None),
+                                volume_id=getattr(ch2, "volume_id", None),
+                                full_text=getattr(ch2, "content_text", "") or "",
+                                caller="tasks.run_async_generation")
                     logger.warning(
                         "Async generation salvaged produced prose after persistence/session error task_id=%s chars=%d err=%s",
                         task_id,

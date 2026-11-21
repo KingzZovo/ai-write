@@ -62,8 +62,10 @@ def core_task(task_book, monkeypatch):
     monkeypatch.setattr('app.services.chapter_summarizer.summarize_and_save_chapter', r.summary)
     monkeypatch.setattr('app.services.character_cognition.extract_and_update', AsyncMock())
     r.dispatch = AsyncMock()
-    monkeypatch.setattr(generation_tasks, '_dispatch_chapter_entities', r.dispatch)
-    monkeypatch.setattr(generation_tasks, '_backfill_volume_summary_safe', AsyncMock())
+    # 2026-11-21:章后收尾收敛到 app/services/chapter_finalize.py(唯一执行链),
+    # 所以 mock 目标从入口的私有封装搬到服务层真实依赖。
+    monkeypatch.setattr('app.services.entity_dispatch.dispatch_for_chapter', r.dispatch)
+    monkeypatch.setattr('app.services.memory.backfill_prev_volume_summary', AsyncMock(return_value=True))
     return r
 
 

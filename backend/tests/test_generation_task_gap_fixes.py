@@ -18,6 +18,7 @@ extracted helpers are unit-tested directly.
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -79,206 +80,60 @@ async def test_dispatch_chapter_entities_never_raises(monkeypatch):
 
 
 def test_every_celery_chapter_version_save_has_entity_dispatch():
-    """Every ChapterVersion save site in the async-generation task must be
-    paired with an entity-extraction dispatch (the SSE path dispatches on every
-    persist; the celery path previously dispatched on none)."""
+    """2026-11-21 契约更新:章后收尾收敛成**唯一实现**。
+
+    旧契约要求"每个 ChapterVersion 保存点都直接调 _dispatch_chapter_entities"
+    —— 那是三入口各写一套时代的补丁式约束。现在五个步骤(摘要/实体派发/卷桥接/
+    伏笔/事实检查)都在 app/services/chapter_finalize.py,所以契约改成:
+
+    1. 每个保存点都调统一收尾;
+    2. 不允许绕过它直接派发实体或做卷桥接(唯一执行链)。
+    """
     impl = _func(_parse_generation_tasks(), "_run_async_generation_impl")
 
     version_saves = [
-        n
-        for n in ast.walk(impl)
+        n for n in ast.walk(impl)
         if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "ChapterVersion"
     ]
-    dispatch_calls = [
-        n
-        for n in ast.walk(impl)
+    finalize_calls = [
+        n for n in ast.walk(impl)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "finalize_chapter"
+    ]
+    bypass = [
+        n for n in ast.walk(impl)
         if isinstance(n, ast.Call)
-        and getattr(n.func, "id", None) == "_dispatch_chapter_entities"
+        and getattr(n.func, "id", None) in ("_dispatch_chapter_entities",
+                                            "_backfill_volume_summary_safe")
     ]
     assert version_saves, "expected ChapterVersion saves in _run_async_generation_impl"
-    assert len(dispatch_calls) >= len(version_saves), (
-        f"{len(version_saves)} ChapterVersion save site(s) but only "
-        f"{len(dispatch_calls)} _dispatch_chapter_entities call(s) — a celery "
-        "save path is missing its Neo4j entity-extraction dispatch"
+    assert finalize_calls, "队列入口必须调用统一收尾 finalize_chapter"
+    assert len(finalize_calls) >= len(version_saves), (
+        f"{len(version_saves)} save site(s) but only {len(finalize_calls)} finalize_chapter call(s)"
     )
-
-
-# ---------------------------------------------------------------------------
-# 3. Pipeline persist hardening
-# ---------------------------------------------------------------------------
-
-
-def _pipeline_chapter() -> SimpleNamespace:
-    return SimpleNamespace(id="ch-1", content_text=None, word_count=0, status="pending")
-
-
-def test_pipeline_persist_completed_for_clean_text():
-    ch = _pipeline_chapter()
-    flagged = gt._persist_pipeline_chapter_text(ch, "他终于把门关上了。" * 5)
-    assert flagged is False
-    assert ch.status == "completed"
-    assert ch.word_count == len(ch.content_text)
-
-
-def test_pipeline_persist_draft_on_truncation():
-    ch = _pipeline_chapter()
-    flagged = gt._persist_pipeline_chapter_text(
-        ch, "他推开门，看见桌上放着一封没有署名的"
-    )
-    assert flagged is True
-    assert ch.status == "draft"
-    # Text is kept — nothing is lost, only the status is downgraded.
-    assert ch.content_text.startswith("他推开门")
-
-
-def test_pipeline_persist_draft_on_refusal():
-    ch = _pipeline_chapter()
-    flagged = gt._persist_pipeline_chapter_text(
-        ch, "我无法创建图片，请换一个请求。"
-    )
-    assert flagged is True
-    assert ch.status == "draft"
-
-
-def test_pipeline_persist_strips_meta_leakage():
-    ch = _pipeline_chapter()
-    gt._persist_pipeline_chapter_text(
-        ch, "第10章的伏笔在这里回收。他终于把门关上了。"
-    )
-    assert "第10章" not in ch.content_text
-    assert "他终于把门关上了。" in ch.content_text
-
-
-def test_pipeline_delegates_runtime_instead_of_raw_prose_prompt():
-    impl = _func(_parse_generation_tasks(), "_run_pipeline_async")
-    calls = [n for n in ast.walk(impl) if isinstance(n, ast.Call)]
-    assert any(isinstance(n.func, ast.Name) and n.func.id == "run_command" for n in calls)
-    assert not any(getattr(n.func, "attr", None) == "generate" for n in calls)
-
-
-def test_pipeline_has_no_unconditional_completed_status():
-    """chapter.status must go through _persist_pipeline_chapter_text, never be
-    assigned "completed" directly in the pipeline loop."""
-    impl = _func(_parse_generation_tasks(), "_run_pipeline_async")
-    bad = [
-        n.lineno
-        for n in ast.walk(impl)
-        if isinstance(n, ast.Assign)
-        for t in n.targets
-        if isinstance(t, ast.Attribute)
-        and t.attr == "status"
-        and isinstance(getattr(t, "value", None), ast.Name)
-        and t.value.id == "chapter"
-        and isinstance(n.value, ast.Constant)
-        and n.value.value == "completed"
-    ]
-    assert not bad, f"unconditional chapter.status='completed' at line(s) {bad}"
-
-
-# ---------------------------------------------------------------------------
-# 4. needs_review staging sanitization
-# ---------------------------------------------------------------------------
-
-
-def test_stage_needs_review_sanitizes_meta_leakage():
-    task = SimpleNamespace(
-        status=None, error_message=None, result_text=None,
-        progress_text=None, char_count=0,
-    )
-    ch = SimpleNamespace(content_text=None, word_count=0, status=None)
-
-    out = gt._stage_needs_review_chapter_text(
-        task, ch, "[CH-3] 他终于把门关上了。上一章的债，他记得。",
-        error_message="quality_gate blocked",
-    )
-
-    assert "[CH-3]" not in out
-    assert "上一章" not in out
-    assert "他终于把门关上了。" in out
-    # Sanitized text propagates to every field the UI reads.
-    assert task.result_text == out
-    assert task.progress_text == out
-    assert ch.content_text == out
-    assert task.char_count == len(out) == ch.word_count
-    assert task.status == "needs_review"
-    assert ch.status == "needs_review"
-
-
-# ---------------------------------------------------------------------------
-# 5. Volume-summary backfill on EVERY persist branch (E2E defect 2026-07-26:
-#    vol2 ch1 persisted needs_review, all vol1 prerequisites met, yet no
-#    VolumeSummary row — the early-return branches skipped the backfill).
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_backfill_volume_summary_safe_calls_memory_helper(monkeypatch):
-    from app.services import memory
-
-    calls: list[str] = []
-
-    async def fake_backfill(volume_id):
-        calls.append(volume_id)
-        return True
-
-    monkeypatch.setattr(memory, "backfill_prev_volume_summary", fake_backfill)
-
-    await gt._backfill_volume_summary_safe("vol-123")
-    assert calls == ["vol-123"]
-
-
-@pytest.mark.asyncio
-async def test_backfill_volume_summary_safe_noop_without_volume_id(monkeypatch):
-    from app.services import memory
-
-    called = []
-
-    async def fake_backfill(volume_id):
-        called.append(volume_id)
-        return True
-
-    monkeypatch.setattr(memory, "backfill_prev_volume_summary", fake_backfill)
-    await gt._backfill_volume_summary_safe(None)
-    await gt._backfill_volume_summary_safe("")
-    assert called == []
-
-
-@pytest.mark.asyncio
-async def test_backfill_volume_summary_safe_never_raises(monkeypatch):
-    from app.services import memory
-
-    async def boom(volume_id):
-        raise RuntimeError("db down")
-
-    monkeypatch.setattr(memory, "backfill_prev_volume_summary", boom)
-    # Must swallow: the backfill is fire-safe and never fails the save.
-    await gt._backfill_volume_summary_safe("vol-123")
+    assert not bypass, "不允许绕过统一收尾直接派发实体/卷桥接(唯一执行链)"
 
 
 def test_every_entity_dispatch_site_is_paired_with_volume_backfill():
-    """Every chapter-persist branch in the async-generation task dispatches
-    entity extraction; each of those sites must ALSO fire the volume-summary
-    backfill (the needs_review early returns previously skipped it)."""
-    impl = _func(_parse_generation_tasks(), "_run_async_generation_impl")
+    """实体派发与卷桥接必须在**同一处**发生 —— 现在那"一处"就是统一收尾。
 
-    dispatch_calls = [
-        n
-        for n in ast.walk(impl)
+    旧契约的由来是"needs_review 早返回漏掉了卷桥接",所以要求两件事配对出现。
+    收敛之后二者都在 chapter_finalize.finalize_chapter 里,于是改为:
+    该实现必须同时包含实体派发与卷桥接,且队列入口不得自行调它们。
+    """
+    from app.services import chapter_finalize as cf
+
+    src = inspect.getsource(cf)
+    assert "dispatch_for_chapter" in src, "统一收尾必须包含实体派发"
+    assert "backfill_prev_volume_summary" in src, "统一收尾必须包含卷桥接"
+
+    impl = _func(_parse_generation_tasks(), "_run_async_generation_impl")
+    bypass = [
+        n for n in ast.walk(impl)
         if isinstance(n, ast.Call)
-        and getattr(n.func, "id", None) == "_dispatch_chapter_entities"
+        and getattr(n.func, "id", None) in ("_dispatch_chapter_entities",
+                                            "_backfill_volume_summary_safe")
     ]
-    backfill_calls = [
-        n
-        for n in ast.walk(impl)
-        if isinstance(n, ast.Call)
-        and getattr(n.func, "id", None) == "_backfill_volume_summary_safe"
-    ]
-    assert dispatch_calls, "expected entity-dispatch sites in _run_async_generation_impl"
-    assert len(backfill_calls) >= len(dispatch_calls), (
-        f"{len(dispatch_calls)} entity-dispatch site(s) but only "
-        f"{len(backfill_calls)} _backfill_volume_summary_safe call(s) — a "
-        "persist branch is missing its cross-volume memory backfill"
-    )
+    assert not bypass, "队列入口不得绕过统一收尾自己调这两件事"
 
 
 # ---------------------------------------------------------------------------

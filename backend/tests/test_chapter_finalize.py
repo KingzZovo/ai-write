@@ -61,20 +61,29 @@ async def test_missing_ids_skip_steps_instead_of_raising():
     assert result["warnings"] == []
 
 
-def test_entries_that_are_wired_reference_the_same_finalizer():
-    """盯"已接入"的入口,不假装完成。
+def test_all_three_entries_call_the_same_finalizer():
+    """三入口(SSE / 队列 / 评估探针)都必须引用统一收尾 —— 唯一执行链的守门人。
 
-    现状(2026-11-21):
-    - 评估探针(scripts/quality_eval/continuity_probe.py)**已接入**;
-    - 队列入口(app/tasks/generation_tasks.py)的接入需要同步更新 13 个既有测试的契约
-      (它们 mock 的是旧的 summarize/dispatch/backfill 三连),单独排期;
-    - SSE 入口(api/generate.py)有 cognition 两阶段结算,单独处理。
+    2026-11-21 收敛前,三处各写一套章后逻辑;现在都调
+    `app/services/chapter_finalize.finalize_chapter`,且不允许绕过它自己再调
+    实体派发 / 卷桥接。
     """
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    probe = (root / "scripts/quality_eval/continuity_probe.py").read_text(encoding="utf-8")
-    assert "chapter_finalize" in probe, "评估探针没有接入统一收尾"
-    assert "mode=\"inline\"" in probe or "mode='inline'" in probe, "探针应使用 inline 模式"
+    entries = {
+        "SSE": "app/api/generate.py",
+        "队列": "app/tasks/generation_tasks.py",
+        "探针": "scripts/quality_eval/continuity_probe.py",
+    }
+    for label, rel in entries.items():
+        text = (root / rel).read_text(encoding="utf-8")
+        assert "chapter_finalize" in text, f"{label} 入口({rel})没有接入统一收尾"
+    for label, rel in entries.items():
+        text = (root / rel).read_text(encoding="utf-8")
+        assert "await _dispatch_chapter_entities(" not in text, f"{label} 入口绕过统一收尾做实体派发"
+        assert "await _backfill_volume_summary_safe(" not in text, f"{label} 入口绕过统一收尾做卷桥接"
+    probe = (root / entries["探针"]).read_text(encoding="utf-8")
+    assert 'mode="inline"' in probe or "mode='inline'" in probe, "探针应走 inline 模式"
 
 
 def test_finalize_is_the_single_implementation_of_post_chapter_work():
