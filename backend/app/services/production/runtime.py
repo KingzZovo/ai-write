@@ -7,7 +7,6 @@ No database transaction remains open during model generation.
 from __future__ import annotations
 
 import asyncio
-import os
 from collections import Counter
 from datetime import datetime, timezone
 import logging
@@ -78,39 +77,51 @@ async def _heartbeat(sessions, lease, pipeline_id, command_id, worker_id, interv
 
 
 def _cognition_wait_seconds() -> int:
-    """PIPELINE_COGNITION_WAIT_SECONDS=0 disables the wait (legacy behaviour)."""
+    """0 disables the wait (legacy behaviour)."""
+    from app.config import settings
+
     try:
-        return max(0, int(os.getenv("PIPELINE_COGNITION_WAIT_SECONDS", "600")))
+        return max(0, int(settings.PIPELINE_COGNITION_WAIT_SECONDS))
     except (TypeError, ValueError):
-        return 600
+        return 180
 
 
 async def _wait_chapter_cognition(
-    sessions, chapter_id, *, timeout_seconds, poll_seconds=5.0, requeue_limit=3,
+    sessions, chapter_id, *, timeout_seconds, poll_seconds=None, should_stop=None,
 ) -> bool:
-    """Wait for this chapter's cognition extraction to reach a usable terminal state.
+    """Wait for this chapter's cognition extraction to become usable.
 
-    Returns True when the record is ``completed`` (or the wait is disabled — a
-    ``0`` timeout intentionally preserves the old behaviour).
+    Ready means ``status == completed``. ``obsolete`` (source changed / author
+    decision) is a real terminal state — give up immediately.
 
-    A ``failed`` extraction is usually transient (it races the body/entity
-    write) and a manual retry does succeed, so instead of giving up we put the
-    record back on the project's own ``pending`` queue — Beat's
-    ``cognition.replay_pending`` picks it up every 60s — and keep waiting, up to
-    ``requeue_limit`` times so a permanently broken chapter cannot loop us.
+    ``failed`` is **not** requeued here even though it looks like a terminal
+    failure: ``cognition.extract_chapter`` runs with
+    ``autoretry_for=(Exception,), max_retries=3`` and a redelivery with the same
+    ``delivery_id`` flips the record back to ``running``. Re-queueing it
+    ourselves races that mechanism, so we keep polling and let autoretry (or the
+    timeout) decide.
 
-    ``obsolete`` is an author decision; it is never requeued. Using up the
-    requeues or timing out returns False; the caller logs it and moves on, and
-    the next chapter surfaces the missing context explicitly.
+    The wait runs inside ``project_worker_lock``, so ``should_stop`` is polled
+    every round: without it a user pause would be stuck behind the whole
+    timeout, and the lock would block rollback/recovery commands too.
     """
     if timeout_seconds <= 0:
         return True
+    from app.config import settings
     from app.models.cognition import ChapterCognition
+
+    if poll_seconds is None:
+        try:
+            poll_seconds = max(0.0, float(settings.PIPELINE_COGNITION_POLL_SECONDS))
+        except (TypeError, ValueError):
+            poll_seconds = 5.0
 
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     last_status = None
-    requeues = 0
     while True:
+        if should_stop is not None and await should_stop():
+            logger.info("Cognition wait abandoned (pipeline no longer ours) chapter=%s", chapter_id)
+            return False
         async with sessions() as db:
             record = await db.scalar(
                 select(ChapterCognition)
@@ -123,34 +134,29 @@ async def _wait_chapter_cognition(
                 last_status = record.status
                 if record.status == "completed":
                     return True
-                if record.status == "failed" and requeues < requeue_limit:
-                    await db.execute(
-                        update(ChapterCognition)
-                        .where(ChapterCognition.id == record.id)
-                        .values(status="pending")
-                    )
-                    await db.commit()
-                    requeues += 1
-                    logger.info(
-                        "Cognition requeued for retry chapter=%s attempt=%s/%s",
-                        chapter_id, requeues, requeue_limit,
-                    )
-                elif record.status in ("failed", "obsolete"):
-                    logger.warning(
-                        "Cognition terminal but unusable chapter=%s status=%s requeues=%s",
-                        chapter_id, record.status, requeues,
-                    )
+                if record.status == "obsolete":
+                    logger.warning("Cognition obsolete chapter=%s", chapter_id)
                     return False
         if asyncio.get_running_loop().time() >= deadline:
             logger.warning(
-                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss requeues=%s",
-                chapter_id, last_status, timeout_seconds, requeues,
+                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss",
+                chapter_id, last_status, timeout_seconds,
             )
             return False
         await asyncio.sleep(poll_seconds)
 
 
 async def _chapters(sessions, pipeline_id, command_id, worker_id, executor):
+    async def _lost_ownership() -> bool:
+        """等待认知期间一旦 pause 或所有权变化就立刻放弃。
+
+        等待发生在 project_worker_lock 内,不检查的话用户 pause 会被拖到超时,
+        而 rollback/recovery 也拿不到锁。
+        """
+        async with sessions() as db:
+            current = await db.get(PipelineRun, pipeline_id)
+        return current is None or not _owned(current, command_id, worker_id) or current.state != "generating"
+
     while True:
         async with sessions() as db:
             pipeline = await _locked_pipeline(db, pipeline_id)
@@ -217,6 +223,7 @@ async def _chapters(sessions, pipeline_id, command_id, worker_id, executor):
             # 这里在提交之后(不持任何行锁)等,心跳任务仍在跑。
             ready = await _wait_chapter_cognition(
                 sessions, chapter_id, timeout_seconds=_cognition_wait_seconds(),
+                should_stop=_lost_ownership,
             )
             if not ready:
                 logger.warning(

@@ -136,6 +136,16 @@ class Settings(BaseSettings):
     # character_cognition_not_ready 拦住,而下一章的上下文里本来就有上一章完整正文。
     ALLOW_COGNITION_DEGRADED_CONTINUATION: bool = False
 
+    # pipeline 在推进下一章前,等该章认知提取就绪的上限秒数。
+    # 依据(实测 2026-11-21):下一章的上下文要求它之前所有章的认知记录为
+    # completed,而提取是章后**异步**派发的 —— 不等就会出现 ch1 成功、ch2 起
+    # 99 章全部 character_cognition_not_ready。设 0 关闭等待(回到旧行为)。
+    # 注意:等待发生在 project_worker_lock 作用域内,所以它同时是全书的
+    # pause 响应上限;单章值不宜过大。
+    PIPELINE_COGNITION_WAIT_SECONDS: int = 180
+    # 等待轮询间隔(秒)。
+    PIPELINE_COGNITION_POLL_SECONDS: float = 5.0
+
     # 人物认知历史块的字符预算(送模的"认知边界"一段)。
     # 2026-11-18:默认 1200 → 3000。为什么必须提高:该块要求"每个必选人物的
     # **最新一条记录(含依据原文)**都装下",装不下就显式失败(不许退化成旧记录,

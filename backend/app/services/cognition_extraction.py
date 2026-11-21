@@ -1,6 +1,9 @@
 """Durable, replayable cognition extraction with source fencing."""
 import asyncio
+import logging
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 from datetime import timedelta
 from sqlalchemy import select, update, case, or_, and_
 from sqlalchemy.dialects.postgresql import insert
@@ -154,11 +157,19 @@ async def run_cognition_extraction(source, *, sessions, engine, delivery_id=None
                         changes = _parse_changes(result.text, source.content)
                         break
                     except ValueError as exc:
+                        offenders = getattr(exc, 'offending_evidence', None) or []
+                        # 把点名到的依据记下来:没有它就只能看到一句"无法逐字定位",
+                        # 无法判断该收紧判据还是加强提示(2026-11-14 与本次都卡在这里)。
+                        if offenders:
+                            logger.warning(
+                                "Cognition evidence unlocatable chapter=%s attempt=%s/%s offenders=%s",
+                                source.chapter_id, attempt + 1, 3,
+                                [item[:80] for item in offenders[:3]],
+                            )
                         if attempt:
                             raise
                         # 逐字依据不合格时点名具体哪几条找不到:实测只说"重新输出",
                         # 模型仍会继续改写;点名之后才会回正文里复制。
-                        offenders = getattr(exc, 'offending_evidence', None) or []
                         named = ''.join(f'- {item[:60]}\n' for item in offenders)
                         hint = ('下面这些依据在正文中找不到,属于改写或拼接。'
                                 '请回到正文里复制连续原文,不要改写、不要加省略号:\n' + named

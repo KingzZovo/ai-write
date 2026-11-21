@@ -48,6 +48,10 @@ def canonical(monkeypatch, *, on_call=None, outcome="completed"):
                 task.status = outcome
             await db.commit()
     monkeypatch.setattr(generation_tasks, "_run_async_generation_impl", generate)
+    # 这些集成用例只写正文、从不写 ChapterCognition 记录,所以必须关掉认知等待,
+    # 否则每章会白等满超时(6 章 = 数十分钟,直接挂死 CI)。
+    from app.config import settings as _settings
+    monkeypatch.setattr(_settings, "PIPELINE_COGNITION_WAIT_SECONDS", 0, raising=False)
     return calls
 
 
