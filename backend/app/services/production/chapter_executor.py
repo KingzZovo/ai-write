@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.models.generation_task import GenerationTask
 from app.models.pipeline import PipelineChapterStatus, PipelineRun
@@ -74,6 +74,19 @@ async def _ensure_cognition_for_saved_body(db, project_id, chapter_id) -> None:
         if existing is None:
             await enqueue_cognition(db, source)
             logger.info("Cognition enqueued for already-saved chapter=%s", chapter_id)
+        elif existing.status in ("failed", "obsolete"):
+            # 有记录但**不可用**:按当前正文的认知边界只看 completed,所以 failed
+            # 与没有记录等价。置回 pending 让 worker/Beat 重新提取
+            # (enqueue_cognition 只重开 obsolete,对 failed 是 no-op)。
+            await db.execute(
+                update(ChapterCognition)
+                .where(ChapterCognition.id == existing.id)
+                .values(status="pending")
+            )
+            logger.info(
+                "Cognition re-queued for already-saved chapter=%s previous=%s",
+                chapter_id, existing.status,
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Cognition enqueue skipped chapter=%s err=%s", chapter_id, exc)
 def _outcome(task, chapter, status) -> ChapterOutcome:
