@@ -5,6 +5,7 @@ ContextPack, style selection, drafting, review, repair and entity dispatch.
 This adapter owns durable chapter-task identity and fenced persistence.
 """
 from __future__ import annotations
+import logging
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -27,6 +28,54 @@ class ChapterOutcome:
     retryable: bool = False
 
 
+
+logger = logging.getLogger(__name__)
+
+
+def _should_skip_existing_chapter(chapter, options) -> bool:
+    """已有正文且已定稿的章默认不重写(见 execute_chapter 里的理由)。
+
+    抽成纯函数是为了能直接单测:它决定了整条链会不会因为无谓重写而自锁。
+    ``options.force_rewrite`` 为真时照旧重写(作者显式要求)。
+    """
+    return bool(
+        chapter is not None
+        and chapter.content_text and chapter.content_text.strip()
+        and chapter.status == "completed"
+        and not (options or {}).get("force_rewrite")
+    )
+
+
+async def _ensure_cognition_for_saved_body(db, project_id, chapter_id) -> None:
+    """确保这一章**当前正文**的认知提取已入队。
+
+    跳过重写时正文没变,但它的认知记录可能从未建立(例如正文写于换模型之前、
+    或当时提取失败过 —— 那些记录按旧 hash 绑定,对当前正文无效)。这里按当前
+    source 查一次:没有记录就派发,由 worker/Beat 补齐。否则下一章的认知边界
+    依然会缺这一章。
+
+    派发失败只记日志:跳过这个动作本身不该变成 failed 把链路拖死。
+    """
+    from app.models.cognition import ChapterCognition
+    from app.services.cognition_extraction import enqueue_cognition
+    from app.services.cognition_reader import resolve_cognition_source
+
+    try:
+        source = await resolve_cognition_source(db, project_id, chapter_id)
+        if source is None:
+            return
+        existing = await db.scalar(
+            select(ChapterCognition)
+            .where(ChapterCognition.chapter_id == chapter_id,
+                   ChapterCognition.source_hash == source.source_hash)
+            .limit(1)
+            .execution_options(autoflush=False)
+        )
+        if existing is None:
+            await enqueue_cognition(db, source)
+            logger.info("Cognition enqueued for already-saved chapter=%s", chapter_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Cognition enqueue skipped chapter=%s err=%s", chapter_id, exc)
 def _outcome(task, chapter, status) -> ChapterOutcome:
     usable = bool(chapter.content_text and chapter.content_text.strip()) and (
         status.saved_hash == content_hash(chapter.content_text)
@@ -59,6 +108,20 @@ async def execute_chapter(sessions, pipeline_id, command_id, worker_id, status_i
             if outcome.state == "completed" or (outcome.state == "needs_review" and status.state == "generating"):
                 return outcome  # Worker died after the canonical save, before projection.
         options = pipeline.options_json or {}
+        # 已有正文且已定稿的章:**默认不重写**。
+        # 每次重跑都会改写正文 → content_hash 变 → 该章此前按旧 hash 绑定的认知
+        # 记录全部作废,下一章的认知边界(要求"它之前所有章"当前正文的认知为
+        # completed)随即失效,整卷自锁 —— 实测卷 1 反复在 completed=0~2 打转。
+        # 需要真的重写时显式传 options.force_rewrite=true。
+        if _should_skip_existing_chapter(chapter, options):
+            await _ensure_cognition_for_saved_body(db, pipeline.project_id, chapter.id)
+            status.state = "completed"
+            status.word_count = chapter.word_count
+            status.error_message = None
+            status.completed_at = datetime.now(timezone.utc)
+            pipeline.current_chapter_idx = chapter.chapter_idx
+            await db.commit()
+            return ChapterOutcome("completed", chapter.word_count or 0)
         # Runtime identifiers always override caller-supplied options.
         params = {key: options[key] for key in (
             "user_input", "style_id", "structure_book_id", "enable_polish", "skip_polish", "target_words",
