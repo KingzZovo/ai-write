@@ -83,7 +83,7 @@ def _cognition_wait_seconds() -> int:
     try:
         return max(0, int(settings.PIPELINE_COGNITION_WAIT_SECONDS))
     except (TypeError, ValueError):
-        return 180
+        return 600
 
 
 async def _wait_chapter_cognition(

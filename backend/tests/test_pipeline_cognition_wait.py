@@ -33,7 +33,7 @@ def test_wait_seconds_reads_settings(monkeypatch):
     monkeypatch.setattr(settings, "PIPELINE_COGNITION_WAIT_SECONDS", -3, raising=False)
     assert runtime._cognition_wait_seconds() == 0, "负值按关闭处理"
     monkeypatch.setattr(settings, "PIPELINE_COGNITION_WAIT_SECONDS", "bad", raising=False)
-    assert runtime._cognition_wait_seconds() == 180
+    assert runtime._cognition_wait_seconds() == 600
 
 
 def _sessions(records):

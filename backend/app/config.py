@@ -137,12 +137,16 @@ class Settings(BaseSettings):
     ALLOW_COGNITION_DEGRADED_CONTINUATION: bool = False
 
     # pipeline 在推进下一章前,等该章认知提取就绪的上限秒数。
-    # 依据(实测 2026-11-21):下一章的上下文要求它之前所有章的认知记录为
+    # 依据(实测 2026-11-21/22):下一章的上下文要求它之前所有章的认知记录为
     # completed,而提取是章后**异步**派发的 —— 不等就会出现 ch1 成功、ch2 起
-    # 99 章全部 character_cognition_not_ready。设 0 关闭等待(回到旧行为)。
-    # 注意:等待发生在 project_worker_lock 作用域内,所以它同时是全书的
-    # pause 响应上限;单章值不宜过大。
-    PIPELINE_COGNITION_WAIT_SECONDS: int = 180
+    # 整批 character_cognition_not_ready。设 0 关闭等待(回到旧行为)。
+    # 为什么是 600 而不是更小的值:一次提取可能先失败、再经"重开 → 重新提取"
+    # 才能成功(见 chapter_executor._ensure_cognition_for_saved_body),整轮要
+    # 一两分钟;180s 时实测链仍在 ch6 卡住,600s 后 completed 能连续增长
+    # (实测 5→10 章、pending 持续下降、状态保持 generating)。
+    # 代价:等待发生在 project_worker_lock 内,所以它同时是全书的 pause 响应
+    # 上限;should_stop 每轮都会检查,真正的 pause 不会被忽视,只是最长要等这么久。
+    PIPELINE_COGNITION_WAIT_SECONDS: int = 600
     # 等待轮询间隔(秒)。
     PIPELINE_COGNITION_POLL_SECONDS: float = 5.0
 
