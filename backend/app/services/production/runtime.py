@@ -88,22 +88,23 @@ def _cognition_wait_seconds() -> int:
 
 async def _wait_chapter_cognition(
     sessions, chapter_id, *, timeout_seconds, poll_seconds=None, should_stop=None,
+    requeue_limit=3, requeue_cooldown_seconds=300,
 ) -> bool:
     """Wait for this chapter's cognition extraction to become usable.
 
     Ready means ``status == completed``. ``obsolete`` (source changed / author
     decision) is a real terminal state — give up immediately.
 
-    ``failed`` is **not** requeued here even though it looks like a terminal
-    failure: ``cognition.extract_chapter`` runs with
-    ``autoretry_for=(Exception,), max_retries=3`` and a redelivery with the same
-    ``delivery_id`` flips the record back to ``running``. Re-queueing it
-    ourselves races that mechanism, so we keep polling and let autoretry (or the
-    timeout) decide.
-
-    The wait runs inside ``project_worker_lock``, so ``should_stop`` is polled
-    every round: without it a user pause would be stuck behind the whole
-    timeout, and the lock would block rollback/recovery commands too.
+    ``failed`` 不立即放弃,也**不**立刻重投:
+    - Celery 的 autoretry 是 ``retry_backoff`` 的**秒级**三次重试,同一 prompt、
+      同一温度、同一份正文下模型会重复同一个错误(实测某章 3 次挤在 5 秒内,
+      连同手动那次共 4 次全败)。所以要给足冷却时间,不能与它抢。
+    - 冷却满之后置回 ``pending`` 才是有效重试:``run_cognition_extraction`` 对
+      ``failed`` + 非原 delivery_id 的投递会直接 skip
+      (``model_retry_requires_original_task``,见 test_cognition_workflow_offline),
+      而置回 ``pending`` 后 beat 的再派发不再命中该分支,等于走了一次"稍后重试"
+      —— 隔开时间的新采样实测才有机会成功。
+    - ``requeue_limit`` 保证永久失败的章不会被无限重投。
     """
     if timeout_seconds <= 0:
         return True
@@ -118,6 +119,7 @@ async def _wait_chapter_cognition(
 
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     last_status = None
+    requeues = 0
     while True:
         if should_stop is not None and await should_stop():
             logger.info("Cognition wait abandoned (pipeline no longer ours) chapter=%s", chapter_id)
@@ -137,10 +139,28 @@ async def _wait_chapter_cognition(
                 if record.status == "obsolete":
                     logger.warning("Cognition obsolete chapter=%s", chapter_id)
                     return False
+                if record.status == "failed":
+                    updated = record.updated_at
+                    if updated is not None and updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=timezone.utc)
+                    cooled = (updated is None
+                              or (datetime.now(timezone.utc) - updated).total_seconds() >= requeue_cooldown_seconds)
+                    if cooled and requeues < requeue_limit:
+                        await db.execute(
+                            update(ChapterCognition)
+                            .where(ChapterCognition.id == record.id)
+                            .values(status="pending")
+                        )
+                        await db.commit()
+                        requeues += 1
+                        logger.info(
+                            "Cognition requeued after cooldown chapter=%s attempt=%s/%s",
+                            chapter_id, requeues, requeue_limit,
+                        )
         if asyncio.get_running_loop().time() >= deadline:
             logger.warning(
-                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss",
-                chapter_id, last_status, timeout_seconds,
+                "Cognition wait timed out chapter=%s last_status=%s timeout=%ss requeues=%s",
+                chapter_id, last_status, timeout_seconds, requeues,
             )
             return False
         await asyncio.sleep(poll_seconds)
