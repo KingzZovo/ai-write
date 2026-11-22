@@ -88,7 +88,7 @@ def _cognition_wait_seconds() -> int:
 
 async def _wait_chapter_cognition(
     sessions, chapter_id, *, timeout_seconds, poll_seconds=None, should_stop=None,
-    requeue_limit=3, requeue_cooldown_seconds=300,
+    requeue_limit=3, requeue_cooldown_seconds=90,
 ) -> bool:
     """Wait for this chapter's cognition extraction to become usable.
 
