@@ -75,16 +75,19 @@ async def _ensure_cognition_for_saved_body(db, project_id, chapter_id) -> None:
             await enqueue_cognition(db, source)
             logger.info("Cognition enqueued for already-saved chapter=%s", chapter_id)
         elif existing.status in ("failed", "obsolete"):
-            # 有记录但**不可用**:按当前正文的认知边界只看 completed,所以 failed
-            # 与没有记录等价。置回 pending 让 worker/Beat 重新提取
-            # (enqueue_cognition 只重开 obsolete,对 failed 是 no-op)。
+            # 有记录但**不可用**:认知边界只看 completed,所以 failed 与"没有"等价。
+            # 不能只置 pending —— 该记录的 attempt_count 可能已用尽(实测 ch2 att=4),
+            # 任务一跑就 model_retry_budget_exhausted 返回(0.2 秒,根本没调模型)。
+            # 走项目自己的重开路径:先置 obsolete,enqueue_cognition 只重开 obsolete,
+            # 会新建 cycle 并把 attempt_count 归零,等于重开一轮预算。
             await db.execute(
                 update(ChapterCognition)
                 .where(ChapterCognition.id == existing.id)
-                .values(status="pending")
+                .values(status="obsolete", attempt_token=None)
             )
+            await enqueue_cognition(db, source)
             logger.info(
-                "Cognition re-queued for already-saved chapter=%s previous=%s",
+                "Cognition reopened for already-saved chapter=%s previous=%s",
                 chapter_id, existing.status,
             )
     except Exception as exc:  # noqa: BLE001
