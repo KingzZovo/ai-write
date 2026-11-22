@@ -38,6 +38,15 @@ async def resolve_cognition_source(db, project_id, chapter_id):
 def validate_completed_receipt(record, source):
     """Validate the saved delta's shape and receipt; not an evidence proof."""
     if record is None or record.status != 'completed':
+        # 兜底文案("人物认知材料暂不可用")对应多个错误码,且这一条是长篇最容易
+        # 反复撞的墙 —— 不点名是哪一章、哪条记录、什么状态,排查只能靠猜。
+        logger.warning(
+            "character_cognition_not_ready chapter=%s record=%s status=%s source_hash=%s",
+            getattr(source, 'chapter_id', None),
+            'missing' if record is None else 'present',
+            getattr(record, 'status', None),
+            str(getattr(source, 'source_hash', '') or '')[:12],
+        )
         raise RequiredContextUnavailable('character_cognition_not_ready')
     try:
         if (record.source_hash != source.source_hash or record.source_json != source.receipt
