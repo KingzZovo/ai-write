@@ -30,11 +30,14 @@ setsid nohup /root/ai-write/.venv/bin/python -m uvicorn app.main:app --host 127.
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -n main@%h > /tmp/celery_main.log 2>&1 &
 # 3) pipeline-control worker
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q pipeline-control -n pipe@%h > /tmp/celery_pipe.log 2>&1 &
-# 4) beat —— 调度 pipeline-command-recovery(30s)/cognition-extraction-recovery(60s)/entity-projection-recovery(60s)
+# 4) 认知提取 worker —— 必须独立队列,否则写作排队会把它堵住
+setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q cognition -n cog@%h > /tmp/celery_cog.log 2>&1 &
+# 5) beat —— 调度 pipeline-command-recovery(30s)/cognition-extraction-recovery(60s)/entity-projection-recovery(60s)
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app beat --loglevel=info --schedule=/tmp/aiwrite-celerybeat > /tmp/celery_beat.log 2>&1 &
 ```
 
 - **`--concurrency=1` 是硬要求**:项目对同一项目的实体投影/认知是**独占**语义,并发会报 `EntityProjectionBusy('another entity worker owns this project')`。
+- **认知提取必须走 `cognition` 独立队列**(`task_routes` 里已配)。它与写作共用 worker 时,写作单章 2–4 分钟会把提取排到十几分钟后;而认知边界是全有或全无,一章 pending 就把后续整批章堵死(实测 293 次 `not_ready` 全指向同一章 pending)。
 - **改完代码必须重启 worker 与 API**——prefork 子进程只在启动时加载代码。这条踩过多次。
 
 ## 3. 正常流程(全部走 HTTP,不要自己写调度脚本)
