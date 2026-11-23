@@ -106,6 +106,13 @@ services:
     <<: *celery-base
     command: celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q pipeline-control
 
+  # 认知提取必须与写作并行。它原本留在默认队列,写作排队时认知提取一等十几分钟;
+  # 而 pipeline 推进下一章要求前一章的认知记录为 completed(边界全有或全无),
+  # 实测一章 pending 的 12 分钟里,后面 73 章全部失败。专用队列 + 专用 worker 解决。
+  celery-cognition-worker:
+    <<: *celery-base
+    command: celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q cognition
+
   # Run one Beat instance per deployment. Durable DB tokens deduplicate delivery.
   celery-beat:
     <<: *celery-base

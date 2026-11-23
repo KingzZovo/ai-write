@@ -44,6 +44,12 @@ celery_app.conf.update(
         "tasks.dispatch_generation_batches": {"queue": "pipeline-control"},
         "tasks.dispatch_generation_tasks": {"queue": "pipeline-control"},
         "tasks.dispatch_arc_planning": {"queue": "pipeline-control"},
+        # 认知提取走独立队列。
+        # 原因(实测 2026-11-22):它原本与写作共用 concurrency=1 的 worker,写作
+        # 任务排队时认知提取一等十几分钟;而 pipeline 推进下一章要求前一章的认知
+        # 记录为 completed(边界全有或全无),于是 ch13 pending 的 12 分钟里,
+        # 后面的 73 章全部失败。独立队列 + 独立 worker 让两者并行、互不阻塞。
+        "cognition.extract_chapter": {"queue": "cognition"},
     },
 )
 
