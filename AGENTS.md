@@ -11,8 +11,10 @@
 - 仓库:`/root/ai-write`(后端 `backend/`,前端 `frontend/`);Python 用 **`/root/ai-write/.venv/bin/python`**(不是系统 python,也不是 `/root/hcx_venv`)。
 - **开发/验证一律用隔离库**:`postgresql+asyncpg://postgres:postgres@127.0.0.1:55432/aiwrite_eval`。不要碰生产库。
 - 端口:**API 8020**(8000/8010 是别的项目)、Qdrant 56333、Redis 56379、Neo4j `bolt://127.0.0.1:57687`。
-- **密钥不写进仓库文件、文档或提交信息**。需要 API key 时从运行中的进程 env 取:
-  `tr '\0' '\n' < /proc/$(pgrep -f "uvicorn app.main:app --host 127.0.0.1 --port 8020" | head -1)/environ | grep QUALITY_EVAL_API_KEY`
+- **密钥不写进仓库文件、文档或提交信息**。需要 API key / 启动 env 时用
+  `python backend/scripts/ops/dump_service_env.py /tmp/aiwrite.env`(从运行中的 API 进程
+  抄 env,含 JSON 的值会自动加引号)。**不要用 `pgrep -f "uvicorn …"` 取 PID** —— 它会
+  匹配到你正在执行的这条命令行(见第 9 节),拿到的是自己。
 
 ## 2. 必需服务(缺任一,链路会静默不推进)
 
@@ -35,6 +37,11 @@ setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --lo
 # 5) beat —— 调度 pipeline-command-recovery(30s)/cognition-extraction-recovery(60s)/entity-projection-recovery(60s)
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app beat --loglevel=info --schedule=/tmp/aiwrite-celerybeat > /tmp/celery_beat.log 2>&1 &
 ```
+
+- **快速重启**(改完代码 / 改完模型路由 / 换 embedding 模型后必须重启,否则 prefork 子进程
+  仍用旧代码与旧 DB 路由):`bash backend/scripts/ops/restart_services.sh` 默认只重启 celery
+  四个角色,加 `--with-api` 连 API 一起。脚本从**运行中的进程**提取 env,不硬编码密钥;
+  它是唯一推荐的重启入口 —— 手写 kill 循环会踩第 9 节的"杀自己"坑。
 
 - **`--concurrency=1` 是硬要求**:项目对同一项目的实体投影/认知是**独占**语义,并发会报 `EntityProjectionBusy('another entity worker owns this project')`。
 - **认知提取必须走 `cognition` 独立队列**(`task_routes` 里已配)。它与写作共用 worker 时,写作单章 2–4 分钟会把提取排到十几分钟后;而认知边界是全有或全无,一章 pending 就把后续整批章堵死(实测 293 次 `not_ready` 全指向同一章 pending)。
@@ -93,6 +100,20 @@ setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app beat --logl
 - 自检(应返回空列表):
   `curl -s "http://127.0.0.1:8020/api/prompts" -H "X-API-Key: $K" | python3 -c "import json,sys;print([p['task_type'] for p in json.load(sys.stdin) if p.get('is_active') and not p.get('endpoint_id')])"`
 - `GET /api/model-config/tasks` 是 **stub**(返回空),不是路由入口。
+
+- **embedding 走外部 NVIDIA 云,不在 8317 网关里**:`http://127.0.0.1:8317/v1/embeddings`
+  返回 **404**(网关只有 chat 模型)。当前模型 `nvidia/nemotron-3.5-embed-1b`(**2048 维**),
+  由 `prompt_assets(task_type='embedding')` → `llm_endpoints` 决定;改它走
+  `PUT /api/model-config/endpoints/{id}` + `PUT /api/prompts/{id}?confirm_mismatch=true`。
+- **`space_identity` 含 model 名** → 换 embedding 模型 = 换向量空间 = 换集合名
+  (`chapter_cognition__<project>__<space_id>__<dim>`),旧索引不复用;**新集合由写作时的
+  `rank_cognition` 惰性重建**,不需要人工跑回填。
+- **上游 EOL 的症状是"整批章 failed"**,文案 `正文生成:人物认知检索暂不可用…`
+  (兜底码 `character_cognition_retrieval_unavailable`,对应 410/超时/连接失败多个原因)。
+  先脱敏验证 provider:
+  `python backend/scripts/ops/dump_service_env.py /tmp/e; . /tmp/e; `
+  然后用 `/tmp/e` 里的 key 直连 `POST {base_url}/embeddings` 看真实状态码。
+  本次事故复盘:[docs/evaluation/embedding-eol-20261124.md](docs/evaluation/embedding-eol-20261124.md)。
 
 ## 6. 认知链(长篇最容易卡死的地方)
 
@@ -156,7 +177,12 @@ psql ... -c "select v.volume_idx,count(*),min(ch.word_count),max(ch.word_count) 
 ```
 
 - `chapters` 表**没有** `project_id`(要 join `volumes`);`outlines` 表**没有** `volume_idx`(在 `content_json->>'volume_idx'`)。
-- `pkill -f /tmp/x.py` 会杀掉自己(命令行含同一串),用变量拼接规避。
+- `pkill -f` / `pgrep -f` 会匹配自己的命令行。`pkill -f /tmp/x.py` 会杀掉自己;更隐蔽的是
+  **kill 循环**(遍历 `/proc/*` 按 cmdline 关键字 kill):当这段代码与关键字**字面**出现在
+  同一条 shell 命令里时,被检查的进程列表包含当前 shell 本身(exit 143)。
+  规避:把 kill 逻辑放进**脚本文件**执行 —— 调用方 cmdline 只有脚本路径,不含关键字。
+  另:读 `/proc/<pid>/cmdline` 得到的是 `\0` 分隔串,要匹配 `--port 8020` 这种**跨参数**串,
+  先 `.replace('\0', ' ')`(否则永远匹配不上,表现为"找不到进程")。
 
 ## 10. 当前项目(白蜡树)
 
