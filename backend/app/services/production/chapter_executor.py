@@ -102,6 +102,38 @@ def _outcome(task, chapter, status) -> ChapterOutcome:
         return ChapterOutcome("needs_review", chapter.word_count, task.error_message or "草稿已保留，请审核后继续")
     return ChapterOutcome("failed", error=task.error_message or "本次生成没有成功保存可用正文，原稿已保留", retryable=task.status == "failed")
 
+async def _backfill_empty_chapter(db, chapter, task, status) -> None:
+    """章节为空、而任务保留了候选正文时,把候选落库。
+
+    背景:局部修订一条都定不到时,生成链走"停止分支"——候选留在
+    ``GenerationTask.result_text``、章节保持原样、状态 ``needs_review``。
+    若章节本来就是空的(首次生成、作者没有稿),这一章就**永远拿不到正文**:
+    实测卷 1 的 35/38/39/40/41 长期停在 ``draft`` + ``body=0``。
+
+    只在**空章**上回填,绝不覆盖作者已有稿 —— 那是
+    ``test_revision_stop_terminal`` 锁住的语义("不覆盖章节正文"),也不该被这里改掉。
+    """
+    if chapter is None or (chapter.content_text or '').strip():
+        return
+    candidate = (getattr(task, 'result_text', None) or '').strip()
+    if not candidate:
+        return
+    chapter.content_text = candidate
+    chapter.word_count = len(candidate)
+    if (chapter.status or 'draft') == 'draft':
+        # 候选未经评审通过,不能冒充 completed。
+        chapter.status = 'needs_review'
+    # `_outcome` 的防伪校验比对 status.saved_hash,回填必须同步更新,
+    # 否则这一章依旧被判 failed、正文等于没落。
+    if status is not None:
+        status.saved_hash = content_hash(candidate)
+        status.word_count = len(candidate)
+    await db.flush()
+    logger.info(
+        "Backfilled empty chapter from retained candidate chapter=%s chars=%d",
+        chapter.id, len(candidate),
+    )
+
 
 async def execute_chapter(sessions, pipeline_id, command_id, worker_id, status_id) -> ChapterOutcome:
     async with sessions() as db:
@@ -168,4 +200,7 @@ async def execute_chapter(sessions, pipeline_id, command_id, worker_id, status_i
         status = await db.get(PipelineChapterStatus, UUID(str(status_id)))
         if task is None or chapter is None or status is None:
             return ChapterOutcome("failed", error="生成结果或章节已不存在")
+        # 停止分支(局部修订定不到)只把候选留在 task 里;章节原本为空时,
+        # 必须在这里落库,否则这一章永远没有正文。
+        await _backfill_empty_chapter(db, chapter, task, status)
         return _outcome(task, chapter, status)
