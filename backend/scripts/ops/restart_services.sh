@@ -83,6 +83,9 @@ fi
 start celery_main.log "$CEL" -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -n main@%h
 start celery_pipe.log "$CEL" -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q pipeline-control -n pipe@%h
 start celery_cog.log  "$CEL" -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q cognition -n cog@%h
+# 恢复/派发任务必须有独立 worker:默认队列单次 pipeline 任务实测占用 1031 秒,
+# 期间恢复任务全部排队 → pending 认知记录派发不出去 → 认知就绪守候超时 → 级联失败。
+start celery_recovery.log "$CEL" -A app.tasks:celery_app worker --loglevel=info --concurrency=4 -Q recovery -n rec@%h
 start celery_beat.log "$CEL" -A app.tasks:celery_app beat --loglevel=info --schedule="$LOG_DIR/aiwrite-celerybeat"
 
 sleep 8

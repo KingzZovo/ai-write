@@ -113,6 +113,13 @@ services:
     <<: *celery-base
     command: celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q cognition
 
+  # 恢复/派发类 beat 任务走独立队列:默认队列是 concurrency=1 的写作 worker,
+  # 单次 pipeline 生成实测占用 1031 秒,期间恢复任务一个都排不上 —— pending 的
+  # 认知记录派发不出去,pipeline 的认知就绪守候超时后照常推进,后续章级联失败。
+  celery-recovery-worker:
+    <<: *celery-base
+    command: celery -A app.tasks:celery_app worker --loglevel=info --concurrency=4 -Q recovery
+
   # Run one Beat instance per deployment. Durable DB tokens deduplicate delivery.
   celery-beat:
     <<: *celery-base

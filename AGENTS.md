@@ -34,7 +34,11 @@ setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --lo
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q pipeline-control -n pipe@%h > /tmp/celery_pipe.log 2>&1 &
 # 4) 认知提取 worker —— 必须独立队列,否则写作排队会把它堵住
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --loglevel=info --concurrency=1 -Q cognition -n cog@%h > /tmp/celery_cog.log 2>&1 &
-# 5) beat —— 调度 pipeline-command-recovery(30s)/cognition-extraction-recovery(60s)/entity-projection-recovery(60s)
+# 5) recovery worker —— 恢复/派发类 beat 任务(entities.*/foreshadows.*/evaluations.*/cognition.replay_pending)
+#    必须独立队列:默认队列是 concurrency=1 的写作 worker,单次 pipeline 生成实测占用
+#    1031 秒,期间恢复任务全被饿死 → pending 认知记录派发不出去 → 认知守候超时 → 级联失败。
+setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app worker --loglevel=info --concurrency=4 -Q recovery -n rec@%h > /tmp/celery_recovery.log 2>&1 &
+# 6) beat —— 调度各 *-recovery(30s/60s)与 hourly/daily 维护任务
 setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app beat --loglevel=info --schedule=/tmp/aiwrite-celerybeat > /tmp/celery_beat.log 2>&1 &
 ```
 

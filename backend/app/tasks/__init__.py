@@ -50,6 +50,26 @@ celery_app.conf.update(
         # 记录为 completed(边界全有或全无),于是 ch13 pending 的 12 分钟里,
         # 后面的 73 章全部失败。独立队列 + 独立 worker 让两者并行、互不阻塞。
         "cognition.extract_chapter": {"queue": "cognition"},
+        # 周期性恢复/派发任务走独立队列。
+        # 原因(实测 2026-11-26):它们本来跑在默认队列,而默认队列是
+        # concurrency=1 的写作 worker —— 单次 tasks.run_pipeline_generation 实测占用
+        # **1031 秒**,期间 beat 的恢复任务一个都排不上。后果是
+        # cognition.replay_pending 无法把 pending 记录派发出去,认知记录空等十几分钟,
+        # pipeline 的 _wait_chapter_cognition(600s)超时后照常推进,后续章成片
+        # character_cognition_not_ready 失败。恢复任务必须在一条**不会被长任务饿死**
+        # 的队列上,所以给它们专用 recovery worker。
+        "cognition.replay_pending": {"queue": "recovery"},
+        "entities.replay_pending": {"queue": "recovery"},
+        "entities.replay_relationship_writes": {"queue": "recovery"},
+        "entities.replay_character_deletions": {"queue": "recovery"},
+        "entities.replay_author_profiles": {"queue": "recovery"},
+        "entities.replay_outline_settings": {"queue": "recovery"},
+        "entities.replay_invalidations": {"queue": "recovery"},
+        "entities.drain_source_outbox": {"queue": "recovery"},
+        "foreshadows.replay_writes": {"queue": "recovery"},
+        "foreshadows.replay_confirmations": {"queue": "recovery"},
+        "foreshadows.replay_reviews": {"queue": "recovery"},
+        "evaluations.recover_pending": {"queue": "recovery"},
     },
 )
 
