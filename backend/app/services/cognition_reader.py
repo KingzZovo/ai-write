@@ -226,7 +226,8 @@ def _chapter_item(chapter, source, record, revision=None, *, include_changes=Fal
         messages['invalid'] = '作者决定记录无法核对，请重新校订或明确恢复自动提取。'
     result = dict(chapter_id=str(chapter.id), chapter_title=source.receipt['title'] if source else chapter.title,
         global_idx=source.global_idx if source else chapter.global_idx,
-        chapter_status=source.receipt['status'] if source else chapter.status,
+        # 回执已不含 status(source 身份不该随评审态变化),章节状态直接读行数据。
+        chapter_status=chapter.status,
         status=state, message=messages.get(state, '后台正在处理当前保存稿。'),
         record_id=str(record.id) if record else None, cycle_id=str(record.cycle_id) if record else None,
         source_hash=source.source_hash if source else None,

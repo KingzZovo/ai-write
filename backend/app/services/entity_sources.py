@@ -35,11 +35,22 @@ class EntitySourceHeader:
 
 
 def _receipt_from_row(row, content_hash):
-    """One format shared by full-body and lightweight source reads."""
+    """**Source 身份** —— 只包含"正文变了才会变"的东西,与读正文/走哈希两条路共用。
+
+    ``source_hash = digest(receipt)``,所以回执里放什么,就等于把什么当成身份。
+    唯一被**有意排除**的是 ``status``(评审态 ``needs_review``↔``completed``):
+    审核动作会反复改它而正文一字未动;实测把它烤进身份后,状态一翻记录就查不到,
+    ``record is None`` 让 ``completed`` 章走严格路径抛
+    ``character_cognition_not_ready``,同批次后续**所有**章级联 failed。
+
+    ``title`` 与位置字段都**留在**身份里 —— 这是既有契约:改题、重排、换卷都让旧
+    source 失效(test_previous_proof_cannot_authorize_a_changed_current_source[title]、
+    test_changed_source_or_record_is_never_reused[chapter_order|volume_order])。
+    评审态则是展示字段,一律现读 ``chapters`` 行。
+    """
     return dict(chapter_id=str(row.id), project_id=str(row.project_id), volume_id=str(row.volume_id),
                    title=row.title, chapter_idx=row.chapter_idx, global_idx=row.global_idx,
-                   volume_idx=row.volume_idx, status=row.status,
-                   content_hash=content_hash)
+                   volume_idx=row.volume_idx, content_hash=content_hash)
 
 
 def _source_from_row(row):

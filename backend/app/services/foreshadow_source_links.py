@@ -48,8 +48,11 @@ async def current_source(db, project_id, chapter_id, *, lock=False):
     if source is None:
         raise SourceLinkConflict('chapter_unavailable')
     position = (await load_foreshadow_positions(db, project_id)).chapter(chapter_id)
+    # 只比位置。评审态(status)不属于 source 身份 —— 审核通过一纸章节不该让
+    # 伏笔引用变成"不可用",项目自己的契约也要求改 status/改题都保留同一段被引正文
+    # (test_status_and_title_changes_preserve_the_same_cited_prose)。
     if position is None or any(str(source.receipt[key]) != str(position[key])
-            for key in ('volume_id', 'volume_idx', 'chapter_idx', 'global_idx', 'status')):
+            for key in ('volume_id', 'volume_idx', 'chapter_idx', 'global_idx')):
         raise SourceLinkConflict('chapter_unavailable')
     return source
 

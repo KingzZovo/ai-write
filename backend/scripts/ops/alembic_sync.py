@@ -41,7 +41,14 @@ from dataclasses import dataclass, field
 # head 迁移 → 它留下的可核对痕迹。加新迁移时**必须**在这里补一行,
 # 否则新 head 会落到 `manual`(拒绝自动判断),这是有意的安全默认。
 SCHEMA_PROBES: dict[str, tuple[tuple[str, str, str], ...]] = {
-    # (kind, table, name);kind: column | unique | table | trigger
+    # (kind, table, name);kind: column | unique | table | trigger | data
+    # `data` 是**数据迁移**的痕迹:table 槽位放一条 SQL,必须返回真值。
+    # a1001963 把 status 从认知 source 身份里剔除(纯数据迁移,无 DDL),
+    # 痕迹 = "再没有任何一条记录的 source_json 还带 status"。
+    "a1001963": (("data",
+                  "SELECT NOT EXISTS (SELECT 1 FROM chapter_cognition_extractions "
+                  "WHERE (source_json::jsonb) ? 'status')",
+                  ""),),
     # a1001962 重装 chapter content_hash 触发器(并回填历史正文的 hash)。
     "a1001962": (("trigger", "chapters", "chapter_content_hash_changed"),),
     # a1001961 只加一列:usage_estimated(该行 token 是字符数估算,不是供应商计量)。
@@ -144,6 +151,10 @@ def check_probes(dsn: str, revision: str) -> bool | None:
                         found = (await conn.execute(text(
                             "SELECT 1 FROM pg_trigger WHERE tgrelid = to_regclass(:t) "
                             "AND tgname = :n AND NOT tgisinternal"), {"t": table, "n": name})).scalar()
+                    elif kind == "data":
+                        # 数据迁移的痕迹:table 槽位里放的就是要核对的 SQL,
+                        # 返回真值即通过(见 SCHEMA_PROBES 顶部说明)。
+                        found = (await conn.execute(text(table))).scalar()
                     else:  # table
                         found = (await conn.execute(text(
                             "SELECT to_regclass(:t)"), {"t": table})).scalar()
