@@ -128,7 +128,11 @@ async def _backfill_empty_chapter(db, chapter, task, status) -> None:
     if status is not None:
         status.saved_hash = content_hash(candidate)
         status.word_count = len(candidate)
-    await db.flush()
+    # 必须 **commit**，不能只 flush：本文件的会话由 `async with sessions() as db`
+    # 管理，退出时会回滚未提交的事务，只 flush 等于白写 —— 实测这一条让 22 次
+    # 回填全部丢失（日志里 "Backfilled empty chapter" 打了 22 次，章节仍是
+    # draft + body=0）。与上方跳过分支的 `await db.commit()` 保持一致。
+    await db.commit()
     logger.info(
         "Backfilled empty chapter from retained candidate chapter=%s chars=%d",
         chapter.id, len(candidate),
