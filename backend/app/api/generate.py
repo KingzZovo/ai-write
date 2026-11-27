@@ -1815,11 +1815,17 @@ async def generate_outline(
             parent = await db.get(Outline, req.parent_outline_id)
             book_outline = parent.content_json if parent else {}
         elif req.project_id:
+            # 与下方 chapter 分支**同一套取法**:作品可能有多份书纲(重新生成过就有),
+            # 而无过滤的 scalar_one_or_none() 会抛 MultipleResultsFound ——
+            # 实测《白蜡树下》有 4 份书纲(1 份 confirm),卷 5 的生成直接 500,
+            # 等于**任何重生成过书纲的作品都再也建不出新卷**。
+            # 取法与 chapter 分支保持一致:先 confirmed、再版本/时间/ID 兜底。
             book_result = await db.execute(
                 select(Outline).where(
                     Outline.project_id == req.project_id,
                     Outline.level == "book",
-                )
+                ).order_by(Outline.is_confirmed.desc(), Outline.version.desc(),
+                           Outline.created_at.desc(), Outline.id.desc()).limit(1)
             )
             parent = book_result.scalar_one_or_none()
             book_outline = parent.content_json if parent else {}
