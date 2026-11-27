@@ -2328,6 +2328,16 @@ def dispatch_pipeline_commands():
     from app.services.production.dispatch import dispatch_queued_commands
     return _run_async(dispatch_queued_commands())
 
+@celery_app.task(name="tasks.advance_volumes")
+def advance_volumes():
+    """整书任务自动续卷:一卷跑完自动起下一卷(只对开启开关的作品生效)。
+
+    放在 beat 里而不是依赖外部调度器 —— 实测外部那个每小时任务从未触发,
+    导致卷 2 跑完后链条静默停住。详见 app/services/volume_advance.py。
+    """
+    from app.services.volume_advance import advance_project_volumes
+    return _run_async(advance_project_volumes(None))
+
 
 @celery_app.task(name='tasks.run_generation_batch', acks_late=False)
 def run_generation_batch(project_id: str, request_id: str):

@@ -70,6 +70,9 @@ celery_app.conf.update(
         "foreshadows.replay_confirmations": {"queue": "recovery"},
         "foreshadows.replay_reviews": {"queue": "recovery"},
         "evaluations.recover_pending": {"queue": "recovery"},
+        # 自动续卷也要走 recovery:它同样不能被 1031 秒的写作任务挡住 ——
+        # 挡住的后果正是"这一卷跑完没人起下一卷"。
+        "tasks.advance_volumes": {"queue": "recovery"},
     },
 )
 
@@ -111,6 +114,12 @@ celery_app.conf.beat_schedule = {
                                       "options": {"expires": 60}},
     "cognition-index-cleanup": {"task": "cognition.cleanup_deleted_projects", "schedule": 3600.0,
                                 "options": {"expires": 3600}},
+    # 整书任务自动续卷:一卷跑完自动起下一卷(只对 settings_json 里
+    # auto_advance_volumes=true 的作品生效)。放在项目自己的 beat 里,而不是
+    # 依赖外部调度器 —— 实测外部那个每小时任务 lastRunAt 停在 11-21 从未触发,
+    # 结果卷 2 跑完后链条静默停住,卷 3–5 一个字没写。
+    "volume-auto-advance": {"task": "tasks.advance_volumes", "schedule": 60.0,
+                            "options": {"expires": 60}},
     "entity-projection-recovery": {"task": "entities.replay_pending", "schedule": 60.0,
                                    "options": {"expires": 60}},
     "pipeline-command-recovery": {

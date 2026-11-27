@@ -67,9 +67,17 @@ setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app beat --logl
 | 整书任务 | `POST /api/pipeline` → `POST /api/pipeline/{id}/start` | 项目自己逐章跑 |
 | 进度 | `GET /api/pipeline/{id}` | **先读每章 `error_message`,再看日志** |
 
-- `state`:`planning/queued/generating/pausing/completed/failed`。
+- `state`:`planning/queued/generating/pausing/completed/failed/needs_review`。
+  **`needs_review` 不是进行中**:整卷跑完但有草稿待审时停在这里,续卷任务会照常推进下一卷。
 - `pause` / `rollback` 是恢复手段;`failed` 的任务要**重建**(章节清单变了旧任务会拒绝启动)。
 - **不要用 `/tmp` 脚本逐章打 SSE** —— 那等于把项目的编排器重写一遍,会掩盖真实缺陷。
+- **逐卷自动续卷**(百万字长篇必须串行,因为同一作品同时只能有一个进行中的整书任务):
+  开启 `project.settings_json.auto_advance_volumes = true` 后,beat 的
+  `tasks.advance_volumes`(60s,走 `recovery` 队列)会在「本作品没有进行中任务」且
+  「还有正文未完成的卷」时自动起该卷的 pipeline(挑最小 `volume_idx`)。
+  **别依赖外部调度器**:实测外部那个每小时任务 `lastRunAt` 停在 11-21、`nextRunAt`
+  一直往后滚却从未触发,导致卷 2 跑完(100/100、27 万字)后链条**静默停住**,
+  卷 3–5 一个字没写而日志无任何错误。开关经 `PUT /api/projects/{id}`(`settings_json`)设置。
 
 ## 4. 规模与字数的口径(容易记混)
 
