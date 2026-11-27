@@ -32,6 +32,10 @@ from sqlalchemy import case, func, select
 logger = logging.getLogger(__name__)
 
 AUTO_ADVANCE_SETTING = 'auto_advance_volumes'
+# 同一卷最多自动重试几轮。某卷若有几章**每次都失败**(正文永远写不出来),
+# 「正文未完成」这个判据会一直成立,而 beat 每 60s 就会为它起一个新任务 ——
+# 无上限就是无限重试、无限烧钱。到顶就跳过它去写后面的卷,并留日志点名。
+MAX_VOLUME_ATTEMPTS = 5
 
 
 def _enabled(settings: Any) -> bool:
@@ -41,14 +45,20 @@ def _enabled(settings: Any) -> bool:
     return value is True or str(value).strip().lower() == 'true'
 
 
-def first_unfinished_volume(rows) -> Any | None:
-    """挑出正文未完成的最小卷;全齐返回 None。
+def first_unfinished_volume(rows, *, max_attempts: int = MAX_VOLUME_ATTEMPTS) -> Any | None:
+    """挑出正文未完成、且**还没被反复重试到顶**的最小卷;没有则返回 None。
 
-    `rows` 每项需带 `volume_idx / total / done`,已按 volume_idx 升序。
+    `rows` 每项需带 `volume_idx / total / done / attempts`,已按 volume_idx 升序。
+
+    为什么要 attempts 上限:见 MAX_VOLUME_ATTEMPTS —— 卡住的卷不能被无限重起,
+    否则 beat 会一直为它烧钱,而后面的卷永远轮不到。
     """
     for row in rows:
-        if row.total and row.done < row.total:
-            return row
+        if not row.total or row.done >= row.total:
+            continue
+        if getattr(row, 'attempts', 0) >= max_attempts:
+            continue
+        return row
     return None
 
 
@@ -78,12 +88,17 @@ async def advance_project_volumes(sessions, *, dispatch=None, limit=20) -> dict[
             if active is not None:
                 result['skipped'].append({'project_id': str(project_id), 'reason': 'active_pipeline'})
                 continue
+            # 该卷历史上起过多少轮任务 —— 用来给"卡住的卷"设上限,见
+            # first_unfinished_volume 的说明。
+            attempts = (select(func.count(PipelineRun.id))
+                        .where(PipelineRun.volume_id == Volume.id).scalar_subquery())
             rows = (await db.execute(
                 select(
                     Volume.id.label('volume_id'),
                     Volume.volume_idx.label('volume_idx'),
                     func.count(Chapter.id).label('total'),
                     func.count(case((Chapter.word_count > 0, Chapter.id))).label('done'),
+                    attempts.label('attempts'),
                 )
                 .join(Chapter, Chapter.volume_id == Volume.id)
                 .where(Volume.project_id == project_id)
@@ -92,7 +107,18 @@ async def advance_project_volumes(sessions, *, dispatch=None, limit=20) -> dict[
             )).all()
             target = first_unfinished_volume(rows)
             if target is None:
-                result['skipped'].append({'project_id': str(project_id), 'reason': 'all_volumes_done'})
+                # 区分"全书写完"与"剩下的卷已经被重试到顶"——后者需要人看一眼。
+                stuck = [f'v{r.volume_idx}({r.done}/{r.total}, {r.attempts} 轮)'
+                         for r in rows if r.total and r.done < r.total]
+                if stuck:
+                    logger.warning(
+                        'volume advance gave up project=%s volumes stuck after %d attempts: %s',
+                        project_id, MAX_VOLUME_ATTEMPTS, ', '.join(stuck))
+                    result['skipped'].append({'project_id': str(project_id),
+                                              'reason': 'attempts_exhausted', 'volumes': stuck})
+                else:
+                    result['skipped'].append({'project_id': str(project_id),
+                                              'reason': 'all_volumes_done'})
                 continue
             try:
                 pipeline = await create_pipeline(db, project_id, target.volume_id)
