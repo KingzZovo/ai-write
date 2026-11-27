@@ -25,6 +25,7 @@ class Driver:
         self.receipts = {}
         self.fail_character_delete = False
         self.relationship_locks = 0
+        self.queries = []
     def session(self): return self
     async def __aenter__(self): return self
     async def __aexit__(self, *args): pass
@@ -35,6 +36,7 @@ class Driver:
             self.character, self.receipts = before
             raise
     async def run(self, query, **params):
+        self.queries.append(query)
         if query.startswith('CREATE CONSTRAINT'): return Result()
         if 'MERGE (g:RelationshipProjectGuard' in query:
             self.relationship_locks += 1
@@ -164,3 +166,26 @@ def test_deletion_task_uses_async_bridge(monkeypatch):
     monkeypatch.setattr(tasks, '_run_async_safe', asyncio.run)
     assert entity_tasks.replay_character_deletions.run() == {'projects': 0}
     recovery.assert_awaited_once_with(driver)
+
+
+@pytest.mark.asyncio
+async def test_replay_query_is_valid_cypher_for_aggregation():
+    """回归:RETURN 带 collect 时,ORDER BY 不能裸写 min(...)。
+
+    实测 2026-11-27,原查询是
+        RETURN d.project_id AS project_id,collect(d.token) AS tokens
+        ORDER BY min(coalesce(d.retry_after,0)),project_id
+    Neo4j 直接判 CypherSyntaxError("In a WITH/RETURN with DISTINCT or an aggregation,
+    it is not possible to access variables declared before") —— 于是这个恢复任务
+    每 60 秒抛一次错,角色删除的重放从来没跑成过。修法是把到期时间也投影成
+    `AS due`,再 `ORDER BY due`。
+    """
+    driver, pid, token = Driver(), uuid4(), uuid4()
+    await delete_character_graph(driver, pid, '周砚', {'identity': '师父'}, token)
+    await replay_character_deletions(driver, materialize=AsyncMock())
+    replay = [q for q in driver.queries if 'collect(d.token)' in q]
+    assert replay, '没找到重放查询'
+    query = replay[0]
+    assert 'ORDER BY min(' not in query, 'ORDER BY 里裸用聚合,Neo4j 会判 CypherSyntaxError'
+    assert 'min(coalesce(d.retry_after,0)) AS due' in query
+    assert 'ORDER BY due' in query

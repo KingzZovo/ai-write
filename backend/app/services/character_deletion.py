@@ -96,10 +96,16 @@ async def replay_character_deletions(driver, *, materialize=None, limit=20):
         from app.tasks.entity_tasks import _materialize_entities_to_postgres
         materialize = _materialize_entities_to_postgres
     async with driver.session() as session:
+        # RETURN 里带聚合(collect)时,ORDER BY 只能引用 RETURN 投影里的东西:
+        # 裸写 min(...) 会被 Neo4j 判成 CypherSyntaxError
+        # ("In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to
+        #  access variables declared before")。这个恢复任务因此每 60 秒抛一次错,
+        # 角色删除的重放一直没跑成 —— 把最早的到期时间也投影出来,再按它排序。
         rows = await (await session.run('MATCH (d:CharacterDeletion {status:"pending"}) '
             'WHERE coalesce(d.retry_after,0) <= timestamp() '
-            'RETURN d.project_id AS project_id,collect(d.token) AS tokens '
-            'ORDER BY min(coalesce(d.retry_after,0)),project_id LIMIT $limit', limit=min(max(limit, 1), 100))).data()
+            'RETURN d.project_id AS project_id,collect(d.token) AS tokens,'
+            'min(coalesce(d.retry_after,0)) AS due '
+            'ORDER BY due,project_id LIMIT $limit', limit=min(max(limit, 1), 100))).data()
     completed = failed = 0
     for row in rows:
         try:
