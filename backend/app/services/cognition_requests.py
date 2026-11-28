@@ -47,7 +47,10 @@ async def retry_cognition(db, project_id, chapter_id, request_id, source_hash, e
     repeated = await reserve_request(db, project_id, request_id, payload)
     if repeated is not None:
         return repeated
-    sources = await resolve_entity_sources(db, project_id, [chapter_id], lock=True)
+    # allow_review_drafts:正文已落库但状态被降级的章同样要能提取(否则台账永远
+    # 缺它们的事实 —— 见 cognition_reader.resolve_cognition_source 的长注释)。
+    sources = await resolve_entity_sources(db, project_id, [chapter_id], lock=True,
+                                           allow_review_drafts=True)
     source = sources.get(str(chapter_id))
     if source is None or source.source_hash != source_hash:
         raise CognitionConflict('当前保存稿或章序已变化，请刷新后再提取')

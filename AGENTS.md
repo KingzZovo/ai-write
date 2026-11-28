@@ -132,6 +132,17 @@ setsid nohup /root/ai-write/.venv/bin/celery -A app.tasks:celery_app beat --logl
 - **边界是全有或全无**:写第 N 章时,`load_ledger` 要求"边界之前**所有有正文的章**"
   的认知记录为 `completed`(`cognition_reader.validate_completed_receipt`:记录缺失或
   `status != completed` → 抛 `character_cognition_not_ready`)。一条不合就整卷停摆,并**级联**。
+- **自增强回路(2026-11-28 实测,长篇最大的质量杀手)**:章 N 评分不到 8.2 →
+  `needs_review` → 若提取侧只认 `completed`,这一章的认知**永远**提不出来 → 台账却
+  **有意**把它的正文算进 boundary(`_ledger_position_query`)并静默跳过 → 章 N+1 在
+  缺少前文事实的条件下写 → 更差 → 更多 `needs_review`。《白蜡树下》实测:267 个 AI
+  生成章里**只有 7 章**是在前置认知齐备时生成的,260 章平均缺 96.3 章事实(最多 294);
+  按卷取样,第 50 章丢 1 章、第 200 章丢 61 章、第 450 章丢 258 章、第 500 章丢 293 章。
+  已修:`resolve_cognition_source` / `retry_cognition` 传 `allow_review_drafts=True`
+  (正文存在即事实存在,评审态不影响提取;空章仍不提取)。
+  **判定标准**:任何一次整书/整卷生成,前置章(有正文)的认知缺口必须为 0。核对:
+  `select count(*) from chapters ch join volumes v on v.id=ch.volume_id where v.project_id='<PID>' and coalesce(ch.content_text,'')<>'' and ch.global_idx < <N> and not exists (select 1 from chapter_cognition_extractions r where r.chapter_id=ch.id and r.status='completed')`
+  —— 非 0 就不要继续生成;`grep cognition_ledger_degraded /tmp/celery_*.log` 也应为 0。
 - **pipeline 已实现"推进下一章前等该章认知就绪"**(`runtime._wait_chapter_cognition`):
   等待上限 `PIPELINE_COGNITION_WAIT_SECONDS`(**默认 600**;`0` 关闭)、轮询
   `PIPELINE_COGNITION_POLL_SECONDS`、每轮检查 `should_stop`(pause/所有权)。

@@ -202,3 +202,40 @@ async def test_author_save_keeps_a_clean_manuscript_byte_identical(manuscript):
     chapter, _versions = current(manuscript)
     assert chapter.content_text == RESTORED
     assert chapter.word_count == len(RESTORED)
+
+
+@pytest.mark.asyncio
+async def test_content_change_enqueues_cognition_for_the_new_body(manuscript, monkeypatch):
+    """2026-11-28:改正文必须为新正文重入队认知提取。
+
+    认知记录按 source_hash(含 content_hash)绑定,正文一改旧记录即失效。若不在
+    写入路径重入队,这一章就没有当前正文的记录,而台账对 completed 章是严格的 →
+    它成为其后**所有**章的硬阻塞。实测:重写并采纳 卷2-5 之后,全书重写驱动全部
+    卡在 character_cognition_not_ready。
+    """
+    from unittest.mock import AsyncMock
+    import app.services.cognition_extraction as extraction
+
+    enqueue = AsyncMock()
+    monkeypatch.setattr(extraction, 'ensure_chapter_cognition', enqueue)
+
+    response = await save(manuscript)
+
+    assert response.status_code == 200
+    enqueue.assert_awaited_once()
+    args = enqueue.await_args.args
+    assert str(args[1]) == str(manuscript.pid) and str(args[2]) == str(manuscript.cid)
+
+
+@pytest.mark.asyncio
+async def test_unchanged_save_does_not_enqueue_cognition(manuscript, monkeypatch):
+    from unittest.mock import AsyncMock
+    import app.services.cognition_extraction as extraction
+
+    enqueue = AsyncMock()
+    monkeypatch.setattr(extraction, 'ensure_chapter_cognition', enqueue)
+
+    response = await save(manuscript, content_text=BEFORE, force=True)
+
+    assert response.status_code == 200 and response.json()['changed'] is False
+    enqueue.assert_not_awaited()

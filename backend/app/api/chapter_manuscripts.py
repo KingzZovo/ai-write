@@ -110,6 +110,10 @@ async def save_manuscript(project_id: UUID, chapter_id: UUID, body: ManuscriptSa
         chapter.word_count = len(change.text)
         if body.status is not None:
             chapter.status = body.status
+        if change.changed:
+            # 正文变了 → 旧认知记录失效。不重入队,这一章就成为其后所有生成的硬阻塞。
+            from app.services.cognition_extraction import ensure_chapter_cognition
+            await ensure_chapter_cognition(db, project_id, chapter_id)
         await db.flush()
         response = ManuscriptReceipt(manuscript=manuscript_source(project_id, chapter), changed=change.changed,
                                      backup_version_id=change.backup_version_id)

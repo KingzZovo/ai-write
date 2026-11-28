@@ -49,49 +49,13 @@ def _should_skip_existing_chapter(chapter, options) -> bool:
 async def _ensure_cognition_for_saved_body(db, project_id, chapter_id) -> None:
     """确保这一章**当前正文**的认知提取已入队。
 
-    跳过重写时正文没变,但它的认知记录可能从未建立(例如正文写于换模型之前、
-    或当时提取失败过 —— 那些记录按旧 hash 绑定,对当前正文无效)。这里按当前
-    source 查一次:没有记录就派发,由 worker/Beat 补齐。否则下一章的认知边界
-    依然会缺这一章。
-
-    派发失败只记日志:跳过这个动作本身不该变成 failed 把链路拖死。
+    逻辑已抽到 ``cognition_extraction.ensure_chapter_cognition`` —— 正文变更的每个
+    入口(流水线跳过分支、作者手稿保存、通用章节更新)都必须走同一条,否则新正文
+    没有记录,``completed`` 章的严格台账会把它变成其后所有章的硬阻塞。
     """
-    from app.models.cognition import ChapterCognition
-    from app.services.cognition_extraction import enqueue_cognition
-    from app.services.cognition_reader import resolve_cognition_source
+    from app.services.cognition_extraction import ensure_chapter_cognition
+    await ensure_chapter_cognition(db, project_id, chapter_id)
 
-    try:
-        source = await resolve_cognition_source(db, project_id, chapter_id)
-        if source is None:
-            return
-        existing = await db.scalar(
-            select(ChapterCognition)
-            .where(ChapterCognition.chapter_id == chapter_id,
-                   ChapterCognition.source_hash == source.source_hash)
-            .limit(1)
-            .execution_options(autoflush=False)
-        )
-        if existing is None:
-            await enqueue_cognition(db, source)
-            logger.info("Cognition enqueued for already-saved chapter=%s", chapter_id)
-        elif existing.status in ("failed", "obsolete"):
-            # 有记录但**不可用**:认知边界只看 completed,所以 failed 与"没有"等价。
-            # 不能只置 pending —— 该记录的 attempt_count 可能已用尽(实测 ch2 att=4),
-            # 任务一跑就 model_retry_budget_exhausted 返回(0.2 秒,根本没调模型)。
-            # 走项目自己的重开路径:先置 obsolete,enqueue_cognition 只重开 obsolete,
-            # 会新建 cycle 并把 attempt_count 归零,等于重开一轮预算。
-            await db.execute(
-                update(ChapterCognition)
-                .where(ChapterCognition.id == existing.id)
-                .values(status="obsolete", attempt_token=None)
-            )
-            await enqueue_cognition(db, source)
-            logger.info(
-                "Cognition reopened for already-saved chapter=%s previous=%s",
-                chapter_id, existing.status,
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Cognition enqueue skipped chapter=%s err=%s", chapter_id, exc)
 def _outcome(task, chapter, status) -> ChapterOutcome:
     usable = bool(chapter.content_text and chapter.content_text.strip()) and (
         status.saved_hash == content_hash(chapter.content_text)

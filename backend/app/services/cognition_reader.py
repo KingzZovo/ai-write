@@ -26,13 +26,28 @@ async def require_project(db, project_id, *, lock=False):
 
 
 async def resolve_cognition_source(db, project_id, chapter_id):
-    """Lock parent before children/FK writes, matching structure/deletion order."""
+    """Lock parent before children/FK writes, matching structure/deletion order.
+
+    ``allow_review_drafts=True`` —— 2026-11-28 实测出的长篇系统性缺陷:
+    认知台账 ``_ledger_position_query`` **有意**把"已有落库正文、但状态被降级"的
+    章算进 boundary(``status`` 早已移出 source 身份,身份因此稳定),可提取侧一直
+    用默认 ``allow_review_drafts=False`` 只认 ``completed`` —— 于是这些章**永远
+    拿不到认知记录**,台账每遇到它们就按"无认知变化"静默跳过。
+
+    后果是自增强回路:章 N 评分 7.9 → ``needs_review`` → 它的认知永远提取不了 →
+    台账剔除它的事实 → 章 N+1 在缺少前文事实的条件下写 → 更差 → 更多
+    ``needs_review``。实测《白蜡树下》:生成第 50 章时只丢 1 章事实,第 200 章丢
+    61 章,第 450 章丢 258 章,第 500 章丢 293 章(平均缺 96 章,最多 294 章)。
+    正文存在就等于事实存在;评审态是编辑意见,不该决定"书里已经发生的事要不要
+    被记住"。
+    """
     from app.services.entity_sources import resolve_entity_source
     try:
         await require_project(db, project_id, lock=True)
     except CognitionNotFound:
         return None
-    return await resolve_entity_source(db, project_id, 0, chapter_id, lock=True)
+    return await resolve_entity_source(db, project_id, 0, chapter_id, lock=True,
+                                       allow_review_drafts=True)
 
 
 def validate_completed_receipt(record, source):

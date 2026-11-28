@@ -240,3 +240,45 @@ async def replay_pending_cognition(sessions, *, dispatch=None, limit=20):
             # publishing fails or the process crashes before reaching here.
             continue
     return {'examined': len(rows), 'dispatched': sent, 'backfill_processed': backfill_processed}
+
+
+async def ensure_chapter_cognition(db, project_id, chapter_id) -> None:
+    """确保这一章**当前正文**的认知提取已入队(幂等)。
+
+    为什么必须挂在"正文变更"之后:认知记录按 ``source_hash``(含 content_hash)绑定,
+    正文一改旧记录即失效。若改正文时不重入队,这一章就**没有**当前正文的记录,而
+    台账对 ``completed`` 章是**严格**的 → 它成为其后所有章的硬阻塞
+    (``character_cognition_not_ready``)。实测:重写并采纳 卷2-5 之后,卷2-5 与
+    卷2-8 立刻成为全书的阻塞点,重写驱动全部卡死。
+
+    派发失败只记日志:补齐动作本身不该把调用方链路拖死。
+    """
+    from app.models.cognition import ChapterCognition as Record2
+    from app.services.cognition_reader import resolve_cognition_source
+
+    try:
+        source = await resolve_cognition_source(db, project_id, chapter_id)
+        if source is None:
+            return
+        existing = await db.scalar(
+            select(Record2)
+            .where(Record2.chapter_id == chapter_id, Record2.source_hash == source.source_hash)
+            .limit(1)
+            .execution_options(autoflush=False)
+        )
+        if existing is None:
+            await enqueue_cognition(db, source)
+            logger.info("Cognition enqueued for changed chapter=%s", chapter_id)
+        elif existing.status in ("failed", "obsolete"):
+            # failed 与"没有"对边界等价;且 attempt_count 可能已用尽,直接置 pending
+            # 会被预算拦住(0.2 秒返回 model_retry_budget_exhausted)。走 obsolete 重开。
+            await db.execute(
+                update(Record2)
+                .where(Record2.id == existing.id)
+                .values(status="obsolete", attempt_token=None)
+            )
+            await enqueue_cognition(db, source)
+            logger.info("Cognition reopened for changed chapter=%s previous=%s",
+                        chapter_id, existing.status)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Cognition enqueue skipped chapter=%s err=%s", chapter_id, exc)

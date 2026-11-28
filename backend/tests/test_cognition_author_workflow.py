@@ -102,7 +102,11 @@ async def test_missing_request_is_idempotent_and_dispatch_carries_cycle(cognitio
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('change', ['body', 'order', 'status', 'title', 'deleted', 'attempt'])
+# 2026-11-28:status 从"陈旧"参数里移出。source 身份早已不含 status(评审态是展示
+# 字段,见 entity_sources._receipt_from_row),因此评审态翻转不该让提取请求失效;
+# 且 `resolve_cognition_source` 现在对"有正文但被降级"的章同样解析,于是这条不再
+# 冲突 —— 反而符合"正文存在即事实存在"。正文/章序/章名/删除/尝试数仍然是陈旧。
+@pytest.mark.parametrize('change', ['body', 'order', 'title', 'deleted', 'attempt'])
 async def test_stale_author_request_does_not_reset_or_ack(cognition_db, change):
     r = cognition_db
     await aged_record(r, 'failed')
@@ -571,3 +575,25 @@ async def test_body_edit_after_empty_delta_read_invalidates_snapshot(cognition_d
     monkeypatch.setattr(reader, 'load_source_records', edit_body)
     with pytest.raises(RequiredContextUnavailable, match='source_unavailable'):
         await history.load_ledger(r.db, r.pid, before_global_idx=901)
+
+
+@pytest.mark.asyncio
+async def test_review_status_flip_still_allows_extraction(cognition_db):
+    """评审态翻转不该让这一章变成"永久认知缺口"。
+
+    2026-11-28 实测的《白蜡树下》回路:章被降级为 ``needs_review`` 后,提取侧只认
+    ``completed`` → 它的认知永远建不起来 → 台账每章都少一段事实 → 后续章在缺前文
+    的条件下写 → 更差 → 更多 ``needs_review``。第 450 章时已丢 258 章事实。
+    """
+    r = cognition_db
+    await aged_record(r, 'failed')
+    before = await view(r)
+    r.session.execute(update(Chapter).where(Chapter.id == UUID(r.source.chapter_id))
+                      .values(status='needs_review'))
+    r.session.commit()
+
+    accepted = await retry(r, snapshot=before)
+
+    assert accepted is not None, '正文没变、只有评审态变了,不该判为陈旧请求'
+    assert stored(r).status in ('queued', 'pending')
+    assert stored(r).attempt_count == 0

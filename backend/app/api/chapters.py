@@ -273,6 +273,11 @@ async def update_chapter(
             response.manuscript_receipt = ManuscriptReceipt(manuscript=manuscript_source(project_id, change.chapter),
                 changed=change.changed, backup_version_id=change.backup_version_id)
             chapter_idx = change.chapter.chapter_idx
+            if change.changed:
+                # 正文变了 → 旧认知记录失效,必须为新正文入队提取,否则这一章会成为
+                # 其后所有生成的硬阻塞(实测重写采纳 卷2-5 后全书卡死)。
+                from app.services.cognition_extraction import ensure_chapter_cognition
+                await ensure_chapter_cognition(db, project_id, chapter_id)
         if change.changed:
             from app.services.entity_dispatch import dispatch_entity_extraction
             dispatch_entity_extraction(project_id=project_id, chapter_id=chapter_id, chapter_idx=chapter_idx,
