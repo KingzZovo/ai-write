@@ -1338,13 +1338,13 @@ async def _extract_cognition_async(project_id, chapter_id, source_hash, *, deliv
                                          delivery_id=delivery_id, recovery=True, cycle_id=cycle_id)
 
 
-# 2026-11-28:原 `retry_backoff=True, max_retries=3` 实测会**空转**:批量写入 308 章
-# 触发 308 个 chapter_entities 抽取,各自持有本作品的实体投影锁;认知抽取抢不到锁
-# 就 `EntityProjectionBusy`,而 3 次秒级重试随即耗光 —— 实测 4 分钟 924 次 busy 日志、
-# 只推进 3 章。改为 20s 起步、最长 300s、带抖动的退避,并把耐心拉到约 33 分钟,
-# 让另一侧把队排完,而不是两边互相踩。`retry_jitter` 同时消除多 worker 同步重试。
+# 2026-11-28:原 `retry_backoff=True` 是秒级退避(实测日志是 "Retry in 0s"),
+# 批量写入 308 章触发 308 个 chapter_entities 抽取时,认知抽取抢不到实体投影锁就
+# 立刻重投,4 分钟刷出 924 条 EntityProjectionBusy 而只推进 3 章。改为 20s 起步、
+# 最长 120s、带抖动。`max_retries` 必须与 `cognition_extraction.MAX_EXTRACTION_ATTEMPTS`
+# 对齐(4 = 首调 + 3 次重试),见 tests/test_cognition_workflow_offline.py。
 @celery_app.task(name='cognition.extract_chapter', bind=True, autoretry_for=(Exception,),
-                 retry_backoff=20, retry_backoff_max=300, retry_jitter=True, max_retries=12)
+                 retry_backoff=20, retry_backoff_max=120, retry_jitter=True, max_retries=3)
 def extract_chapter_cognition(self, project_id, chapter_id, source_hash, cycle_id=None):
     from app.tasks import _run_async_safe
     return _run_async_safe(_extract_cognition_async(project_id, chapter_id, source_hash,
