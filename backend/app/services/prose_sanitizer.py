@@ -44,22 +44,24 @@ _CHAPTER_REF_RE = re.compile(
 # Half-width punctuation contamination (E2E 2026-07-26): generated prose mixes
 # half-width commas into CJK sentences ("皮带轮卡了一下,又转起来"). Normalize
 # conservatively so numbers ("1,000"), code, URLs and latin text are never
-# touched:
-#   - , ; : ? ! directly BETWEEN two CJK characters -> full-width equivalent
-#   - a half-width comma directly FOLLOWED by a CJK character (no space) ->
-#     full-width comma (covers "…了”,他说" / "3000,又转起来" style joins)
-_CJK = "㐀-䶿一-鿿豈-﫿"
-_HALFWIDTH_TO_FULLWIDTH = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
-_PUNCT_BETWEEN_CJK_RE = re.compile(rf"(?<=[{_CJK}])([,;:?!])(?=[{_CJK}])")
+# touched. 2026-11-28 全书质量检查发现旧规则只认"夹在两个汉字之间",于是
+# **句尾/引号前**的半角标点整片漏网(实测 2,016 处 / 230 章:"这份?"、
+# "走了!"、"说:"、"了,"),现改为"汉字之后、且后面不是拉丁字母或数字":
+#   - CJK + , ; : ? ! 之后不是 [0-9A-Za-z] -> 全角(覆盖"汉字之间"、
+#     句尾、换行前、引号/括号前)
+#   - 半角逗号直接接汉字(前面不是汉字,如 "3000,又转起来")-> 全角
+_CJK = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+_HALFWIDTH_TO_FULLWIDTH = {",": "\uff0c", ";": "\uff1b", ":": "\uff1a", "?": "\uff1f", "!": "\uff01"}
+_PUNCT_AFTER_CJK_RE = re.compile(rf"(?<=[{_CJK}])([,;:?!])(?![0-9A-Za-z\"'])")
 _COMMA_BEFORE_CJK_RE = re.compile(rf",(?=[{_CJK}])")
 
 
 def _normalize_halfwidth_punct(text: str) -> str:
     """Convert half-width punctuation to full-width in CJK context only."""
-    text = _PUNCT_BETWEEN_CJK_RE.sub(
+    text = _PUNCT_AFTER_CJK_RE.sub(
         lambda m: _HALFWIDTH_TO_FULLWIDTH[m.group(1)], text
     )
-    return _COMMA_BEFORE_CJK_RE.sub("，", text)
+    return _COMMA_BEFORE_CJK_RE.sub("\uff0c", text)
 
 # --- 章内同源段落折叠 --------------------------------------------------------
 # 生成侧会把同一段反复吐出来(解码/续写重叠),不是编辑意义的重复。参数保守:

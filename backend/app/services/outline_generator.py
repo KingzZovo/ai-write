@@ -1591,6 +1591,15 @@ class OutlineGenerator:
                 not isinstance(event, str) or not event.strip() for event in events
             ):
                 raise ValueError(f"第 {expected} 章至少需要两个有效 key_events")
+        # 2026-11-28:卷 5 实测出现过"从第 33 章起循环重规划同一高潮"——100 章
+        # 里 57 个标题重复、两两摘要 8-gram Jaccard 高达 0.70,正文因此成片重复。
+        # 规划层没有叙事理由让两章计划相同,这里判不合格,`generate_single_volume`
+        # 会把原因回喂给模型重规划(见 outline_volume_single)。
+        from app.services.chapter_plan_repetition import describe_violation, plan_repetition
+        report = plan_repetition(items)
+        reason = describe_violation(report, index_span=f"{start}-{end}", titles=False)
+        if reason:
+            raise ValueError(reason)
         return items
 
     async def _generate_volume_outline_staged_text_stream(

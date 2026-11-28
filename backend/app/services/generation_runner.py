@@ -729,7 +729,11 @@ async def _execute_run_locked(*, run_id: str, db: AsyncSession, resume: bool = F
         # or an unconfirmed commit; the last confirmed checkpoint is readable.
         raise
     except Exception as exc:
-        logger.warning('generation run failed (%s)', type(exc).__name__)
+        # 2026-11-28:此前只记异常类名,于是 UI 只看到兜底文案「生成流程未完成」,
+        # 而 RequiredContextUnavailable 底下有十几个不同错误码(认知未就绪、
+        # 世界规则缺失、预算超限……),排查必须先进日志。把码一起记下来。
+        detail = ' '.join(str(exc).split())[:200]
+        logger.warning('generation run failed (%s: %s)', type(exc).__name__, detail)
         # Only previously committed candidates are claimed as retained. A
         # failed session must be rolled back before recording terminal state.
         try:
@@ -740,7 +744,8 @@ async def _execute_run_locked(*, run_id: str, db: AsyncSession, resume: bool = F
             if run.status == STATUS_DONE:
                 # A failed progress notification cannot undo a saved result.
                 return _run_result(run)
-            _checkpoint_set(run, 'failure', {'phase': failure_phase, 'code': 'generation_run_failed'})
+            _checkpoint_set(run, 'failure', {'phase': failure_phase, 'code': 'generation_run_failed',
+                                             'reason': type(exc).__name__, 'detail': detail})
             run.status = STATUS_FAILED
             run.phase = PHASE_FAILED
             run.last_error = '生成流程未完成；已保存的候选稿可在检查点中查看。'

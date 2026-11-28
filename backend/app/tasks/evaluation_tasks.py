@@ -159,6 +159,10 @@ async def _evaluate_task_owned(evaluate_task_id, chapter_id, caller, lease):
         cognition_ledger_text = await resolve_prompt_context(cognition_ledger_text)
         await lease.check()
         evaluator = ChapterEvaluator()
+        # 2026-11-28:章内句级模板循环(pacing 的主因,r=-0.442)是评审过去看不见
+        # 的信号。这里只注入确定性计数,判断仍归模型(契约允许有叙事作用的重复)。
+        from app.services.repetition_profile import chapter_repetition_profile, render_repetition_block
+        repetition_text = render_repetition_block(chapter_repetition_profile(chapter_text))
         eval_result = await evaluator.evaluate(
             chapter_text=chapter_text,
             project_id=evaluation_project_id, chapter_id=str(chapter_id),
@@ -168,6 +172,7 @@ async def _evaluate_task_owned(evaluate_task_id, chapter_id, caller, lease):
             style_profile=style_text,
             cognition_ledger_text=cognition_ledger_text,
             style_stats_text=style_stats_text,
+            chapter_repetition_text=repetition_text,
         )
     except Exception as exc:
         await lease.check()

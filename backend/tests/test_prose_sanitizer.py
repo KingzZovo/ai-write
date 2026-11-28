@@ -128,11 +128,21 @@ class TestHalfwidthPunctNormalization:
         cleaned, _ = sanitize_prose(text)
         assert cleaned == text
 
-    def test_punct_before_non_cjk_quote_untouched(self):
-        # Conservative: comma before a closing quote (not CJK) is left alone.
-        text = "他低声说“够了,”便不再开口。"
+    def test_punct_before_cjk_closing_quote_is_converted(self):
+        # 2026-11-28 契约搬家:旧规则只认"夹在两个汉字之间",于是标点紧接
+        # 中文引号时整片漏网。全书实测这类漏网 2,014 处(其中标点+闭合引号
+        # 685 处,如「“你来?”」、「“够了,”」),落在正文里就是半角标点。
+        # 现在统一为"汉字之后且后面不是拉丁字母/数字",引号不再豁免。
+        cleaned, _ = sanitize_prose("他低声说“够了,”便不再开口。")
+        assert cleaned == "他低声说“够了，”便不再开口。"
+        cleaned, _ = sanitize_prose("“你来?”他问。")
+        assert cleaned == "“你来？”他问。"
+
+    def test_punct_before_ascii_quote_untouched(self):
+        # 保留旧契约真正想保护的东西:混排英文/代码里的 ASCII 引号不动。
+        text = '他念了句"hello,world"然后停住。'
         cleaned, _ = sanitize_prose(text)
-        assert "够了," in cleaned
+        assert cleaned == text
 
     def test_mixed_sentence_converts_only_cjk_context(self):
         text = "他敲下print(1,2),又核对了1,024条记录,才发现问题:参数错了"

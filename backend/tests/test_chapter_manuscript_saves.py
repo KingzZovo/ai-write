@@ -168,3 +168,37 @@ async def test_author_may_save_a_review_draft_but_cannot_claim_model_completion(
     response = await save(manuscript, expected_content_text=RESTORED, status='completed')
     assert response.status_code == 422
     assert current(manuscript)[0].status == 'needs_review'
+
+
+@pytest.mark.asyncio
+async def test_author_save_strips_meta_chapter_reference_before_storing(manuscript):
+    """2026-11-28:meta 泄漏必须在共享漏斗里剥掉,不能靠各调用点记得调。
+
+    实测残留:卷2-29「他想起第12章那天早上」、卷3-15「第二卷末,旧操场…」。
+    角色不知道自己处在第几章,这类引用一旦落库就是读者可见的硬伤。
+    """
+    from app.services.prose_sanitizer import sanitize_prose
+
+    leaky = BEFORE + '他想起第12章那天早上,名字换成了他的。第二卷末,老槐树底下。'
+    expected, hits = sanitize_prose(leaky)
+    assert hits, '净化器本身必须能命中这两处引用'
+
+    response = await save(manuscript, content_text=leaky)
+
+    assert response.status_code == 200
+    assert response.json()['manuscript']['content_text'] == expected
+    assert '第12章' not in expected and '第二卷' not in expected
+    chapter, _versions = current(manuscript)
+    assert chapter.content_text == expected
+    assert chapter.word_count == len(expected)
+
+
+@pytest.mark.asyncio
+async def test_author_save_keeps_a_clean_manuscript_byte_identical(manuscript):
+    """净化不得静默改写本来就干净的作者稿(否则每次保存都产出版本差异)。"""
+    response = await save(manuscript, content_text=RESTORED)
+    assert response.status_code == 200
+    assert response.json()['manuscript']['content_text'] == RESTORED
+    chapter, _versions = current(manuscript)
+    assert chapter.content_text == RESTORED
+    assert chapter.word_count == len(RESTORED)

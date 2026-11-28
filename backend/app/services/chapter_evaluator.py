@@ -81,6 +81,7 @@ def _build_user_prompt(
     following_context: str = "",
     user_instruction: str = "",
     established_facts: str = "",
+    chapter_repetition_text: str = "",
 ) -> str:
     """Build the user prompt with all context for evaluation."""
     if not isinstance(cognition_ledger_text, str):
@@ -144,6 +145,13 @@ def _build_user_prompt(
     if style_stats_text:
         parts.append("\n\n")
         parts.append(_limit_text(style_stats_text, 600))
+
+    # 2026-11-28 全书质量检查:章内句级模板循环是评审看不见的分;pacing 与
+    # 章内近重复的客观相关 r=-0.442(强于字数的 -0.379)。只喂确定性计数,
+    # 判断留给模型 —— 契约明确"重复要结合语境判断、不按词频清零"。
+    if chapter_repetition_text:
+        parts.append("\n\n")
+        parts.append(chapter_repetition_text)
 
     if active_foreshadows:
         parts.append("\n\n## 当前活跃伏笔\n")
@@ -370,6 +378,7 @@ class ChapterEvaluator:
         chapter_id=None,
         user_instruction: str = "",
         established_facts: str = "",
+        chapter_repetition_text: str = "",
     ) -> EvaluationResult:
         """
         Evaluate a chapter using task_type='chapter_evaluation'.
@@ -412,6 +421,7 @@ class ChapterEvaluator:
             following_context=following_context,
             user_instruction=user_instruction,
             established_facts=established_facts,
+            chapter_repetition_text=chapter_repetition_text,
         )
 
         messages = [

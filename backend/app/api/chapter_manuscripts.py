@@ -106,8 +106,8 @@ async def save_manuscript(project_id: UUID, chapter_id: UUID, body: ManuscriptSa
                                                 expected=body.expected_content_text, force=body.force)
         chapter = change.chapter
         if change.changed:
-            chapter.content_text = body.content_text
-        chapter.word_count = len(body.content_text)
+            chapter.content_text = change.text
+        chapter.word_count = len(change.text)
         if body.status is not None:
             chapter.status = body.status
         await db.flush()

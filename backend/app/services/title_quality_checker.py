@@ -156,7 +156,8 @@ REWRITE_SYSTEM = """你是中文小说章名修订师。下面给你一批章名
 - 物体（钟/灯/债/山门/剑/印 等）不能直接做需要意识的抽象动作（认账/还债/判罪/原谅）。需要物体可配可见动作（如「钟声起」「山门点灯」「剑出鞘」）。
 - 第二人称「你」允许出现，但只能作为人物对话引语或视角对象指称（「你别回头」「你欠的债」），不能让标题像在向读者解释剧情（不允许「你把他写得太干净」「你应该知道的那件事」）。
 - 不允许：「第N章」/纯数字/重复卷名/纯抽象空词（恐惚 此类）/中文全角冒号「：」/现代化或工程类词汇（流程/系统/SOP 等）/生造不可读单字。
-- 字数以短为主、可长可短、不需全卷统一；不超过 14 个汉字（避免一句描述被当成标题）。
+- 字数以短为主、可长可短、不需全卷统一;不超过 14 个汉字(避免一句描述被当成标题)。
+- 若某章的 reasons 含 duplicate_title(与该卷其他章同名),必须换成能区分本章内容的新标题,且不得与任何已有章名相同。
 - 优先选择：本章主事件的关键具象意象、关键道具、关键人物动作，或章末状态的诗化短句。
 
 输出严格 JSON：
@@ -261,6 +262,13 @@ async def check_and_rewrite_in_place(
     project_id: str | None = None,
 ) -> dict:
     violations = check_titles(chapter_summaries)
+    # 2026-11-28:卷内同名章也是标题质量问题(实测《白蜡树下》238 章标题与他人重复,
+    # 最严重「灰袍的收网」x7)。文本习惯规则抓不到"两章同名",这里补上,交给同一次
+    # 批量重写处理;重写失败时保持原样,不会让整卷生成失败。
+    from app.services.chapter_plan_repetition import duplicate_title_violations
+    already = {v.get("chapter_idx") for v in violations}
+    violations.extend(v for v in duplicate_title_violations(chapter_summaries)
+                      if v.get("chapter_idx") not in already)
     stats: dict[str, Any] = {
         "checked": len(chapter_summaries or []),
         "violations": len(violations),

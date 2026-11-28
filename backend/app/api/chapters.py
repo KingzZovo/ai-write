@@ -268,7 +268,8 @@ async def update_chapter(
                     else 400
                 )
                 raise HTTPException(status_code=status, detail=exc.detail) from None
-            response = await _update_chapter(project_id, chapter_id, body, db, chapter=change.chapter)
+            response = await _update_chapter(project_id, chapter_id, body, db, chapter=change.chapter,
+                                             content_text=change.text)
             response.manuscript_receipt = ManuscriptReceipt(manuscript=manuscript_source(project_id, change.chapter),
                 changed=change.changed, backup_version_id=change.backup_version_id)
             chapter_idx = change.chapter.chapter_idx
@@ -283,11 +284,13 @@ async def update_chapter(
     return await _update_chapter(project_id, chapter_id, body, db)
 
 
-async def _update_chapter(project_id, chapter_id, body, db, *, chapter=None):
+async def _update_chapter(project_id, chapter_id, body, db, *, chapter=None, content_text=None):
     if chapter is None:
         chapter = await _project_chapter(db, project_id, chapter_id, lock=body.expected_content_text is not None or body.expected_outline_json is not None)
+    # content_text 是调用方(作者手稿漏斗)已净化的正文;直接落它,不要回读 body。
+    replacement = content_text if content_text is not None else body.content_text
     try:
-        check_chapter_replacement(chapter.content_text, body.content_text,
+        check_chapter_replacement(chapter.content_text, replacement,
                                   expected=body.expected_content_text, force=bool(body.force))
     except ChapterContentError as exc:
         raise HTTPException(409 if exc.code == 'chapter_edit_conflict' else 400, detail=exc.detail) from None
@@ -306,9 +309,9 @@ async def _update_chapter(project_id, chapter_id, body, db, *, chapter=None):
 
     if body.title is not None:
         chapter.title = body.title
-    if body.content_text is not None and "content_text" in data:
-        chapter.content_text = body.content_text
-        chapter.word_count = len(body.content_text)
+    if replacement is not None and "content_text" in data:
+        chapter.content_text = replacement
+        chapter.word_count = len(replacement)
     if body.outline_json is not None:
         from app.services.outline_authority import record_text_edit
         from app.services.outline_order import prepare_author_chapter
