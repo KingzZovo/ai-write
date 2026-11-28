@@ -9,13 +9,21 @@ prose.
 Scope is intentionally narrow: it only strips references that a character
 inside the story can never legitimately utter (chapter/volume numbering,
 outline structure tags, context-pack delimiters). It does NOT rewrite prose
-or touch story content — a regex strip is reliable for these well-defined
-patterns, whereas an LLM rewrite would be slow and could introduce new
-drift.
+or rephrase story content — a regex strip is reliable for these well-defined
+patterns, whereas an LLM rewrite would be slow and could introduce new drift.
+
+**唯一的例外是章内同源段落折叠**(2026-11-28):生成侧会把同一段反复吐出来
+(实测卷 4 第 22 章 52 段里 18 段同源、卷 3 第 83 章 152 段 / 10,678 字),
+那是解码/续写重叠的产物,不是编辑意义上的重复。它同时抬高字数、压低
+narrative_pacing(章内近重复段落占比与 pacing 相关 r=-0.44,强于字数的 -0.38),
+并让评审报出**没有唯一锚点**的 issue(重复的东西本来就多处出现)→ 局部修订
+0 span → 整章进复核。这属于"机械性清理",与糟粕化的词频清零/近义词替换
+(项目文风契约明令禁止)不是一回事,见 ``collapse_duplicate_paragraphs``。
 """
 
 from __future__ import annotations
 
+import difflib
 import re
 
 # Context-pack delimiters that must never survive into prose. These are the
@@ -52,6 +60,56 @@ def _normalize_halfwidth_punct(text: str) -> str:
         lambda m: _HALFWIDTH_TO_FULLWIDTH[m.group(1)], text
     )
     return _COMMA_BEFORE_CJK_RE.sub("，", text)
+
+# --- 章内同源段落折叠 --------------------------------------------------------
+# 生成侧会把同一段反复吐出来(解码/续写重叠),不是编辑意义的重复。参数保守:
+DUPLICATE_PREFIX = 24         # 前 N 字作为同源指纹
+DUPLICATE_MIN_PARAGRAPH = 24  # 太短的段落不参与(对白短句天然会重复)
+DUPLICATE_SIMILARITY = 0.85   # 指纹相同还不够,整体相似度也要到这条线
+
+
+def _paragraph_similarity(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def collapse_duplicate_paragraphs(text: str) -> tuple[str, int]:
+    """折叠**同一章内**的同源段落,只保留首次出现;返回 ``(新文本, 折叠段数)``。
+
+    为什么这与项目文风契约不冲突:契约禁止的是**按词频清零**与**为避重换成失真
+    的近义词**(``narrative_quality_gates`` 明写"不按词频清零");这里删的是
+    **成段重复**——解码/续写重叠的产物,首次出现原样保留,措辞一个字不改。
+
+    边界:只在章内比较;指纹(前 24 字)相同 **且** 整体相似度 >= 0.85 才算同源;
+    短段落不参与;永远保留第一次出现;没有折叠时原样返回(调用方据此保持
+    "无变更"的既有语义)。
+    """
+    if not text:
+        return text, 0
+    parts = re.split(r"(\n+)", text)      # [段, 分隔, 段, 分隔, ...]
+    kept: dict[str, list[str]] = {}
+    out: list[str] = []
+    dropped = 0
+    for i, chunk in enumerate(parts):
+        if i % 2 == 1:                    # 分隔符
+            out.append(chunk)
+            continue
+        body = chunk.strip()
+        if len(body) < DUPLICATE_MIN_PARAGRAPH:
+            out.append(chunk)
+            continue
+        key = body[:DUPLICATE_PREFIX]
+        prior = kept.get(key)
+        if prior and any(_paragraph_similarity(body, seen) >= DUPLICATE_SIMILARITY
+                         for seen in prior):
+            dropped += 1
+            if i + 1 < len(parts):
+                parts[i + 1] = ""         # 连它前面的空行一起去掉,避免留下空洞
+            continue
+        kept.setdefault(key, []).append(body)
+        out.append(chunk)
+    if not dropped:
+        return text, 0
+    return "".join(out), dropped
 
 
 def sanitize_prose(text: str) -> tuple[str, list[str]]:
@@ -96,6 +154,12 @@ def sanitize_prose(text: str) -> tuple[str, list[str]]:
             # 混合形态(正文 + 话术)仍按上面剥离,那种情况才有正文可救。
             hits.append("service_noise_fatal")
             return text, hits
+
+    # 章内同源段落折叠 —— 本模块唯一"动内容"的例外,理由见模块 docstring。
+    # 放在 `if not hits` 之前:折叠本身要计入 hits,否则会被当成"无变更"而丢弃。
+    cleaned, collapsed = collapse_duplicate_paragraphs(cleaned)
+    if collapsed:
+        hits.append(f"duplicate_paragraphs:{collapsed}")
 
     if not hits:
         return text, []
