@@ -82,29 +82,32 @@ def test_planning_target_does_not_break_planner_budget_window(monkeypatch):
 
 # --- 章级验收下限 -----------------------------------------------------------
 
-def test_chapter_min_target_ratio_default_is_point_95():
+def test_chapter_min_target_ratio_default_is_one():
+    """2026-11-28:作者的硬规则是"低于 2000 字都不能发布",所以验收下限不再留 5% 浮动。"""
     from app.services.chapter_quality_gate import (
         _MIN_TARGET_WORD_RATIO,
         _resolve_min_target_ratio,
     )
 
-    assert _resolve_min_target_ratio() == pytest.approx(0.95)
-    assert _MIN_TARGET_WORD_RATIO == pytest.approx(0.95)
+    assert _resolve_min_target_ratio() == pytest.approx(1.0)
+    assert _MIN_TARGET_WORD_RATIO == pytest.approx(1.0)
 
 
-def test_chapter_min_target_count_for_2000_is_1900():
+def test_chapter_min_target_count_for_2000_is_2000():
     from app.services.chapter_quality_gate import _min_target_word_count
 
-    assert _min_target_word_count(2000) == 1900
+    assert _min_target_word_count(2000) == 2000
     assert _min_target_word_count(None) is None
     assert _min_target_word_count(0) is None
 
 
-def test_shortfall_boundary_at_1900_chars():
+def test_shortfall_boundary_at_2000_chars():
     from app.services.chapter_quality_gate import _target_length_shortfall
 
-    assert _target_length_shortfall("字" * 1899, target_word_count=2000) is True
-    assert _target_length_shortfall("字" * 1900, target_word_count=2000) is False
+    # 1900 曾经算"达标"(0.95 浮动),按新规则必须算偏短。
+    assert _target_length_shortfall("字" * 1900, target_word_count=2000) is True
+    assert _target_length_shortfall("字" * 1999, target_word_count=2000) is True
+    assert _target_length_shortfall("字" * 2000, target_word_count=2000) is False
     # 没有目标字数时不做长度判定。
     assert _target_length_shortfall("字" * 10, target_word_count=None) is False
 
