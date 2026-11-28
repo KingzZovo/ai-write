@@ -1985,6 +1985,19 @@ async def generate_outline(
     except Exception:
         pass
 
+    # 2026-11-28:书纲输入此前**只**认 req.user_input,完全不读 project.premise ——
+    # 于是"用项目自身前提重生成书纲"在不传创意时会凭空编一个无关故事(实测:以
+    # 《白蜡树》为前提的项目重生成,跑成了毫无关系的《拾光者》)。前端一直把前提
+    # 塞进 user_input,所以这条缺口长期没暴露。补一个回退:没给创意就用项目前提。
+    if not (req.user_input or "").strip() and req.project_id:
+        try:
+            from app.models.project import Project as _PremiseProject
+            _premise_project = await db.get(_PremiseProject, req.project_id)
+            if _premise_project is not None and (_premise_project.premise or "").strip():
+                req.user_input = _premise_project.premise
+        except Exception:
+            pass
+
     # Combine user input with style and anti-AI instructions
     enhanced_input = req.user_input
     if style_instruction:

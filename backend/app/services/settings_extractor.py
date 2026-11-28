@@ -106,7 +106,10 @@ JSON 结构：{ "relationships": [ { "source_name": "...", "target_name": "...",
 规则：
 - rel_type 只能是 ally|enemy|mentor|lover|rival|family|other
 - sentiment 只能是 positive|negative|neutral
-- 覆盖大纲里所有明显的人物关系；单向关系不要正反重复"""
+- 覆盖大纲里所有明显的人物关系;单向关系不要正反重复
+- source_name / target_name **必须逐字取自调用方给出的可用角色名单**。组织、机构、
+  门派、公司、物件、地点都不是角色(如「灰袍」「白塔」「老网游」),不得作为端点;
+  这类关系请改写成"角色与角色"的真实关系,或干脆不写这一条。没有可写的关系就返回空数组。"""
 
 
 def _settings_split_enabled() -> bool:
@@ -152,10 +155,18 @@ def _validate_relationships(data: dict) -> dict:
     names = [item["name"].strip() for item in data["characters"]]
     if len(names) != len(set(names)):
         raise SettingsExtractionError("设定提取包含重复人物")
+    offenders = []
     for relationship in data["relationships"]:
         source, target = relationship["source_name"].strip(), relationship["target_name"].strip()
         if source not in names or target not in names or source == target:
-            raise SettingsExtractionError("人物关系与角色列表不一致")
+            offenders.append(f"{source}->{target}")
+    if offenders:
+        # 2026-11-28:原来只报一句"不一致",看不出是哪个端点写错、错成什么。点名,
+        # 让调用方(与下一次重试)能直接拿到原因;契约"无效输出≠空成功"保持不变。
+        raise SettingsExtractionError(
+            "人物关系与角色列表不一致:" + "; ".join(offenders[:8])
+            + f" (可用角色名:{'、'.join(names[:12])})"
+        )
     return data
 
 
@@ -230,7 +241,23 @@ async def extract_settings_from_outline(outline_text: str, *, project_id=None) -
         if any(isinstance(result, asyncio.CancelledError) for result in failures):
             raise asyncio.CancelledError
         if not failures:
-            return _validate_relationships({field: result[field] for field, result in zip(fields, outcomes)})
+            payload = {field: result[field] for field, result in zip(fields, outcomes)}
+            try:
+                return _validate_relationships(payload)
+            except SettingsExtractionError as exc:
+                # 2026-11-28 实测:关系 pass 会把**组织**当端点(「林迟->灰袍」,灰袍
+                # 是组织不是角色)。原来这一条让整本书的设定提取 502、world_rules 永远
+                # 为 0、写作链卡在"世界规则暂时无法读取"。契约"无效输出≠空成功"保留,
+                # 但给一次带原因的修复机会(与卷纲的"回喂原因重规划"同一手法)。
+                logger.warning("settings_extractor relationship repair round: %s", exc)
+                repaired = await _extract_stream(
+                    "relationships_extraction",
+                    relationships_prompt + f"\n- 上一轮失败原因:{exc}"
+                    "\n- 请只用可用角色名做端点,或者返回空数组。",
+                    outline_text, ("relationships",), project_id,
+                )
+                payload["relationships"] = repaired["relationships"]
+                return _validate_relationships(payload)
         if len(failures) != len(outcomes):
             raise SettingsExtractionError("设定提取尚未完整完成,未写入任何资料,请重试")
         logger.warning("All settings extraction branches failed; trying one combined extraction")
